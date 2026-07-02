@@ -1,36 +1,37 @@
 #!/usr/bin/env bash
-# detections/siem/gen-siem.sh — generate the deployable Splunk savedsearches form
-# from the Sigma source of truth, so the compiled deploy artifact stops drifting.
+# detections/siem/gen-siem.sh — generate the deployable SIEM forms from the Sigma
+# source of truth, so the compiled deploy artifacts stop drifting by hand.
 # ──────────────────────────────────────────────────────────────────────────────
 # Sigma is the source of truth (detections/sigma/). This script is the reproducible
-# "compile Sigma → backend, in its DEPLOY shape" step: it runs the pySigma splunk
-# backend's `savedsearches` output format over the whole rule tree and writes one
-# savedsearches.conf a Splunk app can drop into etc/apps/<app>/local/. It is the
-# generated twin of the hand-authored deploy forms alongside it:
+# "compile Sigma → backend, in its DEPLOY shape" step. It emits three artifacts, one
+# per SIEM, each drift-gated in CI by `gen-siem.sh --check`:
 #
-#   splunk/savedsearches.generated.conf   ← THIS SCRIPT (every single-event +
-#                                            correlation rule, drift-gated in CI)
-#   splunk/savedsearches.conf             ← hand, 5 enriched worked examples
-#   splunk/correlation_searches.conf      ← hand, absence/join detections Sigma
-#                                            can't express (Golden/Silver/NTLM-relay)
-#   sentinel/*.yaml                        ← hand, Microsoft Sentinel deploy forms
+#   splunk/savedsearches.generated.conf   Splunk savedsearches.conf stanzas (every
+#                                         rule; Windows dirs via the splunk_windows TA
+#                                         pipeline, non-Windows dirs raw)
+#   sentinel/rules.generated.kql          Microsoft Sentinel KQL, one query per rule
+#   elastic/rules.generated.lucene        Elasticsearch Lucene, one query per rule
 #
-# Windows tactic dirs compile through the `splunk_windows` pipeline (EventID→EventCode
-# and the Splunk Windows TA field names); the non-Windows platform dirs compile raw
-# (--without-pipeline), matching detections/sigma/convert.sh.
+# The KQL/Lucene forms compile each rule with `--without-pipeline` (raw logical field
+# names) — a compile-checked deploy STARTING point, same framing as convert.sh. A real
+# deploy adds a schema pipeline (sentinel_asim / microsoft_xdr for Sentinel, ecs_windows
+# for Elastic) on the Windows rules. Rules a backend cannot express (Sigma correlations
+# — password spray, AS-REP probing) are NOTED in the file, not silently dropped. The
+# hand-authored siem/ forms (savedsearches.conf, correlation_searches.conf, sentinel/*.yaml)
+# stay for the enriched, absence/join, and packaged-analytics deploys a bare compile can't emit.
 #
-#   gen-siem.sh            # (re)write splunk/savedsearches.generated.conf from sigma/
-#   gen-siem.sh --check    # exit 1 (with a diff) if the committed file is out of date
+#   gen-siem.sh            # (re)write all three generated artifacts from sigma/
+#   gen-siem.sh --check    # exit 1 (with a diff) if any committed artifact is out of date
 #
-# --check is the drift gate (CI runs it in .github/workflows/sigma.yml); the bare form
-# is what you run after adding/editing a rule. Deps: sigma-cli + pysigma-backend-splunk
-# (same pins as convert.sh / the CI job).
+# Deps: sigma-cli + the pinned backends (splunk, elasticsearch, kusto) — see the CI job.
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SIGMA="$HERE/../sigma"
-OUT="$HERE/splunk/savedsearches.generated.conf"
+OUT_SPLUNK="$HERE/splunk/savedsearches.generated.conf"
+OUT_SENTINEL="$HERE/sentinel/rules.generated.kql"
+OUT_ELASTIC="$HERE/elastic/rules.generated.lucene"
 
 CHECK=0
 if [[ $# -gt 1 ]]; then
@@ -49,7 +50,7 @@ case "${1:-}" in
 esac
 
 if ! command -v sigma >/dev/null 2>&1; then
-  echo "sigma not found — pip install sigma-cli pysigma-backend-splunk" >&2
+  echo "sigma not found — pip install sigma-cli pysigma-backend-splunk pysigma-backend-elasticsearch pysigma-backend-kusto" >&2
   exit 1
 fi
 
@@ -58,13 +59,12 @@ fi
 WIN_DIRS=(credential_access privilege_escalation lateral_movement persistence defense_evasion)
 NONWIN_DIRS=(cloud kubernetes okta github gitlab registry vault terraform jenkins snowflake google_workspace)
 
+# ── Splunk savedsearches form ─────────────────────────────────────────────────
 # Each `sigma convert -f savedsearches` invocation prepends its own [default] stanza
 # (global dispatch window). Strip every per-invocation [default] block and emit one
-# canonical [default] at the top instead, so the concatenated file has exactly one.
-# Drop the per-invocation [default] stanza (a global dispatch window sigma emits once
-# per convert call); one canonical [default] is written in the header instead. Skip
-# from the [default] header until the NEXT stanza header (^[) — not the next blank line,
-# which would be brittle if the upstream format ever reflowed blank lines.
+# canonical [default] at the top instead. Skip from the [default] header until the NEXT
+# stanza header (^[) — not the next blank line, which would be brittle if the upstream
+# format ever reflowed blank lines.
 strip_default() {
   awk '
     /^\[default\]$/ { skip=1; next }
@@ -78,7 +78,6 @@ strip_default() {
 # byte-sorted file list (NOT the bare directory): `sigma convert <dir>` enumerates in
 # filesystem order, which differs between machines and would make the generated file —
 # and therefore the --check drift gate — non-reproducible across environments.
-#   $1 = dir under sigma/   $2… = extra `sigma convert` args (pipeline selection)
 gen_dir() {
   local dir="$1"
   shift
@@ -87,12 +86,11 @@ gen_dir() {
   mapfile -t files < <(find "$SIGMA/$dir" -maxdepth 1 -name '*.yml' | LC_ALL=C sort)
   [[ ${#files[@]} -gt 0 ]] || return 0
   # No stderr suppression: sigma's "Parsing Sigma rules" notice goes to stderr (it does
-  # not pollute the generated stdout), and a real conversion error must stay visible —
-  # with pipefail it also fails the pipeline so the drift gate reports the root cause.
+  # not pollute the generated stdout), and a real conversion error must stay visible.
   sigma convert -t splunk -f savedsearches "$@" "${files[@]}" | strip_default
 }
 
-generate() {
+generate_splunk() {
   cat <<'HEADER'
 # savedsearches.generated.conf — GENERATED by detections/siem/gen-siem.sh. DO NOT EDIT.
 #
@@ -121,17 +119,74 @@ HEADER
   done
 }
 
+# ── Sentinel (KQL) / Elastic (Lucene) forms ───────────────────────────────────
+# Every rule as its own query, compiled --without-pipeline. Per-rule (not per-dir):
+# a single unconvertible rule aborts a whole-dir convert, and per-rule lets us NOTE the
+# ones a backend can't express (Sigma correlations) instead of dropping them silently.
+all_rules() { find "$SIGMA" -mindepth 2 -maxdepth 2 -name '*.yml' | LC_ALL=C sort; }
+
+emit_queries() {
+  local target="$1" label="$2" comment="$3" f rel title q errf
+  errf="$(mktemp)"
+  printf '%s rules.generated — GENERATED by detections/siem/gen-siem.sh. DO NOT EDIT.\n' "$comment"
+  printf '%s %s deploy form: each Sigma rule in detections/sigma/ compiled with\n' "$comment" "$label"
+  printf '%s   sigma convert -t %s --without-pipeline\n' "$comment" "$target"
+  printf '%s (raw logical field names — for a real deploy add a schema pipeline, e.g.\n' "$comment"
+  printf '%s sentinel_asim/microsoft_xdr for Sentinel or ecs_windows for Elastic on the\n' "$comment"
+  printf '%s Windows rules). Regenerate with detections/siem/gen-siem.sh; CI drift-gates it.\n' "$comment"
+  printf '%s Rules a backend cannot express (Sigma correlations) are noted, not dropped.\n' "$comment"
+  while IFS= read -r f; do
+    rel="${f#"$SIGMA"/}"
+    title="$(sed -n 's/^title:[[:space:]]*//p' "$f" | head -1)"
+    printf '\n%s %s — %s\n' "$comment" "$rel" "$title"
+    if q="$(sigma convert -t "$target" --without-pipeline "$f" 2>"$errf")"; then
+      printf '%s\n' "$q"
+    else
+      printf '%s UNSUPPORTED: %s\n' "$comment" "$(sed -n 's/^Error: //p' "$errf" | head -1)"
+    fi
+  done < <(all_rules)
+  rm -f "$errf"
+}
+
+render_one() {
+  case "$1" in
+  splunk) generate_splunk ;;
+  sentinel) emit_queries kusto "Microsoft Sentinel (KQL)" '//' ;;
+  elastic) emit_queries lucene "Elasticsearch (Lucene)" '//' ;;
+  esac
+}
+outpath() {
+  case "$1" in
+  splunk) echo "$OUT_SPLUNK" ;;
+  sentinel) echo "$OUT_SENTINEL" ;;
+  elastic) echo "$OUT_ELASTIC" ;;
+  esac
+}
+
+WHICH=(splunk sentinel elastic)
+
 if [[ "$CHECK" -eq 1 ]]; then
-  tmp="$(mktemp)"
-  trap 'rm -f "$tmp"' EXIT
-  generate >"$tmp"
-  if ! diff -u "$OUT" "$tmp" >/dev/null 2>&1; then
-    echo "gen-siem: $OUT is out of date — run detections/siem/gen-siem.sh" >&2
-    diff -u "$OUT" "$tmp" >&2 || true
-    exit 1
+  rc=0
+  for w in "${WHICH[@]}"; do
+    out="$(outpath "$w")"
+    tmp="$(mktemp)"
+    render_one "$w" >"$tmp"
+    if ! diff -u "$out" "$tmp" >/dev/null 2>&1; then
+      echo "gen-siem: $out is out of date — run detections/siem/gen-siem.sh" >&2
+      diff -u "$out" "$tmp" >&2 || true
+      rc=1
+    fi
+    rm -f "$tmp"
+  done
+  if [[ "$rc" -eq 0 ]]; then
+    echo "gen-siem: all generated SIEM forms up to date"
   fi
-  echo "gen-siem: savedsearches.generated.conf up to date"
+  exit "$rc"
 else
-  generate >"$OUT"
-  echo "gen-siem: wrote $OUT"
+  for w in "${WHICH[@]}"; do
+    out="$(outpath "$w")"
+    mkdir -p "$(dirname "$out")"
+    render_one "$w" >"$out"
+    echo "gen-siem: wrote $out"
+  done
 fi
