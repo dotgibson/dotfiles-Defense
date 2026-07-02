@@ -19,7 +19,7 @@ OperationName in~ ("Consent to application", "Add delegated permission grant", "
 OperationName in~ ("Add service principal credentials", "Add application credentials", "Update application - Certificates and secrets management", "Update application – Certificates and secrets management")
 
 // cloud/gcp_service_account_key_created.yml — GCP user-managed service-account key created
-'gcp.audit.method_name' =~ "google.iam.admin.v1.CreateServiceAccountKey"
+['gcp.audit.method_name'] =~ "google.iam.admin.v1.CreateServiceAccountKey"
 
 // credential_access/asrep_roast_probing_4771.yml — AS-REP roast base - Kerberos pre-auth failure 0x18 (4771)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -82,13 +82,13 @@ uri contains "/createItem" or (uri contains "/job/" and uri contains "/configSub
 uri contains "/scriptText" or uri contains "/script"
 
 // kubernetes/k8s_clusteradmin_binding.yml — Kubernetes cluster-admin role binding created or modified
-(verb in~ ("create", "update", "patch")) and ('objectRef.resource' in~ ("clusterrolebindings", "rolebindings")) and 'requestObject.roleRef.name' =~ "cluster-admin"
+(verb in~ ("create", "update", "patch")) and (['objectRef.resource'] in~ ("clusterrolebindings", "rolebindings")) and ['requestObject.roleRef.name'] =~ "cluster-admin"
 
 // kubernetes/k8s_pod_exec_attach.yml — Kubernetes pod exec / attach
-verb =~ "create" and 'objectRef.resource' =~ "pods" and ('objectRef.subresource' in~ ("exec", "attach"))
+verb =~ "create" and ['objectRef.resource'] =~ "pods" and (['objectRef.subresource'] in~ ("exec", "attach"))
 
 // kubernetes/k8s_privileged_pod_created.yml — Kubernetes privileged / host-namespace pod created (node escape)
-(verb =~ "create" and 'objectRef.resource' =~ "pods") and ('requestObject.spec.containers.securityContext.privileged' =~ true or 'requestObject.spec.hostPID' =~ true or 'requestObject.spec.volumes.hostPath.path' =~ "/")
+(verb =~ "create" and ['objectRef.resource'] =~ "pods") and (['requestObject.spec.containers.securityContext.privileged'] == true or ['requestObject.spec.hostPID'] == true or ['requestObject.spec.volumes.hostPath.path'] =~ "/")
 
 // lateral_movement/rdp_hijack_tscon_4688.yml — RDP session hijack - tscon redirect to an RDP endpoint
 CommandLine contains "/dest:rdp-tcp#"
@@ -145,19 +145,19 @@ query_type =~ "UNLOAD"
 query_type =~ "CREATE_USER" or (query_type =~ "GRANT" and (query_text contains "ACCOUNTADMIN" or query_text contains "SECURITYADMIN"))
 
 // terraform/tfc_rogue_agent_pool.yml — Terraform Cloud agent pool created (rogue run executor)
-'resource.type' =~ "agent_pool" and 'resource.action' =~ "create"
+['resource.type'] =~ "agent_pool" and ['resource.action'] =~ "create"
 
 // terraform/tfc_token_backdoor.yml — Terraform Cloud org/team API token created (durable-access backdoor)
-'resource.type' =~ "authentication_token" and 'resource.action' =~ "create"
+['resource.type'] =~ "authentication_token" and ['resource.action'] =~ "create"
 
 // terraform/tfc_variable_injection.yml — Terraform Cloud workspace variable created or updated (run hijack)
-'resource.type' =~ "variable" and ('resource.action' in~ ("create", "update"))
+['resource.type'] =~ "variable" and (['resource.action'] in~ ("create", "update"))
 
 // vault/vault_approle_backdoor.yml — HashiCorp Vault AppRole / auth method created (persistence)
-(type =~ "request" and ('request.operation' in~ ("create", "update"))) and (''request.path'' startswith "auth/approle/role/" or ''request.path'' startswith "sys/auth/")
+(type =~ "request" and (['request.operation'] in~ ("create", "update"))) and (['request.path'] startswith "auth/approle/role/" or ['request.path'] startswith "sys/auth/")
 
 // vault/vault_audit_device_disabled.yml — HashiCorp Vault audit device disabled (blind the SIEM)
-type =~ "request" and 'request.operation' =~ "delete" and 'request.path' startswith "sys/audit/"
+type =~ "request" and ['request.operation'] =~ "delete" and ['request.path'] startswith "sys/audit/"
 
 // vault/vault_bulk_secret_read.yml — HashiCorp Vault secret read (bulk-exfil triage)
-type =~ "request" and 'request.operation' =~ "read" and 'request.path' startswith "secret/"
+type =~ "request" and ['request.operation'] =~ "read" and ['request.path'] startswith "secret/"

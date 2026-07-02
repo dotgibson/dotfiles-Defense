@@ -125,6 +125,16 @@ HEADER
 # ones a backend can't express (Sigma correlations) instead of dropping them silently.
 all_rules() { find "$SIGMA" -mindepth 2 -maxdepth 2 -name '*.yml' | LC_ALL=C sort; }
 
+# The kusto backend, compiled --without-pipeline, quotes dotted field identifiers with
+# SINGLE quotes (e.g. 'resource.type') — but single quotes are STRING LITERALS in KQL, so
+# the predicate wouldn't reference a column; it also renders booleans as `=~ true`. Since
+# string VALUES are double-quoted, single-quoted tokens are unambiguously field names:
+# rewrite them to bracketed column refs (['resource.type']) and fix the boolean operator,
+# yielding syntactically valid KQL. (Elastic/Lucene needs no such fix — dots are legal there.)
+kql_fix() {
+  sed -E "s/''+/'/g; s/'([A-Za-z0-9_.]+)'/['\1']/g; s/=~ (true|false)/== \1/g"
+}
+
 emit_queries() {
   local target="$1" label="$2" comment="$3" f rel title q errf
   errf="$(mktemp)"
@@ -140,6 +150,7 @@ emit_queries() {
     title="$(sed -n 's/^title:[[:space:]]*//p' "$f" | head -1)"
     printf '\n%s %s — %s\n' "$comment" "$rel" "$title"
     if q="$(sigma convert -t "$target" --without-pipeline "$f" 2>"$errf")"; then
+      if [[ "$target" == kusto ]]; then q="$(printf '%s' "$q" | kql_fix)"; fi
       printf '%s\n' "$q"
     else
       printf '%s UNSUPPORTED: %s\n' "$comment" "$(sed -n 's/^Error: //p' "$errf" | head -1)"
