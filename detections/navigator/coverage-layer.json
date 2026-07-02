@@ -69,10 +69,22 @@
       "comment": "3 rule(s): aws_iam_access_key_created, entra_sp_credential_backdoor, gcp_service_account_key_created"
     },
     {
+      "techniqueID": "T1098.003",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): gws_admin_role_grant"
+    },
+    {
       "techniqueID": "T1110.003",
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): password_spray_4625"
+    },
+    {
+      "techniqueID": "T1114.003",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): gws_external_mail_forwarding"
     },
     {
       "techniqueID": "T1134.001",
@@ -106,9 +118,9 @@
     },
     {
       "techniqueID": "T1528",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): entra_illicit_consent_grant"
+      "comment": "2 rule(s): entra_illicit_consent_grant, gws_illicit_oauth_grant"
     },
     {
       "techniqueID": "T1543",

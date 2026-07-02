@@ -70,7 +70,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 49 rules / 51 documents, organized by ATT&CK tactic
+### `sigma/` — 52 rules / 54 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -196,14 +196,23 @@ purple-validatable out of the box.
 | `snowflake_user_created` | `CREATE_USER` / priv `GRANT` | T1136.003 | Snowflake · snowflake-rogue-user |
 | `snowflake_network_policy_change` | `NETWORK POLICY` in query text | T1562.007 | Snowflake · snowflake-network-policy |
 
+**`google_workspace/`** (Google Workspace admin/token/user audit — `product: google_workspace`; field `eventName`)
+
+| Rule | Event / source | ATT&CK | Validate with |
+| ---- | -------------- | ------ | ------------- |
+| `gws_illicit_oauth_grant` | token `authorize` | T1528 | Workspace · gws-oauth-grant |
+| `gws_admin_role_grant` | `GRANT_DELEGATED_ADMIN_PRIVILEGES` / `ASSIGN_ROLE` | T1098.003 | Workspace · gws-super-admin |
+| `gws_external_mail_forwarding` | `email_forwarding_out_of_domain` | T1114.003 | Workspace · gws-mail-forward |
+
 `password_spray` and `asrep_roast_probing` are Sigma **correlation** rules
 (a base event + a `value_count` over a window); the rest are single-event
 selections. The `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,
-`gitlab/`, `vault/`, `terraform/`, `jenkins/`, and `snowflake/` rules are the
-non-Windows logsources here
-(`product: azure|aws|gcp|kubernetes|okta|github|harbor|gitlab|vault|terraform|jenkins|snowflake`)
+`gitlab/`, `vault/`, `terraform/`, `jenkins/`, `snowflake/`, and `google_workspace/`
+rules are the non-Windows logsources here
+(`product: azure|aws|gcp|kubernetes|okta|github|harbor|gitlab|vault|terraform|jenkins|snowflake|google_workspace`)
 and mirror the htpx corpus's companion-only cloud, K8s, Okta, GitHub Actions, Harbor
-registry, GitLab CI/CD, HashiCorp Vault, Terraform Cloud, Jenkins, and Snowflake pairs.
+registry, GitLab CI/CD, HashiCorp Vault, Terraform Cloud, Jenkins, Snowflake, and
+Google Workspace pairs.
 The `jenkins/` rules match the Audit Trail plugin's request-URI log line via a `uri`
 field (`uri|contains`), scoped to the specific endpoints (e.g. job `configSubmit` is
 bound to the `/job/` path so global config submits don't trip it).

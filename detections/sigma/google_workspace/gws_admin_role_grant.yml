@@ -1,0 +1,34 @@
+title: Google Workspace admin/super-admin role granted (tenant persistence)
+id: a5dfde3d-3def-41ee-9be9-87e011bf8172
+status: experimental
+description: |
+  Detects an admin-role grant in the Google Workspace admin audit:
+  GRANT_DELEGATED_ADMIN_PRIVILEGES (a user made super admin) or ASSIGN_ROLE (a privileged
+  admin role assigned). After a tenant compromise an attacker promotes their own account to
+  gain durable, full-tenant control - user/role management, security settings, every mailbox
+  - surviving the victim admin's password reset (T1098.003). Admin grants are rare and
+  high-impact, so one by an unexpected actor, or a grant quickly following a new-user
+  creation, warrants review.
+  Validate (purple): promote a user to super admin via the Admin SDK from dotfiles-Kali
+  (htpx pair gws-super-admin).
+references:
+  - https://attack.mitre.org/techniques/T1098/003/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/gws-admin-audit.md
+author: dotfiles-Defense
+date: 2026-07-02
+tags:
+  - attack.persistence
+  - attack.t1098.003
+logsource:
+  product: google_workspace
+  service: admin
+detection:
+  selection:
+    eventName:
+      - 'GRANT_DELEGATED_ADMIN_PRIVILEGES'
+      - 'ASSIGN_ROLE'
+  condition: selection
+falsepositives:
+  - Sanctioned admin/role administration - reconcile against the IdM workflow and alert on
+    super-admin grants or grants outside change control.
+level: high
