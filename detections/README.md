@@ -33,10 +33,11 @@ repo's `lint.yml` only covers shell). Four hard checks, one advisory:
    flakes on a network hiccup.
 2. **Compile** — every rule must compile to a real backend (Splunk) via
    `detections/sigma/convert.sh`. A rule that won't convert isn't deployable.
-3. **SIEM deploy-form drift** — `detections/siem/gen-siem.sh --check`. The Splunk
-   `savedsearches.generated.conf` deploy artifact is *generated* from the Sigma tree;
-   this proves the committed file still matches what the generator emits, so the
-   deploy form can't drift by hand (the same idea as htpx's `gen-views.sh --check`).
+3. **SIEM deploy-form drift** — `detections/siem/gen-siem.sh --check`. The three
+   deploy artifacts — Splunk `savedsearches.generated.conf`, Sentinel
+   `rules.generated.kql`, Elastic `rules.generated.lucene` — are *generated* from the
+   Sigma tree; this proves the committed files still match what the generator emits, so
+   no deploy form can drift by hand (the same idea as htpx's `gen-views.sh --check`).
 4. **ATT&CK Navigator drift** — `detections/navigator/gen-navigator.sh --check`. The
    `coverage-layer.json` heatmap is *generated* from the rules' `attack.*` tags; this
    proves the committed layer still matches, so the coverage view can't drift from the
@@ -48,21 +49,25 @@ repo's `lint.yml` only covers shell). Four hard checks, one advisory:
 Run it locally (any pySigma backend):
 
 ```sh
-pip install "sigma-cli==3.0.2" "pysigma-backend-splunk==2.1.0"   # pinned, matching CI
+# pinned, matching CI (splunk + elasticsearch + kusto backends)
+pip install "sigma-cli==3.0.2" "pysigma-backend-splunk==2.1.0" \
+            "pysigma-backend-elasticsearch==2.1.0" "pysigma-backend-kusto==1.0.1"
 sigma check --fail-on-issues -c detections/sigma-validation-config.yml detections/sigma/   # lint
 detections/sigma/convert.sh splunk                                                         # compile → SPL
-detections/siem/gen-siem.sh --check                                                        # deploy-form drift
+detections/siem/gen-siem.sh --check                                                        # deploy-form drift (Splunk/Sentinel/Elastic)
 detections/navigator/gen-navigator.sh --check                                              # ATT&CK coverage drift
 ```
 
 `convert.sh` is the reproducible "Sigma → backend" *compile check*: it compiles each
 rule with `--without-pipeline` (raw logical fields). `gen-siem.sh` is the reproducible
-"Sigma → **deploy form**" step: it runs the backend's `savedsearches` output format
-(Windows dirs through the `splunk_windows` TA pipeline, non-Windows dirs raw) over the
-whole tree and writes `siem/splunk/savedsearches.generated.conf` — the deployable
-artifact a bare per-rule `convert.sh` doesn't assemble. The other `siem/` forms below
-stay hand-wrapped for what the generator can't emit (enriched examples, absence/join
-correlations, Sentinel).
+"Sigma → **deploy form**" step across **three SIEMs**: the Splunk `savedsearches`
+form (Windows dirs through the `splunk_windows` TA pipeline, non-Windows dirs raw),
+plus one-query-per-rule **Sentinel KQL** (`kusto` backend) and **Elastic Lucene**
+(`lucene` backend) forms — all generated from the tree and drift-gated together. The
+KQL/Lucene forms compile raw (add a `sentinel_asim`/`ecs_windows` pipeline for a real
+Windows deploy); rules a backend can't express (Sigma correlations) are noted in-file,
+not dropped. The hand-wrapped `siem/` forms below stay for the enriched, absence/join,
+and packaged-analytics deploys a bare compile can't emit.
 
 ## What ships today (the starter pack)
 
@@ -238,6 +243,10 @@ is a lab baseline, not production — graduate to `sysmon-modular` and tune.
   (Windows dirs through the `splunk_windows` TA pipeline, non-Windows dirs raw), and
   drift-gated in CI via `gen-siem.sh --check`. This is the "real pipeline" the note
   above promised: edit a rule → `gen-siem.sh` → commit both. Do not hand-edit it.
+- **`sentinel/rules.generated.kql`** — GENERATED. Every rule as a Microsoft Sentinel
+  KQL query (`kusto` backend), one per rule, by the same `gen-siem.sh` (drift-gated).
+- **`elastic/rules.generated.lucene`** — GENERATED. Every rule as an Elasticsearch
+  Lucene query (`lucene` backend), one per rule, by the same `gen-siem.sh` (drift-gated).
 - **`splunk/savedsearches.conf`** — HAND. Five single-event rules with hand-tuned
   enrichment (stats correlation, per-search schedules/severities/`action.notable`)
   the bare `savedsearches` format doesn't emit — kept as the worked, richer example.
