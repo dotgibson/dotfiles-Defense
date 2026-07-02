@@ -1,0 +1,31 @@
+title: Google Workspace external mail forwarding enabled (BEC exfil)
+id: 6e2a80de-912d-495b-aa3c-c3ce24ac9ef3
+status: experimental
+description: |
+  Detects a mailbox set to auto-forward outside the organization in the Google Workspace
+  audit (eventName=email_forwarding_out_of_domain) - the durable, quiet exfil channel behind
+  most business email compromise, which keeps leaking mail even after the session is lost
+  (T1114.003). Enabling out-of-domain forwarding is uncommon and rarely legitimate, so alert
+  on any occurrence, prioritize forwarding to new/free-mail domains, and pair with the admin
+  setting that disables automatic external forwarding org-wide.
+  Validate (purple): enable external auto-forwarding via the Gmail API from dotfiles-Kali
+  (htpx pair gws-mail-forward).
+references:
+  - https://attack.mitre.org/techniques/T1114/003/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/gws-mail-forward-audit.md
+author: dotfiles-Defense
+date: 2026-07-02
+tags:
+  - attack.collection
+  - attack.t1114.003
+logsource:
+  product: google_workspace
+  service: user_accounts
+detection:
+  selection:
+    eventName: 'email_forwarding_out_of_domain'
+  condition: selection
+falsepositives:
+  - Rare sanctioned external forwarding - allowlist the approved destinations and alert on
+    forwarding to new/free-mail domains or by users who don't normally set it.
+level: medium
