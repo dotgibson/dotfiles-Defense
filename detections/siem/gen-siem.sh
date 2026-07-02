@@ -56,7 +56,7 @@ fi
 # Windows tactic dirs → splunk_windows TA pipeline; non-Windows platform dirs → raw.
 # (Same split convert.sh documents; kept explicit so a new dir is a conscious choice.)
 WIN_DIRS=(credential_access privilege_escalation lateral_movement persistence defense_evasion)
-NONWIN_DIRS=(cloud kubernetes okta github gitlab registry vault terraform jenkins)
+NONWIN_DIRS=(cloud kubernetes okta github gitlab registry vault terraform jenkins snowflake)
 
 # Each `sigma convert -f savedsearches` invocation prepends its own [default] stanza
 # (global dispatch window). Strip every per-invocation [default] block and emit one

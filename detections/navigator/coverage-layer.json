@@ -81,6 +81,12 @@
       "comment": "1 rule(s): potato_seimpersonate_4688"
     },
     {
+      "techniqueID": "T1136.003",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): snowflake_user_created"
+    },
+    {
       "techniqueID": "T1207",
       "score": 1,
       "enabled": true,
@@ -159,10 +165,22 @@
       "comment": "3 rule(s): github_branch_protection_tamper, gitlab_protected_branch_tamper, vault_audit_device_disabled"
     },
     {
+      "techniqueID": "T1562.007",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): snowflake_network_policy_change"
+    },
+    {
       "techniqueID": "T1563.002",
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): rdp_hijack_tscon_4688"
+    },
+    {
+      "techniqueID": "T1567.002",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): snowflake_data_unload"
     },
     {
       "techniqueID": "T1569.002",

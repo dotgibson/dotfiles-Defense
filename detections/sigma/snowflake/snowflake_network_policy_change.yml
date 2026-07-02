@@ -1,0 +1,35 @@
+title: Snowflake network policy changed (IP allowlist tamper)
+id: 9fded018-1de7-4f8a-b257-84ae8c3e418e
+status: experimental
+description: |
+  Detects Snowflake network-policy changes in ACCOUNT_USAGE.QUERY_HISTORY (query text
+  containing NETWORK POLICY - a CREATE/ALTER/DROP network policy or ALTER ACCOUNT/USER SET
+  NETWORK_POLICY). A network policy is Snowflake's IP allowlist; opening it (a wide
+  ALLOWED_IP_LIST like 0.0.0.0/0) or dropping the enforced one lets stolen credentials work
+  from anywhere - the control gap behind the 2024 credential-stuffing (T1562.007). These are
+  rare and high-impact, so any change warrants review; read-only SHOW is excluded.
+  Validate (purple): open/drop a network policy from dotfiles-Kali (htpx pair
+  snowflake-network-policy).
+references:
+  - https://attack.mitre.org/techniques/T1562/007/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/snowflake-network-policy-audit.md
+author: dotfiles-Defense
+date: 2026-07-02
+tags:
+  - attack.defense_evasion
+  - attack.t1562.007
+logsource:
+  product: snowflake
+  service: audit
+detection:
+  selection:
+    query_text|contains:
+      - 'NETWORK POLICY'
+      - 'NETWORK_POLICY'
+  filter_show:
+    query_text|startswith: 'SHOW'
+  condition: selection and not filter_show
+falsepositives:
+  - Legitimate network-policy administration during a change window - reconcile against
+    change control and alert on wide ALLOWED_IP_LIST values or drops of the enforced policy.
+level: medium

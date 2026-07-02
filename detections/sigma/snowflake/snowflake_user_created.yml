@@ -1,0 +1,36 @@
+title: Snowflake user created or ACCOUNTADMIN granted (tenant persistence)
+id: 50aefe1d-c91f-4b15-96bd-217d2d7b8fc0
+status: experimental
+description: |
+  Detects Snowflake user creation or a high-power role grant in ACCOUNT_USAGE.QUERY_HISTORY:
+  QUERY_TYPE=CREATE_USER, or a GRANT whose text carries ACCOUNTADMIN/SECURITYADMIN. After an
+  admin compromise an attacker creates their own user and grants it ACCOUNTADMIN - a durable,
+  full-tenant login that survives the victim's password reset (T1136.003). Both are rare,
+  admin-level changes, so one by an unexpected actor - especially a create immediately
+  followed by an ACCOUNTADMIN grant - warrants review.
+  Validate (purple): create a user + grant ACCOUNTADMIN from dotfiles-Kali (htpx pair
+  snowflake-rogue-user).
+references:
+  - https://attack.mitre.org/techniques/T1136/003/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/snowflake-user-audit.md
+author: dotfiles-Defense
+date: 2026-07-02
+tags:
+  - attack.persistence
+  - attack.t1136.003
+logsource:
+  product: snowflake
+  service: audit
+detection:
+  create_user:
+    query_type: 'CREATE_USER'
+  priv_grant:
+    query_type: 'GRANT'
+    query_text|contains:
+      - 'ACCOUNTADMIN'
+      - 'SECURITYADMIN'
+  condition: create_user or priv_grant
+falsepositives:
+  - Sanctioned user provisioning / role administration - reconcile against the IdM workflow
+    and alert on privileged grants outside change control.
+level: medium

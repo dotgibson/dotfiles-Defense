@@ -1,0 +1,31 @@
+title: Snowflake data unload (COPY INTO external stage — exfil triage)
+id: bc06137c-7f4d-4b35-9fa2-72b558357952
+status: experimental
+description: |
+  Surfaces Snowflake data unloads in ACCOUNT_USAGE.QUERY_HISTORY (QUERY_TYPE=UNLOAD, a
+  COPY INTO <location>) for exfiltration triage - the 2024-campaign move of copying whole
+  tables to an attacker-controlled external stage / cloud bucket at warehouse speed
+  (T1567.002). Internal-stage unloads are routine, so the abuse signal is an unload to an
+  EXTERNAL stage/cloud URL, large ROWS_UNLOADED/byte volume, an unusual role or warehouse,
+  or a first-time destination - a call left to backend triage on the query text and volume.
+  Validate (purple): COPY INTO an external stage from dotfiles-Kali (htpx pair
+  snowflake-exfil-stage).
+references:
+  - https://attack.mitre.org/techniques/T1567/002/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/snowflake-exfil-audit.md
+author: dotfiles-Defense
+date: 2026-07-02
+tags:
+  - attack.exfiltration
+  - attack.t1567.002
+logsource:
+  product: snowflake
+  service: audit
+detection:
+  selection:
+    query_type: 'UNLOAD'
+  condition: selection
+falsepositives:
+  - Routine ETL unloads to internal stages - triage on external destinations, volume,
+    and unexpected roles/warehouses rather than the unload event alone.
+level: medium
