@@ -21,6 +21,15 @@ OperationName:(Add\ service\ principal\ credentials OR Add\ application\ credent
 // cloud/gcp_service_account_key_created.yml — GCP user-managed service-account key created
 gcp.audit.method_name:google.iam.admin.v1.CreateServiceAccountKey
 
+// cloudflare/cloudflare_api_token_created.yml — Cloudflare API token created (durable control-plane backdoor)
+resource.type:api_token AND action.type:create
+
+// cloudflare/cloudflare_waf_rule_disabled.yml — Cloudflare WAF/firewall rule deleted or disabled (edge exposed)
+(resource.type:(firewall_rule OR ruleset)) AND (action.type:(delete OR update))
+
+// cloudflare/cloudflare_worker_deployed.yml — Cloudflare Worker deployed (serverless edge code execution)
+(resource.type:(worker OR workers_script)) AND (action.type:(create OR update))
+
 // credential_access/asrep_roast_probing_4771.yml — AS-REP roast base - Kerberos pre-auth failure 0x18 (4771)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
