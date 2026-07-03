@@ -58,9 +58,9 @@
     },
     {
       "techniqueID": "T1098",
-      "score": 12,
+      "score": 14,
       "enabled": true,
-      "comment": "12 rule(s): aws_login_profile_created, cloudflare_api_token_created, github_credential_backdoor, gitlab_token_backdoor, harbor_robot_account_created, jenkins_api_token_created, k8s_clusteradmin_binding, npm_maintainer_added, okta_api_token_created, rbcd_allowedtoact_5136, tfc_token_backdoor, vault_approle_backdoor"
+      "comment": "14 rule(s): aws_login_profile_created, cloudflare_api_token_created, github_credential_backdoor, gitlab_token_backdoor, harbor_robot_account_created, jenkins_api_token_created, k8s_clusteradmin_binding, npm_maintainer_added, okta_api_token_created, pypi_collaborator_added, pypi_trusted_publisher_added, rbcd_allowedtoact_5136, tfc_token_backdoor, vault_approle_backdoor"
     },
     {
       "techniqueID": "T1098.001",
@@ -100,9 +100,9 @@
     },
     {
       "techniqueID": "T1195.002",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): npm_malicious_package_publish"
+      "comment": "2 rule(s): npm_malicious_package_publish, pypi_token_release_upload"
     },
     {
       "techniqueID": "T1207",
@@ -243,7 +243,7 @@
       "#66b1ff"
     ],
     "minValue": 0,
-    "maxValue": 12
+    "maxValue": 14
   },
   "legendItems": [],
   "showTacticRowBackground": false,

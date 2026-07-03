@@ -75,7 +75,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 58 rules / 60 documents, organized by ATT&CK tactic
+### `sigma/` — 61 rules / 63 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -225,16 +225,24 @@ purple-validatable out of the box.
 | `npm_maintainer_added` | `package.owner_add` / `team.user_add` | T1098 | npm · npm-owner-add |
 | `npm_publish_2fa_disabled` | `package.edit` `mfa=none` | T1562.001 | npm · npm-2fa-disable |
 
+**`pypi/`** (PyPI project journal — `product: pypi`, `service: audit`; field `action`)
+
+| Rule | Event / source | ATT&CK | Validate with |
+| ---- | -------------- | ------ | ------------- |
+| `pypi_token_release_upload` | `new release` not via trusted publisher | T1195.002 | PyPI · pypi-malicious-publish |
+| `pypi_collaborator_added` | `add Owner` / `add Maintainer` | T1098 | PyPI · pypi-role-add |
+| `pypi_trusted_publisher_added` | add `trusted publisher` entry | T1098 | PyPI · pypi-trusted-publisher |
+
 `password_spray` and `asrep_roast_probing` are Sigma **correlation** rules
 (a base event + a `value_count` over a window); the rest are single-event
 selections. The `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,
 `gitlab/`, `vault/`, `terraform/`, `jenkins/`, `snowflake/`, `google_workspace/`,
-`cloudflare/`, and `npm/`
+`cloudflare/`, `npm/`, and `pypi/`
 rules are the non-Windows logsources here
-(`product: azure|aws|gcp|kubernetes|okta|github|harbor|gitlab|vault|terraform|jenkins|snowflake|google_workspace|cloudflare|npm`)
+(`product: azure|aws|gcp|kubernetes|okta|github|harbor|gitlab|vault|terraform|jenkins|snowflake|google_workspace|cloudflare|npm|pypi`)
 and mirror the htpx corpus's companion-only cloud, K8s, Okta, GitHub Actions, Harbor
 registry, GitLab CI/CD, HashiCorp Vault, Terraform Cloud, Jenkins, Snowflake,
-Google Workspace, Cloudflare, and npm registry pairs.
+Google Workspace, Cloudflare, and npm + PyPI registry pairs.
 The `jenkins/` rules match the Audit Trail plugin's request-URI log line via a `uri`
 field (`uri|contains`), scoped to the specific endpoints (e.g. job `configSubmit` is
 bound to the `/job/` path so global config submits don't trip it).
