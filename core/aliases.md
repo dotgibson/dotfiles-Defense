@@ -74,6 +74,15 @@ automatically. No manual config required; install `jj` and these aliases appear.
 | `jjl` | `jj log` |
 | `jjd` | `jj diff` |
 
+## Upstream Sync
+
+A function (not an alias), so it works from inside any OS repo's vendored
+`core/` subtree without needing `.bin` on `PATH`.
+
+| Command | Expands To |
+| ------- | ------------ |
+| `gsync` | `.bin/sync-upstream.sh` — pushes an OS repo's vendored `core/` subtree back upstream to dotfiles-core |
+
 ---
 
 ## Git Aliases
