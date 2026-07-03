@@ -13,6 +13,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.0.1] - 2026-07-03
+
+### Changed
+
+- **nvim: the cheatsheet's three entry points now share one opener.** `<leader>?`
+  and the `:Cheatsheet` / `:Cheat` user commands each inlined the same
+  `require("gerrrt.cheatsheet").open()` thunk; they now call a single local
+  `open_cheatsheet`, so the three can't drift and a future option/argument is a
+  one-line edit. No user-visible change — `require` is still deferred to first open.
+
+### Fixed
+
+- **`gsync` was undocumented in `aliases.md`.** The upstream-sync helper
+  (`zsh/aliases.zsh`, pushes an OS repo's vendored `core/` back to dotfiles-core)
+  had no entry in the aliases cheat sheet. Added an "Upstream Sync" section.
+
 ## [v3.0.0] - 2026-07-02
 
 ### Added
