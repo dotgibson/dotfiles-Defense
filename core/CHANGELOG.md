@@ -13,7 +13,35 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.0.0] - 2026-07-02
+
+### Added
+
+- **nvim: a full-screen keybinding cheatsheet — the whole map, not the live
+  prompt.** which-key is great at "I pressed `<leader>`, what's next?" but useless
+  for "what do I even have?" — so the config's ~30 lazy plugin specs accreted
+  features faster than muscle memory could keep up. The new
+  `lua/gerrrt/cheatsheet.lua` renders every curated binding at once in a centered,
+  NVChad-style floating panel: task-grouped cards (Essentials, Flash, LSP & Code,
+  the three Git groups, Debug, Test, Folds, Text objects & Surround, Sessions, …)
+  auto-packed into as many columns as the terminal is wide, tokyonight-themed via
+  `default = true` highlight links so it also degrades cleanly on a bare box.
+  Opened with **`<leader>?`** or **`:Cheatsheet`** (`:Cheat`); `q` / `<Esc>` close.
+  Pure Neovim API, no new plugin dependency, and the module is `require`-d lazily
+  so it costs nothing at startup. It is **hand-curated on purpose**: most mappings
+  are bound lazily and aren't registered until their plugin loads, so scraping
+  `nvim_get_keymap()` at open time would show a half-empty, load-order-dependent
+  list — the table is the intentional, always-complete picture, and lives beside
+  the specs it mirrors so a new binding gets a new row in the same review.
+
 ### Changed
+
+- **nvim: `<leader>?` now opens the new cheatsheet instead of which-key's
+  buffer-local-keys popup; that popup moves to `<leader>wk`.** Repointing a public
+  binding is the one intentional breaking change in this release — the whole map
+  is the more useful thing to keep on the mnemonic "help" key, and the live
+  per-buffer prompt is one keystroke away under a new (which-key-labelled) `w`
+  group. Existing `<leader>?` muscle memory now lands on the bigger view.
 
 - **starship: pin an explicit `command_timeout = 1300` (was the implicit 500ms
   default).** The value is both a correctness knob and a safety valve. Correctness:

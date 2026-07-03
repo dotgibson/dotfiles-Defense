@@ -20,6 +20,7 @@ return {
 			{ "<leader>S", group = "search & replace" },
 			{ "<leader>t", group = "test (neotest)" },
 			{ "<leader>u", group = "ui / toggles" },
+			{ "<leader>w", group = "which-key" },
 			{ "<leader>x", group = "trouble / lists" },
 			{ "<leader><tab>", group = "tabs" },
 			-- non-leader: mini.surround moved here off `s` so flash owns `s` (see mini-nvim.lua)
@@ -27,8 +28,10 @@ return {
 		},
 	},
 	keys = {
+		-- `<leader>?` now opens the full cheatsheet (config/keymaps.lua) — the whole map, not the
+		-- live prompt. which-key's buffer-local-keys popup moves to `<leader>wk` so both survive.
 		{
-			"<leader>?",
+			"<leader>wk",
 			function()
 				require("which-key").show({ global = false })
 			end,
