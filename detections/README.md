@@ -223,7 +223,7 @@ purple-validatable out of the box.
 | ---- | -------------- | ------ | ------------- |
 | `npm_malicious_package_publish` | `package.publish` by non-CI actor | T1195.002 | npm · npm-malicious-publish |
 | `npm_maintainer_added` | `package.owner_add` / `team.user_add` | T1098 | npm · npm-owner-add |
-| `npm_publish_2fa_disabled` | `org.set_2fa` `two_factor_auth=disabled` | T1562.001 | npm · npm-2fa-disable |
+| `npm_publish_2fa_disabled` | `package.edit` `mfa=none` | T1562.001 | npm · npm-2fa-disable |
 
 `password_spray` and `asrep_roast_probing` are Sigma **correlation** rules
 (a base event + a `value_count` over a window); the rest are single-event

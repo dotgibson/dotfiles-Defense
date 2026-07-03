@@ -2,14 +2,14 @@ title: npm publish-2FA requirement disabled (open the publish path)
 id: 0df91273-3e6e-459c-b865-468bd1f1c686
 status: experimental
 description: |
-  Detects the org/package require-two-factor-to-publish control being turned off in the npm
-  audit log (action=org.set_2fa, two_factor_auth=disabled). That setting is what stops a bare
-  stolen token from shipping a release; disabling it lets an automation token publish with no
-  second factor and no prompt, quietly clearing the path for a malicious publish (T1562.001).
-  The downgrade is rare and high-impact, so any disable warrants review - especially one soon
-  followed by a package.publish; a disable-then-publish-then-re-enable is the cover-tracks
+  Detects the package require-two-factor-to-publish control being turned off in the npm audit
+  log (action=package.edit, mfa=none). That setting is what stops a bare stolen token from
+  shipping a release; setting it to none lets an automation token publish with no second
+  factor and no prompt, quietly clearing the path for a malicious publish (T1562.001). The
+  downgrade is rare and high-impact, so any change to none warrants review - especially one
+  soon followed by a package.publish; a disable-then-publish-then-re-enable is the cover-tracks
   shape.
-  Validate (purple): set `npm org ... 2fa-mode=disabled` from dotfiles-Kali (htpx pair
+  Validate (purple): run `npm access set mfa=none <package>` from dotfiles-Kali (htpx pair
   npm-2fa-disable).
 references:
   - https://attack.mitre.org/techniques/T1562/001/
@@ -24,8 +24,8 @@ logsource:
   service: audit
 detection:
   selection:
-    action: 'org.set_2fa'
-    two_factor_auth: 'disabled'
+    action: 'package.edit'
+    mfa: 'none'
   condition: selection
 falsepositives:
   - A deliberate, ticketed policy change - manage the 2FA policy as a locked org setting and

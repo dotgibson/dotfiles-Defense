@@ -115,7 +115,7 @@ action in~ ("package.owner_add", "team.user_add")
 action =~ "package.publish" and (not(['actor.type'] =~ "ci"))
 
 // npm/npm_publish_2fa_disabled.yml — npm publish-2FA requirement disabled (open the publish path)
-action =~ "org.set_2fa" and two_factor_auth =~ "disabled"
+action =~ "package.edit" and mfa =~ "none"
 
 // okta/okta_api_token_created.yml — Okta API token created (programmatic persistence)
 eventType =~ "system.api_token.create"
