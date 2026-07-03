@@ -13,7 +13,7 @@ fires here.
 | `sysmon/`  | Sysmon config baseline(s)                             | Olaf Hartong `sysmon-modular`; SwiftOnSecurity |
 | `network/` | Zeek scripts + Suricata rules                         | Zeek pkgs; ET Open ruleset                     |
 | `siem/`    | compiled saved-searches, props/transforms, dashboards | compile from `sigma/`                          |
-| `navigator/` | ATT&CK Navigator coverage layer (heatmap)           | generate from `sigma/`                          |
+| `navigator/` | ATT&CK Navigator layer (heatmap) + `COVERAGE.md` report | generate from `sigma/`                       |
 
 Workflow: write Sigma → convert to your backend → stand up the lab (`siemup`) →
 run the matching attack from Kali → confirm it fires → tune → commit rule +
@@ -22,7 +22,7 @@ validation note. Real IOC values from cases stay in `~/cases/*/iocs`, never here
 ## CI gate — the rules are validated as code
 
 The Sigma rules are gated on every change by `.github/workflows/sigma.yml` (the
-repo's `lint.yml` only covers shell). Four hard checks, one advisory:
+repo's `lint.yml` only covers shell). Five hard checks, one advisory:
 
 1. **Structural lint** (hermetic) —
    `sigma check --fail-on-issues -c detections/sigma-validation-config.yml`.
@@ -42,7 +42,10 @@ repo's `lint.yml` only covers shell). Four hard checks, one advisory:
    `coverage-layer.json` heatmap is *generated* from the rules' `attack.*` tags; this
    proves the committed layer still matches, so the coverage view can't drift from the
    rules.
-5. **ATT&CK-tag validity** — advisory (`continue-on-error`); checks each
+5. **ATT&CK coverage report drift** — `detections/navigator/gen-coverage.sh --check`. The
+   human-readable `COVERAGE.md` roll-up (by tactic / technique / logsource) is *generated*
+   from the same tags; this proves the committed report still matches, so it can't drift.
+6. **ATT&CK-tag validity** — advisory (`continue-on-error`); checks each
    `attack.tXXXX` is a real published technique, but never breaks the build on a
    transient MITRE download failure.
 
@@ -55,7 +58,8 @@ pip install "sigma-cli==3.0.2" "pysigma-backend-splunk==2.1.0" \
 sigma check --fail-on-issues -c detections/sigma-validation-config.yml detections/sigma/   # lint
 detections/sigma/convert.sh splunk                                                         # compile → SPL
 detections/siem/gen-siem.sh --check                                                        # deploy-form drift (Splunk/Sentinel/Elastic)
-detections/navigator/gen-navigator.sh --check                                              # ATT&CK coverage drift
+detections/navigator/gen-navigator.sh --check                                              # ATT&CK Navigator layer drift
+detections/navigator/gen-coverage.sh --check                                               # ATT&CK coverage report (COVERAGE.md) drift
 ```
 
 `convert.sh` is the reproducible "Sigma → backend" *compile check*: it compiles each
@@ -293,7 +297,7 @@ is a lab baseline, not production — graduate to `sysmon-modular` and tune.
   device-code sign-in). The AWS/GCP cloud rules deploy in their native consoles
   (CloudTrail/Athena, GCP Logging) or via Sentinel's AWS/GCP connectors.
 
-### `navigator/` — ATT&CK coverage heatmap
+### `navigator/` — ATT&CK coverage heatmap + report
 
 - **`coverage-layer.json`** — GENERATED. A MITRE ATT&CK Navigator layer rolled up from
   every rule's `attack.*` tags by `gen-navigator.sh`, drift-gated in CI via
@@ -302,6 +306,11 @@ is a lab baseline, not production — graduate to `sysmon-modular` and tune.
   Layer → Upload) to see the corpus's coverage on the matrix: each covered technique is
   scored by how many rules detect it (gradient white→blue) and commented with the rule
   names. Edit a rule's tags → `gen-navigator.sh` → commit both.
+- **`COVERAGE.md`** — GENERATED. The human-readable companion: a Markdown roll-up of the
+  same tags **by ATT&CK tactic, by technique, and by logsource** (with the headline
+  rule/technique/tactic/logsource counts), emitted by `gen-coverage.sh` and drift-gated
+  via `gen-coverage.sh --check`. Read it in the repo to see coverage at a glance without
+  loading the Navigator. Edit a rule's tags → `gen-coverage.sh` → commit both.
 
 ## Coverage gaps (honest notes)
 
