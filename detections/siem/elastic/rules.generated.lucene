@@ -108,6 +108,15 @@ EventID:7045 AND (ImagePath:(*\\cmd.exe* OR *powershell* OR *%COMSPEC%* OR *\\AD
 // lateral_movement/wmiexec_wmiprvse_child_4688.yml — WMI remote exec - shell spawned by WmiPrvSE
 (ParentImage:*\\WmiPrvSE.exe AND (Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe))) OR (CommandLine:*\/Q* AND CommandLine:*\/c* AND CommandLine:*127.0.0.1\\ADMIN$*)
 
+// npm/npm_maintainer_added.yml — npm maintainer or owner added (durable publish backdoor)
+action:(package.owner_add OR team.user_add)
+
+// npm/npm_malicious_package_publish.yml — npm package published by non-CI actor (supply-chain implant)
+action:package.publish AND (NOT actor.type:ci)
+
+// npm/npm_publish_2fa_disabled.yml — npm publish-2FA requirement disabled (open the publish path)
+action:org.set_2fa AND two_factor_auth:disabled
+
 // okta/okta_api_token_created.yml — Okta API token created (programmatic persistence)
 eventType:system.api_token.create
 

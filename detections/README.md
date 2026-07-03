@@ -75,7 +75,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 55 rules / 57 documents, organized by ATT&CK tactic
+### `sigma/` — 58 rules / 60 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -215,18 +215,26 @@ purple-validatable out of the box.
 | ---- | -------------- | ------ | ------------- |
 | `cloudflare_api_token_created` | `resource.type=api_token` `create` | T1098 | Cloudflare · cf-api-token |
 | `cloudflare_waf_rule_disabled` | `firewall_rule`/`ruleset` `delete`/`update` | T1562.001 | Cloudflare · cf-waf-disable |
-| `cloudflare_worker_deployed` | `resource.type=worker` `create`/`update` | T1648 | Cloudflare · cf-worker-deploy |
+| `cloudflare_worker_deployed` | `resource.type=worker`/`workers_script` `create`/`update` | T1648 | Cloudflare · cf-worker-deploy |
+
+**`npm/`** (npm account/org audit log — `product: npm`, `service: audit`; field `action`)
+
+| Rule | Event / source | ATT&CK | Validate with |
+| ---- | -------------- | ------ | ------------- |
+| `npm_malicious_package_publish` | `package.publish` by non-CI actor | T1195.002 | npm · npm-malicious-publish |
+| `npm_maintainer_added` | `package.owner_add` / `team.user_add` | T1098 | npm · npm-owner-add |
+| `npm_publish_2fa_disabled` | `org.set_2fa` `two_factor_auth=disabled` | T1562.001 | npm · npm-2fa-disable |
 
 `password_spray` and `asrep_roast_probing` are Sigma **correlation** rules
 (a base event + a `value_count` over a window); the rest are single-event
 selections. The `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,
 `gitlab/`, `vault/`, `terraform/`, `jenkins/`, `snowflake/`, `google_workspace/`,
-and `cloudflare/`
+`cloudflare/`, and `npm/`
 rules are the non-Windows logsources here
-(`product: azure|aws|gcp|kubernetes|okta|github|harbor|gitlab|vault|terraform|jenkins|snowflake|google_workspace|cloudflare`)
+(`product: azure|aws|gcp|kubernetes|okta|github|harbor|gitlab|vault|terraform|jenkins|snowflake|google_workspace|cloudflare|npm`)
 and mirror the htpx corpus's companion-only cloud, K8s, Okta, GitHub Actions, Harbor
 registry, GitLab CI/CD, HashiCorp Vault, Terraform Cloud, Jenkins, Snowflake,
-Google Workspace, and Cloudflare pairs.
+Google Workspace, Cloudflare, and npm registry pairs.
 The `jenkins/` rules match the Audit Trail plugin's request-URI log line via a `uri`
 field (`uri|contains`), scoped to the specific endpoints (e.g. job `configSubmit` is
 bound to the `/job/` path so global config submits don't trip it).
