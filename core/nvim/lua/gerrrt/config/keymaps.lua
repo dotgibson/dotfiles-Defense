@@ -16,16 +16,14 @@ vim.keymap.set("n", "<leader>rc", "<Cmd>e ~/.config/nvim/init.lua<CR>", { desc =
 -- actually gives you. `<leader>?` shadows which-key's old buffer-local-keys binding on purpose:
 -- the whole map is the more useful thing to have on the mnemonic key. Also exposed as
 -- :Cheatsheet / :Cheat. `require` is deferred so it costs nothing at startup — the module only
--- loads on first open.
-vim.keymap.set("n", "<leader>?", function()
+-- loads on first open. One opener shared by all three entry points so behaviour can never drift
+-- between them (and a future option/arg is a single edit).
+local function open_cheatsheet()
 	require("gerrrt.cheatsheet").open()
-end, { desc = "Cheatsheet (all keybindings)" })
-vim.api.nvim_create_user_command("Cheatsheet", function()
-	require("gerrrt.cheatsheet").open()
-end, { desc = "Open the keybinding cheatsheet" })
-vim.api.nvim_create_user_command("Cheat", function()
-	require("gerrrt.cheatsheet").open()
-end, { desc = "Open the keybinding cheatsheet" })
+end
+vim.keymap.set("n", "<leader>?", open_cheatsheet, { desc = "Cheatsheet (all keybindings)" })
+vim.api.nvim_create_user_command("Cheatsheet", open_cheatsheet, { desc = "Open the keybinding cheatsheet" })
+vim.api.nvim_create_user_command("Cheat", open_cheatsheet, { desc = "Open the keybinding cheatsheet" })
 
 -- Wrap-aware vertical motion
 vim.keymap.set("n", "j", function()
