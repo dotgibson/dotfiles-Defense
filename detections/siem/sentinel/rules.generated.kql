@@ -162,6 +162,15 @@ operation =~ "push" and resource_type =~ "artifact"
 // registry/harbor_robot_account_created.yml — Harbor robot account created (durable registry credential)
 operation =~ "create" and resource_type =~ "robot"
 
+// slack/slack_2fa_enforcement_disabled.yml — Slack 2FA enforcement disabled (workspace auth weakened)
+action =~ "pref.two_factor_auth_changed" and two_factor_required == false
+
+// slack/slack_app_installed.yml — Slack app installed (durable data-access foothold)
+action =~ "app_installed"
+
+// slack/slack_external_shared_channel.yml — Slack Connect external shared channel (channel exfiltration)
+action in~ ("shared_channel_invite_sent", "shared_channel_invite_accepted")
+
 // snowflake/snowflake_data_unload.yml — Snowflake data unload (COPY INTO external stage — exfil triage)
 query_type =~ "UNLOAD"
 

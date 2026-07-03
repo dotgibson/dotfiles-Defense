@@ -75,7 +75,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 61 rules / 63 documents, organized by ATT&CK tactic
+### `sigma/` — 64 rules / 66 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -233,16 +233,24 @@ purple-validatable out of the box.
 | `pypi_collaborator_added` | `add Owner` / `add Maintainer` | T1098 | PyPI · pypi-role-add |
 | `pypi_trusted_publisher_added` | add `trusted publisher` entry | T1098 | PyPI · pypi-trusted-publisher |
 
+**`slack/`** (Slack Enterprise Grid audit logs — `product: slack`, `service: audit`; field `action`)
+
+| Rule | Event / source | ATT&CK | Validate with |
+| ---- | -------------- | ------ | ------------- |
+| `slack_app_installed` | `app_installed` (broad read scopes) | T1098 | Slack · slack-malicious-app |
+| `slack_external_shared_channel` | `shared_channel_invite_sent` / `_accepted` | T1567 | Slack · slack-external-share |
+| `slack_2fa_enforcement_disabled` | `pref.two_factor_auth_changed` `two_factor_required=false` | T1562.001 | Slack · slack-2fa-disable |
+
 `password_spray` and `asrep_roast_probing` are Sigma **correlation** rules
 (a base event + a `value_count` over a window); the rest are single-event
 selections. The `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,
 `gitlab/`, `vault/`, `terraform/`, `jenkins/`, `snowflake/`, `google_workspace/`,
-`cloudflare/`, `npm/`, and `pypi/`
+`cloudflare/`, `npm/`, `pypi/`, and `slack/`
 rules are the non-Windows logsources here
-(`product: azure|aws|gcp|kubernetes|okta|github|harbor|gitlab|vault|terraform|jenkins|snowflake|google_workspace|cloudflare|npm|pypi`)
+(`product: azure|aws|gcp|kubernetes|okta|github|harbor|gitlab|vault|terraform|jenkins|snowflake|google_workspace|cloudflare|npm|pypi|slack`)
 and mirror the htpx corpus's companion-only cloud, K8s, Okta, GitHub Actions, Harbor
 registry, GitLab CI/CD, HashiCorp Vault, Terraform Cloud, Jenkins, Snowflake,
-Google Workspace, Cloudflare, and npm + PyPI registry pairs.
+Google Workspace, Cloudflare, npm + PyPI registry, and Slack pairs.
 The `jenkins/` rules match the Audit Trail plugin's request-URI log line via a `uri`
 field (`uri|contains`), scoped to the specific endpoints (e.g. job `configSubmit` is
 bound to the `/job/` path so global config submits don't trip it).
