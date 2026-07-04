@@ -1,9 +1,9 @@
 # Defense Aliases Cheat Sheet
 
 Aliases sourced from two layers: `core/` (Core) and `defense/defense.zsh` (the
-blue role layer). See `core/` for the full Core alias reference (modern CLI,
-git, safety nets). This repo is distro-agnostic — no OS layer of its own; host
-tools come from whichever OS-native repo runs underneath.
+blue role layer). See `core/aliases.md` for the full Core alias reference
+(modern CLI, git, safety nets). This repo is distro-agnostic — no OS layer of
+its own; host tools come from whichever OS-native repo runs underneath.
 
 ---
 
@@ -35,6 +35,6 @@ installed. Case/evidence data never lives in the repo — it lives in
 
 | Function | Purpose |
 |----------|---------|
-| `mkcase <incident-or-codename>` | Create a dated case workspace at `$CASES_DIR/<YYYYMMDD>-<slug>/{evidence,network,timeline,iocs,report,notes}`; renders `case.md` from `defense/templates/case.md` (or a minimal stub), copies `defense/templates/hunt.md` if present, sets `$CASE`, `cd`s in, and opens `case.md` in `$EDITOR` — fill in scope/authorization before touching evidence |
+| `mkcase <incident-or-codename>` | Create a dated case workspace at `$CASES_DIR/<YYYYMMDD>-<slug>/{evidence,network,timeline,iocs,report,notes}`; renders `case.md` from `defense/templates/case.md` (or a minimal stub), copies `defense/templates/hunt.md` if present, sets `$CASE`, `cd`s in, and opens `case.md` in `${EDITOR:-nvim}` — fill in scope/authorization before touching evidence |
 | `gocase` | fzf-jump between existing cases under `$CASES_DIR` (previews `case.md`); sets `$CASE` and `cd`s in |
 | `note [text]` | Append a timestamped line to the active case's `notes/notes.md` (`$CASE/notes`, falls back to `$PWD/notes`) |
