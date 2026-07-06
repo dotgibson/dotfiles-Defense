@@ -1,0 +1,44 @@
+// .markdownlint.jsonc — house style for this repo's showcase README.
+//
+// This repo's README is a public deliverable, so it's worth linting. Lint the
+// README specifically with markdownlint-cli2 (the same rule set dotfiles-core
+// uses for its own README):
+//
+//     npx --yes markdownlint-cli2 README.md
+//
+// Scope note: this config carries only rules, not ignores. Target README.md
+// directly rather than a broad glob like '**/*.md' — a wide run would also
+// traverse any vendored subtrees or other Markdown owned and gated elsewhere,
+// not here. This config is the local README check, mirrored from Core; CI in
+// this repo gates its own code, not its Markdown.
+//
+// Two rules are deliberately off; everything else (the default rule set) stays
+// on to catch real structural defects — bad headings, broken lists, and the
+// stray-HTML / leaked-template-tag class of bug this config exists to catch.
+{
+  "default": true,
+
+  // MD013 (line-length): OFF. Prose wraps by sentence, not column, and the docs
+  // use wide GitHub tables — a long line is not a defect here.
+  "MD013": false,
+
+  // MD041 (first-line-h1): OFF. The README opens with a centered badge/logo HTML
+  // block, not a top-level H1, which is the intended showcase layout.
+  "MD041": false,
+
+  // MD024 (no-duplicate-heading): SIBLINGS ONLY. Still catches a true duplicate
+  // (two identical headings under the SAME parent) while allowing repeated
+  // subsection names under different parents.
+  "MD024": { "siblings_only": true },
+
+  // MD033 (no-inline-html): SCOPED, not off. The README legitimately uses HTML
+  // the CommonMark spec can't express — centered badge rows, the logo block, a
+  // collapsible table of contents, back-to-top links. allowed_elements lists
+  // exactly the tags that design needs, so the rule still fires on ANYTHING else
+  // — the leaked-template-tag class of bug. Keep this list tight.
+  "MD033": {
+    "allowed_elements": [
+      "a", "br", "details", "div", "h3", "img", "li", "nobr", "ol", "p", "strong", "summary", "ul"
+    ]
+  },
+}
