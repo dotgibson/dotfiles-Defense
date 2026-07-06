@@ -5,6 +5,10 @@
 -- SWAP  : prefer something else? tokyonight ships "storm" (current), "moon", "night", "day".
 --         Change `style` below. Or drop in catppuccin / kanagawa / rose-pine and swap the
 --         colorscheme() call.
+-- HIGHLIGHTS : the NvChad-flavored chrome cleanup (hairline splits, minimal rounded floats,
+--         fzf-lua / blink finder+menu palette) lives in utils/ui-highlights.lua and is applied
+--         through `on_highlights` below — so it re-runs on every :colorscheme and recolors from
+--         whatever `style`/theme you pick, no ColorScheme autocmd needed.
 -- ================================================================================================
 return {
 	-- Transparency is tokyonight-native (transparent=true below). The separate
@@ -24,8 +28,9 @@ return {
 				transparent = true,
 				styles = { sidebars = "transparent", floats = "transparent" },
 				on_highlights = function(hl, c)
-					hl.Visual = { bg = c.bg_visual }
-					hl.Comment = { fg = c.comment, italic = true }
+					-- Flat table of NvChad-flavored overrides; kept in its own module so this
+					-- spec stays about the colorscheme and the highlights stay palette-aware.
+					require("gerrrt.utils.ui-highlights").apply(hl, c)
 				end,
 			})
 			vim.cmd("colorscheme tokyonight")

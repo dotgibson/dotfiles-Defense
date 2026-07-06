@@ -13,6 +13,79 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.1.0] - 2026-07-06
+
+### Added
+
+- **`assets/`: a reproducible VHS tape for the README hero demo.**
+  `assets/demo.tape` scripts a short terminal tour (eza, bat, zoxide, `core help`,
+  `glog`) that renders to `assets/demo.gif` via `vhs assets/demo.tape`, so the hero
+  can be regenerated rather than hand-recorded. `assets/README.md` documents the
+  render steps; `assets/` is allowlisted in `audit-core.sh` as repo-meta (it rides
+  along in the subtree copy but is never symlinked).
+- **README: a structured four-row badge block at the top.** Row 1 is repo
+  status & automation — live `ci` and `core-integrity` Actions status,
+  open-issue / open-PR counts, repo size, and latest release. Row 2 is the
+  MIT license (auto-detected from `LICENSE`) plus last-commit / commit-activity.
+  Row 3 is the languages (Zsh, Bash, Lua, TOML, YAML, JSON) and Row 4 the
+  tooling (Neovim, Vim, tmux, Starship, Git, 1Password). Tools with no
+  simpleicon (`mise`, `lazygit`, `jujutsu`, `sesh`, `fzf`) share a substitute
+  `gnometerminal` glyph on a Tokyo Night purple label.
+  Every brand color is taken from the `simple-icons` dataset (e.g. Lua `000080`,
+  Git `F03C2E`, 1Password `145FE4`). Vim is the `vim/vimrc` fallback editor for
+  boxes with no nvim, not just the `vim=nvim` alias; the tooling row covers
+  every tool Core ships a dedicated config for. Each Row 3/4 badge links to its
+  upstream project on GitHub and, where the project publishes releases/tags,
+  shows the current upstream version live (Neovim, Vim, tmux, Starship, Git,
+  Lua, TOML, mise, lazygit, jujutsu, sesh, fzf); Zsh, Bash, YAML, JSON, and
+  1Password have no clean upstream version and stay plain. On the versioned
+  badges the name side carries the brand color and the version side is a Tokyo
+  Night blue (not grey). Row 1 leads with a `dotgibson` badge that shows the
+  current release version (dynamic `github/v/release`) with the org avatar as
+  its icon (base64 data-URI logo) and links to the latest release. All `flat-square`; the old hardcoded `audit-passing`
+  shield is replaced by the live `ci` status it stood in for.
+- **nvim: `utils/ui-highlights.lua` — a flat table of NvChad-flavored highlight
+  overrides.** Hairline window splits (`WinSeparator`/`VertSplit`), minimal
+  rounded floats (`NormalFloat`/`FloatBorder`/`FloatTitle`), a border-tinted
+  fzf-lua palette (`FzfLua*`), a matching blink.cmp menu/docs palette
+  (`BlinkCmp*`), and NvChad's dim-linenr / bright-current-line gutter. Applied
+  through tokyonight's `on_highlights` in `plugins/theme.lua`, so it re-runs on
+  every `:colorscheme` and recolors from whatever `style`/theme is active — no
+  `ColorScheme` autocmd, no per-plugin hardcoded hexes. Deliberately one flat
+  function, not a helper framework.
+
+### Changed
+
+- **README: reworked into a lean public landing page.** Replaced the long-form
+  technical README with a concise landing page — a lead stating Core is the vendored
+  foundation layer (you install an OS repo, not this one), an at-a-glance three-layer
+  table, a modern-CLI Usage section framed by the `HAVE_*` detection-flag fallback,
+  and the repo's real contribution contract. The deep architecture and reference
+  material now lives on the documentation hub at `dotfiles-web`. Fixed broken links
+  along the way (`LICENSE`, `aliases.md`, the issue-template deep-links, a malformed
+  acknowledgment link), and scoped MD033 in `.markdownlint.jsonc` with
+  `allowed_elements` so the intentional showcase inline HTML passes the markdown gate
+  while the rule still catches unexpected tags. The hero image is now the rendered
+  terminal demo (`assets/demo.gif`, produced from `assets/demo.tape`).
+- **nvim: the statusline now wears NvChad's rounded block look.** `plugins/lualine-nvim.lua`
+  keeps its sections and (intentionally) its existing diagnostic glyphs — which
+  stay in lockstep with `utils/diagnostics.lua` and the tabline — but swaps
+  powerline arrows for NvChad's half-circle bubble caps (U+E0B6 / U+E0B4)
+  and drops inner component separators so each half reads as one clean run of
+  blocks. Adds a cwd (project basename) segment on the right, the cue a global
+  statusline otherwise loses. Still a standard lualine config — no NvChad
+  backend, no statusline caching, no managed toggle state.
+- **nvim: fzf-lua now mirrors NvChad's telescope layout.** `plugins/fzf-lua.lua`
+  gains `winopts`/`fzf_opts` translated 1:1 from `nvchad/configs/telescope.lua`
+  (width 0.87, height 0.80, 55% preview on the right, prompt on top, a
+  U+F002 magnifier prompt prefix, a U+F0DA selection caret) with rounded
+  borders — the minimal
+  NvChad finder look, on the finder you actually run (fzf-lua, not telescope).
+- **nvim: the bufferline tabline picks up NvChad's flat-tab modified dot.**
+  `plugins/bufferline-nvim.lua` sets `modified_icon` to the same ● (f111) used by
+  lualine and incline, and annotates `separator_style = "thin"` as the flat,
+  NvChad-tabufline-style rectangular tabs it already produces.
+
 ## [v3.0.1] - 2026-07-03
 
 ### Changed
