@@ -26,4 +26,17 @@
   // version parents. siblings_only still catches a true duplicate (two identical
   // headings under the SAME parent) while allowing the format's intended repetition.
   "MD024": { "siblings_only": true },
+
+  // MD033 (no-inline-html): SCOPED, not off. The README is a public showcase
+  // landing page and legitimately uses HTML the CommonMark spec can't express —
+  // centered badge rows, the logo block, a collapsible table of contents,
+  // back-to-top links. allowed_elements lists exactly the tags that design needs,
+  // so the rule still fires on ANYTHING else — the leaked-template-tag class of
+  // bug this config exists to catch. Keep this list tight; a new tag here should
+  // be a deliberate design choice, not a silencer.
+  "MD033": {
+    "allowed_elements": [
+      "a", "br", "details", "div", "h3", "img", "li", "nobr", "ol", "p", "strong", "summary", "ul"
+    ]
+  },
 }

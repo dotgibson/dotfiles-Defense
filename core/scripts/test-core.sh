@@ -315,7 +315,13 @@ end
 -- servers/* LEAF (each returns a `function(capabilities)`; requiring it evaluates the file
 -- WITHOUT calling it, so no blink.cmp/lspconfig need be installed). servers/init.lua itself
 -- is skipped — it require()s blink.cmp, a plugin absent from this hermetic probe.
-for _, m in ipairs({ "gerrrt.utils.lsp", "gerrrt.utils.diagnostics" }) do try(m) end
+-- utils.ui-highlights has the SAME gap: it's only require()d inside tokyonight's deferred
+-- on_highlights callback (plugins/theme.lua), which the plugins/* loop above never runs — so
+-- add it here too. It returns `M` with an `apply(hl, c)` function; requiring evaluates the
+-- file without calling apply, so no tokyonight/colorscheme need be present.
+for _, m in ipairs({ "gerrrt.utils.lsp", "gerrrt.utils.diagnostics", "gerrrt.utils.ui-highlights" }) do
+  try(m)
+end
 local sdir = vim.env.CORE_NVIM_DIR .. "/lua/gerrrt/servers"
 for _, f in ipairs(vim.fn.readdir(sdir) or {}) do
   local name = f:match("^(.+)%.lua$")

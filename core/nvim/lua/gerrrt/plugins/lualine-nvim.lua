@@ -1,16 +1,25 @@
 -- ================================================================================================
--- TITLE : lualine.nvim | statusline
+-- TITLE : lualine.nvim | statusline (NvChad-styled)
 -- LINKS : https://github.com/nvim-lualine/lualine.nvim
--- ABOUT : A polished but restrained statusline:
---           left  : mode · git branch · git diff (+~-)
+-- ABOUT : NvChad's block statusline, rebuilt as a STANDARD lualine config — no NvChad backend,
+--         no statusline caching, no managed toggle state. Just lualine's own theming with
+--         NvChad's rounded "bubble" separators and section layout:
+--           left  : mode (rounded bubble) · git branch · git diff (+~-)
 --           center: filename (relative) with modified/readonly markers
---           right : search count · attached LSP servers · diagnostics · filetype · progress · location
+--           right : search count · attached LSP servers · diagnostics · filetype · cwd · location
+-- LOOK  : the signature NvChad move is the ROUNDED block — half-circle caps  (U+E0B6) and
+--          (U+E0B4) instead of powerline arrows, with NO inner component separators so each
+--         half reads as one clean run of blocks. Colors come from lualine's tokyonight theme
+--         (which sets a bg per section), so this stays readable even under transparency.
 -- ICONS : All glyphs are written as \u{XXXX} escapes (Nerd Font private-use codepoints),
 --         NOT raw glyphs. Raw glyphs get silently stripped when text passes through tools
 --         that don't preserve the private-use area; escapes are plain ASCII in the file and
 --         decode to the glyph at runtime, so they survive copy/paste/transfer intact.
 --         Each escape is named in a trailing comment. Requires a Nerd Font in your terminal.
 --         If any single glyph shows as a box (tofu), your font lacks it — swap that codepoint.
+--         Diagnostic glyphs are kept IDENTICAL to utils/diagnostics.lua + bufferline so the
+--         gutter, tabline and statusline never disagree (this matters more than matching
+--         NvChad's exact glyphs — the NvChad look here is the block styling, not the icons).
 -- ================================================================================================
 return {
 	"nvim-lualine/lualine.nvim",
@@ -30,19 +39,27 @@ return {
 			return "\u{f085} " .. table.concat(names, ", ") -- f085 nf-fa-cogs
 		end
 
+		-- Current working directory basename — NvChad shows this on the right; it's the fast
+		-- "which project am I in" cue that a global statusline otherwise loses.
+		local function cwd()
+			return "\u{f07c} " .. vim.fn.fnamemodify(vim.fn.getcwd(), ":t") -- f07c nf-fa-folder_open
+		end
+
 		require("lualine").setup({
 			options = {
 				theme = "tokyonight",
 				icons_enabled = true,
 				globalstatus = true,
-				-- Powerline separators (universally present in Nerd Fonts):
-				section_separators = { left = "\u{e0b0}", right = "\u{e0b2}" }, -- e0b0  / e0b2
-				component_separators = { left = "\u{e0b1}", right = "\u{e0b3}" }, -- e0b1  / e0b3
+				-- NvChad's rounded blocks: half-circle section caps, and NO component separators
+				-- (an empty string) so each half is one clean run instead of arrow-chevroned.
+				section_separators = { left = "\u{e0b4}", right = "\u{e0b6}" }, -- e0b4  / e0b6
+				component_separators = "",
 				disabled_filetypes = { statusline = { "NvimTree", "dapui_scopes", "dapui_breakpoints" } },
 			},
 			sections = {
 				lualine_a = {
-					{ "mode", icon = "\u{e62b}" }, -- e62b nf-custom-vim
+					-- the outer half-circle cap (e0b6) turns the mode block into NvChad's bubble
+					{ "mode", icon = "\u{e62b}", separator = { left = "\u{e0b6}" } }, -- e62b nf-custom-vim, e0b6
 				},
 				lualine_b = {
 					{ "branch", icon = "\u{e0a0}" }, -- e0a0 powerline branch
@@ -84,10 +101,11 @@ return {
 					{ "filetype" },
 				},
 				lualine_y = {
-					{ "progress" },
+					{ cwd },
 				},
 				lualine_z = {
-					{ "location", icon = "\u{e0a1}" }, -- e0a1 powerline line-number
+					-- outer half-circle cap (e0b4) closes the right bubble, mirroring the mode block
+					{ "location", icon = "\u{e0a1}", separator = { right = "\u{e0b4}" } }, -- e0a1 line-number, e0b4
 				},
 			},
 			inactive_sections = {
