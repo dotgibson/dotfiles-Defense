@@ -59,7 +59,8 @@ return {
 			themable = true,
 			numbers = "none", -- jump-by-number is harpoon's job; keep the line uncluttered
 			indicator = { style = "underline" }, -- subtle; reads cleanly with your transparency
-			separator_style = "thin",
+			separator_style = "thin", -- flat rectangular tabs like NvChad's tabufline (no slant)
+			modified_icon = "\u{f111}", -- f111 nf-fa-circle (●) — same unsaved dot as lualine/incline
 			show_buffer_close_icons = false,
 			show_close_icon = false,
 			always_show_bufferline = true, -- you like the visual — keep it up even at 1 buffer

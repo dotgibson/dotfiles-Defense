@@ -265,7 +265,10 @@ META_ALLOWLIST=(
 # (absent from core.manifest).
 # .devcontainer/ is the dev-environment definition (one-command CI parity) — dev tooling
 # too, not part of the shipped Core layer (not in core.manifest).
-META_PREFIXES=(examples/ .github/ scripts/ .claude/ .devcontainer/)
+# assets/ is README media (the VHS demo tape + rendered gif) — repo-meta for the public
+# showcase, not shipped Core (absent from core.manifest); it rides along physically in the
+# subtree copy but is never symlinked.
+META_PREFIXES=(examples/ .github/ scripts/ .claude/ .devcontainer/ assets/)
 
 # ── 1. manifest <-> filesystem drift ─────────────────────────────────────────
 hdr "manifest ↔ filesystem"
