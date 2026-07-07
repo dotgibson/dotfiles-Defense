@@ -13,6 +13,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **maint: the daily runner now reconciles pinned zsh plugins by CONFIG, not
+  checkout state.** `maint/dotfiles-maint.sh` decided "pinned vs unpinned" by
+  asking whether a plugin's `HEAD` was detached — but a plugin cloned before
+  `plugins.zsh` began pinning (or by the old floating `--depth=1` path) sits on a
+  branch even though it IS pinned in `ZPLUGIN_PINS`. Those were wrongly
+  `git pull --ff-only`'d every run: floating them off their pins, and logging a
+  false `✗ … (pull failed)` for any whose branch couldn't fast-forward (e.g.
+  `zsh-syntax-highlighting`). The loop now reads the pins straight from
+  `plugins.zsh` (same grep `update-plugins.sh` uses — bash-3.2 safe) and, for any
+  pinned plugin, re-asserts the recorded SHA (fetch + detach, mirroring
+  `zplugin-update`): a branch checkout is reconciled back onto its pin, a rolled
+  pin is now actually applied by the runner, and plugins already at their pin do
+  zero network. Only genuinely unpinned plugins still fast-forward.
+
 ## [v3.1.0] - 2026-07-06
 
 ### Added
