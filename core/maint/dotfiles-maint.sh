@@ -102,20 +102,55 @@ if have mise; then
 fi
 
 # ── zsh plugins (mirrors your zplugin-update) ─────────────────────────────────
-# Pin-aware: plugins.zsh now pins each plugin to a commit (detached HEAD). A pinned
-# plugin has NO upstream branch, so `pull --ff-only` would log a false failure every
-# run — and worse, moving it here would float the runtime off its pin. So we only
-# fast-forward plugins that are ON A BRANCH (unpinned); pinned ones are held until a
-# deliberate `make update-plugins` rolls the SHA. `symbolic-ref -q HEAD` succeeds on
-# a branch, fails on a detached (pinned) checkout — the exact discriminator we want.
+# Pin-aware, keyed off the CONFIG, not the on-disk checkout state. plugins.zsh pins
+# each plugin to a commit in ZPLUGIN_PINS; the intent is that a pinned plugin is held
+# AT its pin and never floats. An earlier version used "is HEAD detached?" as the
+# proxy for "is it pinned?" — but those diverge: a plugin cloned BEFORE pinning was
+# introduced (or by the old floating `--depth=1` path) sits on a branch even though
+# it IS pinned in config, so it was wrongly treated as unpinned and `pull --ff-only`'d
+# every run — floating it off its pin, and logging a false "pull failed" for any whose
+# branch can't fast-forward (upstream rebased / shallow clone). So decide by pin
+# MEMBERSHIP instead: for a pinned plugin, re-assert the recorded SHA (fetch + detach,
+# exactly like zplugin-update) so a branch checkout is reconciled back onto its pin and
+# a rolled pin is actually applied here; only genuinely unpinned plugins fast-forward.
+# Pins are read from plugins.zsh (the sourced Core module in $ZDOTDIR) with the same
+# grep update-plugins.sh uses — no bash-4 assoc array, so this stays macOS bash-3.2 safe.
+PLUGINS_ZSH="${ZDOTDIR:-$HOME/.config/zsh}/plugins.zsh"
+# _pin_for <plugin-dir-name> → prints the 40-hex pin for owner/<name>, or nothing.
+# The trailing whitespace+sha in the pattern anchors the match to a full pin row, so a
+# name can't partial-match a longer sibling slug.
+_pin_for() {
+  [[ -f "$PLUGINS_ZSH" ]] || return 0
+  grep -oE "[A-Za-z0-9_.-]+/$1[[:space:]]+[0-9a-f]{40}" "$PLUGINS_ZSH" 2>/dev/null |
+    awk 'NR==1{print $2}'
+}
 if [[ -d "$ZPLUGINDIR" ]]; then
   log "▶ zsh plugins ($ZPLUGINDIR)"
+  [[ -f "$PLUGINS_ZSH" ]] || log "  – $PLUGINS_ZSH not found — cannot read pins; unpinned fast-forward only"
   for d in "$ZPLUGINDIR"/*/; do
     [[ -d "$d/.git" ]] || continue
     name="$(basename "$d")"
-    if ! git -C "$d" symbolic-ref -q HEAD >/dev/null 2>&1; then
-      log "  • ${name} pinned ($(git -C "$d" rev-parse --short HEAD 2>/dev/null)) — held"
-    elif git -C "$d" pull --ff-only >>"$LOG" 2>&1; then log "  ✓ ${name}"; else log "  ✗ ${name} (pull failed) — continuing"; fi
+    pin="$(_pin_for "$name")"
+    if [[ -n "$pin" ]]; then
+      # Pinned: hold at the recorded SHA. Already there → no network, just note it.
+      # Otherwise fetch exactly that commit and detach onto it (reproducible, and the
+      # way plugins.zsh installs a pin); verify HEAD landed on the pin before claiming it.
+      if [[ "$(git -C "$d" rev-parse HEAD 2>/dev/null)" == "$pin" ]]; then
+        log "  • ${name} pinned (${pin:0:7}) — held"
+      elif git -C "$d" fetch -q --depth 1 origin "$pin" >>"$LOG" 2>&1 &&
+        git -C "$d" checkout -q --detach FETCH_HEAD >>"$LOG" 2>&1 &&
+        [[ "$(git -C "$d" rev-parse HEAD 2>/dev/null)" == "$pin" ]]; then
+        log "  ✓ ${name} → pinned ${pin:0:7}"
+      else
+        log "  ✗ ${name} (could not set pin ${pin:0:7}) — continuing"
+      fi
+    elif ! git -C "$d" symbolic-ref -q HEAD >/dev/null 2>&1; then
+      log "  • ${name} detached (unpinned) — held"
+    elif git -C "$d" pull --ff-only >>"$LOG" 2>&1; then
+      log "  ✓ ${name}"
+    else
+      log "  ✗ ${name} (pull failed) — continuing"
+    fi
   done
 fi
 
