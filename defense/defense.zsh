@@ -56,8 +56,12 @@ export CASES_DIR DEFENSE_DIR
 # Compose lives in $DEFENSE_DIR/docker. Override which stack with DEFENSE_STACK.
 : "${DEFENSE_STACK:=detection-lab}"
 _compose() {  # prefer `docker compose`, fall back to legacy `docker-compose`
-  if docker compose version >/dev/null 2>&1; then docker compose "$@"
-  else docker-compose "$@"; fi
+  # Auto-load docker/.env (gitignored) so the real stack gets its secrets — the
+  # placeholder stub needs none, so a missing file is fine.
+  local envfile="$DEFENSE_DIR/docker/.env" envargs=()
+  [[ -f "$envfile" ]] && envargs=(--env-file "$envfile")
+  if docker compose version >/dev/null 2>&1; then docker compose "${envargs[@]}" "$@"
+  else docker-compose "${envargs[@]}" "$@"; fi
 }
 siemup() {
   [[ -n ${HAVE_DOCKER:-} ]] || { echo "docker not installed"; return 1; }

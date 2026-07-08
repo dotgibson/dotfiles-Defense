@@ -1,30 +1,60 @@
 # docker/detection-lab.compose.yml
-# Minimal, RUNNABLE stub so the siemup/siemdown wiring is real and testable.
-# Replace the placeholder service with your actual stack (OpenSearch + Dashboards,
-# Elastic, Wazuh, ...). A commented real-stack skeleton is at the bottom.
+# The detection lab: a single-node OpenSearch + Dashboards stack — the blue
+# team's log store and query console. Brought up/down with the defense.zsh
+# helpers (they auto-load docker/.env if present):
 #
 #   siemup        # up -d        siemlogs   # follow        siemdown   # tear down
+#
+# FIRST RUN (once):
+#   1. cp docker/detection-lab.env.example docker/.env   # gitignored
+#   2. edit docker/.env — set a STRONG OPENSEARCH_INITIAL_ADMIN_PASSWORD
+#   3. host kernel setting OpenSearch needs (see docker/README.md):
+#        sudo sysctl -w vm.max_map_count=262144
+#   4. siemup   →   Dashboards at http://127.0.0.1:5601  (login: admin / your pw)
+#
+# Discipline (docker/README.md): data volumes are gitignored (docker/**/data/),
+# image tags are pinned (Renovate's docker:pinDigests maintains the @sha256
+# digest pin), and every port is bound to 127.0.0.1 — the lab is never LAN-exposed.
 
 services:
-  # ── placeholder: a tiny service so `siemup` works before you pick a SIEM ──
-  lab-placeholder:
-    image: traefik/whoami:v1.10.2 # ~6MB, pinned; stand-in for "the console"
-    container_name: lab-placeholder
+  # ── OpenSearch: the search/analytics engine (the log store) ────────────────
+  opensearch:
+    image: opensearchproject/opensearch:2.19.0
+    container_name: detection-lab-opensearch
+    environment:
+      - cluster.name=detection-lab
+      - node.name=opensearch
+      - discovery.type=single-node # lab: one node, no bootstrap checks
+      - bootstrap.memory_lock=true # disable swapping (paired with the memlock ulimit)
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g" # heap; raise for larger corpora
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD:?set it in docker/.env}
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - ./detection-lab/data/opensearch:/usr/share/opensearch/data
     ports:
-      - "127.0.0.1:8088:80" # bound to localhost only — not LAN-exposed
+      - "127.0.0.1:9200:9200" # REST API — localhost only
+    healthcheck:
+      # -k: the demo config ships a self-signed cert; auth with the admin creds.
+      test: ["CMD-SHELL", "curl -sk -u admin:${OPENSEARCH_INITIAL_ADMIN_PASSWORD} https://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
     restart: unless-stopped
-    # Visit http://127.0.0.1:8088 to confirm the lab is up, then swap this out.
 
-# ── Real stack skeleton (uncomment + tune; data dirs are gitignored) ──────────
-#   opensearch:
-#     image: opensearchproject/opensearch:2.13.0
-#     environment:
-#       - discovery.type=single-node
-#       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_PW}   # from local .env (gitignored)
-#     volumes:
-#       - ./detection-lab/data/opensearch:/usr/share/opensearch/data
-#     ports: ["127.0.0.1:9200:9200"]
-#   dashboards:
-#     image: opensearchproject/opensearch-dashboards:2.13.0
-#     ports: ["127.0.0.1:5601:5601"]
-#     depends_on: [opensearch]
+  # ── Dashboards: the query console / visualization UI ───────────────────────
+  dashboards:
+    image: opensearchproject/opensearch-dashboards:2.19.0
+    container_name: detection-lab-dashboards
+    environment:
+      - 'OPENSEARCH_HOSTS=["https://opensearch:9200"]'
+      - OPENSEARCH_USERNAME=admin
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD:?set it in docker/.env}
+    ports:
+      - "127.0.0.1:5601:5601" # web UI — localhost only
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: unless-stopped
