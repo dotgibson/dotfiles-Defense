@@ -45,3 +45,7 @@ lives here in docs rather than in the compose file.
   grouped into the fleet's weekly `ci(deps):` PR.
 - **Secrets in a local `.env`** — copied from `detection-lab.env.example`, never committed.
 - **Localhost-only** — every published port binds `127.0.0.1`; the lab is never LAN-exposed.
+- **Compose v2 required** — Dashboards is gated on OpenSearch being *healthy* via a
+  long-form `depends_on: condition: service_healthy`, which only `docker compose` (v2)
+  honors. Legacy `docker-compose` (v1, EOL) ignores it — `siemup` warns and still runs,
+  but startup ordering isn't health-gated. Install Compose v2.

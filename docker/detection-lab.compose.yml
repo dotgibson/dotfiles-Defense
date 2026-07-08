@@ -37,7 +37,10 @@ services:
       - "127.0.0.1:9200:9200" # REST API — localhost only
     healthcheck:
       # -k: the demo config ships a self-signed cert; auth with the admin creds.
-      test: ["CMD-SHELL", "curl -sk -u admin:${OPENSEARCH_INITIAL_ADMIN_PASSWORD} https://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"]
+      # $$ (not $) so Compose does NOT interpolate the password at render time — it
+      # stays out of `docker compose config`/`inspect`; the container shell expands
+      # $OPENSEARCH_INITIAL_ADMIN_PASSWORD (set in this service's environment) at runtime.
+      test: ["CMD-SHELL", "curl -sk -u admin:$$OPENSEARCH_INITIAL_ADMIN_PASSWORD https://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"]
       interval: 20s
       timeout: 10s
       retries: 10
@@ -52,8 +55,14 @@ services:
       - 'OPENSEARCH_HOSTS=["https://opensearch:9200"]'
       - OPENSEARCH_USERNAME=admin
       - OPENSEARCH_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD:?set it in docker/.env}
+      # OpenSearch's demo TLS is a self-signed cert; skip verification for this local
+      # lab so Dashboards can connect (it would otherwise fail TLS validation).
+      - OPENSEARCH_SSL_VERIFICATIONMODE=none
     ports:
       - "127.0.0.1:5601:5601" # web UI — localhost only
+    # Long-form depends_on gates Dashboards on OpenSearch being *healthy*. This needs
+    # Compose v2 (`docker compose`); legacy docker-compose v1 (EOL) ignores the
+    # condition — the detection lab requires Compose v2 (see docker/README.md).
     depends_on:
       opensearch:
         condition: service_healthy

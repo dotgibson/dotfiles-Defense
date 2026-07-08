@@ -55,13 +55,19 @@ export CASES_DIR DEFENSE_DIR
 # ── Detection lab: bring the Docker stack up / down ──────────────────────────
 # Compose lives in $DEFENSE_DIR/docker. Override which stack with DEFENSE_STACK.
 : "${DEFENSE_STACK:=detection-lab}"
-_compose() {  # prefer `docker compose`, fall back to legacy `docker-compose`
+_compose() {  # prefer Compose v2 (`docker compose`); warn on the EOL v1 fallback
   # Auto-load docker/.env (gitignored) so the real stack gets its secrets — the
   # placeholder stub needs none, so a missing file is fine.
   local envfile="$DEFENSE_DIR/docker/.env" envargs=()
   [[ -f "$envfile" ]] && envargs=(--env-file "$envfile")
-  if docker compose version >/dev/null 2>&1; then docker compose "${envargs[@]}" "$@"
-  else docker-compose "${envargs[@]}" "$@"; fi
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "${envargs[@]}" "$@"
+  else
+    # Legacy docker-compose v1 is EOL and ignores `depends_on: condition:
+    # service_healthy` — the detection lab's health-gating won't apply. Still run it.
+    echo "⚠ using legacy docker-compose (v1) — install Compose v2 for health-gated startup" >&2
+    docker-compose "${envargs[@]}" "$@"
+  fi
 }
 siemup() {
   [[ -n ${HAVE_DOCKER:-} ]] || { echo "docker not installed"; return 1; }
