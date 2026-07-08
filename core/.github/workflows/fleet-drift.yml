@@ -82,3 +82,18 @@ jobs:
         run: |
           echo "Fleet drift detected — run 'make sync' (and nvim-sync.ps1 for Windows)." >&2
           exit 1
+
+  # Turn a red run into a deduplicated issue (G1) — a drifted fleet must page a human,
+  # not just paint a tab nobody watches.
+  notify-failure:
+    needs: drift
+    if: failure()
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/notify-failure-call.yml
+    with:
+      workflow: fleet-drift
+      title: "ci-failure: fleet-drift sweep is red"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      details: "The weekly vendoring-drift sweep failed. A repo may be lagging Core's latest release tag — run `make sync` (and `nvim-sync.ps1` for Windows), or the sweep itself may be broken."

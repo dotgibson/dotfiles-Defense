@@ -2,9 +2,11 @@
 # changes — the static-site equivalent of a cache purge. Receiving side:
 # dotfiles-web's deploy.yml (repository_dispatch: refresh) + its README.
 #
-# Setup: add a fine-grained PAT with "Contents: Read and write" on
-# dotgibson/dotfiles-web as a repo secret named WEBHOOK_SECRET. Without it,
-# this job no-ops.
+# Setup (G2): with the fleet GitHub App configured (the FLEET_APP_ID variable +
+# FLEET_APP_PRIVATE_KEY secret — see dotfiles-core GITHUB-APP-AUTH.md) this mints a
+# short-lived dotfiles-web-scoped token for the dispatch. Fallback: a fine-grained PAT
+# with "Contents: Read and write" on dotgibson/dotfiles-web as a secret named
+# WEBHOOK_SECRET. With neither, this job no-ops.
 name: Refresh showcase
 
 on:
@@ -22,14 +24,30 @@ jobs:
     if: github.repository_owner == 'dotgibson'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      # Presence flag for the App key (value 'true'/'false', never the key): secrets can't be
+      # tested in a step `if:`, but an env derived from a secret comparison can. Gates the mint
+      # so a partial App setup falls back cleanly to WEBHOOK_SECRET.
+      HAS_APP_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY != '' }}
     steps:
+      # Mint a dotfiles-web-scoped token when the fleet App is configured (dotfiles-core
+      # GITHUB-APP-AUTH.md, G2); no App/key -> SKIPPED, dispatch falls back to WEBHOOK_SECRET.
+      - name: Mint a scoped installation token (if the App is configured)
+        id: app
+        if: vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ vars.FLEET_APP_ID }}
+          private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: dotfiles-web
       - name: Notify dotfiles-web to rebuild
         env:
-          TOKEN: ${{ secrets.WEBHOOK_SECRET }}
+          TOKEN: ${{ steps.app.outputs.token || secrets.WEBHOOK_SECRET }}
         run: |
           set -euo pipefail
           if [ -z "${TOKEN:-}" ]; then
-            echo "::warning::WEBHOOK_SECRET not set — skipping showcase refresh"
+            echo "::warning::no dispatch token (neither the fleet App nor WEBHOOK_SECRET) — skipping showcase refresh"
             exit 0
           fi
           curl -fsS -X POST \

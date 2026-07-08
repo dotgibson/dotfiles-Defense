@@ -1,0 +1,28 @@
+# scripts/parity-aliases.txt — the ALIGNED modern-CLI tool-swap aliases contract (Track A).
+# ──────────────────────────────────────────────────────────────────────────────
+# The flat manifest behind parity-check.sh's alias coverage. Each row is an `aligned`
+# tool-swap (a classic command re-pointed at a modern tool) that BOTH shells provide —
+# zsh (Core, this repo) and PowerShell (dotfiles-Windows host). parity-check.sh asserts,
+# per row, that the zsh alias is defined in zsh/aliases.zsh AND the pwsh name appears in
+# 00-aliases.ps1's `provides:` contract (which tests/LoadContract.Tests.ps1 gates to the
+# real definitions). Adding an aligned tool-swap is ONE row here, not a code change.
+#
+# Format: capability|zsh_alias|pwsh_alias|note   (pipe-delimited; `#` comments + blanks ok)
+# The zsh and pwsh names differ ONLY where a platform forces it (the `note` says why) —
+# that naming exception is exactly what this manifest exists to pin, so a rename on one
+# side without the other is caught. Keep it in step with PARITY.md's aligned rows.
+# ──────────────────────────────────────────────────────────────────────────────
+eza: ls|ls|ls|
+eza: long+hidden+git (ll)|ll|ll|
+eza: all (la)|la|la|
+eza: tree depth-2 (lt)|lt|lt|
+eza: tree depth-3 long (llt)|llt|llt|
+bat: cat (no pager)|cat|cat|
+bat: catp (paged)|catp|catp|
+xh: http|http|http|
+xh: https|https|https|
+doggo: dns|dns|dns|
+dust: du|du|du|
+procs: ps|ps|pss|pwsh renames it: `ps` is a core cmdlet, so procs lands on `pss`
+viddy: watch|watch|watch|
+lazygit: lg|lg|lg|

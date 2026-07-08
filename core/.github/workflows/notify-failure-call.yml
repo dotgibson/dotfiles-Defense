@@ -1,0 +1,102 @@
+# .github/workflows/notify-failure-call.yml
+# ──────────────────────────────────────────────────────────────────────────────
+# REUSABLE failure notifier (G1). The fleet's scheduled sweeps (fleet-drift,
+# core-integrity, parity-check, freshness, the routines, the release fan-out) only
+# ever surfaced a failure as a red run in the Actions tab — a tab nobody watches.
+# This turns any sweep's failure into a DEDUPLICATED GitHub issue, so a drifted,
+# tampered, or token-expired fleet actually pages a human.
+#
+# Called from a sweep's own `if: failure()` job:
+#
+#   notify-failure:
+#     needs: [<the-sweep-job>]
+#     if: failure()
+#     permissions: { contents: read, issues: write }
+#     uses: ./.github/workflows/notify-failure-call.yml
+#     with:
+#       workflow: fleet-drift
+#       title: "ci-failure: fleet-drift sweep is red"
+#       run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+#
+# SELF-CONTAINED ON PURPOSE: the dedup logic is inlined (same behaviour as
+# file-routine-issue.sh — match an OPEN issue by exact title, comment if present
+# else create) rather than shelling out to that script, so any repo in the fleet can
+# call this via `dotgibson/dotfiles-core/.github/workflows/notify-failure-call.yml@v3`
+# without needing the helper checked out. It files into the CALLER's repo (gh uses the
+# caller's github.token), which is exactly where the failing run lives.
+#
+# First-party only: gh is preinstalled on the runner; no marketplace action.
+name: notify-failure
+
+on:
+  workflow_call:
+    inputs:
+      workflow:
+        description: "name of the workflow/sweep that failed"
+        required: true
+        type: string
+      title:
+        description: "STABLE issue title to dedup on — no dates or changing values"
+        required: true
+        type: string
+      run_url:
+        description: "URL of the failing run (for the issue body)"
+        required: false
+        type: string
+        default: ""
+      details:
+        description: "optional extra context, shown verbatim in the issue body"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # GH_REPO is what lets `gh issue …` resolve the target repo. This job does NOT
+      # check out the caller (it only files an issue), so without GH_REPO `gh` falls
+      # back to inferring the repo from a git remote and dies with "not a git
+      # repository" — silently breaking the whole failure-alerting path.
+      GH_REPO: ${{ github.repository }}
+      IN_TITLE: ${{ inputs.title }}
+      IN_WORKFLOW: ${{ inputs.workflow }}
+      IN_RUN_URL: ${{ inputs.run_url }}
+      IN_DETAILS: ${{ inputs.details }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: File / update a deduplicated failure issue
+        run: |
+          set -euo pipefail
+          # Markdown code-spans are built by wrapping the VALUE in escaped backticks (a
+          # literal backtick in double quotes) rather than putting backticks in the
+          # single-quoted format string — same rendered output, no SC2016 false alarm.
+          body="${RUNNER_TEMP:-/tmp}/notify-failure-body.md"
+          {
+            printf '## %s — %s\n\n' "$IN_TITLE" "$(date -u +%Y-%m-%dT%H:%MZ)"
+            printf -- '- **Repo:** %s\n' "\`$REPO\`"
+            printf -- '- **Workflow:** %s\n' "\`$IN_WORKFLOW\`"
+            [ -n "$IN_RUN_URL" ] && printf -- '- **Run:** %s\n' "$IN_RUN_URL"
+            if [ -n "$IN_DETAILS" ]; then printf '\n%s\n' "$IN_DETAILS"; fi
+            printf '\n_Filed by notify-failure. A scheduled sweep went red — a signal that would otherwise alert nobody. Investigate, fix, and close._\n'
+          } >"$body"
+
+          # gh search is fuzzy, so re-check the title EXACTLY before deciding to dedup.
+          existing="$(gh issue list --state open --limit 200 --search "$IN_TITLE in:title" \
+            --json number,title --jq '.[] | [.number, .title] | @tsv' \
+            | awk -F'\t' -v t="$IN_TITLE" '$2 == t {print $1; exit}')"
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file "$body"
+            echo "appended failure to existing issue #$existing"
+          else
+            gh issue create --title "$IN_TITLE" --body-file "$body"
+          fi

@@ -103,7 +103,11 @@ fi
 # Report the delta (added/removed/changed plugin commits) in human terms.
 if cmp -s "$BEFORE" "$LOCK"; then
   printf '%s✓ all nvim plugin pins already current.%s\n' "$c_grn" "$c_rst"
-  ((CHECK)) && exit 0
+  # "Already current" is success in BOTH modes — check (gate passes) and apply
+  # (nothing to update). Exit 0 explicitly: `((CHECK)) && exit 0` would, in apply
+  # mode (CHECK=0), leave `((0))` (exit status 1) as the script's LAST command, so
+  # under a caller's `set -e` the freshness bot's nvim job goes red on a no-op week.
+  exit 0
 else
   # Show only the changed plugin entries (the lock is one JSON line per plugin).
   git --no-pager diff --no-index -- "$BEFORE" "$LOCK" 2>/dev/null |

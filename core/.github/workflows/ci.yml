@@ -131,6 +131,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -euxo pipefail
+          # Drop GitHub's flaky third-party apt repos (packages.microsoft.com/azure) first:
+          # they intermittently serve an unsigned InRelease and fail the whole update (exit 100).
+          sudo find /etc/apt/sources.list.d -type f \( -iname '*microsoft*' -o -iname '*azure*' \) -delete 2>/dev/null || true
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends zsh
 
@@ -266,7 +269,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Audit on Alpine (musl + busybox)
         run: |
-          docker run --rm -v "$PWD:/core" -w /core alpine:3.21 sh -euc '
+          docker run --rm -v "$PWD:/core" -w /core alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d sh -euc '
             apk add --no-cache bash zsh git shellcheck python3 py3-yaml
             # The repo is owned by the host runner uid but the container runs as root;
             # without this, git 2.35+ refuses it as "dubious ownership" and the audit
@@ -297,7 +300,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Audit on Arch (rolling glibc toolchain)
         run: |
-          docker run --rm -v "$PWD:/core" -w /core archlinux:latest sh -euc '
+          docker run --rm -v "$PWD:/core" -w /core archlinux:latest@sha256:681569955d1d17313ef7134acc8b5cd8adcda2fc24709bed472d95e1cf3d71a1 sh -euc '
             # -Syu (not bare -Sy): a partial upgrade is unsupported on Arch and can pull
             # mismatched libs. The container is ephemeral, so the full sync+upgrade is the
             # correct AND safe idiom here — the same rule dotfiles-Arch ships to real hosts.
@@ -366,6 +369,9 @@ jobs:
       - name: Install zsh + hyperfine
         run: |
           set -euxo pipefail
+          # Drop GitHub's flaky third-party apt repos (packages.microsoft.com/azure) first —
+          # an unsigned InRelease there otherwise fails the whole update (exit 100).
+          sudo find /etc/apt/sources.list.d -type f \( -iname '*microsoft*' -o -iname '*azure*' \) -delete 2>/dev/null || true
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends zsh hyperfine
       - name: Benchmark Core startup (budget gate)

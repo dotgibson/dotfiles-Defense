@@ -37,6 +37,15 @@ The alias surface is broadly `aligned`: `ll`/`la`, `cat`→bat, `grep`→rg, `ht
 `glog`) resolve to the same intent on both shells. Per-shell extras are noted as
 gaps below.
 
+The **aligned tool-swap aliases** (the classic-command → modern-tool re-points) are
+pinned as a flat manifest — [`scripts/parity-aliases.txt`](scripts/parity-aliases.txt)
+— so `parity-check.sh` enforces each one **bidirectionally**: the zsh alias must be
+defined in `zsh/aliases.zsh` **and** the pwsh name must be in `00-aliases.ps1`'s
+`provides:` contract. Where the two shells must use different names (e.g. `ps`→procs is
+`pss` on pwsh, since `ps` is a core cmdlet) the manifest records the exception, so a
+rename on one side without the other is caught. Adding an aligned tool-swap is one
+manifest row, not a code change.
+
 ## Keybindings
 
 | Capability | zsh | pwsh | Status |
