@@ -39,6 +39,13 @@
 	prompt = false
 [difftool "nvimdiff"]
 	cmd = nvim -d \"$LOCAL\" \"$REMOTE\"
+# difftastic — structural (AST) diff, opt-in via `git dft` (alias below). It is a
+# COMPANION to delta, never a replacement: delta stays the default syntax-highlighting
+# pager for `git diff`; difft is the on-demand, structure-aware review (formatting-only
+# churn — rewraps, moved elements, trailing commas — shows as no syntactic change).
+# Inert without the binary; `git dft` simply errors if difft isn't installed.
+[difftool "difftastic"]
+	cmd = difft \"$LOCAL\" \"$REMOTE\"
 
 # ── Merge ─────────────────────────────────────────────────────────────────────
 [merge]
@@ -150,6 +157,7 @@
 	ds = diff --stat
 	dc = diff --cached
 	dw = diff --word-diff
+	dft = difftool --tool=difftastic   # structural (AST) diff — opt-in, needs difftastic (HAVE_DIFFT)
 	# branch / commit
 	co = checkout
 	br = branch -vv

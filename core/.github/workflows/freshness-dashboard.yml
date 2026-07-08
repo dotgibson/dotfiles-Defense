@@ -1,0 +1,91 @@
+name: freshness-dashboard
+
+# The weekly FLEET FRESHNESS DASHBOARD (option A: one hub rollup, not per-repo issues).
+# Consolidates the fleet's scattered freshness signals — vendoring drift, vendored-core
+# integrity, and zsh/nvim plugin-pin freshness — into ONE deduplicated GitHub issue in
+# dotfiles-core, with links to each repo's Renovate dependency dashboard. It REPORTS; it
+# never mutates. The sub-gates (fleet-drift.yml, core-integrity.yml, freshness.yml) still
+# enforce; this is the glanceable board that answers "how healthy is the fleet this week?"
+# in one place.
+#
+# Runs Monday 10:00 UTC — after the morning sweeps (fleet-drift/freshness 06:00,
+# core-integrity 06:30) have settled, so the board reflects that morning's state. Deduped
+# by title (file-routine-issue.sh), so it updates in place.
+
+on:
+  schedule:
+    - cron: "0 10 * * 1" # Mondays 10:00 UTC, after the morning sweeps settle
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: freshness-dashboard
+  cancel-in-progress: true
+
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    # 15 min like freshness.yml: the nvim-pin check drives a full `:Lazy! sync` that
+    # re-clones every pinned plugin, which dominates the runtime.
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_TITLE: "freshness-dashboard: weekly fleet health board"
+    steps:
+      # Full history so fleet-drift.sh can quantify how far behind each recorded sha is
+      # (a shallow checkout of Core would only ever let it report "DIFFERS", not "BEHIND N").
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      # The nvim-pin check (update-nvim-plugins.sh --check) hard-requires nvim and drives
+      # a real `:Lazy! sync`, so install the SAME pinned neovim freshness.yml uses — else
+      # the "nvim plugin pins" row is a permanently-false ⚠️ ("nvim not found"). The zsh-pin
+      # + drift + integrity checks need only git, already present.
+      - name: Load pinned tool versions
+        run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >> "$GITHUB_ENV"
+      - name: Install neovim (pinned)
+        uses: ./.github/actions/setup-core-tools
+        with:
+          neovim: "true"
+
+      - name: Clone the fleet (public, anonymous, shallow)
+        run: |
+          set -euo pipefail
+          fleet="$RUNNER_TEMP/fleet"
+          mkdir -p "$fleet"
+          # Mirror scripts/os-repos.txt + the Windows host repo (fleet-drift reads its
+          # nvim/.core-ref marker too). We only read provenance markers + core/ trees,
+          # so depth 1 is plenty; a repo that fails to clone is skipped by the scripts.
+          repos=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' scripts/os-repos.txt)
+          for r in $repos dotfiles-Windows; do
+            echo "::group::clone $r"
+            git clone --depth 1 "https://github.com/${GITHUB_REPOSITORY_OWNER}/${r}.git" "$fleet/$r" \
+              || echo "::warning::could not clone $r (skipped in the board)"
+            echo "::endgroup::"
+          done
+
+      - name: Compose the dashboard
+        run: ./scripts/freshness-dashboard.sh --root "$RUNNER_TEMP/fleet" | tee "$RUNNER_TEMP/dashboard.md"
+
+      - name: File the board as a deduplicated issue
+        run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/dashboard.md"
+
+  # A crash (clone/gh failure) files the G1 dedup issue — same rail as the other sweeps.
+  notify-failure:
+    needs: dashboard
+    if: failure()
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/notify-failure-call.yml
+    with:
+      workflow: freshness-dashboard
+      title: "ci-failure: freshness-dashboard is red"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      details: "The weekly fleet freshness dashboard failed to compose or file — this week's health board was not posted."

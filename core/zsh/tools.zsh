@@ -95,6 +95,7 @@ _have glow && HAVE_GLOW=1
 _have doggo && HAVE_DOGGO=1
 _have gron && HAVE_GRON=1
 _have sd && HAVE_SD=1
+_have ast-grep && HAVE_ASTGREP=1    # AST-aware structural search/rewrite — own command, no alias (the syntax-tree complement to rg=text, sd=regex, gron=JSON). Opt-in; inert without the binary.
 _have gum && HAVE_GUM=1
 _have viddy && HAVE_VIDDY=1         # modern watch (aliases.zsh: watch → viddy)
 _have gping && HAVE_GPING=1         # graphical ping (aliases.zsh: ping → gping)
@@ -109,6 +110,7 @@ _have shellcheck && HAVE_SHELLCHECK=1 # shell linter (own command — no alias)
 _have shfmt && HAVE_SHFMT=1        # shell formatter (own command — no alias)
 _have jj && HAVE_JJ=1              # jujutsu — OPT-IN, colocated git companion (aliases.zsh: jjs/jjl/jjd)
 _have sesh && HAVE_SESH=1          # smart tmux session manager — drives Ctrl-G (fzf.zsh) + prefix+f (tmux-sesh.sh); both fall back to find+fzf when unset
+_have difft && HAVE_DIFFT=1        # difftastic — AST/structural diff; OPT-IN companion to delta (git dft), never the default pager (aliases.zsh: gdft)
 [[ -n ${FD_BIN:-} ]] && HAVE_FD=1
 [[ -n ${BAT_BIN:-} ]] && HAVE_BAT=1
 

@@ -11,7 +11,10 @@ name: parity-check
 
 on:
   schedule:
-    - cron: "0 6 * * 1" # Mondays 06:00 UTC, alongside fleet-drift + freshness
+    # Mondays 07:00 UTC. Staggered OFF the 06:00 cluster (fleet-drift + freshness) so the
+    # fleet-cloning sweeps don't contend: fleet-drift 06:00 → core-integrity 06:30 →
+    # parity-check 07:00 (G1 de-confliction).
+    - cron: "0 7 * * 1"
   workflow_dispatch: {}
 
 permissions:
@@ -63,3 +66,17 @@ jobs:
         run: |
           echo "Cross-shell parity drift — an aligned PARITY.md row is missing from a shell." >&2
           exit 1
+
+  # Turn a red run into a deduplicated issue (G1).
+  notify-failure:
+    needs: parity
+    if: failure()
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/notify-failure-call.yml
+    with:
+      workflow: parity-check
+      title: "ci-failure: parity-check sweep is red"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      details: "The weekly cross-shell parity sweep failed. An aligned PARITY.md row may be missing from zsh or PowerShell — reconcile the two shells, or the sweep itself may be broken."

@@ -1,0 +1,219 @@
+name: lint (reusable)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# REUSABLE shell/workflow lint gate (G3). Every OS/role repo carried its own
+# ~203-line copy of this (identical but for Kali's one extra exclude) — one fix had
+# to be hand-propagated to 5+ repos. This is the single definition; each OS repo
+# collapses to a 3-line caller:
+#
+#   jobs:
+#     lint:
+#       uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v3
+#       # Kali only:  with: { extra_ls_files_excludes: ":!:offensive/companion/**" }
+#
+# The ONLY per-repo variance is the extra `git ls-files` exclude (Kali excludes its
+# vendored htpx `offensive/companion/` subtree); everything else — the pinned-tool
+# bootstrap, SHELLCHECK_OPTS, the core/ exclude, shfmt-advisory — is constant.
+#
+# CHECKOUT IS INVERTED vs the old per-repo lint.yml: dotfiles-core@v3 is checked out
+# at ROOT (so `./.github/actions/setup-core-tools` + `scripts/tool-versions.env`
+# resolve here — the SAME major line callers pin this workflow to, mirroring
+# auto-tag-call.yml), and the CALLER repo is checked out into `caller/` (the tree we
+# actually lint). This lets the reusable workflow reuse Core's own composite action
+# without depending on the caller's vendored `core/` copy, and keeps actionlint happy
+# when it lints THIS file inside dotfiles-core (the action path exists here).
+#
+# Same scoping decisions as before: core/ is excluded (gated by its own CI), no Lua
+# leg (all Lua lives under core/), shfmt is advisory. Tools are SHA-256-verified by
+# the shared composite action against pinned checksums in scripts/tool-versions.env.
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_call:
+    inputs:
+      extra_ls_files_excludes:
+        description: >-
+          Extra git-ls-files pathspec exclude(s), appended after ':!:core/**' in every
+          file list. Each a RAW pathspec with NO surrounding quotes — the value is
+          word-split into a bash array, so literal quotes would become part of the token
+          and the exclude would silently not match. Space-separated for multiple. Only Kali
+          sets it: :!:offensive/companion/**
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    name: shell lint (shellcheck · shfmt · syntax)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXTRA_EXCLUDES: ${{ inputs.extra_ls_files_excludes }}
+    steps:
+      # 1) Core@v3 at ROOT — provides the composite action + pinned tool-versions.env.
+      #    (v3 = the current major, matching the @v3 callers; keep in step on a major bump.)
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ github.repository_owner }}/dotfiles-core
+          ref: v3
+      # 2) The caller repo into caller/ — the tree we lint.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          path: caller
+
+      - name: Load pinned tool versions + checksums (Core single source)
+        run: |
+          f=scripts/tool-versions.env
+          if [ ! -f "$f" ]; then echo "::error::$f missing from the dotfiles-core checkout"; exit 1; fi
+          grep -E '^[A-Z0-9_]+=' "$f" >> "$GITHUB_ENV"
+
+      - name: Install zsh (for zsh -n on the repo-owned zsh modules)
+        # Drop GitHub's third-party apt repos (packages.microsoft.com / azure) before update:
+        # they intermittently serve an unsigned InRelease and fail the WHOLE `apt-get update`
+        # with exit 100 — a flaky unrelated to installing zsh from the base repos. Targeting
+        # only *microsoft*/*azure* files is safe regardless of where the Ubuntu base lives
+        # (sources.list vs the deb822 sources.list.d).
+        run: |
+          sudo find /etc/apt/sources.list.d -type f \( -iname '*microsoft*' -o -iname '*azure*' \) -delete 2>/dev/null || true
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsh
+
+      - name: Put core-tools bin on PATH
+        run: |
+          mkdir -p "$HOME/.local/core-tools/bin"
+          echo "$HOME/.local/core-tools/bin" >> "$GITHUB_PATH"
+
+      - name: Cache pinned gate tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/core-tools
+          key: core-tools-${{ runner.os }}-${{ hashFiles('scripts/tool-versions.env') }}-shell
+          restore-keys: |
+            core-tools-${{ runner.os }}-${{ hashFiles('scripts/tool-versions.env') }}-
+
+      - name: Install pinned gate tools (verified)
+        uses: ./.github/actions/setup-core-tools
+        with:
+          shellcheck: "true"
+          shfmt: "true"
+
+      - name: Assert gate tools resolve to the verified bindir
+        run: |
+          bindir="$HOME/.local/core-tools/bin"
+          rc=0
+          for t in shellcheck shfmt; do
+            p="$(command -v "$t" || true)"
+            echo "$t -> ${p:-<not found>}"
+            [ "$p" = "$bindir/$t" ] || { echo "::error::$t is '${p:-<not found>}', not the verified $bindir/$t"; rc=1; }
+          done
+          exit $rc
+
+      # ── BLOCKING: real bugs in repo-owned bash/sh. core/ excluded (gated upstream);
+      # curated excludes mirror the fleet house style (SC1090/1091 runtime source,
+      # SC2015 the cmd&&ok||warn idiom, SC2088 tildes in messages).
+      - name: shellcheck (repo-owned bash/sh)
+        working-directory: caller
+        env:
+          SHELLCHECK_OPTS: "-e SC1090 -e SC1091 -e SC2015 -e SC2088"
+        run: |
+          excludes=(':!:core/**')
+          # shellcheck disable=SC2206  # curated space-separated pathspecs; intentional split
+          [ -n "$EXTRA_EXCLUDES" ] && excludes+=($EXTRA_EXCLUDES)
+          mapfile -t files < <(git ls-files '*.sh' "${excludes[@]}")
+          if [ ${#files[@]} -eq 0 ]; then echo "no repo-owned .sh"; exit 0; fi
+          printf 'shellcheck %s\n' "${files[@]}"
+          shellcheck "${files[@]}"
+
+      - name: bash -n (syntax, repo-owned bash/sh)
+        working-directory: caller
+        run: |
+          excludes=(':!:core/**')
+          # shellcheck disable=SC2206
+          [ -n "$EXTRA_EXCLUDES" ] && excludes+=($EXTRA_EXCLUDES)
+          mapfile -t files < <(git ls-files '*.sh' "${excludes[@]}")
+          if [ ${#files[@]} -eq 0 ]; then echo "no repo-owned .sh"; exit 0; fi
+          rc=0
+          for f in "${files[@]}"; do echo "bash -n $f"; bash -n "$f" || rc=1; done
+          exit $rc
+
+      - name: zsh -n (syntax, repo-owned zsh modules)
+        working-directory: caller
+        run: |
+          excludes=(':!:core/**')
+          # shellcheck disable=SC2206
+          [ -n "$EXTRA_EXCLUDES" ] && excludes+=($EXTRA_EXCLUDES)
+          mapfile -t files < <(git ls-files '*.zsh' "${excludes[@]}")
+          if [ ${#files[@]} -eq 0 ]; then echo "no repo-owned .zsh"; exit 0; fi
+          rc=0
+          for f in "${files[@]}"; do echo "zsh -n $f"; zsh -n "$f" || rc=1; done
+          exit $rc
+
+      # ── ADVISORY: formatting vs a 2-space indent spec (matching core/.editorconfig).
+      # The if/else swallows shfmt's drift exit so the step is non-blocking WITHOUT
+      # continue-on-error (a genuine install failure still reds).
+      - name: shfmt (format check — advisory)
+        working-directory: caller
+        run: |
+          excludes=(':!:core/**')
+          # shellcheck disable=SC2206
+          [ -n "$EXTRA_EXCLUDES" ] && excludes+=($EXTRA_EXCLUDES)
+          mapfile -t files < <(git ls-files '*.sh' "${excludes[@]}")
+          if [ ${#files[@]} -eq 0 ]; then echo "no repo-owned .sh"; exit 0; fi
+          if shfmt -i 2 -d "${files[@]}"; then
+            echo "formatting matches the 2-space spec"
+          else
+            echo "::warning::shfmt reported formatting drift (advisory, not blocking). Fix with: shfmt -i 2 -w <file>"
+          fi
+
+  actionlint:
+    name: actionlint (workflow self-check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ github.repository_owner }}/dotfiles-core
+          ref: v3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          path: caller
+
+      - name: Load pinned tool versions + checksums (Core single source)
+        run: |
+          f=scripts/tool-versions.env
+          if [ ! -f "$f" ]; then echo "::error::$f missing from the dotfiles-core checkout"; exit 1; fi
+          grep -E '^[A-Z0-9_]+=' "$f" >> "$GITHUB_ENV"
+
+      - name: Put core-tools bin on PATH
+        run: |
+          mkdir -p "$HOME/.local/core-tools/bin"
+          echo "$HOME/.local/core-tools/bin" >> "$GITHUB_PATH"
+
+      - name: Cache pinned gate tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/core-tools
+          key: core-tools-${{ runner.os }}-${{ hashFiles('scripts/tool-versions.env') }}-actionlint
+          restore-keys: |
+            core-tools-${{ runner.os }}-${{ hashFiles('scripts/tool-versions.env') }}-
+
+      - name: Install pinned gate tools (verified)
+        uses: ./.github/actions/setup-core-tools
+        with:
+          actionlint: "true"
+
+      - name: Assert gate tools resolve to the verified bindir
+        run: |
+          bindir="$HOME/.local/core-tools/bin"
+          p="$(command -v actionlint || true)"
+          echo "actionlint -> ${p:-<not found>}"
+          [ "$p" = "$bindir/actionlint" ] || { echo "::error::actionlint is '${p:-<not found>}', not the verified $bindir/actionlint"; exit 1; }
+
+      - name: actionlint (on the caller's workflows)
+        working-directory: caller
+        env:
+          SHELLCHECK_OPTS: "-e SC1090 -e SC1091 -e SC2015 -e SC2088"
+        run: actionlint -color

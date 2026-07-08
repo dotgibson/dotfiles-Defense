@@ -20,10 +20,11 @@
 # stamps the named tag — "what Alpine runs" is a frozen version, per RELEASE-STRATEGY.
 #
 # AUTH: the built-in GITHUB_TOKEN is scoped to dotfiles-core only — it cannot push a
-# branch or open a PR in another repo. This needs a FLEET_SYNC_TOKEN secret: a
-# fine-grained PAT or GitHub App installation token with `contents:write` +
-# `pull-requests:write` on the dotfiles-* OS repos. The preflight step fails loudly
-# with setup instructions if it is absent.
+# branch or open a PR in another repo. This mints a short-lived, OS-repo-scoped GitHub
+# App installation token at run time (contents + pull-requests write) when the fleet App
+# is configured (the FLEET_APP_ID variable), and otherwise falls back to the legacy
+# FLEET_SYNC_TOKEN PAT — see GITHUB-APP-AUTH.md. The preflight fails loudly if neither is
+# available.
 #
 # NB: workflow_run + workflow_dispatch triggers only take effect once this file is on
 # the default branch (GitHub reads both from main, never from a feature branch). After
@@ -52,7 +53,8 @@ on:
         default: ""
 
 # Only the default token is requested (read access to check out Core). All cross-repo
-# writes go through FLEET_SYNC_TOKEN, never the workflow token.
+# writes go through the minted App token (or the legacy PAT fallback), never the
+# workflow token.
 permissions:
   contents: read
 
@@ -72,6 +74,13 @@ jobs:
        github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Presence flag for the App private key (value is 'true'/'false', never the key):
+      # secrets can't be tested in a step `if:`, but an env derived from a secret comparison
+      # can. Gates the mint on the key ACTUALLY being present, so a partial App setup (the
+      # FLEET_APP_ID variable set org-wide but the key not scoped to this repo) falls back
+      # cleanly to the PAT instead of failing the mint on an empty key.
+      HAS_APP_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY != '' }}
     steps:
       # ── Resolve the tag to fan out, and bail cleanly on anything that isn't a clean
       # SemVer release tag (a prerelease, a branch build, a mis-trigger). ──
@@ -94,20 +103,38 @@ jobs:
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo ":: will fan out Core $tag"
 
-      # ── Fail early and legibly if the cross-repo token is missing — otherwise the
-      # first clone/push would fail with an opaque 403. ──
-      - name: Preflight — FLEET_SYNC_TOKEN present
+      # ── Mint a short-lived installation token IF the fleet GitHub App is configured
+      # (the FLEET_APP_ID variable is set). No App yet → this step is SKIPPED, and every
+      # token reference below falls back to the legacy FLEET_SYNC_TOKEN PAT — so merging
+      # this is a no-op until you set the org var/secret (GITHUB-APP-AUTH.md, G2). The
+      # token expires in ~1h, replacing the broad, hand-rotated PAT. ──
+      - name: Mint a scoped installation token (if the App is configured)
+        id: app
+        if: steps.resolve.outputs.skip != 'true' && vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ vars.FLEET_APP_ID }}
+          private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          # No `repositories:` list on purpose: the token's scope is the App's
+          # INSTALLATION (the fan-out's write targets, per GITHUB-APP-AUTH.md). Hardcoding
+          # the fleet here would be a second copy of scripts/os-repos.txt that could drift
+          # and 403 a newly-added repo — the install list is the ONE place scope lives.
+
+      # ── Fail early and legibly if NO fleet write token is available (neither the App
+      # nor the legacy PAT) — otherwise the first clone/push would fail with an opaque 403. ──
+      - name: Preflight — a fleet write token is available
         if: steps.resolve.outputs.skip != 'true'
         env:
-          FLEET_SYNC_TOKEN: ${{ secrets.FLEET_SYNC_TOKEN }}
+          FLEET_TOKEN: ${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${FLEET_SYNC_TOKEN:-}" ]; then
-            echo "::error::FLEET_SYNC_TOKEN secret is not set."
+          if [ -z "${FLEET_TOKEN:-}" ]; then
+            echo "::error::No fleet write token available."
             echo "::error::This workflow pushes sync branches and opens PRs in the OS repos,"
-            echo "::error::which the built-in GITHUB_TOKEN cannot reach. Create a fine-grained"
-            echo "::error::PAT or GitHub App token with contents:write + pull-requests:write on"
-            echo "::error::the dotfiles-* OS repos and save it as the FLEET_SYNC_TOKEN secret."
+            echo "::error::which the built-in GITHUB_TOKEN cannot reach. Configure the fleet"
+            echo "::error::GitHub App (set the FLEET_APP_ID variable + FLEET_APP_PRIVATE_KEY"
+            echo "::error::secret — see GITHUB-APP-AUTH.md), or set the legacy FLEET_SYNC_TOKEN."
             exit 1
           fi
 
@@ -137,20 +164,21 @@ jobs:
       - name: Configure git + fleet auth
         if: steps.resolve.outputs.skip != 'true'
         env:
-          FLEET_SYNC_TOKEN: ${{ secrets.FLEET_SYNC_TOKEN }}
+          # The minted App token when the App is configured, else the legacy PAT.
+          FLEET_TOKEN: ${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}
         run: |
           set -euo pipefail
           git config --global user.name "dotfiles-core sync bot"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Authenticate every github.com https fetch/clone/push with the fleet token.
           git config --global \
-            url."https://x-access-token:${FLEET_SYNC_TOKEN}@github.com/".insteadOf \
+            url."https://x-access-token:${FLEET_TOKEN}@github.com/".insteadOf \
             "https://github.com/"
 
       - name: Fan out Core and open PRs
         if: steps.resolve.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.FLEET_SYNC_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token || secrets.FLEET_SYNC_TOKEN }}
           OWNER: ${{ github.repository_owner }}
           TAG: ${{ steps.resolve.outputs.tag }}
           REPOS_INPUT: ${{ github.event.inputs.repos }}
@@ -234,3 +262,19 @@ jobs:
             echo "::error::one or more repos failed to sync — see the job summary"
             exit 1
           fi
+
+  # Turn a failed fan-out into a deduplicated issue (G1). A release that can't reach the
+  # fleet is exactly the silent break this closes — often a fleet-App auth problem (G2):
+  # the App not installed on a target repo, or the FLEET_APP_ID / private key not in scope.
+  notify-failure:
+    needs: fanout
+    if: failure()
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/notify-failure-call.yml
+    with:
+      workflow: sync-fanout
+      title: "ci-failure: Core fan-out (sync-fanout) is red"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      details: "The release fan-out failed — Core did not reach one or more OS repos. Common cause: the fleet GitHub App is misconfigured — not installed on a target OS repo, or the FLEET_APP_ID variable / FLEET_APP_PRIVATE_KEY secret isn't scoped to dotfiles-core (see GITHUB-APP-AUTH.md). The fleet may be sitting a version behind until this is resolved."

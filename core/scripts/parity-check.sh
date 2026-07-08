@@ -110,6 +110,48 @@ for _row in "${CHECKS[@]}"; do
   fi
 done
 
+# ── data-driven tool-swap alias parity (scripts/parity-aliases.txt) ──────────
+# The CHECKS array above covers the tools/bindings/functions rows; the modern-CLI
+# tool-swap aliases (ls→eza, cat→bat, ps→procs, …) are a bigger, churnier set, so they
+# live in a flat manifest instead of hand-coded rows — "cover every tool-swap alias"
+# means add a manifest row, not a code block. Each aligned row asserts the zsh alias is
+# DEFINED in zsh/aliases.zsh AND the pwsh name is in 00-aliases.ps1's `provides:` contract
+# (which tests/LoadContract.Tests.ps1 gates to the real definitions). This is what makes
+# it bidirectional: a rename/drop on EITHER shell fails the row.
+ALIAS_MANIFEST="$HERE/scripts/parity-aliases.txt"
+ZSH_ALIASES="$HERE/zsh/aliases.zsh"
+PWSH_ALIASES="$WIN/powershell/core/00-aliases.ps1"
+if [[ -r "$ALIAS_MANIFEST" ]]; then
+  # The pwsh `provides:` contract line as a ,-delimited set (read once; empty when the
+  # Windows repo/file is absent — the per-row pwsh check is then skipped anyway).
+  provides=""
+  if ((WIN_PRESENT)) && [[ -r "$PWSH_ALIASES" ]]; then
+    provides="$(grep -m1 '^# provides:' "$PWSH_ALIASES" | sed 's/^# provides://')"
+  fi
+  while IFS='|' read -r cap zalias palias _note; do
+    [[ "$cap" =~ ^[[:space:]]*# ]] && continue # comment row
+    [[ -z "${cap// /}" ]] && continue          # blank row
+    # zsh side (always checked): the alias must be defined in zsh/aliases.zsh. Match
+    # `alias <name>=` anywhere a word boundary allows — many are defined inline as
+    # `[[ -n $HAVE_X ]] && alias du=…`, not on their own line, so the match can't anchor
+    # to line-start; the leading space/line-start guard still rules out `myalias`.
+    if grep -qE "(^|[[:space:]])alias (--[[:space:]]+)?${zalias}=" "$ZSH_ALIASES" 2>/dev/null; then
+      pass "alias ${cap} — zsh (${zalias})"
+    else
+      fail "alias ${cap} — MISSING from zsh/aliases.zsh: alias ${zalias}"
+      DRIFT=1
+    fi
+    # pwsh side (only when Windows is present): the name must be in the `provides:` set.
+    ((WIN_PRESENT)) || continue
+    if printf '%s' "$provides" | grep -qE "(^|,)[[:space:]]*${palias}[[:space:]]*(,|\$)"; then
+      pass "alias ${cap} — pwsh (${palias})"
+    else
+      fail "alias ${cap} — MISSING from pwsh 00-aliases.ps1 provides: ${palias}"
+      DRIFT=1
+    fi
+  done <"$ALIAS_MANIFEST"
+fi
+
 echo
 if ((DRIFT)); then
   fail "cross-shell parity drift — an aligned PARITY.md row is missing from a shell"

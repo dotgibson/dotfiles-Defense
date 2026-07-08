@@ -1,0 +1,82 @@
+# .github/workflows/notify-web-call.yml
+# ──────────────────────────────────────────────────────────────────────────────
+# REUSABLE showcase-refresh dispatch (G3). Every source repo carried a byte-identical
+# 43-line notify-web.yml that pings dotfiles-web to rebuild. This is the single
+# definition; each repo collapses to a caller that owns only its `on:` trigger:
+#
+#   jobs:
+#     dispatch:
+#       uses: dotgibson/dotfiles-core/.github/workflows/notify-web-call.yml@v3
+#       secrets:
+#         WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}                 # legacy PAT (fallback)
+#         FLEET_APP_PRIVATE_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY }}   # App auth (G2)
+#
+# The owner guard, the dotfiles-web target, and the {"event_type":"refresh"} payload are
+# constant, so this takes NO inputs — only secrets. AUTH (G2, GITHUB-APP-AUTH.md): when the
+# fleet App is configured (the FLEET_APP_ID variable is set AND the caller passes the
+# private key), it mints a short-lived dotfiles-web-scoped installation token for the
+# dispatch; otherwise it falls back to the caller's WEBHOOK_SECRET PAT. Absent both → the
+# job warns and skips (forks, or before opt-in). First-party only (actions/create-github-
+# app-token + curl; no marketplace action).
+# ──────────────────────────────────────────────────────────────────────────────
+name: notify-web (reusable)
+
+on:
+  workflow_call:
+    secrets:
+      WEBHOOK_SECRET:
+        description: "Legacy fine-grained PAT with Contents:Write on dotgibson/dotfiles-web (the fallback). Absent + no App → the job warns and skips."
+        required: false
+      FLEET_APP_PRIVATE_KEY:
+        description: "Fleet GitHub App private key (G2). With the FLEET_APP_ID variable set, mints a dotfiles-web-scoped token for the dispatch instead of the PAT."
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    # Any repo under the canonical owner may dispatch; forks under other owners are
+    # excluded and lack the secrets anyway.
+    if: github.repository_owner == 'dotgibson'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # Presence flag for the App private key. Secrets can't be tested in a step `if:`, but
+      # an env DERIVED from a secret comparison can — and it never exposes the key (the value
+      # is just 'true'/'false'). This gates the mint so an un-migrated caller (one that
+      # passes no key) cleanly falls back to WEBHOOK_SECRET even when FLEET_APP_ID is set
+      # org-wide, instead of the mint step failing on an empty key.
+      HAS_APP_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY != '' }}
+    steps:
+      # Mint a dotfiles-web-scoped token IF the fleet App is configured AND the caller
+      # passed its private key. No App / no key → SKIPPED, and the dispatch below falls back
+      # to WEBHOOK_SECRET (GITHUB-APP-AUTH.md, G2). ~1h expiry.
+      - name: Mint a scoped installation token (if the App is configured)
+        id: app
+        if: vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ vars.FLEET_APP_ID }}
+          private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: dotfiles-web
+
+      - name: Notify dotfiles-web to rebuild
+        env:
+          TOKEN: ${{ steps.app.outputs.token || secrets.WEBHOOK_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TOKEN:-}" ]; then
+            echo "::warning::no dispatch token (neither the fleet App nor WEBHOOK_SECRET) — skipping showcase refresh"
+            exit 0
+          fi
+          curl -fsS -X POST \
+            --max-time 30 --retry 3 --retry-delay 5 --retry-connrefused \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/dotgibson/dotfiles-web/dispatches \
+            -d '{"event_type":"refresh"}'
+          echo "Dispatched refresh to dotfiles-web"

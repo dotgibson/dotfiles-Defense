@@ -13,7 +13,177 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.2.0] - 2026-07-08
+
+### Removed
+
+- **`token-health.yml` — the weekly PAT-expiry probe, now redundant (G2 finish line).** The
+  probe existed to catch a `FLEET_SYNC_TOKEN` / `WEBHOOK_SECRET` PAT silently expiring before it
+  broke the fan-out or the docs-refresh. With every consumer migrated to GitHub App
+  installation tokens (`GITHUB-APP-AUTH.md`) and both PATs deleted, there is nothing left to
+  probe — a minted token lives ~1 hour and cannot silently expire. Removed the workflow and its
+  references (the freshness dashboard's "Token health" section is now a "Fleet auth" note; the
+  cron-stagger and sync-fanout failure-hint comments no longer mention it).
+
+- **`dotfiles-Defense-PLAN.md` — the pre-build planning skeleton, now obsolete.**
+  The doc was a "ready-to-instantiate skeleton for a future `dotfiles-Defense`
+  repo," written before that repo existed. `dotfiles-Defense` is now a public,
+  released repo (v1.0.x) that actively vendors Core, so the plan is spent — and,
+  worse, it actively misled the `/doc-audit` routine into reporting Defense as
+  "unbuilt/absent." Deleted (git history retains it) and dropped from the
+  `audit-core.sh` META_ALLOWLIST.
+
+### Added
+
+- **`ast-grep` is now a recognized opt-in tool.** AST-aware structural code
+  search/rewrite — the syntax-tree complement to `ripgrep` (text), `sd` (regex), and
+  `gron` (JSON). `tools.zsh` sets `HAVE_ASTGREP` when the binary is present; it's its
+  own command with **no alias** (like `gron`/`sd`), so it shadows nothing and is inert
+  without the binary. `PORTING-MATRIX.md` documents install sources (Arch `extra`,
+  Alpine `community` musl build, Homebrew; else `cargo`/`mise`/`npm`/`pip`). Surfaced
+  by `/tool-scout` as the one true capability gap in the stack.
+
+- **ci: raised the modernization floor — banned retired runners + old action runtimes.**
+  `scripts/modern-baseline.yml` now bans `macos-13` (retired 2025-12-04), `windows-2019`
+  (unsupported 2025-06-30), and `ubuntu-22.04` (deprecation opens 2026-09-17) as runner
+  labels, and the `using: node16` / `using: node20` action runtimes (Node 24 is the
+  default since 2026-06-16). Pure no-regression guard — the fleet uses none of these, so
+  `check-modern.sh` stays green; it just bars re-introducing a dead runner or runtime.
+  Surfaced by `/modernize`.
+
+- **Cross-platform alias parity is now a data-driven manifest (Track A).** The aligned
+  modern-CLI tool-swap aliases (`ls`→eza, `cat`→bat, `ps`→procs, …) live in a flat
+  `scripts/parity-aliases.txt` manifest; `parity-check.sh` reads it and asserts each row
+  **bidirectionally** — the zsh alias is defined in `zsh/aliases.zsh` AND the pwsh name is
+  in `dotfiles-Windows`'s `00-aliases.ps1` `provides:` contract — so a rename or drop on
+  either shell fails the weekly `parity-check`. Naming exceptions (`ps`→procs is `pss` on
+  pwsh) are recorded in the manifest. Extends the check from a handful of hand-coded
+  needles to the full tool-swap surface; adding an aligned alias is one manifest row.
+
+- **`notify-web` dispatch mints a GitHub App token; sync-fanout mint gated on the key (G2).**
+  The reusable `notify-web-call.yml` now mints a short-lived `dotfiles-web`-scoped GitHub App
+  token for the `repository_dispatch` (replacing the `WEBHOOK_SECRET` Bearer PAT) when the
+  fleet App is configured and the caller passes `FLEET_APP_PRIVATE_KEY`, else it falls back to
+  `WEBHOOK_SECRET`. Because `FLEET_APP_ID` is one org-wide variable, the mint is gated on a
+  `HAS_APP_KEY` presence flag (an env derived from a secret comparison — secrets can't be
+  tested in `if:`) so a caller that hasn't been migrated (or a repo the key isn't scoped to)
+  falls back cleanly instead of failing on an empty key. The same defensive gate is added to
+  the Core `sync-fanout` mint. Core's own standalone `notify-web.yml` dispatcher (not a caller
+  of the reusable) mints the App token inline via the same pattern. Reusable-caller repos pass
+  the key in a follow-up (after `v3` advances).
+
+- **`sync-fanout` mints a GitHub App token for the Core fan-out (G2 canary).** Following
+  `GITHUB-APP-AUTH.md`, the Core fan-out now mints a short-lived GitHub App installation
+  token (`actions/create-github-app-token`, SHA-pinned), scoped to the App's installed repos
+  (the fan-out targets — no second copy of `scripts/os-repos.txt` to drift), instead of
+  relying on the broad, hand-rotated `FLEET_SYNC_TOKEN` PAT. It is **backward-compatible**: the mint
+  step runs only when the `FLEET_APP_ID` variable is set and otherwise falls back to the PAT,
+  so this is inert until the fleet App is registered. First consumer migrated; `htpx`
+  `sync-fanout` and the `notify-web` dispatch follow the same pattern.
+
+- **`GITHUB-APP-AUTH.md` — the runbook to retire the fleet's cross-repo PATs (G2).** Both
+  `FLEET_SYNC_TOKEN` (cross-repo push + PR in `sync-fanout`) and `WEBHOOK_SECRET` (the
+  `repository_dispatch` Bearer to `dotfiles-web`) are broad, hand-rotated PATs that expire
+  on a date nobody watches. The runbook specifies replacing them with **one GitHub App**
+  that mints **short-lived, per-repo-scoped installation tokens** at run time
+  (`actions/create-github-app-token`), a **backward-compatible** workflow pattern (mint when
+  `vars.FLEET_APP_ID` is set, else fall back to the legacy PAT — so merging is inert until
+  the App is registered), and the migrate → verify → retire order. Registering the App and
+  resolving the action's pinned SHA are owner actions; the runbook is the design + the exact
+  steps. Once it lands, the `token-health` probe becomes redundant (a minted token cannot
+  silently expire).
+
+- **`/release-readiness` + `/release-notes` maintenance routines — the judgment layer over the
+  release mechanics.** `/release-readiness` is the go/no-go gate in front of `RELEASE-RUNBOOK.md`:
+  it weighs the unreleased `CHANGELOG` work, the audit status, version coherence, and fleet drift
+  into a **READY-to-cut-vX.Y.Z / HOLD** verdict with the next command to run. `/release-notes`
+  drafts the next release's grouped notes from Conventional Commits (git-cliff, or the first-party
+  `gen-release-notes.sh` when the binary is absent) as raw material to curate into `[Unreleased]`.
+  Both are report-first (they edit nothing). `release-readiness` rides the `claude-routines` rail
+  weekly (Tue 10:00 UTC, last in the Opus stagger); `release-notes` is dispatch-only (you draft at
+  release time, not on a beat). Both `fetch-depth: 0` for the `git log <last-release>..HEAD` range.
+
+- **Real release notes for OS-repo tags — `scripts/gen-release-notes.sh` (G5).** OS-repo
+  auto-releases shipped a bare tag with GitHub's raw PR-list (`--generate-notes`); they now
+  ship a grouped Conventional-Commit changelog. `auto-tag.sh --release` drafts the notes for
+  the `latest..NEXT` range and feeds them to `gh release create --notes-file`, falling back
+  to `--generate-notes` when a range has no conventional commits. The generator is the
+  **first-party twin of Core's `cliff.toml`** — same grouping (Features / Bug Fixes / … in
+  commit-parser order) and one-bullet-per-commit shape, but pure `git` + `awk` so it needs
+  no git-cliff binary (the fleet's "no third-party CI tool we can't pin" discipline — the
+  same reason zizmor stayed deferred). Also bumps `auto-tag-call.yml`'s internal core
+  checkout from the stale `@v2` to `@v3` (it now carries both release scripts).
+
+- **A weekly fleet freshness dashboard — one hub health board.** `scripts/freshness-dashboard.sh`
+  consolidates the fleet's otherwise-scattered freshness signals — vendoring drift
+  (`fleet-drift.sh`), vendored-`core/` integrity (`core-integrity.sh`), and zsh/nvim
+  plugin-pin freshness (`update-*-plugins.sh --check`) — into a single glanceable markdown
+  board, with links to each repo's Renovate dependency dashboard and the token-health probe.
+  `.github/workflows/freshness-dashboard.yml` runs it Mondays 10:00 UTC (after the morning
+  sweeps settle) and files a deduplicated issue that updates in place. It _reports_, never
+  mutates — the sub-gates still enforce; this is the "how healthy is the fleet this week?"
+  view in one place. Run locally with `make freshness-dashboard`.
+
+- **A `/modernize` maintenance routine — the judgment half of the modernization floor.**
+  `check-modern.sh` _enforces_ the current floor (`scripts/modern-baseline.yml`); this
+  routine scouts what the _next_ floor should be. It reads the declared floor and the
+  fleet's workflows, researches the latest runner/action deprecations (EOL runner
+  labels, the `node16`→`node20`→`node24` action-runtime treadmill, pinning-discipline
+  gaps, new hardening dimensions), and files a **report-first** proposal — the exact
+  baseline edit, the dated upstream source, and whether it is enforceable today or needs
+  fix-first workflow changes. Runs headless weekly on the `claude-routines` rail (Tue
+  09:00 UTC, last in the Opus stagger) and files a deduplicated issue; edits nothing.
+
+- **Renovate adoption via a shared org preset (replaces Dependabot).** The fleet's
+  dependency-update policy now lives once in `dotgibson/.github` (`default.json`) and
+  every repo opts in with a three-line `renovate.json` that extends it — the same
+  hub-and-spoke centralization Phase 1 applied to reusable workflows, now for
+  dependency management (closes the "no Dependabot/Renovate outside core & Windows"
+  gap). The preset keeps Renovate in lock-step with the modernization floor
+  (`scripts/modern-baseline.yml`): it _maintains_ SHA-pinned actions and `@sha256:`
+  container digests rather than un-pinning them, groups third-party action bumps into
+  one weekly `ci(deps):` PR, and deliberately leaves the fleet's own `dotgibson/**`
+  reusable-workflow refs on their moving `@v3` major tag (advanced by the release
+  process, not a bot). Core retires its standalone `.github/dependabot.yml`;
+  `renovate.json` is allowlisted in `audit-core.sh` as repo-meta.
+
+- **A modernization floor for CI: `scripts/modern-baseline.yml` + `scripts/check-modern.sh`,
+  gated by `audit-core.sh` (section 8c).** The baseline declares what "modern" means — no
+  removed workflow commands (`::set-output`/`::save-state`/…), no EOL runners, every external
+  action pinned to a 40-hex SHA (the fleet's own `@vN` reusable workflows exempt), and every
+  container image pinned to an `@sha256:` digest — and the checker enforces it so a workflow
+  can't silently regress below it. This generalizes the fleet's existing SHA-pin discipline
+  into one contract and closes the last break in it (mutable container tags: `alpine:3.21` and
+  `archlinux:latest` in `ci.yml` are now digest-pinned). Run standalone with `make check-modern`.
+
+- **difftastic (`difft`): an opt-in, structure-aware diff companion to delta.**
+  `tools.zsh` now detects it (`HAVE_DIFFT`), `git/gitconfig` defines a
+  `difftool "difftastic"` plus a `git dft` alias, and `aliases.zsh` adds a
+  `HAVE_DIFFT`-guarded `gdft` shortcut. difftastic diffs by AST (tree-sitter), so
+  formatting-only churn — rewraps, moved elements, trailing commas — shows as no
+  syntactic change. It is deliberately **additive, never the default**: delta stays
+  the `git diff` syntax-highlighting pager and difft is only reached on demand via
+  `git dft`/`gdft`, so nothing changes on a box without the binary. Documented in
+  `PORTING-MATRIX.md` (packaged on Arch/Alpine-musl/Fedora/Gentoo/openSUSE/Homebrew/
+  Debian-Kali; `cargo`/`mise` where unpackaged).
+
 ### Fixed
+
+- **docs: `PORTING-MATRIX.md` clipboard section claimed the backend is "swapped
+  in `os/<distro>.zsh`".** Clipboard selection actually lives in Core's cross-OS
+  `clip`/`clip-paste` scripts — each `os/*.zsh` only aliases `pbcopy`/`pbpaste` to
+  them. Reworded the heading to "Clipboard packages to install" (the table's
+  package names were always correct); surfaced by `/doc-audit`.
+
+- **ci: `update-nvim-plugins.sh` exited non-zero when the lock was already
+  current.** In apply mode the "already current" branch ended on `((CHECK))`
+  (exit status 1 when `CHECK=0`), so the script returned 1 with nothing wrong —
+  and under the freshness bot's `set -e` that turned a no-op week into a red nvim
+  job (and, now that failure-alerting works, a false issue). It exits 0 explicitly.
+
+- **docs: `aliases.md` was missing `gdft`.** The difftastic-backed `git difftool`
+  shortcut (added alongside `HAVE_DIFFT` and `git dft`) landed in `zsh/aliases.zsh`
+  without a matching entry in the cheat sheet — added to the Diff table.
 
 - **maint: the daily runner now reconciles pinned zsh plugins by CONFIG, not
   checkout state.** `maint/dotfiles-maint.sh` decided "pinned vs unpinned" by

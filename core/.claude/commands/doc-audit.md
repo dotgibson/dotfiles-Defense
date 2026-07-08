@@ -24,9 +24,14 @@ Run these cross-checks (skip any out of the requested scope):
    `README.md` should describe the same files the manifest lists and that exist on
    disk. Flag files present but undocumented, documented but absent, or in the
    wrong layer.
-2. **`aliases.md` ↔ `zsh/aliases.zsh` + `zsh/git.zsh`.** Every alias documented
-   should exist in the source, and notable aliases in the source should be
-   documented. Flag stale, renamed, or undocumented aliases.
+2. **`aliases.md` ↔ its alias sources, in every repo that ships one.** Core's
+   `aliases.md` against `zsh/aliases.zsh` + `zsh/git.zsh`; **and each role repo's
+   `aliases.md` against its own role source** — `dotfiles-Kali/aliases.md` ↔
+   `offensive/offensive.zsh`, `dotfiles-Defense/aliases.md` ↔ `defense/defense.zsh`.
+   Every documented alias/function should exist in the source, and notable source
+   aliases/helpers (e.g. a new `redup`, `gdft`) should be documented. Flag stale,
+   renamed, or undocumented entries. (This is the fleet-wide alias-cheatsheet upkeep
+   that used to run as a separate daily routine — it lives here now.)
 3. **`PORTING-MATRIX.md` ↔ each OS repo.** For each distro, check the
    package-manager commands and package names against that repo's
    `install/packages.txt` and `os/<distro>.zsh`. Flag a package renamed upstream,

@@ -1,0 +1,80 @@
+# .github/workflows/core-freshness-call.yml
+# ──────────────────────────────────────────────────────────────────────────────
+# REUSABLE consumer-side freshness watcher (G3, and folds in the drifted MacBook copy
+# — G7). Every OS repo carried an identical watcher that checks whether its vendored
+# core/ has fallen behind upstream. This is the single definition; each repo collapses
+# to a caller that owns only its cron:
+#
+#   jobs:
+#     vendored-core:
+#       uses: dotgibson/dotfiles-core/.github/workflows/core-freshness-call.yml@v3
+#
+# It runs the CALLER's own test/check-core-freshness.sh (which lives per-repo), so this
+# checks out the caller (not Core) and takes NO inputs. The script's exit contract is
+# the interface: 0 = current/skip, 2 = behind (the nudge), 1 = hard failure. MacBook's
+# migration onto this reusable definition (replacing its pre-core.lock variant) also
+# adopts the standard `git subtree pull` remediation below, retiring the old
+# `make sync-core` drift (G7).
+# ──────────────────────────────────────────────────────────────────────────────
+name: core-freshness (reusable)
+
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+jobs:
+  vendored-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0 # core.lock is the fast path; keep full history so the subtree-split fallback still resolves
+      - name: Check vendored core/ against upstream
+        run: |
+          # Capture output + exit code and branch on it: the script exits 0 for
+          # current/skip, 2 for drift (the nudge), 1 for a hard failure (e.g. a malformed
+          # core.lock). `|| rc=$?` keeps the step's set -e from aborting before we branch.
+          rc=0
+          out="$(./test/check-core-freshness.sh 2>&1)" || rc=$?
+          printf '%s\n' "$out"
+          case "$rc" in
+            0)
+              {
+                echo "### ✅ vendored core/ freshness"
+                echo ""
+                echo '```'
+                printf '%s\n' "$out"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            2)
+              {
+                echo "### ⚠️ vendored core/ is behind upstream dotfiles-core"
+                echo ""
+                echo '```'
+                printf '%s\n' "$out"
+                echo '```'
+                echo ""
+                echo "Pull Core, then relink:"
+                echo ""
+                echo '```'
+                echo "git subtree pull --prefix=core https://github.com/dotgibson/dotfiles-core main --squash"
+                echo "./bootstrap.sh --links-only"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+              ;;
+            *)
+              {
+                echo "### ❌ core-freshness check failed (exit $rc)"
+                echo ""
+                echo '```'
+                printf '%s\n' "$out"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+              ;;
+          esac

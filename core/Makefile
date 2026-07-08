@@ -7,7 +7,7 @@
 # pre-commit call the same scripts/audit-core.sh, so `make audit` == green CI.
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-.PHONY: help setup doctor audit audit-changed test bench profile lint sync sync-dry fleet-drift core-integrity parity-check hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins release tag release-notes
+.PHONY: help setup doctor audit audit-changed test bench profile lint sync sync-dry fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern release tag release-notes
 
 help: ## Show this help
 	@echo "dotfiles-core — make targets:"
@@ -52,6 +52,9 @@ core-integrity: ## Verify every OS repo's vendored core/ is pristine (not hand-e
 parity-check: ## Verify PARITY.md's aligned rows hold across zsh + pwsh (needs sibling dotfiles-Windows)
 	@./scripts/parity-check.sh
 
+freshness-dashboard: ## Compose the weekly fleet-health board (drift + integrity + pins) as markdown
+	@./scripts/freshness-dashboard.sh
+
 hooks: ## Install the pre-commit hooks into this clone
 	@command -v pre-commit >/dev/null 2>&1 || { echo "pre-commit not found: pip install pre-commit"; exit 1; }
 	@pre-commit install
@@ -71,6 +74,9 @@ update-tool-checksums: ## Recompute the pinned CI tool SHA-256s in tool-versions
 
 check-pins: ## Report whether the zsh-plugin + nvim pins are behind upstream (the weekly freshness gate)
 	@./scripts/update-plugins.sh --check && ./scripts/update-nvim-plugins.sh --check
+
+check-modern: ## Check CI meets the modern floor (scripts/modern-baseline.yml) — also run inside `make audit`
+	@./scripts/check-modern.sh
 
 release: ## Cut a release: bump core.version + CHANGELOG, run the audit (usage: make release VERSION=X.Y.Z)
 	@./scripts/release.sh $(VERSION)

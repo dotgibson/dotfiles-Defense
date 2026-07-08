@@ -84,6 +84,13 @@ fi
 # right after this file). Only the non-git lazygit launcher lives here.
 alias lg='lazygit'
 
+# difftastic (difft): AST/structural diff — an OPT-IN companion to delta, never the
+# default pager. delta stays the daily syntax-highlighting diff; `gdft [<ref>]` reviews
+# a change by *structure*, so formatting-only churn (rewraps, moved elements, trailing
+# commas) shows as no syntactic change. Wired through git's difftool (see the
+# difftool "difftastic" block in git/gitconfig); guarded so it only exists when installed.
+[[ -n ${HAVE_DIFFT:-} ]] && alias gdft='git difftool --tool=difftastic'
+
 # ── jujutsu (jj) — OPT-IN, colocated git companion (NEVER shadows git) ─────────
 # Guarded by HAVE_JJ (tools.zsh): on a box without jj these simply don't exist, so
 # nothing breaks. jj is additive — it runs on top of the same `.git` repo and never
