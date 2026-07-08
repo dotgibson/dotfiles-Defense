@@ -71,6 +71,21 @@ jobs:
       ISSUE_TITLE: "detection-review: weekly Sigma corpus review"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # Clone Kali (read-only, shallow) as the ../dotfiles-Kali SIBLING that /detection-review
+      # expects — this is what lets its red↔blue MIRROR dimension run: comparing this corpus
+      # against Kali's PURPLE-TEAM.md + offensive/companion red entries. Best-effort: a clone
+      # failure just leaves that one dimension unrun (as it was before), never the whole review.
+      # Kali is public, so no token is needed.
+      - name: Clone dotfiles-Kali (read-only, for the red↔blue mirror dimension)
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          # --quiet drops progress noise but keeps real errors on stderr (so a skipped
+          # mirror is diagnosable); --single-branch trims the fetch to the default branch.
+          git clone --depth 1 --single-branch --quiet \
+            "https://github.com/${OWNER}/dotfiles-Kali.git" \
+            "$GITHUB_WORKSPACE/../dotfiles-Kali" \
+            || echo "::warning::could not clone dotfiles-Kali (see the git error above) — the red↔blue mirror dimension will be skipped"
       - name: Install Claude Code CLI (pinned)
         # Fail fast if the pin is empty — never silently fall back to a floating `latest`.
         run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:?not set}"
