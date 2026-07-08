@@ -151,6 +151,7 @@ Sourced from `zsh/git.zsh` (OMZ-compatible). Three interactive fuzzy helpers
 | `gd` | `git diff` |
 | `gds` | `git diff --staged` |
 | `gdw` | `git diff --word-diff` |
+| `gdft` | `git difftool --tool=difftastic` (opt-in structural diff; requires `HAVE_DIFFT`) |
 
 ### Log
 

@@ -33,6 +33,25 @@ set -uo pipefail
 
 # shellcheck source=scripts/lib/common.sh
 source "${BASH_SOURCE[0]%/*}/lib/common.sh"
+SELF_DIR="${BASH_SOURCE[0]%/*}" # to reach the sibling gen-release-notes.sh
+
+# Create the GitHub Release for a freshly-pushed tag with grouped Conventional-Commit
+# notes (first-party, mirrors cliff.toml via gen-release-notes.sh), falling back to gh's
+# auto-generated PR-list notes when the range has no conventional commits (a repo's first
+# release, or a run of non-conventional subjects). Returns gh's exit code.
+_create_release() { # $1 repo  $2 from-tag (may be empty)  $3 tag
+  local repo="$1" from="$2" tag="$3" notes rc
+  notes="$(mktemp)"
+  "$SELF_DIR/gen-release-notes.sh" "$repo" "$from" "$tag" >"$notes" 2>/dev/null || :
+  if [[ -s "$notes" ]]; then
+    (cd "$repo" && gh release create "$tag" --verify-tag --title "$tag" --notes-file "$notes")
+  else
+    (cd "$repo" && gh release create "$tag" --verify-tag --title "$tag" --generate-notes)
+  fi
+  rc=$?
+  rm -f "$notes"
+  return "$rc"
+}
 
 usage() {
   cat <<'EOF'
@@ -242,9 +261,11 @@ else
   exit 1
 fi
 
-# Optional GitHub Release for the freshly-pushed tag. Auto-generated notes (the repo has
-# no per-tag CHANGELOG section of its own — that's the Core-side release.yml's job). Runs
-# `gh` from inside $REPO so it infers the right repo from origin; GH_TOKEN comes from the
+# Optional GitHub Release for the freshly-pushed tag. Notes are grouped Conventional-Commit
+# sections drafted from the range latest..NEXT (gen-release-notes.sh, the first-party twin
+# of Core's cliff.toml) — so an OS-repo release ships a real changelog, not a bare tag (G5);
+# gh's auto-generated PR list is only the fallback when the range has no conventional commits.
+# Runs `gh` from inside $REPO so it infers the right repo from origin; GH_TOKEN comes from the
 # workflow env. Idempotent: an existing Release is a no-op. The two non-failure exits are
 # deliberate (gh absent / Release exists); but once you've OPTED INTO --release and gh is
 # present, an actual `create` failure is a real problem — exit non-zero so CI goes red
@@ -254,7 +275,7 @@ if ((RELEASE)); then
     skip "GitHub Release for $NEXT (gh not found — tag is pushed)"
   elif (cd "$REPO" && gh release view "$NEXT" >/dev/null 2>&1); then
     pass "GitHub Release $NEXT already exists — nothing to do"
-  elif (cd "$REPO" && gh release create "$NEXT" --verify-tag --title "$NEXT" --generate-notes); then
+  elif _create_release "$REPO" "$latest" "$NEXT"; then
     pass "created GitHub Release $NEXT"
   else
     fail "auto-tag.sh: 'gh release create $NEXT' failed (tag is pushed; create the Release manually)"

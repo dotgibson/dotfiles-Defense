@@ -246,8 +246,8 @@ trap 'exit 143' TERM
 META_ALLOWLIST=(
   README.md PORTING-MATRIX.md CONTRIBUTING.md CHANGELOG.md LICENSE SECURITY.md aliases.md CLAUDE.md
   ARCHITECTURE.md
-  dotfiles-Defense-PLAN.md PARITY.md RELEASE-STRATEGY.md RELEASE-RUNBOOK.md
-  core.manifest .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc
+  PARITY.md RELEASE-STRATEGY.md RELEASE-RUNBOOK.md GITHUB-APP-AUTH.md
+  core.manifest .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc renovate.json
   Makefile cliff.toml
   nvim/.luacheckrc
   CODEOWNERS pull_request_template.md
@@ -577,6 +577,21 @@ if have gitleaks; then
   fi
 else
   skip "gitleaks (not installed — https://github.com/gitleaks/gitleaks/releases)"
+fi
+
+# ── 8c. modernization floor (check-modern.sh) ────────────────────────────────
+# actionlint (8) proves a workflow is VALID; it says nothing about whether it's MODERN.
+# scripts/modern-baseline.yml declares the floor (no ::set-output, no EOL runners, every
+# external action SHA-pinned, every container image @sha256-pinned) and check-modern.sh
+# enforces it — so a workflow can't silently regress below it (this closes G8: mutable
+# container tags were the one break in the fleet's otherwise-strict pinning). Pure
+# bash+awk, always run (our own script, no `have` gate).
+hdr "modernization floor (check-modern.sh)"
+if _cm_out="$("$HERE/scripts/check-modern.sh" 2>&1)"; then
+  pass "check-modern (CI meets scripts/modern-baseline.yml)"
+else
+  printf '%s\n' "$_cm_out" >&2
+  fail "check-modern found violations (above) — run: ./scripts/check-modern.sh"
 fi
 
 # ── 9. version consistency (tool-versions.env ↔ .pre-commit-config.yaml) ──────

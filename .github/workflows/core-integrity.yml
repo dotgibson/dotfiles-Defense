@@ -81,3 +81,17 @@ jobs:
         run: |
           echo "Core integrity failure — a vendored core/ was hand-edited or its core.lock points at a phantom commit. Fix upstream in dotfiles-core, then 'make sync'." >&2
           exit 1
+
+  # Turn a red run into a deduplicated issue (G1).
+  notify-failure:
+    needs: integrity
+    if: failure()
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/notify-failure-call.yml
+    with:
+      workflow: core-integrity
+      title: "ci-failure: core-integrity sweep is red"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      details: "The weekly tamper sweep failed. A vendored `core/` may have been hand-edited or a `core.lock` points at a phantom commit — fix upstream in dotfiles-core then `make sync`, or the sweep itself may be broken."

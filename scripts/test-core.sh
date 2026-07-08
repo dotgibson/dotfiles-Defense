@@ -674,6 +674,62 @@ else
   skip "auto-tag version math + exit-code contract (git unavailable)"
 fi
 
+# ── F3. release-notes drafting (scripts/gen-release-notes.sh) ─────────────────
+# gen-release-notes.sh turns an OS repo's Conventional Commits in a range into the grouped
+# markdown body auto-tag.sh feeds `gh release create --notes-file` (G5 — a real changelog,
+# not a bare tag). Assert hermetically: the right groups appear in cliff.toml order, the
+# subject is upper-firsted with a 7-char SHA, a chore(release) commit is skipped and an
+# unconventional subject is dropped, and a range with no conventional commits prints
+# NOTHING (exit 0 → the caller falls back to gh --generate-notes). Pure bash + git.
+if have git; then
+  hdr "release-notes drafting (scripts/gen-release-notes.sh)"
+  GRN="$HERE/scripts/gen-release-notes.sh"
+  GRNR="$SANDBOX/grnrepo"
+  rm -rf "$GRNR"; mkdir -p "$GRNR"
+  git -C "$GRNR" init -q
+  git -C "$GRNR" config user.email t@example.com
+  git -C "$GRNR" config user.name tester
+  git -C "$GRNR" commit -q --allow-empty -m "chore: seed"
+  git -C "$GRNR" tag v1.0.0
+  git -C "$GRNR" commit -q --allow-empty -m "fix: correct a bug"          # Bug Fixes
+  git -C "$GRNR" commit -q --allow-empty -m "feat(x): add a thing"        # Features (later, but must sort first)
+  git -C "$GRNR" commit -q --allow-empty -m "chore(release): v1.1.0"      # must be skipped
+  git -C "$GRNR" commit -q --allow-empty -m "totally unconventional line" # must be dropped
+  git -C "$GRNR" commit -q --allow-empty -m "fixing a flaky test"         # prose, no delimiter → dropped
+  _grn_out="$("$GRN" "$GRNR" v1.0.0 HEAD 2>/dev/null)"
+
+  if grep -q '^### Features$' <<<"$_grn_out" && grep -q '^### Bug Fixes$' <<<"$_grn_out"; then
+    pass "gen-notes: groups feat + fix under cliff.toml headings"
+  else fail "gen-notes: expected Features + Bug Fixes headings"; fi
+
+  if grep -q 'Feat(x): add a thing' <<<"$_grn_out" && grep -qE '\([0-9a-f]{7}\)' <<<"$_grn_out"; then
+    pass "gen-notes: upper-firsts the subject and appends a 7-char SHA"
+  else fail "gen-notes: subject/sha format wrong"; fi
+
+  if ! grep -qi 'release' <<<"$_grn_out" && ! grep -qi 'unconventional' <<<"$_grn_out"; then
+    pass "gen-notes: skips chore(release) and drops unconventional commits"
+  else fail "gen-notes: a skipped/dropped commit leaked into the notes"; fi
+
+  # "fixing a flaky test" starts with 'fix' but has no `:` delimiter → must be filtered,
+  # not grouped under Bug Fixes (the conventional-delimiter anchor; mirrors filter_unconventional).
+  if ! grep -qi 'flaky' <<<"$_grn_out"; then
+    pass "gen-notes: prose starting with a type word (no delimiter) is dropped"
+  else fail "gen-notes: unconventional prose leaked into a group"; fi
+
+  # commit_parsers order, not commit order: Features (committed later) must lead Bug Fixes.
+  if [[ "$_grn_out" == "### Features"* ]]; then
+    pass "gen-notes: emits groups in cliff.toml order (Features first)"
+  else fail "gen-notes: group order is not the cliff.toml order"; fi
+
+  git -C "$GRNR" tag v1.1.0
+  git -C "$GRNR" commit -q --allow-empty -m "just some words"
+  if _grn_empty="$("$GRN" "$GRNR" v1.1.0 HEAD)"; [[ -z "$_grn_empty" ]]; then
+    pass "gen-notes: a no-conventional-commit range prints nothing (caller falls back)"
+  else fail "gen-notes: expected empty output for a non-conventional range"; fi
+else
+  skip "release-notes drafting (git unavailable)"
+fi
+
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
 # Track B's --only/--skip gate. blib_select VALIDATES a comma-separated selector and
 # records BLIB_ONLY/BLIB_SKIP; blib_want is the allowlist/skiplist predicate the link
