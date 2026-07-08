@@ -1,10 +1,12 @@
 # Thin caller for the reusable showcase-refresh dispatch authored in dotfiles-core
-# (.github/workflows/notify-web-call.yml). The owner guard + curl-to-dotfiles-web live
-# there (one definition for every source repo); this just names the trigger and forwards
-# the secret.
+# (.github/workflows/notify-web-call.yml). The owner guard + the dispatch live there (one
+# definition for every source repo); this just names the trigger and passes the secrets.
 #
-# Setup: add a fine-grained PAT with "Contents: Read and write" on dotgibson/dotfiles-web
-# as a repo secret named WEBHOOK_SECRET. Without it, the reusable job warns and skips.
+# Setup (G2): with the fleet GitHub App configured (the FLEET_APP_ID org variable +
+# FLEET_APP_PRIVATE_KEY secret), the reusable mints a short-lived dotfiles-web-scoped App
+# token for the dispatch; otherwise it falls back to a WEBHOOK_SECRET PAT ("Contents: Read
+# and write" on dotgibson/dotfiles-web). With neither, the reusable job warns and skips.
+# Full runbook: dotgibson/dotfiles-core -> GITHUB-APP-AUTH.md.
 name: Refresh showcase
 
 on:
@@ -19,6 +21,10 @@ jobs:
   dispatch:
     uses: dotgibson/dotfiles-core/.github/workflows/notify-web-call.yml@v3
     secrets:
-      # Least privilege: pass ONLY the token the reusable workflow needs, not `inherit`
-      # (which forwards every repo secret to the called workflow).
-      WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+      # Least privilege: pass ONLY the secrets the reusable needs, not `inherit`. The
+      # reusable mints a short-lived dotfiles-web-scoped GitHub App token when the fleet App
+      # is configured (the FLEET_APP_ID variable + this key) and falls back to WEBHOOK_SECRET
+      # otherwise — so WEBHOOK_SECRET may legitimately be absent once the App is live. Setup
+      # runbook: dotgibson/dotfiles-core -> GITHUB-APP-AUTH.md.
+      WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }} # legacy PAT (fallback)
+      FLEET_APP_PRIVATE_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY }} # App auth (G2)
