@@ -6,8 +6,11 @@ description: |
   the payload runs as a child of WmiPrvSE.exe with no service install (7045) to
   catch. A process creation whose parent is WmiPrvSE.exe spawning cmd/powershell is
   the signal - especially with impacket's "cmd.exe /Q /c ... 1> \\127.0.0.1\ADMIN$"
-  output-redirect shape. Legit WMI providers spawn children too, so pair the parent
-  with a shell target and the SMB output-redirect string.
+  output-redirect shape. Legit WMI providers spawn children too, so this pairs the
+  parent-shell shape AND the SMB output-redirect string (impacket's canonical form)
+  to keep the rule high-confidence. Redirect-less wmiexec variants (a custom
+  --exec-method or a hand-rolled client that skips the ADMIN$ tee) fall to a
+  separate, lower-confidence hunt on the WmiPrvSE-parent shape alone.
   Validate (purple): run impacket-wmiexec from dotfiles-Kali (hacktheplanet "Lateral
   movement & remote execution" fold; htpx pair wmiexec-impacket).
 references:
@@ -34,7 +37,7 @@ detection:
       - '/Q'
       - '/c'
       - '127.0.0.1\ADMIN$'
-  condition: selection or selection_redirect
+  condition: selection and selection_redirect
 falsepositives:
   - Management software that legitimately drives WMI to run scripts (baseline and
     allowlist the specific command lines).

@@ -54,6 +54,9 @@ resource.type:api_token AND action.type:create
 // defense_evasion/dcshadow_rogue_dc_4742.yml — DCShadow - rogue DC registration (GC SPN added to a non-DC)
 (EventID:4742 AND ServicePrincipalNames:*GC\/*) AND (NOT (TargetUserName:(DC1$ OR DC2$)))
 
+// discovery/sharphound_ldap_sweep_4662.yml — Directory object sweep base - 4662 access by a non-machine principal
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
 // github/github_branch_protection_tamper.yml — GitHub branch-protection tampered (unreviewed merge)
 action:(protected_branch.destroy OR protected_branch.policy_override)
 
@@ -106,7 +109,7 @@ CommandLine:*\/dest\:rdp\-tcp#*
 EventID:7045 AND (ImagePath:(*\\cmd.exe* OR *powershell* OR *%COMSPEC%* OR *\\ADMIN$\\* OR *\\Temp\\* OR *\\Users\\*))
 
 // lateral_movement/wmiexec_wmiprvse_child_4688.yml — WMI remote exec - shell spawned by WmiPrvSE
-(ParentImage:*\\WmiPrvSE.exe AND (Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe))) OR (CommandLine:*\/Q* AND CommandLine:*\/c* AND CommandLine:*127.0.0.1\\ADMIN$*)
+(ParentImage:*\\WmiPrvSE.exe AND (Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe))) AND (CommandLine:*\/Q* AND CommandLine:*\/c* AND CommandLine:*127.0.0.1\\ADMIN$*)
 
 // npm/npm_maintainer_added.yml — npm maintainer or owner added (durable publish backdoor)
 action:(package.owner_add OR team.user_add)
@@ -136,7 +139,7 @@ EventID:20 AND (Destination:(*powershell* OR *cmd.exe* OR *mshta* OR *wscript* O
 EventID:(4886 OR 4887)
 
 // privilege_escalation/potato_seimpersonate_4688.yml — Potato privesc - service identity spawning an interactive shell
-(Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe)) AND (User:(*APPPOOL* OR *NETWORK\ SERVICE* OR *LOCAL\ SERVICE*))
+(Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe)) AND ((User:(*APPPOOL* OR *NETWORK\ SERVICE* OR *LOCAL\ SERVICE*)) OR (SubjectUserName:(*APPPOOL* OR *NETWORK\ SERVICE* OR *LOCAL\ SERVICE*)))
 
 // privilege_escalation/rbcd_allowedtoact_5136.yml — RBCD abuse - msDS-AllowedToActOnBehalfOfOtherIdentity write
 (EventID:5136 AND AttributeLDAPDisplayName:msDS\-AllowedToActOnBehalfOfOtherIdentity) AND (NOT SubjectUserName:svc_delegation)

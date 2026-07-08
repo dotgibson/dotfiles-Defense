@@ -8,6 +8,9 @@ description: |
   account / NETWORK|LOCAL SERVICE) spawning cmd/powershell. Confirm the SYSTEM
   outcome with Sysmon 17/18 on the spoolss/DCOM named pipe and Sysmon 1 linking the
   service parent to a SYSTEM child.
+  Field handling: native Security-4688 carries the account in SubjectUserName while
+  Sysmon-1 carries it in User; the rule matches either so it fires on whichever
+  channel is forwarded (a rule keyed on only one silently misses the other).
   Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Kali (hacktheplanet
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate).
 references:
@@ -22,16 +25,21 @@ logsource:
   category: process_creation
   product: windows
 detection:
-  selection:
+  selection_shell:
     Image|endswith:
       - '\cmd.exe'
       - '\powershell.exe'
       - '\pwsh.exe'
-    User|contains:
-      - 'APPPOOL'
-      - 'NETWORK SERVICE'
-      - 'LOCAL SERVICE'
-  condition: selection
+  selection_svc_identity:
+    - User|contains:
+        - 'APPPOOL'
+        - 'NETWORK SERVICE'
+        - 'LOCAL SERVICE'
+    - SubjectUserName|contains:
+        - 'APPPOOL'
+        - 'NETWORK SERVICE'
+        - 'LOCAL SERVICE'
+  condition: selection_shell and selection_svc_identity
 falsepositives:
   - Service accounts that legitimately shell out (scripts, monitoring) - baseline
     per host and allowlist the known parent/child pairs.
