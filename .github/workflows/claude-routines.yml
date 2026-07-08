@@ -1,0 +1,89 @@
+name: claude-routines
+
+# Scheduled "judgment-work" bot for the blue role layer: run the /detection-review
+# maintenance routine (.claude/commands) HEADLESS on a weekly cron and file its
+# findings as a deduplicated GitHub issue — so detection-quality + ATT&CK-coverage
+# review happens on its own instead of waiting for a human. The mirror of
+# dotfiles-core's claude-routines.yml; Defense is the first non-Core repo to carry a
+# .claude routine rail (the sigma.yml CI already gates the MECHANICAL half — parse,
+# compile, drift; this covers the JUDGMENT half a linter can't).
+#
+# First-party only (same principle as dotfiles-core): the Claude Code CLI is installed
+# from npm at a PINNED version — NO third-party marketplace action to trust. Auth is the
+# CLAUDE_CODE_OAUTH_TOKEN repo secret (a Claude subscription token minted with
+# `claude setup-token`).
+#
+# INERT BY DEFAULT: with no CLAUDE_CODE_OAUTH_TOKEN secret the job no-ops with a warning
+# (so a fork — or this repo before you opt in — never gets a red X). Add the secret to enable.
+
+on:
+  schedule:
+    # Wed 08:00 UTC — deliberately off dotfiles-core's Tue 07:00–10:00 routine cluster
+    # so the two repos never draw on the Claude subscription at the same time.
+    - cron: "0 8 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claude-routines-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep in step with dotfiles-core's scripts/tool-versions.env CLAUDE_CODE_VERSION.
+  CLAUDE_CODE_VERSION: "2.1.185"
+
+jobs:
+  # Gate: is the auth token configured? Secrets can't be read in a job-level `if`, so a
+  # tiny job exposes presence as an output the real job depends on. Absent → warn and skip.
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      has_key: ${{ steps.k.outputs.has_key }}
+    steps:
+      - id: k
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+            echo "has_key=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >>"$GITHUB_OUTPUT"
+            echo "::warning::CLAUDE_CODE_OAUTH_TOKEN secret not set — /detection-review is scaffolded but inactive. Add the secret to enable it."
+          fi
+
+  # The judgment half of the detection gate: reads COVERAGE.md + DEFENSE-METHODOLOGY.md
+  # and the Sigma rules, reviews scoping / coverage holes / red↔blue pairing gaps, and
+  # files a report-first issue — edits nothing. Complements sigma.yml, which enforces the
+  # mechanical half (parse, compile, artifact drift) on every change.
+  detection-review:
+    needs: preflight
+    if: needs.preflight.outputs.has_key == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    env:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      ISSUE_TITLE: "detection-review: weekly Sigma corpus review"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install Claude Code CLI (pinned)
+        # Fail fast if the pin is empty — never silently fall back to a floating `latest`.
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:?not set}"
+      - name: Run /detection-review
+        run: |
+          claude -p "/detection-review" \
+            --model opus \
+            --permission-mode acceptEdits \
+            --allowedTools "Read,Grep,Glob,Bash,WebSearch,WebFetch" \
+            --output-format text | tee "$RUNNER_TEMP/detection-review.md"
+      - name: File the report as an issue
+        # GH_TOKEN scoped to just this step (least privilege): it's only needed for the
+        # final `gh` call, so it's not exposed to the `claude` routine run above.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/detection-review.md"
