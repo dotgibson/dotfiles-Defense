@@ -79,7 +79,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 64 rules / 66 documents, organized by ATT&CK tactic
+### `sigma/` — 65 rules / 68 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -109,6 +109,12 @@ purple-validatable out of the box.
 | `wmiexec_wmiprvse_child_4688` | proc create (WmiPrvSE child) | T1047 | Lateral movement · wmiexec-impacket |
 | `rdp_hijack_tscon_4688` | proc create (tscon /dest:) | T1563.002 | Lateral movement · rdp-hijack-tscon |
 | `service_creation_psexec_7045` | 7045 service install | T1569.002 | Lateral movement · pth-lateral-nxc |
+
+**`discovery/`**
+
+| Rule | Event / source | ATT&CK | Validate with |
+| ---- | -------------- | ------ | ------------- |
+| `sharphound_ldap_sweep_4662` | 4662 dir-access (value_count correlation) | T1087.002 / T1069.002 | AD enumeration · bloodhound-sharphound |
 
 **`persistence/`**
 

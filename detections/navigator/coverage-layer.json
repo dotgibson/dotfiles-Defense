@@ -45,6 +45,12 @@
       "comment": "1 rule(s): jenkins_script_console"
     },
     {
+      "techniqueID": "T1069.002",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): sharphound_ldap_sweep_4662"
+    },
+    {
       "techniqueID": "T1070",
       "score": 1,
       "enabled": true,
@@ -55,6 +61,12 @@
       "score": 2,
       "enabled": true,
       "comment": "2 rule(s): jenkins_job_backdoor, tfc_variable_injection"
+    },
+    {
+      "techniqueID": "T1087.002",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): sharphound_ldap_sweep_4662"
     },
     {
       "techniqueID": "T1098",
