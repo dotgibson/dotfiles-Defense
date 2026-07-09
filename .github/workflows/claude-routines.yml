@@ -93,7 +93,7 @@ jobs:
         run: |
           claude -p "/detection-review" \
             --model opus \
-            --permission-mode acceptEdits \
+            --permission-mode default \
             --allowedTools "Read,Grep,Glob,Bash,WebSearch,WebFetch" \
             --output-format text | tee "$RUNNER_TEMP/detection-review.md"
       - name: File the report as an issue
