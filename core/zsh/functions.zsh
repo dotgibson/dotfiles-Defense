@@ -207,15 +207,21 @@ _core_doctor_render() {
   # Actionable: turn the ✗'d tools into a copy-pasteable install line for THIS box's
   # package manager (U2), instead of leaving the reader to look each one up. Best-effort
   # — gated on update.zsh's _pkgup_mgr being loaded (it isn't in the unit harness, which
-  # sources ui+functions alone) and on a known manager. Package names can differ from the
-  # command name, so say so rather than promise an exact incantation.
+  # sources ui+functions alone) and on a known manager. Two honesty caveats, because a
+  # blanket `pkg install <all>` misleads: (1) package NAMES can differ from the command
+  # (rg=ripgrep); (2) not every modern-CLI tool is PACKAGED on every distro — some are
+  # binary-distributed and the right method varies per tool AND distro (a distro package,
+  # `mise use -g`, `go install`, `cargo install`, or a vendor repo — e.g. `op`). Rather
+  # than embed a rot-prone per-distro table here (that is exactly what PORTING-MATRIX.md
+  # is), point the reader at the matrix for the authoritative per-tool install path.
   if ((${#missing})) && (($+functions[_pkgup_mgr])); then
     local _mgr _pfx
     _mgr="$(_pkgup_mgr)"
     if _pfx="$(_core_install_prefix "$_mgr")"; then
       print -r -- "${c}install missing${r}"
       print -r -- "  ${d}${_pfx} ${missing[*]}${r}"
-      print -r -- "  ${d}(some package names differ per distro — e.g. rg=ripgrep, delta=git-delta)${r}"
+      print -r -- "  ${d}names differ per distro (rg=ripgrep, delta=git-delta), and some aren't packaged${r}"
+      print -r -- "  ${d}on every distro — see core/PORTING-MATRIX.md for the per-tool install path${r}"
     fi
   fi
 

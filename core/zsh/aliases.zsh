@@ -72,12 +72,31 @@ if [[ -n ${HAVE_DUF:-} ]]; then alias df='duf'; else alias df='df -h'; fi
 # ── editor + misc QoL ─────────────────────────────────────────────────────────
 alias vim='nvim'
 # diff: colourise ONLY when this box's diff actually supports `--color` (GNU does;
-# BSD/macOS diff — the dotfiles-MacBook target — does NOT, where an unconditional
-# alias would make every `diff` invocation error). Feature-probe once at load with a
-# no-op comparison; the bare classic `diff` stays the fallback. (df → duf/df -h above.)
-if diff --color=auto /dev/null /dev/null >/dev/null 2>&1; then
-  alias diff='diff --color=auto'
-fi
+# BSD/macOS diff — the dotfiles-MacBook target — and busybox diff on Alpine do NOT,
+# where an unconditional alias would make every `diff` invocation error). `--color`
+# support is a STABLE property of the box's diff binary, so probing it forks the real
+# `diff` on every shell for an answer that never changes. Cache the verdict keyed on the
+# binary's mtime (the same invalidation _cache_eval uses): re-probe only when diff is
+# newer than the cache — e.g. after a GNU/BSD toolchain change. When the cache dir isn't
+# writable the live probe still decides correctly, so correctness never depends on the
+# cache. (df → duf/df -h above.)
+() {
+  emulate -L zsh
+  local bin="${commands[diff]}" cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/diff-color"
+  [[ -z "$bin" ]] && return          # no diff at all → no alias
+  if [[ -e "$cache" && ! "$bin" -nt "$cache" ]]; then
+    [[ -s "$cache" ]] && alias diff='diff --color=auto'   # fresh cache, zero forks
+    return
+  fi
+  # (re)probe once, then persist the verdict (non-empty = supported) for next start.
+  # `>|` forces the write past options.zsh's NO_CLOBBER (loaded before aliases.zsh).
+  if diff --color=auto /dev/null /dev/null >/dev/null 2>&1; then
+    alias diff='diff --color=auto'
+    mkdir -p "${cache:h}" 2>/dev/null && print -rn -- 1 >| "$cache" 2>/dev/null
+  else
+    mkdir -p "${cache:h}" 2>/dev/null && print -rn -- '' >| "$cache" 2>/dev/null
+  fi
+}
 
 # ── git ───────────────────────────────────────────────────────────────────────
 # The git alias set is the single source of truth in git.zsh (OMZ-style, loaded
