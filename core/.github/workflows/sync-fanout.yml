@@ -111,7 +111,7 @@ jobs:
       - name: Mint a scoped installation token (if the App is configured)
         id: app
         if: steps.resolve.outputs.skip != 'true' && vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ vars.FLEET_APP_ID }}
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}

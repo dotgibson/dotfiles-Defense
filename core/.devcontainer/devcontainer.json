@@ -8,7 +8,7 @@
   "name": "dotfiles-core",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "features": {
-    "ghcr.io/devcontainers/features/node:1": {},
+    "ghcr.io/devcontainers/features/node:2": {},
     "ghcr.io/devcontainers/features/python:1": {}
   },
   "postCreateCommand": "CLAUDE_CODE_REMOTE=true bash .claude/hooks/session-start.sh; pipx install pre-commit==$(sed -n 's/^PRECOMMIT_VERSION=//p' scripts/tool-versions.env) 2>/dev/null || true",

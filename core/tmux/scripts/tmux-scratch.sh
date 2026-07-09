@@ -12,6 +12,20 @@ if ! tmux has -t "$session" 2>/dev/null; then
   session="$session_id"
 fi
 
+# Force THIS session to detach its client when the session is destroyed, overriding the
+# global `detach-on-destroy off` (tmux.conf) that makes a dying session jump to another.
+# Without this override, exiting the scratchpad shell destroys this session and the popup
+# client — instead of closing — hops to your MAIN session, attaching a second (popup-sized,
+# 80%×80%) client to it: tmux then clamps the main session to the popup's size and double-
+# draws it, so the scratchpad appears to "take over" and the real terminal is left garbled.
+# Detaching on destroy closes the popup cleanly instead. Per-session, so real sessions keep
+# the global jump-don't-exit behaviour. Applied on EVERY open, not just at creation: the
+# scratch session is persistent, so one created before this option existed would otherwise
+# keep the inherited global `off` and still hijack the main session on its next close.
+# `$session` is the session id (freshly created) or the name (already running) — a valid
+# target either way.
+tmux set-option -t "$session" detach-on-destroy on
+
 # Attach to the scratchpad session inside the popup.
 # display-popup launches this script with TERM UNSET (it does NOT inherit the calling
 # pane's TERM), so the nested `tmux attach` finds no terminfo and dies with
