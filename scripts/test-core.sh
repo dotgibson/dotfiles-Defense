@@ -1060,6 +1060,16 @@ check "core-doctor --help returns 0 (not mis-read)" \
 # carries the tools/wired/resolved keys — so a statusline/editor/CI can consume health.
 check "core-doctor --json emits parseable JSON with tools/wired/resolved" \
   'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"wired\",\"resolved\"]) <= set(d)"'
+# core-doctor "install missing" hint: the block is gated on _pkgup_mgr (from update.zsh,
+# absent in this ui+functions harness) so the default render never reaches it. Stub the
+# manager + force every tool ✗ (missing), then assert the copy-paste line renders AND the
+# caveat points at PORTING-MATRIX.md rather than promising the package manager (or a single
+# installer) can fetch everything — the regression guard for the unpackaged-tool guidance.
+check "core-doctor 'install missing' hint points to PORTING-MATRIX.md for unpackaged tools" \
+  '_pkgup_mgr() { print -r -- apt; }
+   _core_have() { return 1; }
+   out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
+     && [[ $out == *"install missing"* && $out == *"sudo apt install"* && $out == *"PORTING-MATRIX.md"* ]]'
 # _core_wired (U1): presence != wired. The probe is true ONLY when the integration's hook
 # function is actually defined in this shell, and false for an idle/unknown one — that gap
 # is exactly what the doctor's "integrations wired" line surfaces.

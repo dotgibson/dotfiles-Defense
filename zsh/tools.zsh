@@ -49,8 +49,12 @@ _cache_eval() { # _cache_eval [--salt <sig>] <name> <command...>
   local dir="${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
   local sig="${salt//[^A-Za-z0-9]/_}"
   local cache="$dir/${name}${sig:+.$sig}.zsh"
-  local bin
-  bin="$(command -v "$1" 2>/dev/null)"
+  # Resolve the binary via zsh's $commands hash (name -> absolute path) instead of
+  # $(command -v ...): the builtin lookup is fork-free, where the command-substitution
+  # forks a subshell on EVERY _cache_eval call (~8/shell across starship/zoxide/mise/
+  # atuin/carapace + os-layer gh/uv/ty). The tools cached here are all external binaries,
+  # so $commands is populated for them; an absent tool yields "" and we bail as before.
+  local bin="${commands[$1]}"
   [[ -z "$bin" ]] && return 0
   if [[ ! -s "$cache" || "$bin" -nt "$cache" ]]; then
     [[ -d "$dir" ]] || mkdir -p "$dir"

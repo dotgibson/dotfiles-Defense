@@ -87,7 +87,7 @@ jobs:
         run: |
           claude -p "/tool-scout" \
             --model opus \
-            --permission-mode acceptEdits \
+            --permission-mode default \
             --allowedTools "Task,Read,Grep,Glob,Bash,WebSearch,WebFetch" \
             --output-format text | tee "$RUNNER_TEMP/tool-scout.md"
       - name: File the report as an issue
@@ -136,7 +136,7 @@ jobs:
           claude -p "/doc-audit" \
             --add-dir "$GITHUB_WORKSPACE" \
             --model opus \
-            --permission-mode acceptEdits \
+            --permission-mode default \
             --allowedTools "Task,Read,Grep,Glob,Bash" \
             --output-format text | tee "$RUNNER_TEMP/doc-audit.md"
       - name: File the report as an issue
@@ -174,7 +174,7 @@ jobs:
         run: |
           claude -p "/freshness-triage" \
             --model opus \
-            --permission-mode acceptEdits \
+            --permission-mode default \
             --allowedTools "Task,Read,Grep,Glob,Bash,WebSearch,WebFetch" \
             --output-format text | tee "$RUNNER_TEMP/freshness-triage.md"
       - name: File the report as an issue
@@ -211,7 +211,7 @@ jobs:
         run: |
           claude -p "/modernize" \
             --model opus \
-            --permission-mode acceptEdits \
+            --permission-mode default \
             --allowedTools "Task,Read,Grep,Glob,Bash,WebSearch,WebFetch" \
             --output-format text | tee "$RUNNER_TEMP/modernize.md"
       - name: File the report as an issue
@@ -249,7 +249,7 @@ jobs:
         run: |
           claude -p "/release-readiness" \
             --model opus \
-            --permission-mode acceptEdits \
+            --permission-mode default \
             --allowedTools "Task,Read,Grep,Glob,Bash,WebSearch,WebFetch" \
             --output-format text | tee "$RUNNER_TEMP/release-readiness.md"
       - name: File the report as an issue
@@ -284,7 +284,7 @@ jobs:
         run: |
           claude -p "/release-notes" \
             --model opus \
-            --permission-mode acceptEdits \
+            --permission-mode default \
             --allowedTools "Task,Read,Grep,Glob,Bash" \
             --output-format text | tee "$RUNNER_TEMP/release-notes.md"
       - name: File the report as an issue

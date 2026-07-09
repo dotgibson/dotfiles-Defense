@@ -13,6 +13,40 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.3.0] - 2026-07-09
+
+### Changed
+
+- **`perf(zsh)`: cut per-shell subprocess forks on the interactive startup path.**
+  `_cache_eval` (`zsh/tools.zsh`) now resolves each tool's binary via zsh's fork-free
+  `$commands` hash instead of `$(command -v …)`, removing one command-substitution fork
+  per cached tool (~8/shell across starship/zoxide/mise/atuin/carapace + the os-layer
+  gh/uv/ty callers). The `diff --color` capability probe (`zsh/aliases.zsh`) is now
+  cached (keyed on the `diff` binary's mtime, invalidated on a toolchain change) instead
+  of running the real `diff` on every shell; a live probe still decides correctly when
+  the cache dir isn't writable. No behavioural change — same aliases, faster launch.
+- **`docs(zsh)`: make `core-doctor`'s "install missing" hint honest about unpackaged tools.**
+  The batch hint printed a blanket `<pkg-manager> install <all-missing>`, implying the package
+  manager can install every tool. On some distros a few modern-CLI tools aren't packaged at
+  all (they're binary-distributed, and the right method — a distro package, `mise use -g`,
+  `go install`, `cargo install`, or a vendor repo — varies per tool and distro), so the line
+  fails on those. The caveat now states that names differ per distro **and** that not every
+  tool is packaged everywhere, pointing to `PORTING-MATRIX.md` for the authoritative per-tool
+  install path instead of implying the package manager covers all of them. Output-only; the
+  package-manager line itself is unchanged.
+
+### Fixed
+
+- **`fix(tmux)`: scratchpad popup (`prefix + T`) no longer hijacks the main session on close.**
+  `tmux-scratch.sh` runs the scratchpad as a persistent `_popup_scratchpad` session the popup
+  `attach`es to. On close, exiting the shell destroys that session, and the global
+  `detach-on-destroy off` (tmux.conf) made the popup's client jump to the MAIN session instead
+  of closing — attaching a second, popup-sized (80%×80%) client, so tmux clamped the main
+  session to the popup's size and double-drew it (the scratchpad "took over" and the real
+  terminal was left garbled). The scratch session now sets `detach-on-destroy on` for itself,
+  so its client detaches (popup closes cleanly) when it's destroyed; real sessions keep the
+  global jump-don't-exit behaviour.
+
 ## [v3.2.0] - 2026-07-08
 
 ### Removed
