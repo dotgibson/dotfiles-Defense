@@ -17,7 +17,7 @@ discrete compose stacks, adding them as you need them.
 ## First run
 
 ```sh
-cp docker/detection-lab.env.example docker/.env   # gitignored; set a STRONG password
+cp docker/detection-lab.env.example docker/.env   # gitignored; then EDIT to set a STRONG password
 sudo sysctl -w vm.max_map_count=262144            # OpenSearch needs this (see below)
 siemup                                            # → http://127.0.0.1:5601  (admin / your pw)
 siemlogs                                           # follow startup; siemdown to tear down
@@ -26,6 +26,9 @@ siemlogs                                           # follow startup; siemdown to
 `docker/.env` is loaded automatically — `siemup`/`siemdown` pass `--env-file` when
 it exists. The placeholder needed no secrets; the real stack requires the admin
 password, so `siemup` will fail fast with a clear message if `docker/.env` is missing.
+The example ships an intentionally-invalid `SET_ME` sentinel password, so if you copy
+the file but forget to edit it, OpenSearch rejects the weak credential and the stack
+refuses to start — a loud failure instead of a lab running on a git-published default.
 
 ### The `vm.max_map_count` requirement
 
