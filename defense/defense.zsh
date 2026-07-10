@@ -76,11 +76,15 @@ siemup() {
   echo ":: bringing up '$DEFENSE_STACK' (detached)"; _compose -f "$f" up -d
 }
 siemdown() {
+  [[ -n ${HAVE_DOCKER:-} ]] || { echo "docker not installed"; return 1; }
   local f="$DEFENSE_DIR/docker/${DEFENSE_STACK}.compose.yml"
+  [[ -f "$f" ]] || { echo "no compose file: $f"; return 1; }
   _compose -f "$f" down "$@"
 }
 siemlogs() {
+  [[ -n ${HAVE_DOCKER:-} ]] || { echo "docker not installed"; return 1; }
   local f="$DEFENSE_DIR/docker/${DEFENSE_STACK}.compose.yml"
+  [[ -f "$f" ]] || { echo "no compose file: $f"; return 1; }
   _compose -f "$f" logs -f "$@"
 }
 
