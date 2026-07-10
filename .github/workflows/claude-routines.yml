@@ -18,10 +18,18 @@ name: claude-routines
 
 on:
   schedule:
-    # Wed 08:00 UTC — deliberately off dotfiles-core's Tue 07:00–10:00 routine cluster
-    # so the two repos never draw on the Claude subscription at the same time.
-    - cron: "0 8 * * 3"
+    # Each cron routes to exactly ONE routine via the per-job `github.event.schedule`
+    # gate below. Wed 08:00/09:00 UTC — off dotfiles-core's Tue 07:00–12:00 routine
+    # cluster, staggered an hour apart so no two Opus runs overlap.
+    - cron: "0 8 * * 3" # Wed 08:00 UTC — detection-review
+    - cron: "0 9 * * 3" # Wed 09:00 UTC — coverage-gap
   workflow_dispatch:
+    inputs:
+      routine:
+        description: "which routine to run"
+        type: choice
+        default: both
+        options: [both, detection-review, coverage-gap]
 
 permissions:
   contents: read
@@ -51,7 +59,7 @@ jobs:
             echo "has_key=true" >>"$GITHUB_OUTPUT"
           else
             echo "has_key=false" >>"$GITHUB_OUTPUT"
-            echo "::warning::CLAUDE_CODE_OAUTH_TOKEN secret not set — /detection-review is scaffolded but inactive. Add the secret to enable it."
+            echo "::warning::CLAUDE_CODE_OAUTH_TOKEN secret not set — the Claude routines are scaffolded but inactive. Add the secret to enable them."
           fi
 
   # The judgment half of the detection gate: reads COVERAGE.md + DEFENSE-METHODOLOGY.md
@@ -60,7 +68,11 @@ jobs:
   # mechanical half (parse, compile, artifact drift) on every change.
   detection-review:
     needs: preflight
-    if: needs.preflight.outputs.has_key == 'true'
+    if: >-
+      needs.preflight.outputs.has_key == 'true' &&
+      (github.event.schedule == '0 8 * * 3' ||
+       github.event.inputs.routine == 'both' ||
+       github.event.inputs.routine == 'detection-review')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -102,3 +114,50 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/detection-review.md"
+
+  # The quantitative half of the coverage story: reads the generated COVERAGE.md +
+  # coverage-layer.json + gen-coverage.sh's 14-tactic table vs DEFENSE-METHODOLOGY.md,
+  # ranks the tactics/techniques the repo INTENDS to cover but doesn't, and files a
+  # report-first issue — edits nothing. Complements /detection-review (which judges
+  # whether the rules that exist are good); this one counts and ranks the holes.
+  coverage-gap:
+    needs: preflight
+    if: >-
+      needs.preflight.outputs.has_key == 'true' &&
+      (github.event.schedule == '0 9 * * 3' ||
+       github.event.inputs.routine == 'both' ||
+       github.event.inputs.routine == 'coverage-gap')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    env:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      ISSUE_TITLE: "coverage-gap: weekly ATT&CK coverage holes"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # Clone Kali (read-only, shallow) as the ../dotfiles-Kali SIBLING so the red↔blue
+      # hole dimension can run (attacks with no detection here). Best-effort — a clone
+      # failure just skips that one dimension. Kali is public, so no token is needed.
+      - name: Clone dotfiles-Kali (read-only, for the red↔blue hole dimension)
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          git clone --depth 1 --single-branch --quiet \
+            "https://github.com/${OWNER}/dotfiles-Kali.git" \
+            "$GITHUB_WORKSPACE/../dotfiles-Kali" \
+            || echo "::warning::could not clone dotfiles-Kali (see the git error above) — the red↔blue hole dimension will be skipped"
+      - name: Install Claude Code CLI (pinned)
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:?not set}"
+      - name: Run /coverage-gap
+        run: |
+          claude -p "/coverage-gap" \
+            --model opus \
+            --permission-mode default \
+            --allowedTools "Read,Grep,Glob,Bash,WebSearch,WebFetch" \
+            --output-format text | tee "$RUNNER_TEMP/coverage-gap.md"
+      - name: File the report as an issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/coverage-gap.md"
