@@ -99,7 +99,7 @@ mkcase() {
   name="$(date +%Y%m%d)-${slug}"
   root="$CASES_DIR/$name"
   if [[ -d "$root" ]]; then
-    echo "Case already exists: $root"; export CASE="$root"; cd "$root"; return 0
+    echo "Case already exists: $root"; cd "$root" || return 1; export CASE="$root"; return 0
   fi
   mkdir -p "$root"/{evidence,network,timeline,iocs,report,notes}
   if [[ -f "$DEFENSE_DIR/defense/templates/case.md" ]]; then
@@ -110,7 +110,8 @@ mkcase() {
   fi
   [[ -f "$DEFENSE_DIR/defense/templates/hunt.md" ]] && cp "$DEFENSE_DIR/defense/templates/hunt.md" "$root/hunt.md"
   : > "$root/notes/notes.md"
-  export CASE="$root"; cd "$root"
+  cd "$root" || return 1
+  export CASE="$root"
   echo "✓ case at $root  (\$CASE set)"
   echo "  → fill in case.md (scope + authorization) BEFORE you touch evidence."
   ${EDITOR:-nvim} "$root/case.md"
