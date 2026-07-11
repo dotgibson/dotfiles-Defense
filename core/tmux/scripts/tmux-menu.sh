@@ -14,6 +14,8 @@
 # display field (--with-nth=1) but returns the whole line, which we dispatch on.
 # ──────────────────────────────────────────────────────────────────────────────
 
+set -u
+
 ENGAGEMENTS_DIR="${ENGAGEMENTS_DIR:-$HOME/engagements}"
 
 build_menu() {
@@ -42,7 +44,9 @@ preview='line={}
 kind=$(printf "%s" "$line" | cut -f2)
 payload=$(printf "%s" "$line" | cut -f3)
 case "$kind" in
-  eng)    bat --color=always --style=plain "$payload/scope/scope.txt" 2>/dev/null || ls -la "$payload" ;;
+  eng)    { bat --color=always --style=plain "$payload/scope/scope.txt" 2>/dev/null \
+              || batcat --color=always --style=plain "$payload/scope/scope.txt" 2>/dev/null; } \
+            || ls -la "$payload" ;;
   switch) tmux capture-pane -ep -t "$payload" 2>/dev/null ;;
 esac'
 

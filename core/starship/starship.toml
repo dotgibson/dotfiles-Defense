@@ -276,8 +276,13 @@ format = '[[ $symbol($context) ](fg:color_purple bg:color_srf1)]($style)'
 # command_timeout (a noisy `custom command … timed out` WARN). A custom module's
 # `os` takes ONE value (linux|macos|windows — there is no "unix"/negation), so the
 # same probe is declared once per Unix OS; Windows matches neither and never runs it.
-# (On a Unix box lacking ifconfig the probe just fast-fails and the segment hides —
-# no timeout, unlike Windows.)
+# macOS uses ifconfig (native there); Linux uses the PORTABLE `ip link show` form —
+# supported by BOTH iproute2 AND BusyBox's `ip` applet (Alpine's default userland), so it
+# works on every Linux target including the BusyBox outlier. It parses the interface name +
+# the UP flag (no `-o`/`show up`, which BusyBox `ip` lacks). net-tools/ifconfig is NOT
+# installed by default on modern distros, so an ifconfig probe would silently never fire
+# there. A box lacking the probe binary just fast-fails and the segment hides — no timeout,
+# unlike Windows.
 [custom.vpn_macos]
 description = "active tunnel interface (macOS)"
 os = "macos"
@@ -289,8 +294,8 @@ format = '[ $symbol $output ]($style)'
 [custom.vpn_linux]
 description = "active tunnel interface (Linux)"
 os = "linux"
-command = "ifconfig | awk '/^(utun|wg|tun)/{print $1; exit}' | tr -d ':'"
-when = "ifconfig | grep -qE '^(utun|wg|tun)'"
+command = "ip link show 2>/dev/null | awk -F'[ :]+' '$2 ~ /^(wg|tun|utun|proton|tailscale|nordlynx)/ && $3 ~ /(<|,)UP(,|>)/ {print $2; exit}'"
+when = "ip link show 2>/dev/null | awk -F'[ :]+' '$2 ~ /^(wg|tun|utun|proton|tailscale|nordlynx)/ && $3 ~ /(<|,)UP(,|>)/ {found=1} END{exit !found}'"
 symbol = "󰦝 "
 style = "fg:color_purple bg:color_srf1"
 format = '[ $symbol $output ]($style)'

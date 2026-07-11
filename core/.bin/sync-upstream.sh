@@ -13,10 +13,12 @@ set -euo pipefail
 # nvim/ would split a history with no common ancestor to main and be rejected.
 
 # --- Configuration ------------------------------------------------------------
-# The upstream source of truth that core/ is vendored from.
-CORE_REPO_URL="https://github.com/dotgibson/dotfiles-core"
-# The target branch in the upstream repository.
-TARGET_BRANCH="main"
+# The upstream source of truth that core/ is vendored from. Overridable via env so a
+# fork or a mirror (or a renamed org) can `gsync` without editing this vendored file.
+CORE_REPO_URL="${CORE_REPO_URL:-https://github.com/dotgibson/dotfiles-core}"
+# The target branch in the upstream repository (env-overridable for a fork on a
+# different default branch).
+TARGET_BRANCH="${TARGET_BRANCH:-main}"
 # The vendored Core subtree, relative to the OS repo root.
 SUBTREE_PREFIX="core"
 

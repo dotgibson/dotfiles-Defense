@@ -69,6 +69,21 @@ manifest row, not a code change.
 | Fuzzy git stage/restore (`gaf`/`grf`/`grsf`) | yes | yes | `aligned` |
 | `cheat` (cht.sh / navi) | `cheat` | `cheat` / `navi` | `aligned` |
 
+## Fleet front door (`core`)
+
+The umbrella `core` verb + its standalone twins, so a cross-platform operator
+reaches for the same command on both shells. On pwsh these are thin dispatchers
+over the host's native verbs (`dotfiles-doctor` / `dothelp` / `up`), which stay
+canonical. Enforced by `scripts/parity-check.sh` (the `core *` rows).
+
+| Capability | zsh | pwsh | Status |
+| --- | --- | --- | --- |
+| Front door | `core` (`help`/`doctor`/`version`/`update`) | `core` (same verbs) | `aligned` |
+| Health | `core doctor` / `core-doctor` | `core doctor` / `core-doctor` (→ `dotfiles-doctor`) | `aligned` |
+| Command index | `core help` / `core-help` | `core help` / `core-help` (→ `dothelp`) | `aligned` (name) |
+| Version | `core version` / `core-version` | `core version` / `core-version` | `aligned` |
+| Update | `core update` / `up` | `core update` / `up` | `aligned` |
+
 ## Resolved decisions
 
 The four formerly-open keybinding decisions were settled together and implemented on

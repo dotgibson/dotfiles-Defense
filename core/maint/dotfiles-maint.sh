@@ -16,9 +16,16 @@
 #   MAINT_ENABLED=1          # 0 = no-op (e.g. drop a guard on a Kali engagement box)
 # ──────────────────────────────────────────────────────────────────────────────
 
-# A scheduler hands us a minimal environment — build a sane PATH and find brew/mise/nvim.
-export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+# Fail on unset vars and broken pipes. `-e` is deliberately omitted: an unattended
+# runner must let one failed step continue to the next (step() handles per-step rc),
+# but nounset catches typo'd env knobs and pipefail surfaces mid-pipe failures.
+set -uo pipefail
+
+# A scheduler hands us a minimal environment: validate HOME first, then build a sane
+# PATH — append any inherited PATH only when it's set, so a stripped cron/systemd env
+# (which may omit PATH entirely) doesn't trip nounset before we've built one.
 export HOME="${HOME:?}"
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
 : "${XDG_CACHE_HOME:=$HOME/.cache}"
 : "${XDG_STATE_HOME:=$HOME/.local/state}"
 : "${ZPLUGINDIR:=${ZDOTDIR:-$HOME/.config/zsh}/plugins}"
