@@ -50,19 +50,28 @@ typeset -g _CORE_COMPDIR="${${(%):-%x}:A:h}/completions"
 [[ -d "$_CORE_COMPDIR" ]] && fpath=("$_CORE_COMPDIR" $fpath)
 
 # ── Completion system (cached: rebuild .zcompdump at most once per 24h) ────────
+# The body is wrapped in an anonymous function so `local zcd` is genuinely
+# function-scoped. This file is SOURCED at the caller's top level, where zsh (which
+# has ONLY function scope) turns a bare `local` into an ordinary GLOBAL — leaking
+# `zcd` into every interactive shell, fleet-wide. The anon-function wrap mirrors the
+# cache pattern in aliases.zsh and honours loader.zsh's "no top-level local" rule.
+# compinit is safe to run in here: it declares its state with `typeset -g`, so the
+# completion system persists into the shell after the function returns.
 typeset -g _CORE_COMPINIT_DONE
 if [[ -z $_CORE_COMPINIT_DONE ]]; then
   _CORE_COMPINIT_DONE=1
   autoload -Uz compinit
-  local zcd="${ZDOTDIR:-$HOME/.config/zsh}/.zcompdump"
-  # (#qN.mh+24): exists, is a file, modified >24h ago → do the full security check
-  if [[ -n ${zcd}(#qN.mh+24) ]]; then
-    compinit -d "$zcd"
-  else
-    compinit -C -d "$zcd" # fresh enough → skip the check (fast path)
-  fi
-  # compile the dump for a faster next start
-  [[ -s "$zcd" && (! -s "${zcd}.zwc" || "$zcd" -nt "${zcd}.zwc") ]] && zcompile "$zcd"
+  () {
+    local zcd="${ZDOTDIR:-$HOME/.config/zsh}/.zcompdump"
+    # (#qN.mh+24): exists, is a file, modified >24h ago → do the full security check
+    if [[ -n ${zcd}(#qN.mh+24) ]]; then
+      compinit -d "$zcd"
+    else
+      compinit -C -d "$zcd" # fresh enough → skip the check (fast path)
+    fi
+    # compile the dump for a faster next start
+    [[ -s "$zcd" && (! -s "${zcd}.zwc" || "$zcd" -nt "${zcd}.zwc") ]] && zcompile "$zcd"
+  }
 fi
 
 # ── Completion styling (zstyle) — portable, theme-neutral ─────────────────────
@@ -76,4 +85,8 @@ zstyle ':completion:*:warnings' format '%F{red}no matches%f'
 zstyle ':completion:*' use-cache on
 zstyle ':completion:*' cache-path "${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompcache"
 zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#)*=0=01;31'
-zstyle ':completion:*' rehash true
+# NB: intentionally NO `zstyle ':completion:*' rehash true`. That re-stats EVERY $PATH
+# entry on EVERY completion attempt — perceptible latency on an NFS home, linuxbrew, or
+# a large mise-shims $PATH, and it fans out to all 8 OS repos. A newly-installed binary
+# surfaces after `hash -r` or a new shell; the maint runner already refreshes the
+# command hash after installs, so the per-Tab stat storm buys nothing here.

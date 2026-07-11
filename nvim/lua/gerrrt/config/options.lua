@@ -66,8 +66,10 @@ vim.opt.diffopt:append("vertical") -- Vertical diff splits
 vim.opt.diffopt:append("algorithm:histogram") -- Better diff algorithm (matches gitconfig's diff.algorithm)
 vim.opt.diffopt:append("linematch:60") -- Better diff highlighting (smart line matching)
 
--- Set undo directory and ensure it exists
-local undodir = "~/.local/share/nvim/undodir" -- Undo directory path
+-- Set undo directory and ensure it exists. Derive from Neovim's own state dir
+-- (vim.fn.stdpath("state")) rather than a hardcoded ~/.local/share path, so it lands
+-- in the right tree under a relocated XDG_STATE_HOME and on non-Linux (macOS) nvim.
+local undodir = vim.fn.stdpath("state") .. "/undodir" -- Undo directory path
 vim.opt.undodir = vim.fn.expand(undodir) -- Expand to full path
 local undodir_path = vim.fn.expand(undodir)
 if vim.fn.isdirectory(undodir_path) == 0 then
@@ -89,7 +91,9 @@ vim.keymap.set({ "n", "i", "v" }, "<LeftRelease>", "<Nop>", { silent = true })
 -- the "+ register (opt-in). We deliberately do NOT force unnamedplus here, so
 -- normal yanks/deletes stay in Neovim's registers (keeps <leader>p sane).
 vim.opt.modifiable = true -- Allow editing buffers
-vim.opt.encoding = "UTF-8" -- Use UTF-8 encoding
+-- NOTE: 'encoding' is intentionally NOT set — Neovim's internal encoding is always
+-- UTF-8, and setting it post-startup is a no-op at best (a footgun at worst). Manage
+-- file encodings via 'fileencoding'/'fileencodings' defaults instead.
 vim.opt.wildmenu = true -- Enable command-line completion menu
 vim.opt.wildmode = "longest:full,full" -- Completion mode for command-line
 vim.opt.wildignorecase = true -- Case-insensitive tab completion in commands

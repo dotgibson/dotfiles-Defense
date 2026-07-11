@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -u
 
 # Define session name for scratchpad
 session="_popup_scratchpad"

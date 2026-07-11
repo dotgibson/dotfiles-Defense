@@ -1689,6 +1689,43 @@ if [[ -z "$out" ]]; then
   pass "tmux-netinfo emits nothing when no tunnel/LAN (segment vanishes)"
 else fail "tmux-netinfo should be silent with no net, printed: $out"; fi
 
+# ── serve macOS IP discovery (_serve_advertise, hermetic) ─────────────────────
+# serve()'s tunnel/LAN URL discovery is split into _serve_advertise so this
+# platform-specific path is testable without the blocking http.server. macOS ships
+# no ip(8), so we isolate PATH to a stub bin WITHOUT `ip` (forcing the route+ipconfig
+# branch), stub ipconfig/route to canned answers, and assert the advertised URLs —
+# mirroring the tmux-netinfo hermetic tests above. ui.zsh/functions.zsh are pure
+# definitions (no source-time forks), so they source cleanly under the isolated PATH.
+hdr "serve macOS IP discovery (_serve_advertise, hermetic)"
+SRVBIN="$SANDBOX/srvbin"
+_serve_net() { # _serve_net <ipconfig-sh-body> <route-sh-body>
+  rm -rf "$SRVBIN"
+  mkdir -p "$SRVBIN"
+  printf '#!/bin/sh\n%s\n' "$1" >"$SRVBIN/ipconfig"
+  printf '#!/bin/sh\n%s\n' "$2" >"$SRVBIN/route"
+  chmod +x "$SRVBIN/ipconfig" "$SRVBIN/route"
+  local t
+  for t in awk cut head; do
+    [[ -e "$SRVBIN/$t" ]] || ln -s "$(command -v "$t")" "$SRVBIN/$t" 2>/dev/null
+  done
+}
+# 1) a tunnel iface up → the tunnel URL is advertised first, naming the iface.
+_serve_net 'case "$2" in tun0) echo 10.8.0.2 ;; esac' ':'
+ucheck "serve: macOS discovery advertises the tunnel addr first (no ip(8))" \
+  "source '$UI' || exit 1; source '$FN' || exit 1; out=\$(_serve_advertise 8000); [[ \$out == *'(tun0)'* && \$out == *'10.8.0.2'* ]]" \
+  PATH="$SRVBIN"
+# 2) no tunnel, default route present → the LAN addr from route(8)+ipconfig.
+_serve_net 'case "$2" in en0) echo 192.168.1.50 ;; esac' 'printf "   interface: en0\n"'
+ucheck "serve: macOS discovery falls back to the default-route LAN addr" \
+  "source '$UI' || exit 1; source '$FN' || exit 1; out=\$(_serve_advertise 8000); [[ \$out == *'(lan)'* && \$out == *'192.168.1.50'* ]]" \
+  PATH="$SRVBIN"
+# 3) tunnel up but NO default route → must NOT reprint the tunnel addr as (lan)
+#    (guards the stale-$ip reuse the Copilot review flagged).
+_serve_net 'case "$2" in tun0) echo 10.8.0.2 ;; esac' ':'
+ucheck "serve: a failed default route does not reprint the tunnel addr as (lan)" \
+  "source '$UI' || exit 1; source '$FN' || exit 1; out=\$(_serve_advertise 8000); [[ \$out == *'(tun0)'* && \$out != *'(lan)'* ]]" \
+  PATH="$SRVBIN"
+
 # ── summary ───────────────────────────────────────────────────────────────────
 summary
 ((FAIL == 0)) || {
