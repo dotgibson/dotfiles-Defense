@@ -44,7 +44,7 @@ link() {
   if [[ -L "$dst" ]]; then
     rm -f "$dst"
   elif [[ -e "$dst" ]]; then mv "$dst" "$dst.pre-dotfiles.$(date +%s)"; fi
-  ln -s "$src" "$dst"
+  ln -s "$src" "$dst" || { echo "link failed: $dst" >&2; return 1; }
 }
 
 # ── Host-tool / docker probe (report only — never installs) ──────────────────
@@ -70,6 +70,7 @@ check_tools() {
 }
 
 wire_links() {
+  local f
   say "symlinking Core"
   for f in "$DOTFILES"/core/zsh/*.zsh; do link "$f" "$CONFIG/zsh/$(basename "$f")"; done
   [[ -f "$DOTFILES/core/tmux/tmux.conf" ]] && link "$DOTFILES/core/tmux/tmux.conf" "$CONFIG/tmux/tmux.conf"

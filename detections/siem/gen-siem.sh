@@ -82,8 +82,11 @@ gen_dir() {
   local dir="$1"
   shift
   [[ -d "$SIGMA/$dir" ]] || return 0
-  local files=()
-  mapfile -t files < <(find "$SIGMA/$dir" -maxdepth 1 -name '*.yml' | LC_ALL=C sort)
+  # Portable read — mapfile is bash 4+, absent on macOS's stock bash 3.2.
+  local f files=()
+  while IFS= read -r f; do
+    files+=("$f")
+  done < <(find "$SIGMA/$dir" -maxdepth 1 -name '*.yml' | LC_ALL=C sort)
   [[ ${#files[@]} -gt 0 ]] || return 0
   # No stderr suppression: sigma's "Parsing Sigma rules" notice goes to stderr (it does
   # not pollute the generated stdout), and a real conversion error must stay visible.
