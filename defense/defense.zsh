@@ -70,21 +70,21 @@ _compose() {  # prefer Compose v2 (`docker compose`); warn on the EOL v1 fallbac
   fi
 }
 siemup() {
-  [[ -n ${HAVE_DOCKER:-} ]] || { echo "docker not installed"; return 1; }
+  [[ -n ${HAVE_DOCKER:-} ]] || { echo "docker not installed" >&2; return 1; }
   local f="$DEFENSE_DIR/docker/${DEFENSE_STACK}.compose.yml"
-  [[ -f "$f" ]] || { echo "no compose file: $f"; return 1; }
+  [[ -f "$f" ]] || { echo "no compose file: $f" >&2; return 1; }
   echo ":: bringing up '$DEFENSE_STACK' (detached)"; _compose -f "$f" up -d
 }
 siemdown() {
-  [[ -n ${HAVE_DOCKER:-} ]] || { echo "docker not installed"; return 1; }
+  [[ -n ${HAVE_DOCKER:-} ]] || { echo "docker not installed" >&2; return 1; }
   local f="$DEFENSE_DIR/docker/${DEFENSE_STACK}.compose.yml"
-  [[ -f "$f" ]] || { echo "no compose file: $f"; return 1; }
+  [[ -f "$f" ]] || { echo "no compose file: $f" >&2; return 1; }
   _compose -f "$f" down "$@"
 }
 siemlogs() {
-  [[ -n ${HAVE_DOCKER:-} ]] || { echo "docker not installed"; return 1; }
+  [[ -n ${HAVE_DOCKER:-} ]] || { echo "docker not installed" >&2; return 1; }
   local f="$DEFENSE_DIR/docker/${DEFENSE_STACK}.compose.yml"
-  [[ -f "$f" ]] || { echo "no compose file: $f"; return 1; }
+  [[ -f "$f" ]] || { echo "no compose file: $f" >&2; return 1; }
   _compose -f "$f" logs -f "$@"
 }
 
@@ -93,7 +93,7 @@ siemlogs() {
 # it. Sets $CASE for the session so other helpers target it. case.md (the brief)
 # is created FIRST and opened so scope/authorization is written down before work.
 mkcase() {
-  [[ -z "$1" ]] && { echo "Usage: mkcase <incident-or-codename>"; return 1; }
+  [[ -z "$1" ]] && { echo "Usage: mkcase <incident-or-codename>" >&2; return 1; }
   local slug name root
   slug=$(echo "$1" | tr '[:upper:] ' '[:lower:]_' | tr -cd '[:alnum:]_-')
   name="$(date +%Y%m%d)-${slug}"
@@ -119,13 +119,14 @@ mkcase() {
 # gocase — fzf-jump between existing cases (mirrors Kali's `eng` widget). NOT named
 # `case`: that's a zsh reserved word, so a `case` function can be defined but never called.
 gocase() {
-  [[ -d "$CASES_DIR" ]] || { echo "no $CASES_DIR yet — run mkcase"; return 1; }
+  [[ -d "$CASES_DIR" ]] || { echo "no $CASES_DIR yet — run mkcase" >&2; return 1; }
   local sel
   sel=$(find "$CASES_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r \
         | fzf --prompt="Case ❯ " \
               --preview="cat {}/case.md 2>/dev/null || ls -la {}")
   [[ -z "$sel" ]] && return 0
-  export CASE="$sel"; cd "$sel"
+  cd "$sel" || return 1
+  export CASE="$sel"
 }
 
 # note — timestamped line into the active case's running notes (audit trail)
