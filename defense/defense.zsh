@@ -103,10 +103,10 @@ mkcase() {
   fi
   mkdir -p "$root"/{evidence,network,timeline,iocs,report,notes}
   if [[ -f "$DEFENSE_DIR/defense/templates/case.md" ]]; then
-    sed "s/__CASE__/$name/; s/__CREATED__/$(date -Iseconds)/" \
+    sed "s/__CASE__/$name/; s/__CREATED__/$(date +%Y-%m-%dT%H:%M:%S%z)/" \
       "$DEFENSE_DIR/defense/templates/case.md" > "$root/case.md"
   else
-    printf 'CASE: %s\nCREATED: %s\n' "$name" "$(date -Iseconds)" > "$root/case.md"
+    printf 'CASE: %s\nCREATED: %s\n' "$name" "$(date +%Y-%m-%dT%H:%M:%S%z)" > "$root/case.md"
   fi
   [[ -f "$DEFENSE_DIR/defense/templates/hunt.md" ]] && cp "$DEFENSE_DIR/defense/templates/hunt.md" "$root/hunt.md"
   : > "$root/notes/notes.md"
@@ -131,7 +131,7 @@ gocase() {
 # note — timestamped line into the active case's running notes (audit trail)
 note() {
   local dir="${CASE:-$PWD}/notes"; mkdir -p "$dir"
-  printf '%s  %s\n' "$(date -Iseconds)" "$*" >> "$dir/notes.md"
+  printf '%s  %s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" "$*" >> "$dir/notes.md"
 }
 
 unfunction _have 2>/dev/null
