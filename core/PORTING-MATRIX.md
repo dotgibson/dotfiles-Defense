@@ -51,8 +51,18 @@ _Repo status_ at the bottom).
 | yazi             | `yazi`                 | cargo³       | cargo³       | `app-misc/yazi`            | cargo³          |
 | tree-sitter-cli⁵ | `tree-sitter-cli`      | cargo³       | cargo³       | cargo³                     | `mise`/`cargo`³ |
 | jq               | `jq`                   | `jq`         | `jq`         | `app-misc/jq`              | `jq`            |
-| yq⁶              | `go-yq`                | `yq`         | `yq`         | `app-admin/go-yq`          | `yq`            |
-| duf              | `duf`                  | `duf`        | `duf`        | `sys-fs/duf`               | `duf`           |
+| yq⁶              | `go-yq`                | `yq`         | `yq-go`      | `app-misc/yq-go`           | `yq-go`         |
+| duf              | `duf`                  | `duf`        | `duf`¹⁴      | `sys-fs/duf`               | `duf`           |
+| dust             | `dust`                 | `dust`       | `dust`       | `sys-block/dust`           | `du-dust`⁴      |
+| procs            | `procs`                | `procs`      | `procs`      | `sys-process/procs`        | `procs`         |
+| sd               | `sd`                   | `sd`         | `sd`         | `sys-apps/sd`¹²            | `sd`            |
+| gron             | `gron`                 | `gron`       | `gron`       | go³                        | `gron`          |
+| glow             | `glow`                 | `glow`       | `glow`¹⁴     | `app-misc/glow`¹²          | `glow`¹⁵        |
+| gum              | `gum`                  | `gum`        | `gum`        | `app-misc/gum`¹²           | `gum`¹⁵         |
+| xh               | `xh`                   | `xh`         | `xh`         | `net-misc/xh`¹²            | `xh`            |
+| doggo            | AUR³                   | go³          | `doggo`      | `net-dns/doggo`            | go³             |
+| carapace         | AUR³                   | go³          | `carapace`   | `app-shells/carapace`¹²    | go³             |
+| op (1Password)¹³ | AUR                    | vendor rpm   | vendor apk   | GURU¹²                     | vendor apt      |
 | hyperfine        | `hyperfine`            | `hyperfine`  | `hyperfine`  | `app-benchmarks/hyperfine` | `hyperfine`     |
 | shellcheck       | `shellcheck`           | `ShellCheck` | `shellcheck` | `dev-util/shellcheck`      | `shellcheck`    |
 | shfmt⁷           | `shfmt`                | `shfmt`      | `shfmt`      | `dev-go/shfmt`             | `shfmt`⁷        |
@@ -64,11 +74,14 @@ _Repo status_ at the bottom).
 
 ¹ openSUSE: may be in `devel` repos; if absent, `cargo install tealdeer`.
 ² Alpine default shell is `ash`; you must `apk add zsh` explicitly.
-³ Not packaged or stale → use the upstream installer / `cargo install` (same
-pattern bootstrap.sh already uses on Fedora). Add `cargo`/`rust` to packages.
+³ Not packaged or stale → bootstrap.sh installs it best-effort (upstream
+installer / `cargo install` / `go install` / AUR), the same pattern bootstrap
+already uses on Fedora. Add `cargo`/`rust` (or a `go` toolchain) to packages.
+`go install` targets land in `~/.local/bin` via `GOBIN` so they're on PATH.
 ⁴ Debian/Kali ship these under different binary names — `bat` runs as `batcat`,
-the `fd-find` package installs `fdfind`. Core's `tools.zsh` already resolves
-both, so aliases and config work unchanged.
+the `fd-find` package installs `fdfind`, and the `du-dust` package installs the
+`dust` command. Core's `tools.zsh` already resolves them, so aliases and config
+work unchanged.
 ⁵ nvim-treesitter (pinned to `main`) needs tree-sitter-cli ≥ 0.26.1. **Mac:**
 `tree-sitter-cli` via brew — **not** `tree-sitter`, which is now lib-only.
 **Fedora:** `tree-sitter-cli` via dnf (verify ≥ 0.26.1, else mise/cargo).
@@ -114,6 +127,21 @@ so it shadows nothing; prefer the `ast-grep` binary name over `sg` (which can co
 `setgroups`). Core sets `HAVE_ASTGREP` when present. Packaged on Arch (`extra`) and Alpine
 (`community` — a musl build, so the outlier is covered) and Homebrew; elsewhere via
 `cargo install ast-grep` / `mise` / `npm` / `pip`. Inert without the binary — nothing depends on it.
+¹² Gentoo **GURU overlay** (`sd`, `glow`, `gum`, `xh`, `carapace`, `1password-cli`): not in
+the main `::gentoo` tree. Enable once with `eselect repository enable guru && emaint sync -r
+guru`, then `emerge` the atom. bootstrap.sh does this best-effort, per-atom (one masked atom
+doesn't block the rest). Verify `app-misc/gum`'s exact category on a synced tree.
+¹³ op = **1Password CLI**. bootstrap.sh installs it from 1Password's official **signed** repo,
+which differs per family: dnf/rpm repo (Fedora/openSUSE), apt repo (Debian/Kali), apk repo
+(Alpine — a native musl build, so it's fine on the musl outlier), the AUR `1password-cli`
+(Arch), and the GURU `app-misc/1password-cli` (Gentoo). A vendor repo, **not** the OS repo;
+the apt/rpm setup is rollback-safe (a failed install removes the added repo entry).
+¹⁴ Alpine `duf`/`glow`: in `community` on current stable (3.24) — a plain `apk add`. bootstrap.sh
+keeps a guarded `go install` fallback (static, musl-safe) for older snapshots where they were
+still in `testing`, so it works either way.
+¹⁵ Kali `glow`/`gum`: recent **Debian sid** packages (Kali rolling tracks testing/sid). If they
+haven't migrated to your snapshot, bootstrap falls back to `go install` / the Charm apt repo
+(`repo.charm.sh/apt`).
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

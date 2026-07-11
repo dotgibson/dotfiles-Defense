@@ -78,6 +78,15 @@ On-demand routines that automate the judgment-heavy chores `audit-core.sh` can't
   version coherence, fleet drift → a READY-to-cut-vX.Y.Z / HOLD verdict.
 - `/release-notes` — draft the next release's notes from Conventional Commits (git-cliff, or
   the first-party `gen-release-notes.sh`) for curation into `CHANGELOG.md`.
+- `/shell-review` — read the week's changed `zsh`/`bash` for runtime footguns lint can't catch
+  (tmux/terminal-state, docs-vs-reality overclaims, quoting, `set -e`/subshell/`exec` traps,
+  idempotency, startup-cost regressions).
+- `/drift-triage` — interpret `fleet-drift`'s red rows into ranked, per-repo remediation (how
+  many releases behind, what's missing, the exact `make sync` / `nvim-sync.ps1` to run).
+- `/os-package-availability` — audit an OS repo's package list for renamed/dropped/moved
+  packages vs upstream + `PORTING-MATRIX.md`. Shipped as the reusable
+  `.github/workflows/claude-routines-call.yml`, which each OS repo consumes as a 3–5 line
+  `@v3` caller (the `lint-call.yml` idiom) instead of a per-repo copy.
 
 Each routine **reports first** and only proposes changes; nothing is vendored out
 without a green `make audit`.

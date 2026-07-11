@@ -1,0 +1,119 @@
+name: claude-routines (reusable)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# REUSABLE OS-repo judgment routine. The six OS repos (Fedora/Arch/openSUSE/Alpine/
+# Gentoo/MacBook) have no judgment layer of their own; rather than 6× copy a full
+# claude-routines.yml, each collapses to a ~5-line caller:
+#
+#   jobs:
+#     claude-routines:
+#       uses: dotgibson/dotfiles-core/.github/workflows/claude-routines-call.yml@v3
+#       permissions: { contents: read, issues: write }
+#       secrets: inherit
+#       with: { distro: fedora }
+#
+# INVERTED CHECKOUT (same design as lint-call.yml): dotfiles-core@v3 is checked out
+# at ROOT — it provides the routine command (.claude/commands/), PORTING-MATRIX.md,
+# scripts/tool-versions.env (the pinned CLI), and file-routine-issue.sh: the SINGLE
+# source, with no dependency on the caller's vendored core/. The CALLER OS repo is
+# checked out into caller/ (its install/packages.txt / Brewfile is what the routine
+# reads, via --add-dir). The issue files into the CALLER repo (its github.token /
+# github.repository), so per-distro findings land in the distro repo.
+#
+# INERT BY DEFAULT: with no CLAUDE_CODE_OAUTH_TOKEN secret the routine no-ops with a
+# warning (via the preflight gate) — a repo that hasn't opted in never gets a red X.
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_call:
+    inputs:
+      distro:
+        description: "which OS repo is calling (fedora|arch|opensuse|alpine|gentoo|macbook)"
+        required: true
+        type: string
+      routine:
+        description: "which routine to run"
+        required: false
+        type: string
+        default: os-package-availability
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Gate: is the auth token configured? Secrets can't be read in a job-level `if`, so a
+  # tiny job exposes presence as an output the real job depends on. Absent → warn and skip.
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      has_key: ${{ steps.k.outputs.has_key }}
+    steps:
+      - id: k
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+            echo "has_key=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >>"$GITHUB_OUTPUT"
+            echo "::warning::CLAUDE_CODE_OAUTH_TOKEN secret not set — the OS-repo Claude routine is scaffolded but inactive. Add the secret to enable it."
+          fi
+
+  # Audit the caller's package list against upstream availability + PORTING-MATRIX.md.
+  os-package-availability:
+    needs: preflight
+    if: >-
+      needs.preflight.outputs.has_key == 'true' &&
+      inputs.routine == 'os-package-availability'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    env:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      ISSUE_TITLE: "os-package-availability: ${{ inputs.distro }} package-list drift"
+    steps:
+      # 1) Core@v3 at ROOT — the routine command + PORTING-MATRIX.md + pinned CLI +
+      #    file-routine-issue.sh. (v3 = the current major, matching the @v3 callers.)
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ github.repository_owner }}/dotfiles-core
+          ref: v3
+      # 2) The caller OS repo into caller/ — its install/packages.txt / Brewfile is
+      #    what the routine reads (exposed to the CLI via --add-dir).
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          path: caller
+      - name: Load the pinned Claude Code version (Core single source)
+        run: |
+          f=scripts/tool-versions.env
+          if [ ! -f "$f" ]; then echo "::error::$f missing from the dotfiles-core checkout"; exit 1; fi
+          grep '^CLAUDE_CODE_VERSION=' "$f" >>"$GITHUB_ENV"
+      - name: Install Claude Code CLI (pinned)
+        # Fail fast if the pin didn't load — never silently fall back to a floating `latest`.
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:?not loaded from scripts/tool-versions.env}"
+      - name: Run /os-package-availability
+        run: |
+          claude -p "/os-package-availability ${{ inputs.distro }}" \
+            --add-dir "$GITHUB_WORKSPACE/caller" \
+            --model opus \
+            --permission-mode default \
+            --allowedTools "Read,Grep,Glob,Bash(git ls-files:*),Bash(ls:*),WebSearch,WebFetch" \
+            --output-format text | tee "$RUNNER_TEMP/os-package-availability.md"
+      - name: File the report as an issue (into the caller repo)
+        # GH_TOKEN scoped to just this step (least privilege): only the final `gh` call
+        # needs it, so it isn't exposed to the `claude` routine run above. GH_REPO is
+        # REQUIRED here: dotfiles-core is checked out at the workspace root, so a bare
+        # `gh issue` would resolve the root `origin` to dotfiles-core and file there —
+        # GH_TOKEN selects credentials but does NOT override repo resolution. Pin it to
+        # github.repository (the CALLER OS repo) so the report lands in the distro repo,
+        # the same way notify-failure-call.yml does.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/os-package-availability.md"

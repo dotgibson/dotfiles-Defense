@@ -176,7 +176,7 @@
 	nuke = !git clean -fd && git reset --hard
 	# remote
 	pushf = push --force-with-lease
-	prune-branches = !git remote prune origin && git branch --merged | egrep -v '(^\\*|main|master|develop)' | xargs -r git branch -d
+	prune-branches = !git remote prune origin && git branch --merged | grep -Ev '(^\\*|main|master|develop)' | xargs -r git branch -d
 	# stash
 	sl = stash list
 	sp = stash pop
@@ -194,7 +194,12 @@
 	contributors = shortlog --summary --numbered --email
 	mine = !git log --author=\"$(git config user.email)\" --oneline
 
-# ── Per-directory work identity (create the file; missing = silently ignored) ─
+# ── Per-directory work identity ───────────────────────────────────────────────
+# Repos under ~/work/ or ~/clients/ take a work identity from ~/.config/git/config-work.
+# CREATE that file with your work [user] name/email — if it is MISSING, git silently
+# ignores the include and you commit with your DEFAULT identity (no error). Seed it, e.g.:
+#   git config -f ~/.config/git/config-work user.name  "Your Name"
+#   git config -f ~/.config/git/config-work user.email "you@work.example"
 [includeIf "gitdir:~/work/"]
 	path = ~/.config/git/config-work
 [includeIf "gitdir:~/clients/"]

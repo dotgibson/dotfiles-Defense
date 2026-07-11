@@ -13,6 +13,96 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`feat(freshness)`: the weekly fleet board gains three live cross-repo signals.**
+  `scripts/freshness-dashboard.sh` now queries the GitHub API (best-effort, gated on `gh` +
+  a token — the workflow provides both, a local run degrades to an "unavailable" note) for:
+  **own-tag release drift** (commits each repo has merged since its last release tag — its
+  own unreleased work, distinct from Core-tag vendoring drift), an **open Renovate PR tally**
+  per repo (how many dependency PRs are waiting right now, beside the existing dashboard
+  links), and **judgment-layer routine issues** (links to each repo's open `.claude`-routine
+  issues — doc-audit, os-package-availability, coverage-gap, … — so the board references the
+  stale-docs and coverage-hole signals rather than recomputing them). Still a never-failing
+  reporter (always exits 0).
+- **`feat(routines)`: three new judgment routines + a reusable OS-repo routine workflow.**
+  - `/shell-review` (`.claude/commands/shell-review.md`) — weekly (Tue 11:00) read of the
+    week's changed `zsh`/`bash` for runtime footguns lint can't catch (the tmux-scratchpad
+    and doctor-hint classes), report-first.
+  - `/drift-triage` (`.claude/commands/drift-triage.md`) — weekly (Tue 12:00) interpretation
+    of Monday's `fleet-drift` sweep into ranked per-repo remediation, report-first.
+  - `/os-package-availability` (`.claude/commands/os-package-availability.md`) — audits an OS
+    repo's `install/packages.txt`/`Brewfile` for renamed/dropped/moved packages against
+    upstream + `PORTING-MATRIX.md`. Shipped as a **reusable workflow**
+    (`.github/workflows/claude-routines-call.yml`) so each OS repo consumes it as a ~5-line
+    `@v3` caller (inverted checkout, like `lint-call.yml`) rather than a 6× copy.
+  All inert-by-default (preflight `CLAUDE_CODE_OAUTH_TOKEN` gate) and report-first.
+
+### Changed
+
+- **`perf(zsh)`: drop `zstyle ':completion:*' rehash true` — no more per-Tab `$PATH` stat storm.**
+  `rehash true` (`zsh/options.zsh`) forced zsh to rebuild its external-command hash — stat every
+  directory in `$PATH` — on _every_ completion attempt, which is perceptible on an NFS home,
+  linuxbrew, or a large mise-shims `$PATH`, and fanned out to all eight OS repos. Removed; a
+  newly-installed binary now surfaces after `hash -r` or a new shell (the maint runner already
+  refreshes the command hash after installs). A regression-guard comment records why it stays out.
+- **`chore(bin)`: make `.bin/sync-upstream.sh` overridable for forks/mirrors.**
+  `CORE_REPO_URL` and `TARGET_BRANCH` now read `${VAR:-default}`, so a fork, a mirror, or a
+  renamed org can `gsync` without editing this vendored file.
+
+### Fixed
+
+- **`fix(zsh)`: `compinit` block no longer leaks a global `zcd` into every interactive shell.**
+  `zsh/options.zsh` declared `local zcd=…` at the file's sourced top level, where zsh (which has
+  only function scope) silently promotes `local` to an ordinary **global** — polluting the
+  namespace on every shell start across all eight OS repos and contradicting the codebase's own
+  anon-function convention (`zsh/aliases.zsh`) and `loader.zsh`'s "no top-level `local`" rule. The
+  cache body is now wrapped in an anonymous function so `zcd` is genuinely function-scoped;
+  `compinit` declares its state `typeset -g`, so the completion system persists unchanged.
+- **`fix(zsh)`: `serve` now prints a reachable URL and QR on macOS.**
+  `serve` (`zsh/functions.zsh`) gated all tunnel/LAN IP discovery on `command -v ip`, but macOS
+  ships no `ip(8)`, so on a Mac it degraded to a bare "serving on port N" with no LAN URL and no
+  QR. Added a `route(8)` + `ipconfig` fallback branch — the same Linux/macOS split
+  `tmux/scripts/tmux-netinfo.sh` already uses — so tunnel-first, then default-route LAN discovery
+  works on a Mac. No change on Linux/WSL.
+- **`fix(nvim)`: undo dir now derives from `stdpath("state")`, not a hardcoded path.**
+  `options.lua` hardcoded `~/.local/share/nvim/undodir`; it now uses `vim.fn.stdpath("state")`,
+  so undo history lands in the right tree under a relocated `XDG_STATE_HOME` and on macOS.
+- **`fix(nvim)`: drop the no-op `vim.opt.encoding = "UTF-8"`.**
+  Neovim's internal encoding is always UTF-8; setting it post-startup is a no-op at best and a
+  footgun at worst. Removed; a comment records why it stays out.
+- **`fix(tmux)`: popup previews degrade on Debian / a bare box.**
+  `tmux-menu.sh`'s engagement preview now falls back `bat`→`batcat` (Debian renames the binary),
+  and `tmux-sesh.sh`'s project preview falls back `eza`→`ls` when eza is absent — matching how
+  the zsh widgets already resolve these.
+- **`fix(starship)`: the Linux VPN segment uses a portable `ip link show` probe, not `ifconfig`.**
+  `custom.vpn_linux` shelled out to `ifconfig` (net-tools), which modern distros don't ship by
+  default, so the tunnel indicator silently never appeared. It now parses `ip link show` — the
+  common form supported by BOTH iproute2 AND BusyBox's `ip` applet (Alpine's default), so it works
+  on every Linux target including the BusyBox outlier. `custom.vpn_macos` keeps `ifconfig` (native).
+- **`docs(git)`: spell out the `includeIf` work-identity failure mode.**
+  Clarified that a missing `~/.config/git/config-work` makes git silently fall back to your
+  default identity (no error), with the exact commands to seed it.
+- **`fix(git)`: `prune-branches` uses `grep -E`, not deprecated `egrep`.**
+  The `prune-branches` alias (`git/gitconfig`) shelled out to `egrep`, which GNU grep ≥3.8 prints
+  a deprecation warning for on every invocation. Switched to `grep -Ev`; `xargs -r` is kept (GNU
+  needs it to skip empty input, and modern BSD/macOS xargs supports it), so the alias is quiet on
+  the Linux target and unchanged in behaviour on the macOS/BSD target it ships to.
+- **`fix(scripts)`: checksum refresh falls back to `shasum -a 256` off-Linux.**
+  `scripts/update-tool-checksums.sh` hard-called `sha256sum` (GNU coreutils); a run on the macOS
+  box (which ships `shasum -a 256`, not `sha256sum`) died. It now probes and falls back, so the
+  tool works on either platform.
+- **`fix(maint)`: `dotfiles-maint.sh` enables `set -uo pipefail`.**
+  The unattended daily runner had no `set` options, so a typo'd env knob expanded to empty and a
+  mid-pipe failure was masked. Added `set -uo pipefail` (every env knob is already `:=`/`:-`
+  defaulted); `-e` stays deliberately omitted so one failed step never aborts the rest — that
+  remains `step()`'s job.
+- **`fix(tmux)`: the popup scripts enable `set -u`.**
+  `tmux-menu.sh`, `tmux-scratch.sh`, and `tmux-sesh.sh` carried no `set` options, unlike their
+  siblings; a typo'd variable would expand to empty silently. Added `set -u` (all three already
+  guard `${TMUX:-}`/`${TERM:-}` etc.); `-e`/`pipefail` stay off because the fzf pickers exit
+  non-zero on a normal operator cancel.
+
 ## [v3.3.0] - 2026-07-09
 
 ### Changed

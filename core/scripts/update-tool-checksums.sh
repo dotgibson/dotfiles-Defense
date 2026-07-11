@@ -45,7 +45,12 @@ set_key() {
 sha_of() {
   local url="$1" out="$tmp/asset"
   curl -fsSL -o "$out" "$url"
-  sha256sum "$out" | cut -d' ' -f1
+  # sha256sum is GNU coreutils; macOS/BSD ships `shasum -a 256` instead.
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$out" | cut -d' ' -f1
+  else
+    shasum -a 256 "$out" | cut -d' ' -f1
+  fi
 }
 
 # <env-prefix>|<asset URL built from that tool's pinned version>

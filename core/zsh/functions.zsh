@@ -451,6 +451,48 @@ mkbak() {
   command cp -p -- "$1" "$dst" && _core_ok "backup: ${dst:t}"
 }
 
+# _serve_advertise <port> — print the reachable http:// URLs for a 0.0.0.0 serve
+# (tunnel/callback IP first in interface-priority order, then the default-route LAN IP)
+# and return the best QR target in $REPLY. Split out of `serve` so the platform-specific
+# discovery is HERMETICALLY testable (stub ip/ipconfig/route) without the blocking
+# http.server. Linux/WSL uses ip(8); macOS/BSD ship none, so fall back to route(8)+ipconfig
+# — the same split tmux/scripts/tmux-netinfo.sh uses; the tunnel list is kept aligned with
+# that script's TUN_IFACES so no interface (tun1/tun2/wg1/…) is silently skipped.
+_serve_advertise() {
+  emulate -L zsh
+  local port="$1" ip i qr_url="" dev
+  local -a tun_ifaces=(tun0 tun1 tun2 wg0 wg1 proton0 nordlynx tailscale0 utun3 utun4 utun5)
+  if command -v ip >/dev/null 2>&1; then # Linux / WSL
+    for i in "${tun_ifaces[@]}"; do
+      ip=$(ip -4 -o addr show "$i" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
+      [[ -n "$ip" ]] && {
+        echo "  → http://${ip}:${port}/   (${i})"
+        qr_url="http://${ip}:${port}/"
+        break
+      }
+    done
+    ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1);exit}}')
+    [[ -n "$ip" ]] && { echo "  → http://${ip}:${port}/   (lan)"; : "${qr_url:=http://${ip}:${port}/}"; }
+  elif command -v ipconfig >/dev/null 2>&1; then # macOS / BSD — no ip(8)
+    for i in "${tun_ifaces[@]}"; do
+      ip=$(ipconfig getifaddr "$i" 2>/dev/null)
+      [[ -n "$ip" ]] && {
+        echo "  → http://${ip}:${port}/   (${i})"
+        qr_url="http://${ip}:${port}/"
+        break
+      }
+    done
+    # Reset ip before the LAN lookup: route(8) may find no default interface, and the
+    # guarded assignment below would otherwise leave a tunnel address in $ip and reprint
+    # it as "(lan)". (The Linux branch's unconditional ip=$(…) self-clears.)
+    ip=""
+    dev=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
+    [[ -n "$dev" ]] && ip=$(ipconfig getifaddr "$dev" 2>/dev/null)
+    [[ -n "$ip" ]] && { echo "  → http://${ip}:${port}/   (lan)"; : "${qr_url:=http://${ip}:${port}/}"; }
+  fi
+  REPLY="$qr_url"
+}
+
 # serve — quick HTTP server in the CWD, printing the URLs it's actually reachable
 # at (tunnel IP first, then LAN). Replaces the old `serve` alias. Binds all
 # interfaces on purpose: this is your ad-hoc file-transfer server. Optional port.
@@ -531,22 +573,12 @@ PY
   # until you Ctrl-C. Use `serve -l` to keep it to loopback.
   _core_warn "serve binds 0.0.0.0:${port} — the CWD is exposed on every interface (use -l for loopback only)"
   echo "serving $(pwd) on port ${port}  (Ctrl-C to stop)"
-  # `i` is declared local too: under `emulate -L zsh` a `for i …` loop var is NOT
-  # auto-scoped, so without this `serve` would leak (and clobber) the caller's $i.
-  local ip i qr_url=""
-  # tunnel IP (callback address) if a tun/wg interface is up, else LAN, via `ip`
-  if command -v ip >/dev/null 2>&1; then
-    for i in tun0 tun1 wg0 proton0 tailscale0; do
-      ip=$(ip -4 -o addr show "$i" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
-      [[ -n "$ip" ]] && {
-        echo "  → http://${ip}:${port}/   (${i})"
-        qr_url="http://${ip}:${port}/"
-        break
-      }
-    done
-    ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1);exit}}')
-    [[ -n "$ip" ]] && { echo "  → http://${ip}:${port}/   (lan)"; : "${qr_url:=http://${ip}:${port}/}"; }
-  fi
+  # Advertise the reachable tunnel/LAN URLs. The platform-specific IP discovery lives in
+  # _serve_advertise (hermetically testable, no blocking server): it prints the URL lines
+  # and returns the best QR target in $REPLY.
+  local qr_url
+  _serve_advertise "$port"
+  qr_url="$REPLY"
   # Scan-to-open: this server's whole point is ad-hoc transfer to another device, so when
   # qrencode is present render the reachable URL as a QR — point a phone at it, no typing
   # a LAN IP. Graceful skip when qrencode is absent (just the URLs above), like every
