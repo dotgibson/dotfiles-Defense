@@ -55,7 +55,13 @@ badge() { if [ "$1" -eq 0 ]; then printf '✅ ok'; else printf '⚠️ attention
 # both). Without them the board still composes — the sections just print an "unavailable"
 # note. Probe once so a local run degrades cleanly instead of erroring per call.
 GH_OK=0
-if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then GH_OK=1; fi
+# An env token (GH_TOKEN/GITHUB_TOKEN — what the workflow provides) is sufficient for
+# `gh api` and more reliable than `gh auth status`, whose exit/output varies by gh
+# version; only fall back to `gh auth status` for local runs authed via stored creds.
+if command -v gh >/dev/null 2>&1 &&
+  { [ -n "${GH_TOKEN:-}" ] || [ -n "${GITHUB_TOKEN:-}" ] || gh auth status >/dev/null 2>&1; }; then
+  GH_OK=1
+fi
 
 # gh_q <jq> <api-path> — jq result on success, empty string on ANY failure (never aborts,
 # so a single unreachable/renamed/rate-limited repo can't sink the board). `// empty`
