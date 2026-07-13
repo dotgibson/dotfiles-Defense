@@ -32,10 +32,16 @@ one of:
 ## Aliases
 
 The alias surface is broadly `aligned`: `ll`/`la`, `cat`→bat, `grep`→rg, `http`→xh,
-`dns`→doggo, `du`→dust, `watch`→viddy, `lg`→lazygit, and the git shorthands
-(`g`, `gst`/`gss`, `ga`/`gaa`, `gc`/`gcm`, `gco`, `gd`, `gl` pull / `gp` push,
-`glog`) resolve to the same intent on both shells. Per-shell extras are noted as
-gaps below.
+`dns`→doggo, `du`→dust, `df`→duf, `top`/`htop`→btop, `watch`→viddy, `fm`/`y`→yazi,
+`md`→glow (pwsh `gmd`, since `md` is a builtin), `ping`→gping, `lg`→lazygit. The git
+shorthands are the **full curated OMZ-style set** from `zsh/git.zsh` on both shells —
+`g`, the `gst`/`gss` status family, `ga`/`gaa`/`gap`, the `gc`/`gcm`/`gca`/`gcam`/`gc!`
+commit family, `gco`/`gcb`/`gsw` checkout/switch, `gd`/`gds`/`gdw`, the `glog` graph
+logs, `gf`/`gl`/`gp`/`gpu`/`gpf` (force-with-lease), the `gsta*` stash and `grb*`
+rebase families, and `grh`/`grs`/`gm` — resolving to the same intent on both. On pwsh
+the git shorthands that collide with a built-in alias (`gc`→Get-Content, `gl`→Get-Location,
+…) are removed at load so the functions win, and `gbD` is dropped (pwsh is
+case-insensitive, so it can't coexist with `gbd`). Per-shell extras are noted as gaps below.
 
 The **aligned tool-swap aliases** (the classic-command → modern-tool re-points) are
 pinned as a flat manifest — [`scripts/parity-aliases.txt`](scripts/parity-aliases.txt)
@@ -58,7 +64,7 @@ manifest row, not a code change.
 | Dir jump | `Alt+Z` (zoxide) / `Alt+C` (fzf) | `Alt+Z` (zoxide `zi`) / `Alt+C` (PSFzf) | `aligned` |
 | Session picker | `Ctrl+G` (sesh) | `Ctrl+G` (psmux sessionizer) | `aligned` — jump-to-session both |
 | Cheatsheet | `cheat` / `core-help` | `navi` / `cheat` | `deliberate` — command, not a keybind |
-| Autosuggest toggle | `Ctrl+\` | PSReadLine predictive (always on) | `deliberate` |
+| Autosuggest toggle | `Ctrl+\` (`autosuggest-toggle`) | `Ctrl+\` (flips `PredictionSource`) | `aligned` |
 | Word nav | `Ctrl+←/→` | `Ctrl+←/→` (PSReadLine) | `aligned` |
 
 ## Functions

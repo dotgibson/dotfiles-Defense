@@ -121,7 +121,7 @@
 	light = false
 	line-numbers = true
 	side-by-side = false          # toggle on the fly with --side-by-side
-	syntax-theme = TwoDark
+	syntax-theme = ansi           # follow the terminal's Tokyo Night ANSI palette (matches BAT_THEME in aliases.zsh)
 	hyperlinks = true
 	true-color = always
 	tabs = 2

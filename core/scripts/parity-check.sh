@@ -71,6 +71,7 @@ CHECKS=(
   "atuin on Ctrl+E|zsh/bindings.zsh|'^E' _atuin_search_widget|powershell/core/10-tools.ps1|-Chord 'Ctrl+e'"
   "zoxide jump on Alt+Z|zsh/bindings.zsh|_fzf_zoxide_jump|powershell/core/10-tools.ps1|-Chord 'Alt+z'"
   "sessionizer on Ctrl+G|zsh/bindings.zsh|_tmux_sessionizer|powershell/core/10-tools.ps1|Invoke-DotfilesSessionizer"
+  "autosuggest/prediction toggle on Ctrl+\\|zsh/bindings.zsh|'^\\' autosuggest-toggle|powershell/core/10-tools.ps1|-Chord 'Ctrl+\\'"
   "fuzzy git stage/restore (gaf)|zsh/git.zsh|function gaf|powershell/core/20-functions.ps1|function gaf"
   "cheat command|zsh/functions.zsh|alias cheat=|powershell/core/20-functions.ps1|function cheat"
   "core front door|zsh/functions.zsh|core() {|powershell/os/48-core.ps1|function global:core {"

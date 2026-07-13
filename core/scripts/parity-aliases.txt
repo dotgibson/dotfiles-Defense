@@ -23,6 +23,13 @@ xh: http|http|http|
 xh: https|https|https|
 doggo: dns|dns|dns|
 dust: du|du|du|
+duf: df|df|df|
 procs: ps|ps|pss|pwsh renames it: `ps` is a core cmdlet, so procs lands on `pss`
+btop: top|top|top|
+btop: htop|htop|htop|
 viddy: watch|watch|watch|
+yazi: fm|fm|fm|
+yazi: y|y|y|
+glow: md|md|gmd|pwsh renames it: `md` is a builtin (mkdir), so glow lands on `gmd`
+gping: ping|ping|ping|
 lazygit: lg|lg|lg|
