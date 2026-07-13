@@ -13,6 +13,39 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.5.0] - 2026-07-13
+
+### Changed
+
+- **`fix(git)`: delta's `syntax-theme` is now `ansi` (was `TwoDark`).** delta now follows
+  the terminal's Tokyo Night ANSI palette, matching `BAT_THEME=ansi` (already set in
+  `aliases.zsh`) so `git diff` and `bat` render syntax the same way — and matching the
+  Windows host, which already used `ansi`. Part of the Windows↔Mac terminal parity pass.
+
+### Fixed
+
+- **`fix(nvim)`: `<leader>rc` and the alpha dashboard "Config" button open `init.lua`
+  on Windows too.** Both hardcoded `~/.config/nvim/init.lua`, which doesn't exist on the
+  Windows host — Neovim there reads `%LOCALAPPDATA%\nvim` — so the binding opened a phantom
+  path. They now resolve the config dir at runtime via `vim.fn.stdpath("config")`, so the
+  same binding lands on the real `init.lua` on every platform.
+
+### Parity (cross-shell contract)
+
+- **`feat(parity)`: the aligned tool-swap manifest gains `df`→duf, `top`/`htop`→btop,
+  `fm`/`y`→yazi, `md`→glow (pwsh `gmd`), and `ping`→gping.** These were already defined
+  in `zsh/aliases.zsh`; adding them to `scripts/parity-aliases.txt` makes
+  `parity-check.sh` enforce them bidirectionally against the pwsh host's `provides:`
+  contract (the Windows PowerShell port added the matching functions in the same pass).
+- **`feat(parity)`: `Ctrl+\` autosuggest/prediction toggle is now `aligned`, not
+  `deliberate`.** The Windows host binds `Ctrl+\` to flip PSReadLine's `PredictionSource`,
+  mirroring zsh's `autosuggest-toggle`; `parity-check.sh` now enforces the needle on both
+  shells. PARITY.md's Aliases prose also now documents the full curated git shorthand set
+  as aligned across zsh + pwsh.
+  > **Merge order:** the pwsh side of these rows ships in the `dotfiles-Windows` parity PR.
+  > Merge (or land together with) that PR so the weekly `parity-check.yml` — which clones
+  > `dotfiles-Windows` `main` — sees the matching pwsh definitions and stays green.
+
 ## [v3.4.0] - 2026-07-12
 
 ### Added

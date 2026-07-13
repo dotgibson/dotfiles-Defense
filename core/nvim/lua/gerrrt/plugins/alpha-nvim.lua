@@ -31,7 +31,7 @@ return {
 			startify.button("g", "\u{f002}  Live grep", "<cmd>FzfLua live_grep<cr>"),
 			startify.button("r", "\u{f1da}  Recent files", "<cmd>FzfLua oldfiles<cr>"), -- f1da history
 			startify.button("s", "\u{f021}  Restore session", "<cmd>lua require('persistence').load()<cr>"), -- f021 refresh
-			startify.button("c", "\u{f013}  Config", "<cmd>e ~/.config/nvim/init.lua<cr>"), -- f013 gear
+			startify.button("c", "\u{f013}  Config", "<cmd>lua vim.cmd.edit(vim.fn.fnameescape(vim.fs.joinpath(vim.fn.stdpath('config'), 'init.lua')))<cr>"), -- f013 gear
 			startify.button("l", "\u{f1b3}  Lazy", "<cmd>Lazy<cr>"), -- f1b3 cubes
 			startify.button("q", "\u{f057}  Quit", "<cmd>qa<cr>"), -- f057 times-circle
 		}
