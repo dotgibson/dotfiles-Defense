@@ -8,8 +8,12 @@
 --        use — same philosophy. All three were duplicated here before and the plugins silently won.
 -- ================================================================================================
 
--- Quick config editing
-vim.keymap.set("n", "<leader>rc", "<Cmd>e ~/.config/nvim/init.lua<CR>", { desc = "Edit config" })
+-- Quick config editing. Resolve the config dir at runtime via stdpath so <leader>rc
+-- opens init.lua on every platform — ~/.config/nvim on Unix, %LOCALAPPDATA%\nvim on
+-- Windows — instead of a hardcoded ~/.config path that never exists on the Windows host.
+vim.keymap.set("n", "<leader>rc", function()
+	vim.cmd.edit(vim.fn.fnameescape(vim.fs.joinpath(vim.fn.stdpath("config"), "init.lua")))
+end, { desc = "Edit config" })
 
 -- Cheatsheet — the full-panel counterpart to which-key. which-key answers "I pressed <leader>,
 -- now what?"; this lays out EVERY curated binding at once so you can rediscover what the config
