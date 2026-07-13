@@ -41,38 +41,38 @@ _Repo status_ at the bottom).
 | fzf              | `fzf`                  | `fzf`        | `fzf`        | `app-shells/fzf`           | `fzf`           |
 | git-delta        | `git-delta`            | `git-delta`  | `delta`      | `dev-util/git-delta`       | `git-delta`     |
 | btop             | `btop`                 | `btop`       | `btop`       | `sys-process/btop`         | `btop`          |
-| tldr             | `tealdeer`             | `tealdeer`¹  | `tealdeer`   | `app-misc/tealdeer`        | `tealdeer`      |
+| tldr             | `tealdeer`             | `tealdeer`¹  | cargo³       | `app-misc/tealdeer`¹²      | `tealdeer`      |
 | neovim           | `neovim`               | `neovim`     | `neovim`     | `app-editors/neovim`       | `neovim`        |
-| lazygit          | `lazygit`              | `lazygit`    | `lazygit`    | `dev-vcs/lazygit`          | `lazygit`       |
+| lazygit          | `lazygit`              | `lazygit`    | `lazygit`    | `dev-vcs/lazygit`¹²        | `lazygit`       |
 | zsh              | `zsh`                  | `zsh`        | `zsh`²       | `app-shells/zsh`           | `zsh`           |
 | tmux             | `tmux`                 | `tmux`       | `tmux`       | `app-misc/tmux`            | `tmux`          |
 | starship         | `starship`             | script³      | script³      | `app-shells/starship`      | script³         |
-| atuin            | `atuin` (AUR for some) | script³      | `atuin`      | `app-shells/atuin`         | `atuin`³        |
-| yazi             | `yazi`                 | cargo³       | cargo³       | `app-misc/yazi`            | cargo³          |
+| atuin            | `atuin`                | script³      | `atuin`      | `app-shells/atuin`         | `atuin`³        |
+| yazi             | `yazi`                 | cargo³       | cargo³       | `app-misc/yazi`¹²          | cargo³          |
 | tree-sitter-cli⁵ | `tree-sitter-cli`      | cargo³       | cargo³       | cargo³                     | `mise`/`cargo`³ |
 | jq               | `jq`                   | `jq`         | `jq`         | `app-misc/jq`              | `jq`            |
 | yq⁶              | `go-yq`                | `yq`         | `yq-go`      | `app-misc/yq-go`           | `yq-go`         |
-| duf              | `duf`                  | `duf`        | `duf`¹⁴      | `sys-fs/duf`               | `duf`           |
+| duf              | `duf`                  | `duf`        | testing¹⁴    | `sys-fs/duf`               | `duf`           |
 | dust             | `dust`                 | `dust`       | `dust`       | `sys-block/dust`           | `du-dust`⁴      |
 | procs            | `procs`                | `procs`      | `procs`      | `sys-process/procs`        | `procs`         |
 | sd               | `sd`                   | `sd`         | `sd`         | `sys-apps/sd`¹²            | `sd`            |
 | gron             | `gron`                 | `gron`       | `gron`       | go³                        | `gron`          |
-| glow             | `glow`                 | `glow`       | `glow`¹⁴     | `app-misc/glow`¹²          | `glow`¹⁵        |
+| glow             | `glow`                 | `glow`       | testing¹⁴    | `app-misc/glow`¹²          | `glow`¹⁵        |
 | gum              | `gum`                  | `gum`        | `gum`        | `app-misc/gum`¹²           | `gum`¹⁵         |
 | xh               | `xh`                   | `xh`         | `xh`         | `net-misc/xh`¹²            | `xh`            |
-| doggo            | AUR³                   | go³          | `doggo`      | `net-dns/doggo`            | go³             |
+| doggo            | `doggo`                | go³          | `doggo`      | `net-dns/doggo`            | go³             |
 | carapace         | AUR³                   | go³          | `carapace`   | `app-shells/carapace`¹²    | go³             |
 | op (1Password)¹³ | AUR                    | vendor rpm   | vendor apk   | GURU¹²                     | vendor apt      |
 | hyperfine        | `hyperfine`            | `hyperfine`  | `hyperfine`  | `app-benchmarks/hyperfine` | `hyperfine`     |
 | shellcheck       | `shellcheck`           | `ShellCheck` | `shellcheck` | `dev-util/shellcheck`      | `shellcheck`    |
 | shfmt⁷           | `shfmt`                | `shfmt`      | `shfmt`      | `dev-go/shfmt`             | `shfmt`⁷        |
-| ouch             | `ouch`                 | cargo³       | `ouch`       | cargo³                     | cargo³          |
+| ouch             | `ouch`                 | cargo³       | testing      | cargo³                     | cargo³          |
 | jujutsu (jj)⁸    | `jujutsu`              | `jujutsu`    | cargo³       | `dev-vcs/jujutsu`          | cargo³          |
 | sesh⁹            | AUR⁹                   | go⁹          | go⁹          | go⁹                        | go⁹             |
 | difftastic¹⁰     | `difftastic`           | `difftastic` | `difftastic` | `dev-util/difftastic`      | `difftastic`    |
 | ast-grep¹¹       | `ast-grep`             | cargo³       | `ast-grep`   | cargo³                     | cargo³          |
 
-¹ openSUSE: may be in `devel` repos; if absent, `cargo install tealdeer`.
+¹ openSUSE: in Tumbleweed main OSS as `tealdeer` (also Leap 15.6); on older Leap, `cargo install tealdeer`.
 ² Alpine default shell is `ash`; you must `apk add zsh` explicitly.
 ³ Not packaged or stale → bootstrap.sh installs it best-effort (upstream
 installer / `cargo install` / `go install` / AUR), the same pattern bootstrap
@@ -127,18 +127,22 @@ so it shadows nothing; prefer the `ast-grep` binary name over `sg` (which can co
 `setgroups`). Core sets `HAVE_ASTGREP` when present. Packaged on Arch (`extra`) and Alpine
 (`community` — a musl build, so the outlier is covered) and Homebrew; elsewhere via
 `cargo install ast-grep` / `mise` / `npm` / `pip`. Inert without the binary — nothing depends on it.
-¹² Gentoo **GURU overlay** (`sd`, `glow`, `gum`, `xh`, `carapace`, `1password-cli`): not in
-the main `::gentoo` tree. Enable once with `eselect repository enable guru && emaint sync -r
-guru`, then `emerge` the atom. bootstrap.sh does this best-effort, per-atom (one masked atom
-doesn't block the rest). Verify `app-misc/gum`'s exact category on a synced tree.
+¹² Gentoo **GURU overlay** (`sd`, `glow`, `gum`, `xh`, `carapace`, `1password-cli`, `tealdeer`,
+`yazi`, `lazygit`, `direnv`): not in the main `::gentoo` tree. Enable once with `eselect
+repository enable guru && emaint sync -r guru`, then `emerge` the atom. bootstrap.sh does this
+best-effort, per-atom (one masked atom doesn't block the rest), in its `guru_install` pass —
+which runs AFTER the main-tree emerge, so these must not sit in the main `packages.txt` blocks
+or they're skipped. direnv is `app-shells/direnv` (not `dev-util/direnv`, which does not exist);
+verify `app-misc/gum`'s exact category on a synced tree.
 ¹³ op = **1Password CLI**. bootstrap.sh installs it from 1Password's official **signed** repo,
 which differs per family: dnf/rpm repo (Fedora/openSUSE), apt repo (Debian/Kali), apk repo
 (Alpine — a native musl build, so it's fine on the musl outlier), the AUR `1password-cli`
 (Arch), and the GURU `app-misc/1password-cli` (Gentoo). A vendor repo, **not** the OS repo;
 the apt/rpm setup is rollback-safe (a failed install removes the added repo entry).
-¹⁴ Alpine `duf`/`glow`: in `community` on current stable (3.24) — a plain `apk add`. bootstrap.sh
-keeps a guarded `go install` fallback (static, musl-safe) for older snapshots where they were
-still in `testing`, so it works either way.
+¹⁴ Alpine **testing** repo (`duf`, `glow`): musl-fine Go tools that live in `testing` (never
+promoted to `community` on stable, incl. 3.24), which isn't enabled by default on a stable
+release. bootstrap.sh `go install`s them instead (static, musl-safe) rather than force-enabling
+`testing`; they stay in `packages.txt` only as a best-effort that `apk add` skips.
 ¹⁵ Kali `glow`/`gum`: recent **Debian sid** packages (Kali rolling tracks testing/sid). If they
 haven't migrated to your snapshot, bootstrap falls back to `go install` / the Charm apt repo
 (`repo.charm.sh/apt`).
