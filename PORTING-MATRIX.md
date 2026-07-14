@@ -55,6 +55,7 @@ _Repo status_ at the bottom).
 | duf              | `duf`                  | `duf`        | testing¹⁴    | `sys-fs/duf`               | `duf`           |
 | dust             | `dust`                 | `dust`       | `dust`       | `sys-block/dust`           | `du-dust`⁴      |
 | procs            | `procs`                | `procs`      | `procs`      | `sys-process/procs`        | `procs`         |
+| viddy¹⁶          | AUR¹⁶                  | cargo³       | cargo³       | cargo³                     | cargo³          |
 | sd               | `sd`                   | `sd`         | `sd`         | `sys-apps/sd`¹²            | `sd`            |
 | gron             | `gron`                 | `gron`       | `gron`       | go³                        | `gron`          |
 | glow             | `glow`                 | `glow`       | testing¹⁴    | `app-misc/glow`¹²          | `glow`¹⁵        |
@@ -146,6 +147,15 @@ release. bootstrap.sh `go install`s them instead (static, musl-safe) rather than
 ¹⁵ Kali `glow`/`gum`: recent **Debian sid** packages (Kali rolling tracks testing/sid). If they
 haven't migrated to your snapshot, bootstrap falls back to `go install` / the Charm apt repo
 (`repo.charm.sh/apt`).
+¹⁶ viddy: the `watch` replacement — Core aliases `watch`→`viddy` (`HAVE_VIDDY`-guarded in
+`zsh/aliases.zsh`), so a box without the binary just keeps classic `watch`. viddy is a
+**Rust** CLI (rewritten from Go upstream), so it installs via `cargo install viddy`, **not**
+`go install`. Packaged on Homebrew (`viddy`, already in the macOS `Brewfile`) and the AUR;
+**not** in Arch-official, openSUSE, Gentoo, or Debian/Kali apt — so `bootstrap.sh` builds it
+best-effort via `cargo install --locked viddy` (musl-safe on Alpine; the same cargo path as
+yazi/dust/tealdeer). **Arch** is the exception: it ships no rust toolchain and builds no AUR
+helper (see its `packages.txt`), so bootstrap prints a hint to `paru -S viddy` instead of
+auto-installing. Inert without the binary.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

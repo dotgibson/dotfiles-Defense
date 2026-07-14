@@ -3,7 +3,7 @@
 All notable changes to **dotfiles-core** are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-Core is the single source of truth vendored into eight OS repos via
+Core is the single source of truth vendored into eight repos via
 `git subtree pull --prefix=core <core-remote> main --squash` (see `scripts/sync-core.sh`).
 Every entry below is therefore a change those repos receive on their next sync —
 this file is the human-readable record of _what_ a sync will bring, complementing
@@ -12,6 +12,26 @@ the SHA that `scripts/sync-core.sh` now prints. To cut a release, move the
 commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
+
+## [v3.5.1] - 2026-07-14
+
+### Changed
+
+- **`ci(modern)`: ban the `macos-14` runner in the modern-CI floor.** `macos-14`
+  (Sonoma) images entered deprecation on 2026-07-06 and are fully unsupported on
+  2026-11-02, so `scripts/modern-baseline.yml` now lists it under `banned_runners`
+  alongside `macos-13`. Pre-emptive and free — the fleet rides `macos-latest`, so no
+  workflow references the pinned label today; `check-modern.sh` enforces it.
+
+### Documentation
+
+- **`docs(matrix)`: `watch`→`viddy` is now a first-class, provisioned tool.**
+  `PORTING-MATRIX.md` gains a `viddy` row so the `watch`→`viddy` alias Core already
+  ships (`HAVE_VIDDY`-guarded in `zsh/aliases.zsh`) is actually installed — macOS
+  already had it via Homebrew; the Linux/Kali repos now install it best-effort in
+  `bootstrap.sh` via `cargo install viddy` (viddy is a Rust CLI, so the same cargo path
+  as yazi/dust — Arch, which ships no rust toolchain, prints a `paru -S viddy` hint).
+  Inert without the binary, so boxes that skip it keep classic `watch`.
 
 ## [v3.5.0] - 2026-07-13
 
