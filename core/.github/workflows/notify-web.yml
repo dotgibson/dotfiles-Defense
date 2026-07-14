@@ -1,6 +1,11 @@
-# Pings dotfiles-web to rebuild & redeploy its static showcase when this repo
-# changes — the static-site equivalent of a cache purge. Receiving side:
-# dotfiles-web's deploy.yml (repository_dispatch: refresh) + its README.
+# Pings dotfiles-web when this repo changes. Two flavors, chosen by trigger:
+#   • a plain push to main → event_type "refresh": a cache-purge rebuild of the
+#     static showcase (received by dotfiles-web's deploy.yml).
+#   • a published release   → event_type "core-release": pokes dotfiles-web's
+#     fleet-sync, the bot that regenerates AND COMMITS src/data/generated.json, so the
+#     site's baked Core version tracks the new tag at once instead of waiting for
+#     fleet-sync's weekly cron (which left Monday's data-freshness guard red until Tue).
+# Receiving side: dotfiles-web's deploy.yml (refresh) + fleet-sync.yml (core-release).
 #
 # Setup (G2): with the fleet GitHub App configured (the FLEET_APP_ID variable +
 # FLEET_APP_PRIVATE_KEY secret — see dotfiles-core GITHUB-APP-AUTH.md) this mints a
@@ -12,6 +17,8 @@ name: Refresh showcase
 on:
   push:
     branches: [main]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -44,6 +51,10 @@ jobs:
       - name: Notify dotfiles-web to rebuild
         env:
           TOKEN: ${{ steps.app.outputs.token || secrets.WEBHOOK_SECRET }}
+          # A published release carries a new Core version → poke the committing
+          # regenerator (fleet-sync) so generated.json is refreshed straight away.
+          # Any other trigger (a plain push to main) is just a cache-purge rebuild.
+          EVENT_TYPE: ${{ github.event_name == 'release' && 'core-release' || 'refresh' }}
         run: |
           set -euo pipefail
           if [ -z "${TOKEN:-}" ]; then
@@ -57,5 +68,5 @@ jobs:
             -H "Content-Type: application/json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             https://api.github.com/repos/dotgibson/dotfiles-web/dispatches \
-            -d '{"event_type":"refresh"}'
-          echo "Dispatched refresh to dotfiles-web"
+            -d "$(printf '{"event_type":"%s"}' "$EVENT_TYPE")"
+          echo "Dispatched ${EVENT_TYPE} to dotfiles-web"
