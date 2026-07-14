@@ -36,12 +36,15 @@ banned_runners:
   - macos-12
   # Full-line comments only — check-modern.sh's list parser does NOT strip an inline
   # `# …`, so a trailing comment would become part of the banned string and the ban
-  # would silently never match. Rationale for the three below: macos-13 retired
+  # would silently never match. Rationale for the four below: macos-13 retired
   # 2025-12-04; windows-2019 unsupported since 2025-06-30; ubuntu-22.04 deprecation
-  # opens 2026-09-17 (pre-emptive — the fleet rides ubuntu-latest, so it's free to ban).
+  # opens 2026-09-17 (pre-emptive — the fleet rides ubuntu-latest, so it's free to ban);
+  # macos-14 deprecation opened 2026-07-06, fully unsupported 2026-11-02 (pre-emptive —
+  # the fleet rides macos-latest, so it's free to ban).
   - macos-13
   - windows-2019
   - ubuntu-22.04
+  - macos-14
 
 # 3) Every EXTERNAL action `uses:` must pin a full 40-hex commit SHA (a tag or branch
 #    is mutable and a supply-chain risk). Local `./…` refs and the fleet's own reusable
