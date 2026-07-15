@@ -27,7 +27,11 @@
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# No `dirname --`: BSD/macOS dirname doesn't reliably take `--`, and the argument is
+# always a script path (never starts with `-`), so it's unneeded. Unset CDPATH so a cd
+# in the caller's environment can't print the target dir into HERE.
+unset CDPATH
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 ZEEK_OUT="$HERE/zeek/ja3-c2-feed.zeek"
 SURICATA_OUT="$HERE/suricata/ja3-c2.lst"
 
@@ -51,19 +55,29 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-tmp="$(mktemp)"
-trap 'rm -f "$tmp"' EXIT
+# Parse either the given file directly or a fetched temp copy — no `cp` needed. mktemp
+# takes an explicit template so it's portable (BSD mktemp errors without one; GNU doesn't).
+tmp=""
+# return 0 so this (the EXIT trap) never overrides the script's real exit status — the
+# guard returns 1 when $tmp is empty (from-file mode), which would otherwise leak out.
+cleanup() {
+  [[ -n "$tmp" ]] && rm -f "$tmp"
+  return 0
+}
+trap cleanup EXIT
 
 if [[ -n "$FROM_FILE" ]]; then
-  cp -- "$FROM_FILE" "$tmp"
+  input="$FROM_FILE"
   src="$FROM_FILE"
 else
   if ! command -v curl >/dev/null 2>&1; then
     echo "update-ja3-feed: curl not found (or pass --from-file)" >&2
     exit 1
   fi
+  tmp="$(mktemp "${TMPDIR:-/tmp}/ja3-feed.XXXXXX")"
   echo "update-ja3-feed: fetching $URL" >&2
-  curl -fsSL --retry 3 -- "$URL" >"$tmp"
+  curl -fsSL --retry 3 "$URL" >"$tmp"
+  input="$tmp"
   src="$URL"
 fi
 
@@ -71,7 +85,7 @@ fi
 hashes=()
 while IFS= read -r h; do
   hashes+=("$h")
-done < <(grep -oiE '[0-9a-fA-F]{32}' -- "$tmp" | tr '[:upper:]' '[:lower:]' | sort -u)
+done < <(grep -oiE '[0-9a-fA-F]{32}' -- "$input" | tr '[:upper:]' '[:lower:]' | sort -u)
 n="${#hashes[@]}"
 
 # --- Zeek fragment: a redef of the opt-in set (pure comments when empty). ---
