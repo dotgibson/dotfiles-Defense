@@ -33,6 +33,12 @@
       "comment": "1 rule(s): passthehash_4624_fanout"
     },
     {
+      "techniqueID": "T1046",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): ldap_recon_explicit_creds_4648"
+    },
+    {
       "techniqueID": "T1047",
       "score": 1,
       "enabled": true,
@@ -70,9 +76,9 @@
     },
     {
       "techniqueID": "T1087.002",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): sharphound_ldap_sweep_4662"
+      "comment": "2 rule(s): ldap_recon_explicit_creds_4648, sharphound_ldap_sweep_4662"
     },
     {
       "techniqueID": "T1098",
@@ -118,9 +124,9 @@
     },
     {
       "techniqueID": "T1136.002",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): rogue_account_creation_4720"
+      "comment": "2 rule(s): machine_account_creation_burst_4741, rogue_account_creation_4720"
     },
     {
       "techniqueID": "T1136.003",

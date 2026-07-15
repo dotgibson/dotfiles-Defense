@@ -79,7 +79,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 69 rules / 74 documents, organized by ATT&CK tactic
+### `sigma/` — 71 rules / 78 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -118,6 +118,7 @@ purple-validatable out of the box.
 | Rule | Event / source | ATT&CK | Validate with |
 | ---- | -------------- | ------ | ------------- |
 | `sharphound_ldap_sweep_4662` | 4662 dir-access (value_count correlation) | T1087.002 / T1069.002 | AD enumeration · bloodhound-sharphound |
+| `ldap_recon_explicit_creds_4648` | 4648 explicit-cred fan-out (value_count correlation) | T1087.002 / T1046 | recon · PURPLE-TEAM 4648 row |
 
 **`persistence/`**
 
@@ -126,6 +127,7 @@ purple-validatable out of the box.
 | `scheduled_task_suspicious_4698` | 4698 task created | T1053.005 | Persistence · schtask-persist |
 | `wmi_event_subscription_consumer` | Sysmon 19/20/21 | T1546.003 | Persistence · wmi-subscription |
 | `rogue_account_creation_4720` | 4720 account created | T1136.002 / T1136.001 | Persistence · rogue-account |
+| `machine_account_creation_burst_4741` | 4741 burst (value_count correlation) | T1136.002 | AD attack paths · rbcd-impacket |
 
 **`defense_evasion/`**
 
@@ -256,9 +258,10 @@ purple-validatable out of the box.
 | `slack_2fa_enforcement_disabled` | `pref.two_factor_auth_changed` `two_factor_required=false` | T1562.001 | Slack · slack-2fa-disable |
 
 `password_spray`, `asrep_roast_probing`, `sharphound_ldap_sweep`,
-`passthehash_4624_fanout`, and `vault_bulk_secret_read` are Sigma **correlation**
-rules (a base event + a `value_count` over a window); the rest are single-event
-selections. The `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,
+`ldap_recon_explicit_creds_4648`, `passthehash_4624_fanout`,
+`machine_account_creation_burst_4741`, and `vault_bulk_secret_read` are Sigma
+**correlation** rules (a base event + a `value_count` over a window); the rest are
+single-event selections. The `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,
 `gitlab/`, `vault/`, `terraform/`, `jenkins/`, `snowflake/`, `google_workspace/`,
 `cloudflare/`, `npm/`, `pypi/`, and `slack/`
 rules are the non-Windows logsources here
@@ -315,10 +318,14 @@ is a lab baseline, not production — graduate to `sysmon-modular` and tune.
   enrichment (stats correlation, per-search schedules/severities/`action.notable`)
   the bare `savedsearches` format doesn't emit — kept as the worked, richer example.
 - **`splunk/correlation_searches.conf`** — the three *absence/join-based* detections
-  Sigma can't express — **Golden Ticket** (4769-without-4768), **Silver Ticket**
-  (4624-without-4769), and **NTLM relay** (4624 workstation/source mismatch) — as
-  deployable Splunk saved searches. This is the promised next step for the
-  coverage-gap items below.
+  Sigma can't express — **Golden Ticket** (4769-without-4768, T1558.001), **Silver
+  Ticket** (4624-without-4769, T1558.002), and **NTLM relay** (4624 workstation/source
+  mismatch, T1557.001) — as deployable Splunk saved searches. **These are covered
+  detections that the `navigator/COVERAGE.md` roll-up does not count** — that report is
+  generated from the Sigma tree only, so T1558.001/.002 and T1557.001 read as "0" there
+  despite being instrumented here. Read the coverage report as *Sigma* coverage, not
+  total. (T1557.001 was renamed by MITRE to "Name Resolution Poisoning and SMB Relay";
+  T1558 has since gained a `.005` Ccache Files sub-technique, not yet instrumented.)
 - **`sentinel/*.yaml`** — Microsoft Sentinel scheduled-analytics-rule deploy forms
   of the Entra cloud detections (illicit consent grant, SP credential backdoor,
   device-code sign-in). The AWS/GCP cloud rules deploy in their native consoles

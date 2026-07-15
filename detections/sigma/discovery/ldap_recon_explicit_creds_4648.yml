@@ -1,0 +1,69 @@
+title: Explicit-credential logon base - 4648 to a remote target
+id: 222d084a-20ec-4461-a9c6-a3b1de9f6de2
+status: experimental
+description: |
+  Base event for the explicit-credential recon correlation below: a 4648 logon
+  attempted with explicit credentials (runas / alternate creds) against a named
+  target server. Not actionable alone - admin tooling and scheduled tasks use
+  explicit creds routinely. The recon shape is one principal fanning explicit-cred
+  logons out across many distinct targets in a short window, expressed by the
+  correlation rule. Machine-account subjects and empty/local targets are filtered
+  here so the count reflects operator-driven fan-out.
+references:
+  - https://attack.mitre.org/techniques/T1087/002/
+  - https://attack.mitre.org/techniques/T1046/
+author: dotfiles-Defense
+date: 2026-07-15
+name: explicit_cred_logon_4648
+tags:
+  - attack.discovery
+  - attack.t1087.002
+  - attack.t1046
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4648
+  filter_machine_subject:
+    SubjectUserName|endswith: '$'
+  filter_local_target:
+    TargetServerName:
+      - '-'
+      - 'localhost'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - A single admin using runas against one host (defeated by the distinct-target count below).
+level: informational
+---
+title: LDAP / host recon by explicit-credential fan-out (4648)
+id: 4268aa00-9150-42f2-a14b-e2548e15a72e
+status: experimental
+description: |
+  Detects one principal driving explicit-credential logons (4648) to many distinct
+  targets in a short window - the alternate-credential recon fan-out (LDAP/account
+  enumeration and host discovery run under a captured credential, e.g. runas +
+  nxc/ldapsearch, or tooling that passes -u/-p per host). Counting distinct targets
+  per subject beats a raw 4648-rate threshold because a legit admin touches a few
+  known hosts, not a broad sweep. Tune the threshold to your admin workflow; jump
+  hosts and orchestration accounts that legitimately fan out should be allowlisted.
+  Validate (purple): run LDAP recon / host sweep under explicit creds from
+  dotfiles-Kali (hacktheplanet recon fold; PURPLE-TEAM "LDAP recon by one principal"
+  4648 row). Requires Logon auditing (success) with explicit-credential logging.
+references:
+  - https://attack.mitre.org/techniques/T1087/002/
+  - https://attack.mitre.org/techniques/T1046/
+correlation:
+  type: value_count
+  rules:
+    - explicit_cred_logon_4648
+  group-by:
+    - SubjectUserName
+  timespan: 10m
+  condition:
+    gte: 15
+    field: TargetServerName
+falsepositives:
+  - Orchestration / monitoring accounts and jump hosts that legitimately reach many
+    servers with explicit credentials (allowlist the principal or raise the threshold).
+level: high
