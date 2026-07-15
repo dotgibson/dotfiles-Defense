@@ -13,7 +13,7 @@ eventSource:iam.amazonaws.com AND eventName:CreateAccessKey
 eventSource:iam.amazonaws.com AND (eventName:(CreateLoginProfile OR UpdateLoginProfile))
 
 // cloud/entra_illicit_consent_grant.yml — Entra consent grant to a third-party app (illicit-consent triage)
-OperationName:(Consent\ to\ application OR Add\ delegated\ permission\ grant OR Add\ OAuth2PermissionGrant)
+(OperationName:(Consent\ to\ application OR Add\ delegated\ permission\ grant OR Add\ OAuth2PermissionGrant)) AND (TargetResources:(*Mail.Read* OR *Mail.ReadWrite* OR *Mail.Send* OR *offline_access* OR *Files.Read.All* OR *Files.ReadWrite.All* OR *Sites.Read.All* OR *Directory.Read.All* OR *full_access_as_user*)) AND (NOT TargetResources:*00000000\-0000\-0000\-0000\-000000000000*)
 
 // cloud/entra_sp_credential_backdoor.yml — Entra service-principal credential added (app backdoor)
 OperationName:(Add\ service\ principal\ credentials OR Add\ application\ credentials OR Update\ application\ \-\ Certificates\ and\ secrets\ management OR Update\ application\ –\ Certificates\ and\ secrets\ management)
@@ -193,7 +193,7 @@ action:app_installed
 action:(shared_channel_invite_sent OR shared_channel_invite_accepted)
 
 // snowflake/snowflake_data_unload.yml — Snowflake data unload (COPY INTO external stage — exfil triage)
-query_type:UNLOAD
+query_type:UNLOAD AND (NOT ((query_text:(*@%* OR *@\~*)) OR query_text:*MY_SANCTIONED_STAGE*))
 
 // snowflake/snowflake_network_policy_change.yml — Snowflake network policy changed (IP allowlist tamper)
 (query_text:(*NETWORK\ POLICY* OR *NETWORK_POLICY*)) AND (NOT query_text:SHOW*)

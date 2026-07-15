@@ -27,8 +27,12 @@ detection:
     EventID: 4742
     ServicePrincipalNames|contains: 'GC/'
   filter_real_dcs:
+    # DEPLOY-REQUIRED: replace with your real domain-controller computer accounts. Until
+    # filled this excludes only DC1$/DC2$, so a GC-SPN write onto any other real DC would
+    # alert. (Lower risk than rbcd: a GC/ SPN write to a non-DC is rare regardless.) Run
+    # detections/sigma/deploy-required.sh to find this.
     TargetUserName:
-      - 'DC1$'        # replace with your real domain-controller computer accounts
+      - 'DC1$'        # example — replace with your real domain-controller computer accounts
       - 'DC2$'
   condition: selection and not filter_real_dcs
 falsepositives:
