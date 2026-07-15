@@ -1,0 +1,54 @@
+name: network-validation
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Detection-EFFICACY gate for the network plane: proves each Zeek/Suricata detection
+# actually FIRES on the traffic shape it claims to catch — the executable form of every
+# "Validate (purple)" line. Complements sigma.yml (which proves the Sigma rules parse +
+# compile): this proves the network detections *work*.
+#
+# The job runs inside the official Zeek image (zeek on PATH), installs scapy, and runs
+# docker/validation/run-validation.sh — which synthesizes an attack-shaped PCAP per
+# manifest row, replays it through the real shipped detection script, and asserts the
+# expected Notice fired. Deterministic (seeded generators), hermetic (no network capture,
+# no live attack), so it's a hard gate.
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "detections/network/**"
+      - "docker/validation/**"
+      - ".github/workflows/network-validation.yml"
+  pull_request:
+    paths:
+      - "detections/network/**"
+      - "docker/validation/**"
+      - ".github/workflows/network-validation.yml"
+
+concurrency:
+  group: network-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: network detections fire on synthetic PCAPs
+    runs-on: ubuntu-latest
+    container:
+      image: zeek/zeek:lts
+    steps:
+      # The zeek image is minimal; git is needed for checkout, python+scapy for fixtures.
+      # This step runs before checkout on purpose — it only needs the container, not the repo.
+      - name: Install deps (git, python, scapy)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates python3 python3-pip
+          pip3 install --break-system-packages scapy || pip3 install scapy
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Validate network detections (attack PCAP -> detection fires)
+        run: bash docker/validation/run-validation.sh

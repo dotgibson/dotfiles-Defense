@@ -39,6 +39,14 @@ host's `vm.max_map_count` is below `262144`. Set it once per boot with
 a sysctl drop-in), not on the Windows host. This is a host kernel setting, so it
 lives here in docs rather than in the compose file.
 
+## Validating the detections
+
+`validation/` turns each detection's `Validate (purple):` line into an automated check:
+attack-shaped traffic → the real shipped detection runs → the expected signal fires. The
+network plane (Zeek/Suricata via PCAP replay) is wired and CI-gated
+(`.github/workflows/network-validation.yml`); see [`validation/README.md`](validation/README.md)
+and the phased [`LAB-VALIDATION-PLAN.md`](LAB-VALIDATION-PLAN.md).
+
 ## Rules
 
 - **No data volumes in git** — `docker/**/data/` and `.env` are gitignored; index
