@@ -79,7 +79,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 65 rules / 68 documents, organized by ATT&CK tactic
+### `sigma/` — 69 rules / 74 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -90,6 +90,8 @@ purple-validatable out of the box.
 | `password_spray_4625` | 4625 (value_count correlation) | T1110.003 | Kerberos/Poisoning · password-spray-kerbrute |
 | `dcsync_replication_4662` | 4662 replication right | T1003.006 | DCSync/NTDS · dcsync-secretsdump |
 | `gpp_cpassword_sysvol_5145` | 5145 SYSVOL prefs XML | T1552.006 | SMB · gpp-cpassword |
+| `coercion_named_pipes_5145` | 5145 IPC$ pipe (spoolss/efsrpc/…) | T1187 | Poisoning & relay · coerce-petitpotam |
+| `dpapi_backupkey_5145` | 5145 IPC$ `protected_storage` | T1555 | Credential access · dpapi-backupkey |
 | `ntds_dump_ntdsutil_vss_4688` | proc create (ntdsutil/VSS) | T1003.003 | DCSync/NTDS · ntds-ntdsutil |
 | `lsass_handle_access` | Sysmon 10 (LSASS) | T1003.001 | Lateral movement · lsass-dump-lsassy |
 
@@ -109,6 +111,7 @@ purple-validatable out of the box.
 | `wmiexec_wmiprvse_child_4688` | proc create (WmiPrvSE child) | T1047 | Lateral movement · wmiexec-impacket |
 | `rdp_hijack_tscon_4688` | proc create (tscon /dest:) | T1563.002 | Lateral movement · rdp-hijack-tscon |
 | `service_creation_psexec_7045` | 7045 service install | T1569.002 | Lateral movement · pth-lateral-nxc |
+| `passthehash_4624_fanout` | 4624 type-3 (value_count correlation) | T1550.002 / T1021 | Lateral movement · pth-lateral-nxc |
 
 **`discovery/`**
 
@@ -122,6 +125,7 @@ purple-validatable out of the box.
 | ---- | -------------- | ------ | ------------- |
 | `scheduled_task_suspicious_4698` | 4698 task created | T1053.005 | Persistence · schtask-persist |
 | `wmi_event_subscription_consumer` | Sysmon 19/20/21 | T1546.003 | Persistence · wmi-subscription |
+| `rogue_account_creation_4720` | 4720 account created | T1136.002 / T1136.001 | Persistence · rogue-account |
 
 **`defense_evasion/`**
 
@@ -183,7 +187,7 @@ purple-validatable out of the box.
 
 | Rule | Event / source | ATT&CK | Validate with |
 | ---- | -------------- | ------ | ------------- |
-| `vault_bulk_secret_read` | `read` on `secret/` path (breadth = triage) | T1555 | Vault · vault-secret-exfil |
+| `vault_bulk_secret_read` | `read` on `secret/` path (value_count correlation) | T1555 | Vault · vault-secret-exfil |
 | `vault_approle_backdoor` | create/update on `auth/approle/role/` or `sys/auth/` | T1098 | Vault · vault-approle-backdoor |
 | `vault_audit_device_disabled` | `delete` on `sys/audit/` path | T1562.001 | Vault · vault-audit-disable |
 
@@ -251,8 +255,9 @@ purple-validatable out of the box.
 | `slack_external_shared_channel` | `shared_channel_invite_sent` / `_accepted` | T1567 | Slack · slack-external-share |
 | `slack_2fa_enforcement_disabled` | `pref.two_factor_auth_changed` `two_factor_required=false` | T1562.001 | Slack · slack-2fa-disable |
 
-`password_spray` and `asrep_roast_probing` are Sigma **correlation** rules
-(a base event + a `value_count` over a window); the rest are single-event
+`password_spray`, `asrep_roast_probing`, `sharphound_ldap_sweep`,
+`passthehash_4624_fanout`, and `vault_bulk_secret_read` are Sigma **correlation**
+rules (a base event + a `value_count` over a window); the rest are single-event
 selections. The `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,
 `gitlab/`, `vault/`, `terraform/`, `jenkins/`, `snowflake/`, `google_workspace/`,
 `cloudflare/`, `npm/`, `pypi/`, and `slack/`

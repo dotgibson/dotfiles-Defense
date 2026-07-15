@@ -1,0 +1,74 @@
+title: Network-logon base - successful type-3 logon (4624)
+id: 88d125b4-66bd-43c1-94bf-1819af1c4d04
+status: experimental
+description: |
+  Base event for the pass-the-hash / credential-reuse correlation below: a
+  successful network logon (4624, LogonType 3). Not actionable alone - a type-3
+  logon is the normal shape of file-share and remote-admin access. The lateral
+  fan-out shape is one source address authenticating to many distinct hosts in a
+  short window, expressed by the correlation rule. Loopback and empty source
+  addresses are filtered here so the count reflects real remote reuse, not local
+  service logons.
+references:
+  - https://attack.mitre.org/techniques/T1550/002/
+  - https://attack.mitre.org/techniques/T1021/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/lateral-4624-fanout.md
+author: dotfiles-Defense
+date: 2026-07-15
+name: network_logon_4624
+tags:
+  - attack.lateral_movement
+  - attack.t1550.002
+  - attack.t1021
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4624
+    LogonType: 3
+  filter_local:
+    IpAddress:
+      - '-'
+      - '127.0.0.1'
+      - '::1'
+  condition: selection and not filter_local
+falsepositives:
+  - A single user opening one file share (defeated by the distinct-host count below).
+level: informational
+---
+title: Pass-the-hash / credential reuse - one source, many hosts (4624)
+id: 20dc1650-19ca-41c7-a84f-d0dcfd6091b0
+status: experimental
+description: |
+  Detects one source address successfully authenticating (4624 type 3) to many
+  distinct hosts in a short window - the lateral-movement fan-out. Pass-the-hash,
+  sprayed-then-reused credentials, and NTLM relay all fan out the same way, and the
+  auth *succeeds*, so the signal is breadth (distinct destination hosts), not a
+  failure count - none of the 4688 process-exec lateral rules can see a logon that
+  never spawns a shell. Counting distinct hosts per source beats a raw 4624-rate
+  threshold because a busy admin hits a few known jump hosts, not a broad sweep.
+  Tune the threshold to your environment; scanners, vuln assessors, and admin
+  tooling legitimately fan out and should be allowlisted by source address.
+  Validate (purple): run nxc/crackmapexec with -H (pass-the-hash) across a subnet
+  from dotfiles-Kali (hacktheplanet "Lateral movement & remote execution" fold;
+  htpx pair pth-lateral-nxc). Requires Logon auditing (success) on the targets.
+references:
+  - https://attack.mitre.org/techniques/T1550/002/
+  - https://attack.mitre.org/techniques/T1021/
+correlation:
+  type: value_count
+  rules:
+    - network_logon_4624
+  group-by:
+    - IpAddress
+  timespan: 10m
+  condition:
+    gte: 5
+    field: Computer
+falsepositives:
+  - Vulnerability scanners, admin/monitoring hosts, and backup agents that
+    legitimately authenticate to many hosts (allowlist those source addresses).
+  - Shared NAT egress collapsing many users behind one source address (raise the
+    threshold or exclude the egress address).
+level: high

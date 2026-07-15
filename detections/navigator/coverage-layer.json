@@ -27,6 +27,12 @@
       "comment": "1 rule(s): dcsync_replication_4662"
     },
     {
+      "techniqueID": "T1021",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): passthehash_4624_fanout"
+    },
+    {
       "techniqueID": "T1047",
       "score": 1,
       "enabled": true,
@@ -105,10 +111,28 @@
       "comment": "1 rule(s): potato_seimpersonate_4688"
     },
     {
+      "techniqueID": "T1136.001",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): rogue_account_creation_4720"
+    },
+    {
+      "techniqueID": "T1136.002",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): rogue_account_creation_4720"
+    },
+    {
       "techniqueID": "T1136.003",
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): snowflake_user_created"
+    },
+    {
+      "techniqueID": "T1187",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): coercion_named_pipes_5145"
     },
     {
       "techniqueID": "T1195.002",
@@ -153,6 +177,12 @@
       "comment": "1 rule(s): wmi_event_subscription_consumer"
     },
     {
+      "techniqueID": "T1550.002",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): passthehash_4624_fanout"
+    },
+    {
       "techniqueID": "T1552.006",
       "score": 1,
       "enabled": true,
@@ -160,9 +190,9 @@
     },
     {
       "techniqueID": "T1555",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): vault_bulk_secret_read"
+      "comment": "2 rule(s): dpapi_backupkey_5145, vault_bulk_secret_read"
     },
     {
       "techniqueID": "T1556",
