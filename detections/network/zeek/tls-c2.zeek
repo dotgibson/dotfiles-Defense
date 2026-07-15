@@ -14,6 +14,17 @@
 ##!   ad-hoc HTTPS listeners). Uses `validation_status` from the stock
 ##!   protocols/ssl/validate-certs policy, loaded below.
 ##!
+##!   TUNE THE CA TRUST FIRST — validation_status is only as good as the roots Zeek
+##!   trusts. Two traps flood this notice with benign traffic if you skip this:
+##!     * TLS-intercepting proxy / NGFW re-signs external TLS with an internal root —
+##!       every session then reads as "unable to get local issuer" unless you add that
+##!       root to Zeek's trust store (`redef SSL::root_certs += { ... }`, or point
+##!       `SSL::root_certs` at your enterprise CA bundle).
+##!     * A stale/missing Mozilla CA list in the Zeek build makes even public CAs fail.
+##!   Confirm a baseline capture is mostly "ok" before enabling; if intercept can't be
+##!   trusted out, narrow `untrusted_cert_status` to `/self signed/` only (drops the
+##!   broken-chain half, keeps the high-signal self-signed-implant half).
+##!
 ##!   OPT-IN — JA3 fast path. Each implant's ClientHello hashes to a stable JA3 that
 ##!   frameworks reuse across builds, so a known-implant JA3 is a high-fidelity match
 ##!   regardless of destination or sleep. JA3 is an add-on field (github.com/zeek/ja3

@@ -138,9 +138,14 @@ event dns_request(c: connection, msg: dns_msg, query: string, qtype: count, qcla
                       [$str=query]);
     }
 
-# DGA: failed resolutions (NXDOMAIN and friends) with long, vowel-poor labels.
-event dns_rejected(c: connection, msg: dns_msg, query: string, qtype: count, qclass: count)
+# DGA: NXDOMAIN replies with long, vowel-poor labels. Keyed on dns_query_reply
+# (fires on the *reply*, echoes the Question, and exposes msg$rcode) gated to
+# rcode 3 = NXDOMAIN — the precise DGA tell. This avoids depending on the exact
+# RCODE range dns_rejected covers; broaden to `msg$rcode != 0` for SERVFAIL/etc.
+event dns_query_reply(c: connection, msg: dns_msg, query: string, qtype: count, qclass: count)
     {
+    if ( msg$rcode != 3 )   # DNS_CODE_NAME_ERR (NXDOMAIN)
+        return;
     if ( query == "" )
         return;
     local label = leftmost_label(query);
