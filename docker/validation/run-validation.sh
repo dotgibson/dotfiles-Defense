@@ -52,12 +52,16 @@ while IFS=$'\t' read -r name engine gen script expect; do
     fail=$((fail + 1)); continue
   fi
 
+  engine_log=""
   case "$engine" in
   zeek)
     rundir="$work/$name.run"
     mkdir -p "$rundir"
+    engine_log="$rundir/engine.out"
     # Run in a scratch dir so Zeek's logs (notice.log, conn.log, …) land there, isolated.
-    (cd "$rundir" && "$ZEEK_CMD" -r "$pcap" "$REPO_ROOT/$script") >/dev/null 2>&1 || true
+    # Keep the engine's stdout+stderr — a load/parse error must be distinguishable from a
+    # detection that simply didn't fire (both otherwise leave no notice.log).
+    (cd "$rundir" && "$ZEEK_CMD" -r "$pcap" "$REPO_ROOT/$script") >"$engine_log" 2>&1 || true
     out="$rundir/notice.log"
     ;;
   *)
@@ -66,11 +70,16 @@ while IFS=$'\t' read -r name engine gen script expect; do
     ;;
   esac
 
-  if [[ -f "$out" ]] && grep -q "$expect" "$out"; then
+  # grep -F: the expected signal (e.g. DNSC2::DNS_Tunnel) is a literal, not a regex.
+  if [[ -f "$out" ]] && grep -qF "$expect" "$out"; then
     echo "PASS $name — '$expect' fired ($engine $(basename "$script"))"
     pass=$((pass + 1))
   else
     echo "FAIL $name — expected '$expect' from $engine $(basename "$script"), not seen"
+    if [[ -n "$engine_log" && -s "$engine_log" ]]; then
+      echo "    ── engine output (a load/parse error here means the script broke, not the detection) ──"
+      sed 's/^/    /' "$engine_log"
+    fi
     fail=$((fail + 1))
   fi
 done <"$MANIFEST"

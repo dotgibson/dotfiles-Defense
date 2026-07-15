@@ -3,8 +3,9 @@
 
 The DNS_Tunnel notice fires when one source drives >= tunnel_min_unique (100) distinct
 long (>= 25-char) leftmost labels under a single parent zone in the epoch. So we emit
-120 unique base32 labels (~48 chars) from one internal host to the resolver, under one
-zone, a second apart — comfortably over the threshold and inside the 10-minute window.
+120 unique labels — each a 64-char SHA-256 hex digest, well over the 25-char floor — from
+one internal host to the resolver, under one zone, a second apart: comfortably over the
+threshold and inside the 10-minute window.
 
 Deterministic (seeded) so the fixture — and therefore the assertion — is reproducible.
 Usage: gen_dns_tunnel.py <out.pcap>
