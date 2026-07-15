@@ -273,6 +273,22 @@ The `jenkins/` rules match the Audit Trail plugin's request-URI log line via a `
 field (`uri|contains`), scoped to the specific endpoints (e.g. job `configSubmit` is
 bound to the `/job/` path so global config submits don't trip it).
 
+#### Deploy-time substitutions (`DEPLOY-REQUIRED`)
+
+A few rules can't be meaningful until you substitute an environment-specific value —
+the anomaly is defined *relative to your baseline*, which the repo can't know. Those
+spots carry a `DEPLOY-REQUIRED:` marker in a YAML comment; run
+[`sigma/deploy-required.sh`](sigma/deploy-required.sh) to list them before deploying and
+fill each one. (Advisory, exits 0 — the repo ships the placeholders on purpose; a
+comment isn't enforcement, so this is the discoverable checklist instead.)
+
+| Rule | Substitute | Until you do |
+| ---- | ---------- | ------------ |
+| `privilege_escalation/rbcd_allowedtoact_5136` | `filter_delegation_admins` → your delegation-admin accounts | can't tell admin from user; pair with `machine_account_creation_burst_4741` for fidelity that doesn't need it |
+| `defense_evasion/dcshadow_rogue_dc_4742` | `filter_real_dcs` → your real DC computer accounts | a `GC/` SPN write onto another real DC would alert (low risk — rare regardless) |
+| `cloud/entra_illicit_consent_grant` | `filter_known_apps` → sanctioned app (client) IDs | verified LOB apps holding mail/file scopes alert (the high-risk-scope match still scopes it) |
+| `snowflake/snowflake_data_unload` | `filter_known_stages` → sanctioned named stages | a named *internal* stage (not `@%`/`@~`) alerts alongside external ones |
+
 ### `sysmon/` — `sysmonconfig-detection-lab.xml`
 
 A deliberately minimal Sysmon baseline that turns on **exactly** the telemetry

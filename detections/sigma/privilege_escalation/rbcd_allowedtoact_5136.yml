@@ -29,8 +29,13 @@ detection:
     EventID: 5136
     AttributeLDAPDisplayName: 'msDS-AllowedToActOnBehalfOfOtherIdentity'
   filter_delegation_admins:
+    # DEPLOY-REQUIRED: replace with your delegation-admin accounts. Until filled this
+    # excludes only 'svc_delegation', so legitimate delegation writes still alert - the
+    # rule can't tell admin from user without this list. Pair with the 4741 burst
+    # (machine_account_creation_burst_4741) for fidelity that doesn't depend on it. Run
+    # detections/sigma/deploy-required.sh to find this.
     SubjectUserName:
-      - 'svc_delegation'      # replace with your delegation-admin accounts
+      - 'svc_delegation'      # example — replace with your delegation-admin accounts
   condition: selection and not filter_delegation_admins
 falsepositives:
   - Sanctioned delegation changes by service-management admins (allowlist them).

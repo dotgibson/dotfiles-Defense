@@ -2,12 +2,18 @@ title: Snowflake data unload (COPY INTO external stage — exfil triage)
 id: bc06137c-7f4d-4b35-9fa2-72b558357952
 status: experimental
 description: |
-  Surfaces Snowflake data unloads in ACCOUNT_USAGE.QUERY_HISTORY (QUERY_TYPE=UNLOAD, a
-  COPY INTO <location>) for exfiltration triage - the 2024-campaign move of copying whole
-  tables to an attacker-controlled external stage / cloud bucket at warehouse speed
-  (T1567.002). Internal-stage unloads are routine, so the abuse signal is an unload to an
-  EXTERNAL stage/cloud URL, large ROWS_UNLOADED/byte volume, an unusual role or warehouse,
-  or a first-time destination - a call left to backend triage on the query text and volume.
+  Detects Snowflake data unloads to a non-internal destination in
+  ACCOUNT_USAGE.QUERY_HISTORY (QUERY_TYPE=UNLOAD, a COPY INTO <location>) - the
+  2024-campaign move of copying whole tables to an attacker-controlled external stage /
+  cloud bucket at warehouse speed (T1567.002). Internal-stage unloads (table stage `@%`,
+  user stage `@~`) are routine ETL and are filtered out, so the rule fires on unloads to
+  a cloud URL (s3/azure/gcs) or a named stage - the external-exfil shape - rather than on
+  every unload (the earlier bare form matched all ETL and was a mute-me alert).
+  Scope note: a COPY INTO a *named* external stage carries the stage name, not a URL, and
+  Snowflake doesn't mark internal-vs-external in the query text - so allowlist your known
+  named stages via filter_known_stages below (a named INTERNAL stage would otherwise
+  alert). Still worth the volume/role triage the backend adds (large ROWS_UNLOADED, an
+  unusual role/warehouse, a first-time destination).
   Validate (purple): COPY INTO an external stage from dotfiles-Kali (htpx pair
   snowflake-exfil-stage).
 references:
@@ -22,10 +28,22 @@ logsource:
   product: snowflake
   service: audit
 detection:
-  selection:
+  selection_unload:
     query_type: 'UNLOAD'
-  condition: selection
+  filter_internal_stages:
+    query_text|contains:
+      - '@%'   # table stage (COPY INTO @%table)
+      - '@~'   # user stage (COPY INTO @~)
+  filter_known_stages:
+    # DEPLOY-REQUIRED: add your sanctioned named stages / destination buckets. Until
+    # filled this excludes only the example, so a named INTERNAL stage will alert - list
+    # yours here to cut that noise. Run detections/sigma/deploy-required.sh to find this.
+    query_text|contains:
+      - 'MY_SANCTIONED_STAGE'   # example — replace with your known-good stage names
+  condition: selection_unload and not 1 of filter_*
 falsepositives:
-  - Routine ETL unloads to internal stages - triage on external destinations, volume,
-    and unexpected roles/warehouses rather than the unload event alone.
+  - Unloads to a named INTERNAL stage (not `@%`/`@~`) - indistinguishable from external
+    by query text alone, so allowlist those stage names in filter_known_stages.
+  - Sanctioned external ETL to a fixed bucket/stage - allowlist the destination; triage
+    the rest on volume (ROWS_UNLOADED) and unexpected roles/warehouses.
 level: medium

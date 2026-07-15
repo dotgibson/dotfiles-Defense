@@ -13,7 +13,7 @@ eventSource =~ "iam.amazonaws.com" and eventName =~ "CreateAccessKey"
 eventSource =~ "iam.amazonaws.com" and (eventName in~ ("CreateLoginProfile", "UpdateLoginProfile"))
 
 // cloud/entra_illicit_consent_grant.yml — Entra consent grant to a third-party app (illicit-consent triage)
-OperationName in~ ("Consent to application", "Add delegated permission grant", "Add OAuth2PermissionGrant")
+(OperationName in~ ("Consent to application", "Add delegated permission grant", "Add OAuth2PermissionGrant")) and (TargetResources contains "Mail.Read" or TargetResources contains "Mail.ReadWrite" or TargetResources contains "Mail.Send" or TargetResources contains "offline_access" or TargetResources contains "Files.Read.All" or TargetResources contains "Files.ReadWrite.All" or TargetResources contains "Sites.Read.All" or TargetResources contains "Directory.Read.All" or TargetResources contains "full_access_as_user") and (not(TargetResources contains "00000000-0000-0000-0000-000000000000"))
 
 // cloud/entra_sp_credential_backdoor.yml — Entra service-principal credential added (app backdoor)
 OperationName in~ ("Add service principal credentials", "Add application credentials", "Update application - Certificates and secrets management", "Update application – Certificates and secrets management")
@@ -193,7 +193,7 @@ action =~ "app_installed"
 action in~ ("shared_channel_invite_sent", "shared_channel_invite_accepted")
 
 // snowflake/snowflake_data_unload.yml — Snowflake data unload (COPY INTO external stage — exfil triage)
-query_type =~ "UNLOAD"
+query_type =~ "UNLOAD" and (not(((query_text contains "@%" or query_text contains "@~") or query_text contains "MY_SANCTIONED_STAGE")))
 
 // snowflake/snowflake_network_policy_change.yml — Snowflake network policy changed (IP allowlist tamper)
 (query_text contains "NETWORK POLICY" or query_text contains "NETWORK_POLICY") and (not(query_text startswith "SHOW"))
