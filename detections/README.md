@@ -284,6 +284,22 @@ is a lab baseline, not production — graduate to `sysmon-modular` and tune.
 - `suricata/coercion.rules` — DCERPC interface binds for PetitPotam / PrinterBug /
   DFSCoerce / ShadowCoerce (the wire twin of the 5145 coercion detection).
 
+**Command-and-Control (TA0011)** — the "Exfil / C2" methodology row, on Zeek + Suricata
+(behavioral invariants in Zeek, per-packet/fingerprint tells in Suricata; htpx pairs
+`dns-tunnel-c2`, `dga-c2-domains`, `reverse-tunnel-chisel`, `icmp-tunnel-c2`, `mtls-c2-sliver`):
+
+- `zeek/dns-c2.zeek` — DNS tunneling (T1071.004, long distinct-subdomain fan-out per
+  zone) and DGA beaconing (T1568.002, long vowel-poor NXDOMAIN bursts), via SumStats.
+- `zeek/reverse-tunnel.zeek` — long-lived high-volume bidirectional external sessions
+  (T1572); the same shape surfaces bulk egress (T1041/T1048).
+- `zeek/icmp-tunnel.zeek` — sustained large-payload ICMP echo to one external host
+  (T1095).
+- `zeek/tls-c2.zeek` — encrypted C2 by JA3 blocklist (T1573.002; operator-populated),
+  with a self-signed-cert-to-external behavioral fallback for the unknown-implant case.
+- `suricata/c2.rules` — the fast-path signatures: encoded/oversized DNS labels
+  (T1071.004), oversized ICMP echo (T1095), and a JA3 known-implant template
+  (T1573.002, ships disabled — populate from a feed).
+
 ### `siem/` — deployable backend forms
 
 - **`splunk/savedsearches.generated.conf`** — GENERATED. Every rule in `sigma/`

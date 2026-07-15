@@ -1,0 +1,46 @@
+# c2.rules — Command-and-Control signatures (the fast-path layer for "Exfil / C2").
+#
+# Signature/protocol-anomaly companion to the behavioral Zeek scripts in
+# ../zeek/{dns-c2,reverse-tunnel,icmp-tunnel,tls-c2}.zeek. Suricata is the wrong tool
+# for volumetrics (bytes/duration/inter-arrival) — those stay in Zeek — so this file
+# carries the per-packet/per-flow tells Suricata does well: encoded DNS labels,
+# oversized ICMP payloads, and known-implant TLS fingerprints. Together they close the
+# Command-and-Control (TA0011) tactic that was scaffolded here but empty.
+#
+# Mirrors the htpx C2 pairs in dotfiles-Kali PURPLE-TEAM.md (dns-tunnel-c2,
+# icmp-tunnel-c2, mtls-c2-sliver). Validate by running the matching implant/tunnel
+# from dotfiles-Kali (hacktheplanet "Exfil / C2" folds).
+#
+# sids are in the same local/custom range as coercion.rules (9_000_1xx here);
+# renumber if it collides with your ruleset. These are alert-and-investigate, not
+# drop — each shape has benign edge cases (see the per-rule notes).
+
+# ── DNS tunneling (T1071.004) ────────────────────────────────────────────────
+# Encoded payload rides the leftmost label: one long high-entropy label is nothing
+# like a hostname a human types. Behavioral volume/entropy lives in dns-c2.zeek;
+# this is the single-query tell for the egregiously long label. Tune the length and
+# baseline out any app that legitimately encodes long subdomains (some CDNs, ACME
+# DNS-01 challenges, cloud health-checks).
+alert dns $HOME_NET any -> any any (msg:"DOTFILES-DEFENSE DNS tunneling - long encoded label"; dns.query; pcre:"/^[a-z0-9+\/=_-]{45,}\./i"; classtype:bad-unknown; metadata:mitre_tactic_id TA0011, mitre_technique_id T1071.004; sid:9000101; rev:1;)
+
+# Very long total query name (many encoded labels) is the other tunnel shape.
+alert dns $HOME_NET any -> any any (msg:"DOTFILES-DEFENSE DNS tunneling - oversized query name"; dns.query; pcre:"/^.{120,}$/"; classtype:bad-unknown; metadata:mitre_tactic_id TA0011, mitre_technique_id T1071.004; sid:9000102; rev:1;)
+
+# ── ICMP tunneling (T1095) ───────────────────────────────────────────────────
+# OS echo payloads are small and fixed (32-64B on Windows/Linux). A large echo
+# payload carries a tunneled session (icmpsh/ptunnel/Loki). Volume lives in
+# icmp-tunnel.zeek; this flags the oversized packet on its own. itype 8 = echo
+# request, 0 = echo reply.
+alert icmp $HOME_NET any -> $EXTERNAL_NET any (msg:"DOTFILES-DEFENSE ICMP tunneling - oversized echo request"; itype:8; dsize:>800; classtype:bad-unknown; metadata:mitre_tactic_id TA0011, mitre_technique_id T1095; sid:9000103; rev:1;)
+alert icmp $EXTERNAL_NET any -> $HOME_NET any (msg:"DOTFILES-DEFENSE ICMP tunneling - oversized echo reply"; itype:0; dsize:>800; classtype:bad-unknown; metadata:mitre_tactic_id TA0011, mitre_technique_id T1095; sid:9000104; rev:1;)
+
+# ── Encrypted C2 by TLS fingerprint (T1573.002) ──────────────────────────────
+# Known-implant JA3 hashes are a high-fidelity fast path, but they ROTATE — shipping
+# hard-coded hashes would go stale and misfire (the placeholder-that-matches-nothing
+# anti-pattern). So this ships DISABLED: enable `ja3` in suricata.yaml, then populate
+# from a maintained feed (abuse.ch SSLBL JA3, Proofpoint ET) and uncomment, one
+# content: per framework hash. tls-c2.zeek carries the self-signed-cert behavioral
+# fallback for the unknown-implant case that no hash list covers.
+#
+# Template (replace the 32-hex placeholder with a real feed hash before enabling):
+# alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"DOTFILES-DEFENSE C2 known JA3 (framework X)"; ja3.hash; content:"00000000000000000000000000000000"; classtype:trojan-activity; metadata:mitre_tactic_id TA0011, mitre_technique_id T1573.002; sid:9000105; rev:1;)
