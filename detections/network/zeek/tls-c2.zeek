@@ -28,10 +28,10 @@
 ##!   OPT-IN — JA3 fast path. Each implant's ClientHello hashes to a stable JA3 that
 ##!   frameworks reuse across builds, so a known-implant JA3 is a high-fidelity match
 ##!   regardless of destination or sleep. JA3 is an add-on field (github.com/zeek/ja3
-##!   or salesforce/ja3) AND the hashes rotate, so the block ships commented: install
-##!   the ja3 package, populate `c2_ja3_blocklist` from a maintained feed (abuse.ch
-##!   SSLBL JA3, Proofpoint ET), then uncomment. An empty/absent list can't go stale
-##!   or false-positive — the same choice suricata/c2.rules makes for its JA3 rule.
+##!   or salesforce/ja3), so it lives in its own opt-in module: `tls-c2-ja3.zeek`, whose
+##!   blocklist is fed from a maintained source by `../update-ja3-feed.sh` (so the hashes
+##!   rotate with the feed, not by hand). Load that after the ja3 package. An empty feed
+##!   matches nothing — the same can't-go-stale choice suricata/c2.rules makes.
 ##!
 ##! Validate (purple): stand up a Sliver mTLS / self-signed HTTPS listener from
 ##! dotfiles-Kali and beacon to it (hacktheplanet "Exfil / C2" folds; htpx pair
@@ -84,23 +84,10 @@ event ssl_established(c: connection)
     }
 
 # ── OPT-IN: JA3 known-implant fast path ───────────────────────────────────────
-# Requires the JA3 package (adds `ja3` to SSL::Info) AND a maintained hash feed.
-# Install the package, `@load` it before this script, then uncomment:
-#
-# const c2_ja3_blocklist: set[string] = {
-#     # "e7d705a3286e19ea42f587b344ee6865",  # <- from your feed, per framework
-# } &redef;
-#
-# redef enum Notice::Type += { C2_JA3_Match };
-#
-# event ssl_established(c: connection) &priority=-5
-#     {
-#     if ( ! c?$ssl || ! c$ssl?$ja3 )
-#         return;
-#     if ( c$ssl$ja3 !in c2_ja3_blocklist )
-#         return;
-#     NOTICE([$note=C2_JA3_Match,
-#             $conn=c,
-#             $msg=fmt("Known C2 JA3 %s: %s -> %s", c$ssl$ja3, c$id$orig_h, c$id$resp_h),
-#             $identifier=cat(c$id$orig_h, c$id$resp_h, c$ssl$ja3)]);
-#     }
+# The JA3 layer lives in its own module because it needs the ja3 add-on field:
+#   tls-c2-ja3.zeek         the set + ssl_established handler (opt-in, load after the
+#                           ja3 package)
+#   ja3-c2-feed.zeek        the blocklist data, GENERATED from a maintained feed by
+#                           ../update-ja3-feed.sh (abuse.ch SSLBL JA3 by default)
+# Enable it by installing the ja3 package and adding `@load ./tls-c2-ja3.zeek` after it,
+# then run update-ja3-feed.sh to populate the blocklist.
