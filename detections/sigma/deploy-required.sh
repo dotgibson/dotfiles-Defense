@@ -19,13 +19,16 @@ HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd)"
 MARKER='DEPLOY-REQUIRED'
 
 count=0
-while IFS= read -r -d '' file; do
+# Newline-delimited (not -print0 | sort -z): `sort -z` is a GNU extension that BSD/macOS
+# sort lacks, and this fleet targets macOS. The rule paths are repo-controlled *.yml with
+# no newlines, so splitting on newline is safe here and portable everywhere.
+while IFS= read -r file; do
   if grep -q "$MARKER" -- "$file"; then
     count=$((count + 1))
     printf '\n%s\n' "${file#"$HERE"/}"
     grep -n "$MARKER" -- "$file" | sed 's/^/  /'
   fi
-done < <(find "$HERE" -type f -name '*.yml' -print0 | sort -z)
+done < <(find "$HERE" -type f -name '*.yml' | sort)
 
 if [[ "$count" -eq 0 ]]; then
   echo "deploy-required: no DEPLOY-REQUIRED markers found — nothing to substitute."
