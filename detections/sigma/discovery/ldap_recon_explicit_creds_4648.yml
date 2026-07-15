@@ -1,4 +1,4 @@
-title: Explicit-credential logon base - 4648 to a remote target
+title: Explicit-credential logon base - 4648 with a named target
 id: 222d084a-20ec-4461-a9c6-a3b1de9f6de2
 status: experimental
 description: |
@@ -7,8 +7,9 @@ description: |
   target server. Not actionable alone - admin tooling and scheduled tasks use
   explicit creds routinely. The recon shape is one principal fanning explicit-cred
   logons out across many distinct targets in a short window, expressed by the
-  correlation rule. Machine-account subjects and empty/local targets are filtered
-  here so the count reflects operator-driven fan-out.
+  correlation rule. Machine-account subjects and empty ('-') / localhost targets are
+  filtered here so the count reflects operator-driven fan-out; scope tighter per
+  environment if you want to exclude other self-referential target names.
 references:
   - https://attack.mitre.org/techniques/T1087/002/
   - https://attack.mitre.org/techniques/T1046/
