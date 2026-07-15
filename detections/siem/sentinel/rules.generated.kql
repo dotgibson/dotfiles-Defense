@@ -33,8 +33,14 @@ OperationName in~ ("Add service principal credentials", "Add application credent
 // credential_access/asrep_roast_probing_4771.yml — AS-REP roast base - Kerberos pre-auth failure 0x18 (4771)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
+// credential_access/coercion_named_pipes_5145.yml — Authentication coercion - named-pipe access over IPC$ (5145)
+EventID == 5145 and ShareName contains "IPC$" and (RelativeTargetName contains "spoolss" or RelativeTargetName contains "efsrpc" or RelativeTargetName contains "lsarpc" or RelativeTargetName contains "netlogon" or RelativeTargetName contains "lsass")
+
 // credential_access/dcsync_replication_4662.yml — DCSync - directory replication right requested by a non-DC
 (EventID == 4662 and (Properties contains "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2" or Properties contains "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2" or Properties contains "89e95b76-444d-4c62-991a-0facbeda640c")) and (not((SubjectUserName endswith "$" or SubjectUserSid =~ "S-1-5-18")))
+
+// credential_access/dpapi_backupkey_5145.yml — DPAPI domain backup-key theft - protected_storage pipe (5145)
+(EventID == 5145 and ShareName contains "IPC$" and RelativeTargetName contains "protected_storage") and (not(SubjectUserName endswith "$"))
 
 // credential_access/gpp_cpassword_sysvol_5145.yml — GPP cpassword hunt - SYSVOL preferences XML read by a user
 (EventID == 5145 and ShareName contains "SYSVOL" and (RelativeTargetName endswith "Groups.xml" or RelativeTargetName endswith "Services.xml" or RelativeTargetName endswith "ScheduledTasks.xml" or RelativeTargetName endswith "Printers.xml" or RelativeTargetName endswith "DataSources.xml")) and (not(SubjectUserName endswith "$"))
@@ -102,6 +108,9 @@ verb =~ "create" and ['objectRef.resource'] =~ "pods" and (['objectRef.subresour
 // kubernetes/k8s_privileged_pod_created.yml — Kubernetes privileged / host-namespace pod created (node escape)
 (verb =~ "create" and ['objectRef.resource'] =~ "pods") and (['requestObject.spec.containers.securityContext.privileged'] == true or ['requestObject.spec.hostPID'] == true or ['requestObject.spec.volumes.hostPath.path'] =~ "/")
 
+// lateral_movement/passthehash_4624_fanout.yml — Network-logon base - successful type-3 logon (4624)
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
 // lateral_movement/rdp_hijack_tscon_4688.yml — RDP session hijack - tscon redirect to an RDP endpoint
 CommandLine contains "/dest:rdp-tcp#"
 
@@ -128,6 +137,9 @@ eventType in~ ("system.idp.lifecycle.create", "system.idp.lifecycle.activate")
 
 // okta/okta_mfa_factor_reset.yml — Okta MFA factor reset or deactivated (account-takeover prep)
 eventType in~ ("user.mfa.factor.reset_all", "user.mfa.factor.deactivate", "system.mfa.factor.deactivate")
+
+// persistence/rogue_account_creation_4720.yml — Rogue account creation (4720)
+EventID == 4720
 
 // persistence/scheduled_task_suspicious_4698.yml — Scheduled task created with a suspicious action
 EventID == 4698 and (TaskContent contains "-enc" or TaskContent contains "-EncodedCommand" or TaskContent contains "-w hidden" or TaskContent contains "-WindowStyle Hidden" or TaskContent contains "FromBase64String" or TaskContent contains "\\Users\\" or TaskContent contains "\\Temp\\" or TaskContent contains "\\mshta.exe" or TaskContent contains "\\regsvr32.exe" or TaskContent contains "\\rundll32.exe" or TaskContent contains "DownloadString" or TaskContent contains "IEX")
@@ -198,5 +210,5 @@ query_type =~ "CREATE_USER" or (query_type =~ "GRANT" and (query_text contains "
 // vault/vault_audit_device_disabled.yml — HashiCorp Vault audit device disabled (blind the SIEM)
 type =~ "request" and ['request.operation'] =~ "delete" and ['request.path'] startswith "sys/audit/"
 
-// vault/vault_bulk_secret_read.yml — HashiCorp Vault secret read (bulk-exfil triage)
-type =~ "request" and ['request.operation'] =~ "read" and ['request.path'] startswith "secret/"
+// vault/vault_bulk_secret_read.yml — Vault secret-read base - KV read on a secret/ path
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
