@@ -6,8 +6,9 @@ description: |
   msDS-AllowedToActOnBehalfOfOtherIdentity on a computer object. Configuring RBCD
   requires this write, so it is the invariant. Legitimately an admin delegating a
   service sets it; a write sourced from a normal user onto a computer object is the
-  anomaly. Pair with a 4741 computer-account-created burst (the attacker's machine
-  account) for higher fidelity.
+  anomaly. Pair with the 4741 computer-account-creation burst (the attacker's machine
+  account) - see machine_account_creation_burst_4741 - for higher fidelity without
+  relying on the delegation-admin allowlist alone.
   Validate (purple): run the impacket addcomputer/rbcd/getST chain from dotfiles-Kali
   (hacktheplanet "Active Directory - attack paths" fold; htpx pair rbcd-impacket).
   Requires the Directory Service Changes audit subcategory + a SACL.

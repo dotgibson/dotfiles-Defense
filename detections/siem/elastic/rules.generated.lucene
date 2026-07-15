@@ -60,6 +60,9 @@ EventID:5145 AND ShareName:*IPC$* AND (RelativeTargetName:(*spoolss* OR *efsrpc*
 // defense_evasion/dcshadow_rogue_dc_4742.yml — DCShadow - rogue DC registration (GC SPN added to a non-DC)
 (EventID:4742 AND ServicePrincipalNames:*GC\/*) AND (NOT (TargetUserName:(DC1$ OR DC2$)))
 
+// discovery/ldap_recon_explicit_creds_4648.yml — Explicit-credential logon base - 4648 with a named target
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
 // discovery/sharphound_ldap_sweep_4662.yml — Directory object sweep base - 4662 access by a non-machine principal
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
@@ -137,6 +140,9 @@ eventType:(system.idp.lifecycle.create OR system.idp.lifecycle.activate)
 
 // okta/okta_mfa_factor_reset.yml — Okta MFA factor reset or deactivated (account-takeover prep)
 eventType:(user.mfa.factor.reset_all OR user.mfa.factor.deactivate OR system.mfa.factor.deactivate)
+
+// persistence/machine_account_creation_burst_4741.yml — Computer-account-created base (4741)
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // persistence/rogue_account_creation_4720.yml — Rogue account creation (4720)
 EventID:4720
