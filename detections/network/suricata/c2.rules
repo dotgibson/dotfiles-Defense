@@ -35,12 +35,14 @@ alert icmp $HOME_NET any -> $EXTERNAL_NET any (msg:"DOTFILES-DEFENSE ICMP tunnel
 alert icmp $EXTERNAL_NET any -> $HOME_NET any (msg:"DOTFILES-DEFENSE ICMP tunneling - oversized echo reply"; itype:0; dsize:>800; classtype:bad-unknown; metadata:mitre_tactic_id TA0011, mitre_technique_id T1095; sid:9000104; rev:1;)
 
 # ── Encrypted C2 by TLS fingerprint (T1573.002) ──────────────────────────────
-# Known-implant JA3 hashes are a high-fidelity fast path, but they ROTATE — shipping
-# hard-coded hashes would go stale and misfire (the placeholder-that-matches-nothing
-# anti-pattern). So this ships DISABLED: enable `ja3` in suricata.yaml, then populate
-# from a maintained feed (abuse.ch SSLBL JA3, Proofpoint ET) and uncomment, one
-# content: per framework hash. tls-c2.zeek carries the self-signed-cert behavioral
-# fallback for the unknown-implant case that no hash list covers.
+# Known-implant JA3 hashes are a high-fidelity fast path, but they ROTATE, so they are
+# NOT hard-coded here: the rule below reads them from a `dataset` file that
+# ../update-ja3-feed.sh regenerates from a maintained feed (abuse.ch SSLBL JA3 by
+# default). ja3-c2.lst holds base64 of each ja3.hash string, one per line; empty = empty
+# set = matches nothing, so it can't misfire on stale hashes. tls-c2.zeek carries the
+# self-signed-cert behavioral fallback for the unknown-implant case no hash list covers.
 #
-# Template (replace the 32-hex placeholder with a real feed hash before enabling):
-# alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"DOTFILES-DEFENSE C2 known JA3 (framework X)"; ja3.hash; content:"00000000000000000000000000000000"; classtype:trojan-activity; metadata:mitre_tactic_id TA0011, mitre_technique_id T1573.002; sid:9000105; rev:1;)
+# Ships COMMENTED because `ja3.hash` requires `app-layer.protocols.tls.ja3-fingerprints:
+# yes` in suricata.yaml — an un-enabled ja3 keyword fails rule load. To enable: turn ja3
+# on, run ../update-ja3-feed.sh, fix the `load` path to your ja3-c2.lst, and uncomment.
+# alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"DOTFILES-DEFENSE C2 known JA3 (maintained feed)"; flow:to_server,established; ja3.hash; dataset:isset,ja3-c2,type string,load ja3-c2.lst; classtype:trojan-activity; metadata:mitre_tactic_id TA0011, mitre_technique_id T1573.002; sid:9000105; rev:1;)

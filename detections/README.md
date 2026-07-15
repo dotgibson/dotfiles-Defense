@@ -313,11 +313,23 @@ is a lab baseline, not production — graduate to `sysmon-modular` and tune.
   (T1572); the same shape surfaces bulk egress (T1041/T1048).
 - `zeek/icmp-tunnel.zeek` — sustained large-payload ICMP echo to one external host
   (T1095).
-- `zeek/tls-c2.zeek` — encrypted C2 by JA3 blocklist (T1573.002; operator-populated),
-  with a self-signed-cert-to-external behavioral fallback for the unknown-implant case.
+- `zeek/tls-c2.zeek` — encrypted C2 (T1573.002): a self-signed-cert-to-external
+  behavioral hunt (always-on) for the unknown-implant case, plus a pointer to the opt-in
+  JA3 fast path below.
+- `zeek/tls-c2-ja3.zeek` — **opt-in** JA3 known-implant match (T1573.002). Needs the ja3
+  add-on package; its blocklist is data in `zeek/ja3-c2-feed.zeek` (generated).
 - `suricata/c2.rules` — the fast-path signatures: encoded/oversized DNS labels
-  (T1071.004), oversized ICMP echo (T1095), and a JA3 known-implant template
-  (T1573.002, ships disabled — populate from a feed).
+  (T1071.004), oversized ICMP echo (T1095), and a feed-driven JA3 `dataset` rule
+  (T1573.002, ships commented — `ja3.hash` needs ja3 enabled in suricata.yaml).
+
+**JA3 feed** — the known-implant fingerprints rotate, so they aren't hard-coded.
+[`update-ja3-feed.sh`](network/update-ja3-feed.sh) pulls a maintained feed (abuse.ch
+SSLBL JA3 by default; `--url` / `--from-file` to override) and regenerates both engines'
+data: `zeek/ja3-c2-feed.zeek` (a `redef` fragment `@load`'d by `tls-c2-ja3.zeek`) and
+`suricata/ja3-c2.lst` (base64 `dataset` entries). Deterministic output (dedup + sort),
+bash 3.2-safe; run it on a schedule and commit the diff. An empty feed matches nothing,
+so nothing goes stale or false-positives — the same discipline as the `DEPLOY-REQUIRED`
+placeholders.
 
 ### `siem/` — deployable backend forms
 
