@@ -13,6 +13,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.5.2] - 2026-07-14
+
+### Fixed
+
+- **`fix(tmux)`: trailing space after the copy-mode icon.** The status-bar copy-mode
+  indicator was `󰆏#S` (glyph abutting the session name); it is now `󰆏 #S` — a single
+  space keeps the pill readable at a glance without otherwise changing the layout.
+
+### Documentation
+
+- **`docs(runbook,strategy)`: document the deliberate dotfiles-Windows minor/major
+  release flow.** `RELEASE-RUNBOOK.md` §3 only covered the automatic PATCH path
+  (mirror-sync → auto-tag). A new §3b covers the human-driven minor/major flow: the
+  version decision via `/release-readiness` + `/release-notes`, the
+  `packages.lock.json` re-pin (including the winget-export-vs-ARP mapping gap that
+  silently drops installed-but-unmapped apps), CHANGELOG promotion, and
+  `gh release create` (there is no `release.yml` on the Windows repo). Simultaneously,
+  `RELEASE-STRATEGY.md` is corrected: dotfiles-Windows is now carved out as the
+  standalone exception that carries its own vX.Y.Z but no `core/` subtree, and the
+  notes-source column is fixed (`--notes-file` via auto-tag.sh is the automatic path;
+  `--generate-notes` is only the fallback for empty/unconventional ranges).
+
 ## [v3.5.1] - 2026-07-14
 
 ### Changed
