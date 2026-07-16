@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 4769, "Channel": "Security", "Computer": "DC01"}, "EventData": {"TicketEncryptionType": "0x17", "ServiceName": "MSSQLSvc", "TargetUserName": "attacker@CORP"}}}

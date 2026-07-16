@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 4886, "Channel": "Security", "Computer": "DC01"}, "EventData": {"Requester": "CORP\\attacker", "Attributes": "SAN:upn=administrator"}}}
