@@ -1,0 +1,16 @@
+# Sigma detection validation manifest — TAB-separated. Paths are repo-root-relative.
+# name<TAB>pipeline<TAB>fixture<TAB>rule<TAB>expected-rule-id
+#
+# Each row: run the fixture (a JSON-lines event log) through the REAL shipped Sigma rule
+# with zircolite (native Sigma via the given pysigma pipeline), and assert the rule's id
+# appears in the detections — i.e. the rule fired on the attack telemetry it claims to
+# catch. Fixtures live in sigma-fixtures/ (committed JSONL — reviewable, deterministic).
+# Covers single-selection, filtered, and value_count-correlation shapes across the
+# windows-security and sysmon pipelines.
+rogue-account-4720	windows-audit	docker/validation/sigma-fixtures/rogue_account_4720.jsonl	detections/sigma/persistence/rogue_account_creation_4720.yml	7394f3ba-a17c-47eb-8b74-9fb709d0283f
+dpapi-backupkey-5145	windows-audit	docker/validation/sigma-fixtures/dpapi_backupkey_5145.jsonl	detections/sigma/credential_access/dpapi_backupkey_5145.yml	d2280db3-54ba-4329-8cc7-de905fac62ac
+coercion-5145	windows-audit	docker/validation/sigma-fixtures/coercion_5145.jsonl	detections/sigma/credential_access/coercion_named_pipes_5145.yml	29ac7a00-b6fe-48d8-8c65-f62a8b83808d
+dcsync-4662	windows-audit	docker/validation/sigma-fixtures/dcsync_4662.jsonl	detections/sigma/credential_access/dcsync_replication_4662.yml	bc81c0e5-f587-4b57-bee4-e29d1848dbfa
+lsass-access-10	sysmon	docker/validation/sigma-fixtures/lsass_access_sysmon10.jsonl	detections/sigma/credential_access/lsass_handle_access.yml	4e9ec480-5e5f-4e7d-b986-a10d0caedebc
+password-spray-4625	windows-audit	docker/validation/sigma-fixtures/password_spray_4625.jsonl	detections/sigma/credential_access/password_spray_4625.yml	0b553ead-484c-4569-9e14-55439cecd62d
+passthehash-4624	windows-audit	docker/validation/sigma-fixtures/passthehash_4624.jsonl	detections/sigma/lateral_movement/passthehash_4624_fanout.yml	20dc1650-19ca-41c7-a84f-d0dcfd6091b0

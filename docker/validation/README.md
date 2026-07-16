@@ -1,11 +1,22 @@
 # docker/validation — does each detection actually fire?
 
 The Sigma CI (`sigma.yml`) proves the rules *parse and compile*. This proves the
-network detections **work**: attack-shaped traffic in → the real shipped detection runs
-→ the expected signal comes out. It's the executable form of every `Validate (purple):`
-line, minus the manual Kali box.
+detections **work**: attack telemetry in → the real shipped detection runs → the expected
+signal comes out. It's the executable form of every `Validate (purple):` line, minus the
+manual Kali box. Two planes:
 
-## How it works
+- **Network** (this doc, below) — PCAP replay through Zeek/Suricata (`run-validation.sh`).
+- **Host / Sigma** — a JSON-lines event log through the real Sigma rule with
+  [zircolite](https://github.com/wagga40/Zircolite) (`run-sigma-validation.sh`), asserting
+  the rule id lands in the detections. Manifest: [`sigma-manifest.tsv`](sigma-manifest.tsv)
+  (`name / pipeline / fixture / rule / expected-id`); fixtures are committed JSONL under
+  `sigma-fixtures/`. Covers single-selection, filtered, and `value_count`-correlation rules
+  across the `windows-audit` and `sysmon` pipelines. Run it:
+  `ZIRCOLITE=/path/to/zircolite.py docker/validation/run-sigma-validation.sh` (CI clones a
+  pinned zircolite — see `.github/workflows/sigma-validation.yml`). Gated the same way the
+  network plane is: a rule that stops firing turns it red.
+
+## How it works (network plane)
 
 `run-validation.sh` reads [`manifest.tsv`](manifest.tsv) — one row per detection:
 

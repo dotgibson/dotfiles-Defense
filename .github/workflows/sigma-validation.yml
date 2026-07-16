@@ -1,0 +1,60 @@
+name: sigma-validation
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Detection-EFFICACY gate for the host plane: proves each Sigma rule actually FIRES on
+# the event telemetry it claims to catch — the executable form of every "Validate
+# (purple)" line. sigma.yml proves the rules parse + compile; this proves they *work*.
+#
+# The job replays a committed JSON-lines event fixture through the real shipped Sigma rule
+# with zircolite (native Sigma via the pysigma windows-audit / sysmon pipeline) and asserts
+# the rule's id lands in the detections. Deterministic (committed fixtures), hermetic (no
+# EVTX capture, no live host). Mirror of network-validation.yml for the Sigma corpus.
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "detections/sigma/**"
+      - "docker/validation/sigma-manifest.tsv"
+      - "docker/validation/sigma-fixtures/**"
+      - "docker/validation/run-sigma-validation.sh"
+      - ".github/workflows/sigma-validation.yml"
+  pull_request:
+    paths:
+      - "detections/sigma/**"
+      - "docker/validation/sigma-manifest.tsv"
+      - "docker/validation/sigma-fixtures/**"
+      - "docker/validation/run-sigma-validation.sh"
+      - ".github/workflows/sigma-validation.yml"
+
+concurrency:
+  group: sigma-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: sigma rules fire on synthetic event logs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Check out zircolite (pinned) — the Sigma-over-events engine
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: wagga40/Zircolite
+          ref: v3.7.6
+          path: .zircolite
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install zircolite deps (pysigma + pipelines)
+        run: pip install -r .zircolite/requirements.txt
+
+      - name: Validate sigma rules (attack events -> rule fires)
+        run: ZIRCOLITE="$PWD/.zircolite/zircolite.py" bash docker/validation/run-sigma-validation.sh

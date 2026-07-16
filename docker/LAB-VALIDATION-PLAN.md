@@ -39,10 +39,16 @@ bind was built, but Suricata's app-layer wouldn't parse the interface out of a h
 raw-TCP flow (it wants a real bind/bind-ack over SMB/epmapper). All three need too much
 protocol state to fake faithfully; capture them from the real Kali attack instead.
 
-**Phase 2 — host / Sigma plane.**
-Add `chainsaw` (or `zircolite`) in a container and run `detections/sigma/` against curated
-EVTX/JSON fixtures, same manifest shape. `value_count` correlations need multi-event
-fixtures. Gated by `sigma-validation.yml`.
+**Phase 2 — host / Sigma plane.** *(started)*
+`run-sigma-validation.sh` runs the real Sigma rule against a committed JSON-lines event
+fixture with **zircolite** (native Sigma via the pysigma `windows-audit` / `sysmon`
+pipelines), asserting the rule id lands in the detections — gated by `sigma-validation.yml`
+(pinned zircolite). First wave validated across every rule shape: single-selection
+(rogue-account 4720, coercion 5145), filtered (DPAPI 5145, DCSync 4662, LSASS Sysmon-10),
+and `value_count` correlation (password-spray 4625, pass-the-hash 4624). Remaining: extend
+to the rest of the Windows/Sysmon corpus, then the cloud/SaaS rules (each needs its
+product-specific event schema + pipeline). Unlike the network engines, zircolite runs in
+the authoring environment, so every rule+fixture is verified locally before CI.
 
 **Phase 3 — fixtures from the real attacks.** *(not CI)*
 A documented `regen-fixtures.sh` that runs the paired Kali attacks (the htpx pairs)

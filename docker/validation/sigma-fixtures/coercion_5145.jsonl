@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 5145, "Channel": "Security", "Computer": "DC01"}, "EventData": {"ShareName": "\\\\*\\IPC$", "RelativeTargetName": "efsrpc", "SubjectUserName": "attacker", "IpAddress": "10.1.1.9"}}}
