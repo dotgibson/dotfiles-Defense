@@ -49,6 +49,12 @@ total=0
 while IFS=$'\t' read -r name pipeline fixture rule expect; do
   case "$name" in '' | \#*) continue ;; esac
   total=$((total + 1))
+  # Guard malformed rows: an empty expected-id would make `grep -qF ""` match any
+  # non-empty output — a false PASS that silently hides a coverage gap.
+  if [[ -z "$pipeline" || -z "$fixture" || -z "$rule" || -z "$expect" ]]; then
+    echo "FAIL $name — malformed manifest row (need pipeline/fixture/rule/expected-id, tab-separated)"
+    fail=$((fail + 1)); continue
+  fi
   rundir="$work/$name"
   mkdir -p "$rundir"
   out="$rundir/detections.json"
