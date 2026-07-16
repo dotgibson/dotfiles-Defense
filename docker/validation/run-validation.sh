@@ -44,6 +44,11 @@ while IFS=$'\t' read -r name engine _; do
   [[ -n "$ENGINE_FILTER" && "$engine" != "$ENGINE_FILTER" ]] && continue
   case " $need " in *" $engine "*) ;; *) need="$need $engine" ;; esac
 done <"$MANIFEST"
+# A filter that matches no rows (an unknown engine or a typo) must be a hard error, not a
+# silent 0/0 pass that fakes coverage.
+if [[ -n "$ENGINE_FILTER" && -z "${need// /}" ]]; then
+  fail_preflight "engine filter '$ENGINE_FILTER' matched no manifest rows (known engines: zeek, suricata)"
+fi
 case " $need " in *" zeek "*) command -v "$ZEEK_CMD" >/dev/null 2>&1 || fail_preflight "zeek not found (set ZEEK_CMD, or run in the zeek/zeek image)" ;; esac
 case " $need " in *" suricata "*) command -v "$SURICATA_CMD" >/dev/null 2>&1 || fail_preflight "suricata not found (set SURICATA_CMD, or run in a suricata image)" ;; esac
 

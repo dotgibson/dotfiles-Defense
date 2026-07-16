@@ -54,14 +54,15 @@ jobs:
   suricata:
     name: suricata detections fire on synthetic PCAPs
     runs-on: ubuntu-latest
-    container:
-      image: jasonish/suricata:latest
+    # Install Suricata from Ubuntu rather than a suricata image — the common images are
+    # CentOS/yum-based and lack the git/python/scapy the harness needs; the runner has all
+    # of it, so apt is simplest and most reliable here.
     steps:
-      - name: Install deps (git, python, scapy)
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends git ca-certificates python3 python3-pip
-          pip3 install --break-system-packages scapy || pip3 install scapy
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install suricata + scapy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends suricata python3-pip
+          pip3 install --break-system-packages scapy || pip3 install scapy
       - name: Validate suricata detections (attack PCAP -> alert fires)
         run: bash docker/validation/run-validation.sh suricata
