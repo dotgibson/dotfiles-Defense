@@ -59,11 +59,17 @@ while IFS=$'\t' read -r name pipeline fixture rule expect; do
   mkdir -p "$rundir"
   out="$rundir/detections.json"
 
+  # pipeline "none" = no pysigma pipeline: cloud/SaaS rules have no EventID and match on
+  # raw field names, so they convert and match without a product pipeline (none is
+  # installed for them anyway). Windows/Sysmon rows name a real pipeline.
+  pipe_args=(--pipeline "$pipeline")
+  [[ "$pipeline" == "none" ]] && pipe_args=()
+
   # zircolite drops a db/log in its cwd — run it in the isolated rundir.
   (cd "$rundir" && "$PYTHON" "$ZIRCOLITE" -j \
     -e "$REPO_ROOT/$fixture" \
     -r "$REPO_ROOT/$rule" \
-    --pipeline "$pipeline" \
+    "${pipe_args[@]}" \
     -c "$CONFIG" \
     -o "$out") >"$rundir/engine.out" 2>&1 || true
 

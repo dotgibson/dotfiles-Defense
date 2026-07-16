@@ -6,7 +6,8 @@
 # appears in the detections — i.e. the rule fired on the attack telemetry it claims to
 # catch. Fixtures live in sigma-fixtures/ (committed JSONL — reviewable, deterministic).
 # Covers single-selection, filtered, and value_count-correlation shapes across the
-# windows-audit and sysmon pysigma pipelines.
+# windows-audit and sysmon pysigma pipelines, plus cloud/SaaS rules with pipeline=none
+# (no pysigma pipeline — they have no EventID and match raw field names).
 rogue-account-4720	windows-audit	docker/validation/sigma-fixtures/rogue_account_4720.jsonl	detections/sigma/persistence/rogue_account_creation_4720.yml	7394f3ba-a17c-47eb-8b74-9fb709d0283f
 dpapi-backupkey-5145	windows-audit	docker/validation/sigma-fixtures/dpapi_backupkey_5145.jsonl	detections/sigma/credential_access/dpapi_backupkey_5145.yml	d2280db3-54ba-4329-8cc7-de905fac62ac
 coercion-5145	windows-audit	docker/validation/sigma-fixtures/coercion_5145.jsonl	detections/sigma/credential_access/coercion_named_pipes_5145.yml	29ac7a00-b6fe-48d8-8c65-f62a8b83808d
@@ -30,3 +31,27 @@ asrep-probing-4771	windows-audit	docker/validation/sigma-fixtures/asrep_probing_
 ldap-recon-4648	windows-audit	docker/validation/sigma-fixtures/ldap_recon_4648.jsonl	detections/sigma/discovery/ldap_recon_explicit_creds_4648.yml	4268aa00-9150-42f2-a14b-e2548e15a72e
 sharphound-4662	windows-audit	docker/validation/sigma-fixtures/sharphound_4662.jsonl	detections/sigma/discovery/sharphound_ldap_sweep_4662.yml	9c4e7d21-3a5b-42f0-8e6d-1b0a4f7c9e33
 machine-account-4741	windows-audit	docker/validation/sigma-fixtures/machine_account_4741.jsonl	detections/sigma/persistence/machine_account_creation_burst_4741.yml	ae5a0814-7222-4c3d-9710-258b0c4045ba
+# Cloud/SaaS rules (pipeline=none: no EventID, match raw field names). Products with
+# dotted/nested field schemas are deferred — zircolite flattens nested paths to the last
+# key, so those rules cannot be matched here (see README). Verified locally.
+cloud_aws_iam_access_key_created	none	docker/validation/sigma-fixtures/cloud_aws_iam_access_key_created.jsonl	detections/sigma/cloud/aws_iam_access_key_created.yml	8b569fc9-809b-4e3a-87e6-b77cac86a643
+cloud_aws_login_profile_created	none	docker/validation/sigma-fixtures/cloud_aws_login_profile_created.jsonl	detections/sigma/cloud/aws_login_profile_created.yml	47f3ada3-a78d-423a-881e-6a5352ce892b
+cloud_entra_illicit_consent_grant	none	docker/validation/sigma-fixtures/cloud_entra_illicit_consent_grant.jsonl	detections/sigma/cloud/entra_illicit_consent_grant.yml	06d00b40-680e-4f4b-a675-889c2a2dd0ed
+cloud_entra_sp_credential_backdoor	none	docker/validation/sigma-fixtures/cloud_entra_sp_credential_backdoor.jsonl	detections/sigma/cloud/entra_sp_credential_backdoor.yml	73a70b60-05ed-4f99-a380-175d62df0b24
+cloud_github_branch_protection_tamper	none	docker/validation/sigma-fixtures/cloud_github_branch_protection_tamper.jsonl	detections/sigma/github/github_branch_protection_tamper.yml	329fba40-2880-470c-ab65-41368c66ebec
+cloud_github_credential_backdoor	none	docker/validation/sigma-fixtures/cloud_github_credential_backdoor.jsonl	detections/sigma/github/github_credential_backdoor.yml	42f34b55-a66d-494c-8e97-723f8c81947c
+cloud_github_self_hosted_runner_registered	none	docker/validation/sigma-fixtures/cloud_github_self_hosted_runner_registered.jsonl	detections/sigma/github/github_self_hosted_runner_registered.yml	d0d00bd8-b122-4909-96e2-49d2775598fb
+cloud_gws_admin_role_grant	none	docker/validation/sigma-fixtures/cloud_gws_admin_role_grant.jsonl	detections/sigma/google_workspace/gws_admin_role_grant.yml	a5dfde3d-3def-41ee-9be9-87e011bf8172
+cloud_gws_external_mail_forwarding	none	docker/validation/sigma-fixtures/cloud_gws_external_mail_forwarding.jsonl	detections/sigma/google_workspace/gws_external_mail_forwarding.yml	6e2a80de-912d-495b-aa3c-c3ce24ac9ef3
+cloud_gws_illicit_oauth_grant	none	docker/validation/sigma-fixtures/cloud_gws_illicit_oauth_grant.jsonl	detections/sigma/google_workspace/gws_illicit_oauth_grant.yml	ee3ba747-0017-46fe-83a8-1918fbbc3241
+cloud_jenkins_api_token_created	none	docker/validation/sigma-fixtures/cloud_jenkins_api_token_created.jsonl	detections/sigma/jenkins/jenkins_api_token_created.yml	970de00f-3f9e-420f-8dbc-5e3c1f9f9445
+cloud_jenkins_job_backdoor	none	docker/validation/sigma-fixtures/cloud_jenkins_job_backdoor.jsonl	detections/sigma/jenkins/jenkins_job_backdoor.yml	a3d57201-71d4-49fb-9a28-df32b823fb10
+cloud_jenkins_script_console	none	docker/validation/sigma-fixtures/cloud_jenkins_script_console.jsonl	detections/sigma/jenkins/jenkins_script_console.yml	a1c74793-c675-4314-9d1d-c71090ccc449
+cloud_npm_maintainer_added	none	docker/validation/sigma-fixtures/cloud_npm_maintainer_added.jsonl	detections/sigma/npm/npm_maintainer_added.yml	e633218d-b46d-4766-9f29-f7016897b5f7
+cloud_npm_publish_2fa_disabled	none	docker/validation/sigma-fixtures/cloud_npm_publish_2fa_disabled.jsonl	detections/sigma/npm/npm_publish_2fa_disabled.yml	0df91273-3e6e-459c-b865-468bd1f1c686
+cloud_okta_api_token_created	none	docker/validation/sigma-fixtures/cloud_okta_api_token_created.jsonl	detections/sigma/okta/okta_api_token_created.yml	4cd86f05-ea3b-40b3-b13c-58a44652dc2c
+cloud_okta_idp_created	none	docker/validation/sigma-fixtures/cloud_okta_idp_created.jsonl	detections/sigma/okta/okta_idp_created.yml	5ee9b695-f1a5-4449-9796-6135d2502461
+cloud_okta_mfa_factor_reset	none	docker/validation/sigma-fixtures/cloud_okta_mfa_factor_reset.jsonl	detections/sigma/okta/okta_mfa_factor_reset.yml	1032e411-3cf5-4f3f-b080-ee837968d077
+cloud_pypi_collaborator_added	none	docker/validation/sigma-fixtures/cloud_pypi_collaborator_added.jsonl	detections/sigma/pypi/pypi_collaborator_added.yml	e93df3fe-0b2f-47bc-b0d9-ac2961d54812
+cloud_slack_app_installed	none	docker/validation/sigma-fixtures/cloud_slack_app_installed.jsonl	detections/sigma/slack/slack_app_installed.yml	6f66f0e6-7c7c-40ca-bf12-05ed5338066f
+cloud_slack_external_shared_channel	none	docker/validation/sigma-fixtures/cloud_slack_external_shared_channel.jsonl	detections/sigma/slack/slack_external_shared_channel.yml	59446f62-cb86-4873-9733-7dfd51e3e138

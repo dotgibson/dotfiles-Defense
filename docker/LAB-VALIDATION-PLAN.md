@@ -48,9 +48,16 @@ pipelines), asserting the rule id lands in the detections — gated by `sigma-va
 pipelines. That sweep already earned its keep: it surfaced that
 `potato_seimpersonate_4688` doesn't fire through pysigma at all — its dual-channel
 `User`/`SubjectUserName` selection nulls under either single pipeline (see the finding in
-[`validation/README.md`](validation/README.md)). Remaining: the cloud/SaaS rules (azure/aws/okta/…), each
-needing its product-specific event schema + pipeline. Unlike the network engines, zircolite
-runs in the authoring environment, so every rule+fixture is verified locally before CI.
+[`validation/README.md`](validation/README.md)). Cloud/SaaS: 21 rules covered
+(AWS, Entra, GitHub, Google Workspace, Jenkins, Okta, npm, PyPI, Slack) via `pipeline=none`
+— they match raw field names. The remaining 26 (GCP, Cloudflare, GitLab, Kubernetes, Harbor,
+Snowflake, Terraform, Vault, and a few others) are deferred: their rules match on
+dotted/nested field names, and zircolite's EVTX flattener collapses nested paths to the last
+key (verified with `--keepflat`), so the column never carries the dotted name. Validating
+them needs a Sigma engine that preserves nested field names (per-product field-mappings or a
+cloud-native matcher). Host-plane total: 44 rules (23 Windows/Sysmon + 21 cloud). Unlike the
+network engines, zircolite runs in the authoring environment, so every rule+fixture is
+verified locally before CI.
 
 **Phase 3 — fixtures from the real attacks.** *(not CI)*
 A documented `regen-fixtures.sh` that runs the paired Kali attacks (the htpx pairs)

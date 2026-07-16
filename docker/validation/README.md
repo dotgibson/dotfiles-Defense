@@ -107,6 +107,22 @@ The fix is a detection-content decision (split into a per-channel pair, or drop 
 channel field), so it's flagged here for review rather than changed under a validation PR.
 Reproduce: a Sysmon-1 `cmd.exe` with `User: "IIS APPPOOL\\…"` under `--pipeline sysmon`.
 
-The network plane (above) is PCAP replay; this plane is JSONL-event replay. Remaining Sigma
-work: the cloud/SaaS rules (azure/aws/okta/…), each needing its product-specific event schema
-and pipeline. Tracked in [`../LAB-VALIDATION-PLAN.md`](../LAB-VALIDATION-PLAN.md).
+**Cloud / SaaS** (`pipeline=none`): 21 rules covered — AWS (IAM key, login profile), Entra
+(consent, SP credential), GitHub (branch-protection, credential, runner), Google Workspace
+(admin role, mail-forward, OAuth), Jenkins (×3), Okta (×3), npm (×2), PyPI collaborator,
+Slack (app-installed, external-share). These have no EventID and match on raw field names,
+so they run without a pysigma pipeline.
+
+**Deferred — an engine limitation, not rule bugs (26 rules).** zircolite is EVTX-oriented:
+its flattener collapses a nested/dotted event path to the **last key with underscores
+stripped** (verified with `--keepflat`: `gcp.audit.method_name` → `methodname`,
+`resource.type` → `type`, with collisions). So cloud rules that match on dotted field names
+can't be exercised through zircolite — their column never carries the name the rule expects.
+This hits every rule for **GCP, Cloudflare, GitLab, Kubernetes, Harbor, Snowflake, Terraform,
+Vault**, plus a few others (npm-malicious-publish, PyPI token/trusted-publisher, Slack-2FA).
+The rules themselves are correct (they compile clean in `sigma.yml`); validating them needs
+a Sigma engine that preserves nested field names (per-product zircolite field-mappings, or a
+cloud-native matcher) — a separate effort, tracked in the plan.
+
+The network plane (above) is PCAP replay; this plane is JSONL-event replay. Tracked in
+[`../LAB-VALIDATION-PLAN.md`](../LAB-VALIDATION-PLAN.md).
