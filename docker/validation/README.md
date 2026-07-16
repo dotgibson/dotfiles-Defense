@@ -95,24 +95,26 @@ oversized-query-name / echo-reply variants.
 
 ## Host / Sigma plane — coverage & findings
 
-Covered (23 rules, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
+Covered (25 rules, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
 every shape — Kerberoast, AS-REP, DCSync, GPP cpassword, coercion, DPAPI, LSASS access,
 NTDS dump, rogue-account / machine-account / scheduled-task / WMI-subscription persistence,
-DCShadow, RBCD, shadow-credentials, ADCS ESC1, RDP-hijack, PsExec, WMIexec, and the
-correlation rules (password-spray, pass-the-hash, LDAP-recon, SharpHound). Each was
-verified firing against the real engine locally.
+DCShadow, RBCD, shadow-credentials, ADCS ESC1, RDP-hijack, PsExec, WMIexec, the potato
+SeImpersonate pair, and the correlation rules (password-spray, pass-the-hash, LDAP-recon,
+SharpHound). Each was verified firing against the real engine locally.
 
-**Finding — `detections/sigma/privilege_escalation/potato_seimpersonate_4688.yml` does not fire through pysigma.**
-The rule is dual-channel by design: `selection_svc_identity` matches the service account in
-EITHER `User` (Sysmon-1) OR `SubjectUserName` (Security-4688). But putting both fields in one
-rule breaks it under a single pysigma pipeline — the **sysmon** pipeline can't resolve
-`SubjectUserName` and the **windows-audit** pipeline can't resolve `User`, and in each case
-the unresolved branch nulls the whole rule (verified: `User`-only fires under sysmon; adding
-the `SubjectUserName` branch → 0 matches on the same event; symmetric under windows-audit).
-So on real single-channel telemetry via any pysigma-based tool, this rule likely never fires.
-The fix is a detection-content decision (split into a per-channel pair, or drop the cross-
-channel field), so it's flagged here for review rather than changed under a validation PR.
-Reproduce: a Sysmon-1 `cmd.exe` with `User: "IIS APPPOOL\\…"` under `--pipeline sysmon`.
+**Resolved — the potato SeImpersonate rule now fires (split into a per-channel pair).**
+The original `potato_seimpersonate_4688.yml` was dual-channel by design: one
+`selection_svc_identity` matched the service account in EITHER `User` (Sysmon-1) OR
+`SubjectUserName` (Security-4688). Both fields in one rule broke it under a single pysigma
+pipeline — the **sysmon** pipeline can't resolve `SubjectUserName` and the **windows-audit**
+pipeline can't resolve `User`, so in each case the unresolved branch nulled the whole rule
+(reproduced: adding the second-channel branch → 0 matches on an event the single-channel form
+caught). The fix was a detection-content decision, so it was flagged rather than changed under
+the cloud-plane PR. It's now split into a per-channel pair — `potato_seimpersonate_sysmon_1.yml`
+(field `User`, validated on the **sysmon** pipeline) and `potato_seimpersonate_4688.yml`
+(field `SubjectUserName`, EventID 4688, validated on **windows-audit**) — with the original id
+preserved on the 4688 half so the htpx cross-link holds. Both are wired into the manifest and
+verified firing locally; deploy both and whichever channel a host forwards will match.
 
 **Cloud / SaaS** (`pipeline=none`): 21 rules covered — AWS (IAM key, login profile), Entra
 (consent, SP credential), GitHub (branch-protection, credential, runner), Google Workspace

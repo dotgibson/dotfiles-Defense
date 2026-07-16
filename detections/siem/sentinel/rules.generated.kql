@@ -156,8 +156,11 @@ EventID == 20 and (Destination contains "powershell" or Destination contains "cm
 // privilege_escalation/adcs_esc1_san_mismatch_4886.yml — AD CS certificate request (ESC1 triage surface)
 EventID in~ ("4886", "4887")
 
-// privilege_escalation/potato_seimpersonate_4688.yml — Potato privesc - service identity spawning an interactive shell
-(Image endswith "\\cmd.exe" or Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and ((User contains "APPPOOL" or User contains "NETWORK SERVICE" or User contains "LOCAL SERVICE") or (SubjectUserName contains "APPPOOL" or SubjectUserName contains "NETWORK SERVICE" or SubjectUserName contains "LOCAL SERVICE"))
+// privilege_escalation/potato_seimpersonate_4688.yml — Potato privesc - service identity spawning an interactive shell (Security 4688)
+(EventID == 4688 and (NewProcessName endswith "\\cmd.exe" or NewProcessName endswith "\\powershell.exe" or NewProcessName endswith "\\pwsh.exe")) and (SubjectUserName contains "APPPOOL" or SubjectUserName contains "NETWORK SERVICE" or SubjectUserName contains "LOCAL SERVICE")
+
+// privilege_escalation/potato_seimpersonate_sysmon_1.yml — Potato privesc - service identity spawning an interactive shell (Sysmon 1)
+(Image endswith "\\cmd.exe" or Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and (User contains "APPPOOL" or User contains "NETWORK SERVICE" or User contains "LOCAL SERVICE")
 
 // privilege_escalation/rbcd_allowedtoact_5136.yml — RBCD abuse - msDS-AllowedToActOnBehalfOfOtherIdentity write
 (EventID == 5136 and AttributeLDAPDisplayName =~ "msDS-AllowedToActOnBehalfOfOtherIdentity") and (not(SubjectUserName =~ "svc_delegation"))

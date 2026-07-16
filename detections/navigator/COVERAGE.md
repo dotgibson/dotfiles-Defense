@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**71 rules · 78 detection documents · 47 techniques · 9 tactics · 21 logsources.**
+**72 rules · 79 detection documents · 47 techniques · 9 tactics · 21 logsources.**
 
 ## By ATT&CK tactic
 
@@ -10,7 +10,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | ------ | -- | ---------: | ----: |
 | Execution | TA0002 | 8 | 10 |
 | Persistence | TA0003 | 13 | 31 |
-| Privilege Escalation | TA0004 | 6 | 6 |
+| Privilege Escalation | TA0004 | 6 | 7 |
 | Defense Evasion | TA0005 | 6 | 10 |
 | Credential Access | TA0006 | 12 | 14 |
 | Discovery | TA0007 | 3 | 2 |
@@ -39,7 +39,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1098.003 | 1 | `gws_admin_role_grant` |
 | T1110.003 | 1 | `password_spray_4625` |
 | T1114.003 | 1 | `gws_external_mail_forwarding` |
-| T1134.001 | 1 | `potato_seimpersonate_4688` |
+| T1134.001 | 2 | `potato_seimpersonate_4688`, `potato_seimpersonate_sysmon_1` |
 | T1136.001 | 1 | `rogue_account_creation_4720` |
 | T1136.002 | 2 | `machine_account_creation_burst_4741`, `rogue_account_creation_4720` |
 | T1136.003 | 1 | `snowflake_user_created` |
@@ -88,7 +88,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `npm` | `npm` | 3 |
 | `okta` | `okta` | 3 |
 | `persistence` | `windows` | 4 |
-| `privilege_escalation` | `windows` | 4 |
+| `privilege_escalation` | `windows` | 5 |
 | `pypi` | `pypi` | 3 |
 | `registry` | `harbor` | 3 |
 | `slack` | `slack` | 3 |

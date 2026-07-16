@@ -1,4 +1,4 @@
-title: Potato privesc - service identity spawning an interactive shell
+title: Potato privesc - service identity spawning an interactive shell (Security 4688)
 id: 9486ed6c-4c38-457f-a475-188a978eaa4a
 status: experimental
 description: |
@@ -8,9 +8,13 @@ description: |
   account / NETWORK|LOCAL SERVICE) spawning cmd/powershell. Confirm the SYSTEM
   outcome with Sysmon 17/18 on the spoolss/DCOM named pipe and Sysmon 1 linking the
   service parent to a SYSTEM child.
-  Field handling: native Security-4688 carries the account in SubjectUserName while
-  Sysmon-1 carries it in User; the rule matches either so it fires on whichever
-  channel is forwarded (a rule keyed on only one silently misses the other).
+  Channel: native Security-4688 carries the account in SubjectUserName. This is the
+  4688 half of a per-channel pair - its Sysmon-1 twin (field User) is
+  potato_seimpersonate_sysmon_1.yml (id 03e878f6-bbdc-41e1-afa6-68b2979938fe). The
+  two are split on purpose: a single rule naming both User and SubjectUserName nulls
+  under any single pysigma pipeline (the pipeline that can't resolve one field drops
+  the whole rule), so it silently never fires. Deploy both; whichever channel your
+  hosts forward will match.
   Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Kali (hacktheplanet
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate).
 references:
@@ -22,23 +26,21 @@ tags:
   - attack.privilege_escalation
   - attack.t1134.001
 logsource:
-  category: process_creation
   product: windows
+  service: security
+  definition: 'Security 4688 (A new process has been created), SubjectUserName populated'
 detection:
   selection_shell:
-    Image|endswith:
+    EventID: 4688
+    NewProcessName|endswith:
       - '\cmd.exe'
       - '\powershell.exe'
       - '\pwsh.exe'
   selection_svc_identity:
-    - User|contains:
-        - 'APPPOOL'
-        - 'NETWORK SERVICE'
-        - 'LOCAL SERVICE'
-    - SubjectUserName|contains:
-        - 'APPPOOL'
-        - 'NETWORK SERVICE'
-        - 'LOCAL SERVICE'
+    SubjectUserName|contains:
+      - 'APPPOOL'
+      - 'NETWORK SERVICE'
+      - 'LOCAL SERVICE'
   condition: selection_shell and selection_svc_identity
 falsepositives:
   - Service accounts that legitimately shell out (scripts, monitoring) - baseline

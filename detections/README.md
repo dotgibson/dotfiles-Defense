@@ -79,7 +79,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 71 rules / 78 documents, organized by ATT&CK tactic
+### `sigma/` — 72 rules / 79 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -100,7 +100,7 @@ purple-validatable out of the box.
 | Rule | Event / source | ATT&CK | Validate with |
 | ---- | -------------- | ------ | ------------- |
 | `adcs_esc1_san_mismatch_4886` | 4886/4887 cert request | T1649 | AD CS abuse · adcs-esc1-certipy |
-| `potato_seimpersonate_4688` | proc create (service→shell) | T1134.001 | Win privesc · potato-seimpersonate |
+| `potato_seimpersonate_4688` / `potato_seimpersonate_sysmon_1` | proc create (service→shell); per-channel pair (Security-4688 `SubjectUserName` / Sysmon-1 `User`) | T1134.001 | Win privesc · potato-seimpersonate |
 | `shadow_credentials_keycredentiallink_5136` | 5136 msDS-KeyCredentialLink | T1556 | AD attack paths · shadow-credentials-certipy |
 | `rbcd_allowedtoact_5136` | 5136 msDS-AllowedToActOnBehalf… | T1098 | AD attack paths · rbcd-impacket |
 

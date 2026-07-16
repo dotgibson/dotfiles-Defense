@@ -43,11 +43,14 @@ protocol state to fake faithfully; capture them from the real Kali attack instea
 `run-sigma-validation.sh` runs the real Sigma rule against a committed JSON-lines event
 fixture with **zircolite** (native Sigma via the pysigma `windows-audit` / `sysmon`
 pipelines), asserting the rule id lands in the detections — gated by `sigma-validation.yml`
-(pinned zircolite). The Windows-security + Sysmon corpus is now covered — 23 rules across every shape
+(pinned zircolite). The Windows-security + Sysmon corpus is now covered — 25 rules across every shape
 (single-selection, filtered, `value_count` correlation) on the `windows-audit` and `sysmon`
-pipelines. That sweep already earned its keep: it surfaced that
-`potato_seimpersonate_4688` doesn't fire through pysigma at all — its dual-channel
-`User`/`SubjectUserName` selection nulls under either single pipeline (see the finding in
+pipelines. That sweep already earned its keep: it surfaced that the original
+`potato_seimpersonate_4688` didn't fire through pysigma at all — a single rule naming both
+`User` (Sysmon-1) and `SubjectUserName` (Security-4688) nulls under either pipeline, since the
+one that can't resolve a field drops the whole rule. It's now fixed by splitting into a
+per-channel pair (`potato_seimpersonate_sysmon_1` on `User`/sysmon and `potato_seimpersonate_4688`
+on `SubjectUserName`/windows-audit), both wired in and firing (see the write-up in
 [`validation/README.md`](validation/README.md)). Cloud/SaaS splits in two by whether
 zircolite can see the field names. 21 flat-field rules (AWS, Entra, GitHub, Google Workspace,
 Jenkins, Okta, npm, PyPI-collaborator, Slack app/share) run on zircolite via `pipeline=none`.
@@ -57,8 +60,8 @@ few others) match on field names zircolite's EVTX flattener can't preserve — d
 `resource_type` → `resourcetype`) — so they run on a dedicated **nested-field cloud plane**
 (`run-cloud-validation.sh`): `sigma_eval.py` matches the real rule against natural cloud-event
 JSON by walking pysigma's own parsed condition tree, and each rule is checked both ways — its
-true-positive fires, a benign true-negative near-miss stays silent. Host-plane total: 70 rules
-(23 Windows/Sysmon + 21 zircolite cloud + 26 evaluator cloud). Both Sigma engines run in the
+true-positive fires, a benign true-negative near-miss stays silent. Host-plane total: 72 rules
+(25 Windows/Sysmon + 21 zircolite cloud + 26 evaluator cloud). Both Sigma engines run in the
 authoring environment, so every rule+fixture is verified locally before CI.
 
 **Phase 3 — fixtures from the real attacks.** *(not CI)*

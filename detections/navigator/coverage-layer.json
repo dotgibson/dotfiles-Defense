@@ -112,9 +112,9 @@
     },
     {
       "techniqueID": "T1134.001",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): potato_seimpersonate_4688"
+      "comment": "2 rule(s): potato_seimpersonate_4688, potato_seimpersonate_sysmon_1"
     },
     {
       "techniqueID": "T1136.001",
