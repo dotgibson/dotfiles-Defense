@@ -1,0 +1,1 @@
+{"Event": {"System": {"Channel": "aws"}, "EventData": {"eventSource": "iam.amazonaws.com", "eventName": "CreateLoginProfile"}}}
