@@ -55,8 +55,8 @@ the engine(s) the selected rows actually use.
 ## Scope — what's covered, what isn't
 
 This is the **network plane** (PCAP replay — offline, deterministic, hermetic). Covered:
-Zeek DNS tunnel + DGA, ICMP tunnel, reverse-tunnel/egress; Suricata DNS-tunnel, ICMP
-oversized-echo, and EFSRPC coercion bind.
+Zeek DNS tunnel + DGA, ICMP tunnel, reverse-tunnel/egress; Suricata DNS-tunnel and ICMP
+oversized-echo.
 
 **Known gaps — deferred to Phase-3 captured fixtures**, not silently uncovered. These
 depend on protocol state a faithful synthetic can't cheaply fake, so a captured PCAP from
@@ -65,9 +65,14 @@ the real Kali attack is the honest fixture:
 - `zeek/tls-c2.zeek` (self-signed cert) and `zeek/tls-c2-ja3.zeek` (JA3) — need a real TLS
   handshake + X.509 chain for Zeek's SSL analyzer and the ja3 add-on.
 - `zeek/kerberoast-rc4.zeek` — needs a real Kerberos TGS-REP (ASN.1, RC4 etype).
+- `suricata/coercion.rules` — a byte-correct scapy DCERPC bind (v5 `05 00 0b`, MS-EFSRPC +
+  NDR UUIDs) was built and tried, but Suricata 7's app-layer didn't parse the interface
+  out of a hand-crafted raw-TCP/135 flow (it read the packets, emitted no alert). The DCERPC
+  app-layer wants a real bind/bind-ack exchange over SMB or the epmapper — captured from
+  the real coercer, not synthesized. Trivially extendable once one interface validates:
+  the other three (MS-RPRN/DFSNM/FSRVP — swap the UUID).
 
-Partial, trivially extendable (same shape as a covered row): the other three
-`coercion.rules` interfaces (MS-RPRN/DFSNM/FSRVP — swap the UUID) and the c2.rules
+Partial, trivially extendable (same shape as a covered row): the c2.rules
 oversized-query-name / echo-reply variants.
 
 The host plane (Sigma vs EVTX via chainsaw/zircolite) is a later phase — see

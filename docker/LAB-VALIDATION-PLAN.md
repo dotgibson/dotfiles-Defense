@@ -29,14 +29,15 @@ generators through the real Zeek scripts and asserting the Notice. Two golden pa
 **Phase 1 — network plane coverage.** *(mostly done)*
 A generator + manifest row per network detection, across both engines, with
 `run-validation.sh <engine>` running one plane per CI job/image. Validated: Zeek
-DNS-tunnel, DGA, ICMP-tunnel, reverse-tunnel/egress; Suricata DNS-tunnel, ICMP-oversized,
-and EFSRPC coercion bind. This closed the "authored to-spec, never run" gap for the C2
-network detections — and immediately caught a real bug (dns-c2's DGA path keyed on the
-wrong Zeek event, so it never fired on NXDOMAIN). reverse-tunnel turned out synthesizable
-after all (compact 8 KB segments over a 31-min span), as did coercion (a scapy DCERPC bind
-to the MS-EFSRPC UUID). Remaining, deferred to Phase-3 captured fixtures: TLS self-signed /
-JA3 (real handshake + X.509) and Kerberoast (ASN.1 TGS-REP) — too much protocol state to
-fake faithfully. Trivially extendable: the other three coercion interfaces (swap the UUID).
+DNS-tunnel, DGA, ICMP-tunnel, reverse-tunnel/egress; Suricata DNS-tunnel and ICMP-oversized.
+This closed the "authored to-spec, never run" gap for the C2 network detections — and
+immediately caught a real bug (dns-c2's DGA path keyed on the wrong Zeek event, so it never
+fired on NXDOMAIN). reverse-tunnel turned out synthesizable after all (compact 8 KB segments
+over a 31-min span). Remaining, deferred to Phase-3 captured fixtures: TLS self-signed / JA3
+(real handshake + X.509), Kerberoast (ASN.1 TGS-REP), and coercion — a byte-correct DCERPC
+bind was built, but Suricata's app-layer wouldn't parse the interface out of a hand-crafted
+raw-TCP flow (it wants a real bind/bind-ack over SMB/epmapper). All three need too much
+protocol state to fake faithfully; capture them from the real Kali attack instead.
 
 **Phase 2 — host / Sigma plane.**
 Add `chainsaw` (or `zircolite`) in a container and run `detections/sigma/` against curated

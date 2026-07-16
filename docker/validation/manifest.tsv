@@ -11,4 +11,3 @@ icmp-tunnel	zeek	docker/validation/fixtures/gen_icmp_tunnel.py	detections/networ
 reverse-tunnel	zeek	docker/validation/fixtures/gen_reverse_tunnel.py	detections/network/zeek/reverse-tunnel.zeek	RevTunnel::Long_Lived_Egress
 dns-tunnel-suri	suricata	docker/validation/fixtures/gen_dns_tunnel.py	detections/network/suricata/c2.rules	DOTFILES-DEFENSE DNS tunneling - long encoded label
 icmp-tunnel-suri	suricata	docker/validation/fixtures/gen_icmp_tunnel.py	detections/network/suricata/c2.rules	DOTFILES-DEFENSE ICMP tunneling - oversized echo request
-coercion-suri	suricata	docker/validation/fixtures/gen_coercion.py	detections/network/suricata/coercion.rules	DOTFILES-DEFENSE Coercion MS-EFSRPC bind (PetitPotam)
