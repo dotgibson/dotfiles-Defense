@@ -30,6 +30,11 @@ triage/
 *.syslog
 *.winlog
 
+# Exception: the detection-validation event fixtures are SYNTHETIC test data (checked in
+# on purpose so the sigma-validation gate is reproducible), not captured case/evidence.
+!docker/validation/sigma-fixtures/
+!docker/validation/sigma-fixtures/*.jsonl
+
 # Forensic / timeline intermediates
 *.plaso
 *.body

@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 4720, "Channel": "Security", "Computer": "DC01", "TimeCreated": {"#attributes": {"SystemTime": "2026-07-16T10:00:00.000Z"}}}, "EventData": {"TargetUserName": "eviladmin", "SubjectUserName": "attacker", "SubjectUserSid": "S-1-5-21-1-2-3-1105"}}}
