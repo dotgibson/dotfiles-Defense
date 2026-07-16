@@ -52,11 +52,23 @@ the engine(s) the selected rows actually use.
 2. Add a row to `manifest.tsv`: the generator, the detection script, and the expected
    signal — a Zeek `Module::Notice_Type`, or a Suricata rule `msg` (matched literally).
 
-## Scope
+## Scope — what's covered, what isn't
 
-This is the **network plane** (PCAP replay — offline, deterministic, hermetic). The host
-plane (Sigma vs EVTX via chainsaw/zircolite) and generating fixtures from the real Kali
-attacks are later phases — see [`../LAB-VALIDATION-PLAN.md`](../LAB-VALIDATION-PLAN.md).
-Detections that can't be synthesized cleanly (TLS handshakes / JA3, Kerberos ASN.1,
-multi-megabyte long-haul tunnels) wait for captured fixtures from that phase rather than
-shipping a fragile synthetic.
+This is the **network plane** (PCAP replay — offline, deterministic, hermetic). Covered:
+Zeek DNS tunnel + DGA, ICMP tunnel, reverse-tunnel/egress; Suricata DNS-tunnel, ICMP
+oversized-echo, and EFSRPC coercion bind.
+
+**Known gaps — deferred to Phase-3 captured fixtures**, not silently uncovered. These
+depend on protocol state a faithful synthetic can't cheaply fake, so a captured PCAP from
+the real Kali attack is the honest fixture:
+
+- `zeek/tls-c2.zeek` (self-signed cert) and `zeek/tls-c2-ja3.zeek` (JA3) — need a real TLS
+  handshake + X.509 chain for Zeek's SSL analyzer and the ja3 add-on.
+- `zeek/kerberoast-rc4.zeek` — needs a real Kerberos TGS-REP (ASN.1, RC4 etype).
+
+Partial, trivially extendable (same shape as a covered row): the other three
+`coercion.rules` interfaces (MS-RPRN/DFSNM/FSRVP — swap the UUID) and the c2.rules
+oversized-query-name / echo-reply variants.
+
+The host plane (Sigma vs EVTX via chainsaw/zircolite) is a later phase — see
+[`../LAB-VALIDATION-PLAN.md`](../LAB-VALIDATION-PLAN.md).
