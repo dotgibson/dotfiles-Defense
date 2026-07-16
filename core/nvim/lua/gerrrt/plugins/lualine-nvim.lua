@@ -60,6 +60,15 @@ return {
 				lualine_a = {
 					-- the outer half-circle cap (e0b6) turns the mode block into NvChad's bubble
 					{ "mode", icon = "\u{e62b}", separator = { left = "\u{e0b6}" } }, -- e62b nf-custom-vim, e0b6
+					-- Macro recording indicator. showmode=false (options.lua) means the cmdline is the
+					-- only native cue that you're recording; this surfaces it in the block instead.
+					-- Empty string when not recording, so the component collapses and adds no width.
+					{
+						function()
+							local reg = vim.fn.reg_recording()
+							return reg == "" and "" or "\u{f111} REC " .. reg:upper() -- f111 nf-fa-circle
+						end,
+					},
 				},
 				lualine_b = {
 					{ "branch", icon = "\u{e0a0}" }, -- e0a0 powerline branch

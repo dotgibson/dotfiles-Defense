@@ -98,3 +98,17 @@ vim.keymap.set("n", "<leader>pa", function()
 	vim.fn.setreg("+", path)
 	print("file:", path)
 end, { desc = "Copy full file path" })
+
+-- Auto-indent when entering insert on a blank line. On a whitespace-only line, i/a/A start you
+-- at column 0 with no indent; "_cc respects smartindent/autoindent and lands you at the correct
+-- depth instead. Uses the black-hole register so it never clobbers a yank (same philosophy as the
+-- <leader>p / <leader>D maps above). Guarded on count == 0 so 3i / 10a keep native repeat-insert
+-- (mirrors the wrap-aware j/k guards near the top of this file).
+for _, key in ipairs({ "i", "a", "A" }) do
+	vim.keymap.set("n", key, function()
+		if vim.v.count == 0 and vim.fn.getline("."):match("^%s*$") then
+			return '"_cc'
+		end
+		return key
+	end, { expr = true, desc = "Insert (auto-indent on blank line)" })
+end
