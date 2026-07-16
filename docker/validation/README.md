@@ -73,8 +73,16 @@ the engine(s) the selected rows actually use.
 ## Scope — what's covered, what isn't
 
 This is the **network plane** (PCAP replay — offline, deterministic, hermetic). Covered:
-Zeek DNS tunnel + DGA, ICMP tunnel, reverse-tunnel/egress; Suricata DNS-tunnel and ICMP
-oversized-echo.
+Zeek DNS tunnel + DGA, ICMP tunnel, reverse-tunnel/egress; Suricata DNS-tunnel, ICMP
+oversized-echo, and all four DCERPC coercion vectors (MS-EFSRPC/RPRN/DFSNM/FSRVP).
+
+**Coercion — synthesized after all (`suricata/coercion.rules`, all 4 interfaces).** An
+earlier bind-only attempt was deferred because Suricata parsed the interface but emitted no
+alert. The missing piece wasn't the bind bytes: `dce_iface` matches when a **request** is
+issued on a *bound* interface, not on the bind alone. `gen_coercion.py` now builds the full
+DCERPC/TCP exchange per vector — TCP handshake → bind → bind_ack → a request PDU on the
+bound context — one flow each for MS-EFSRPC (PetitPotam), MS-RPRN (PrinterBug), MS-DFSNM
+(DFSCoerce) and MS-FSRVP (ShadowCoerce), all in one PCAP. Four manifest rows, all firing.
 
 **Known gaps — deferred to Phase-3 captured fixtures**, not silently uncovered. These
 depend on protocol state a faithful synthetic can't cheaply fake, so a captured PCAP from
@@ -83,12 +91,6 @@ the real Kali attack is the honest fixture:
 - `zeek/tls-c2.zeek` (self-signed cert) and `zeek/tls-c2-ja3.zeek` (JA3) — need a real TLS
   handshake + X.509 chain for Zeek's SSL analyzer and the ja3 add-on.
 - `zeek/kerberoast-rc4.zeek` — needs a real Kerberos TGS-REP (ASN.1, RC4 etype).
-- `suricata/coercion.rules` — a byte-correct scapy DCERPC bind (v5 `05 00 0b`, MS-EFSRPC +
-  NDR UUIDs) was built and tried, but Suricata 7's app-layer didn't parse the interface
-  out of a hand-crafted raw-TCP/135 flow (it read the packets, emitted no alert). The DCERPC
-  app-layer wants a real bind/bind-ack exchange over SMB or the epmapper — captured from
-  the real coercer, not synthesized. Trivially extendable once one interface validates:
-  the other three (MS-RPRN/DFSNM/FSRVP — swap the UUID).
 
 Partial, trivially extendable (same shape as a covered row): the c2.rules
 oversized-query-name / echo-reply variants.

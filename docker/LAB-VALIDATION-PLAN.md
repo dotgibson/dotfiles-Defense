@@ -32,12 +32,15 @@ A generator + manifest row per network detection, across both engines, with
 DNS-tunnel, DGA, ICMP-tunnel, reverse-tunnel/egress; Suricata DNS-tunnel and ICMP-oversized.
 This closed the "authored to-spec, never run" gap for the C2 network detections — and
 immediately caught a real bug (dns-c2's DGA path keyed on the wrong Zeek event, so it never
-fired on NXDOMAIN). reverse-tunnel turned out synthesizable after all (compact 8 KB segments
-over a 31-min span). Remaining, deferred to Phase-3 captured fixtures: TLS self-signed / JA3
-(real handshake + X.509), Kerberoast (ASN.1 TGS-REP), and coercion — a byte-correct DCERPC
-bind was built, but Suricata's app-layer wouldn't parse the interface out of a hand-crafted
-raw-TCP flow (it wants a real bind/bind-ack over SMB/epmapper). All three need too much
-protocol state to fake faithfully; capture them from the real Kali attack instead.
+fired on NXDOMAIN). Two detections deferred as "un-synthesizable" turned out crackable with
+more protocol state: reverse-tunnel (compact 8 KB segments over a 31-min span), and all four
+**DCERPC coercion** vectors (MS-EFSRPC/RPRN/DFSNM/FSRVP). Coercion had been deferred because a
+bind-only PCAP parsed but never alerted; the fix was realizing `dce_iface` matches on a
+*request* issued over a bound interface, not the bind — so `gen_coercion.py` emits the full
+handshake → bind → bind_ack → request per vector, and all four fire. Remaining, deferred to
+Phase-3 captured fixtures: TLS self-signed / JA3 (real handshake + X.509) and Kerberoast
+(ASN.1 TGS-REP) — those need a real TLS/Kerberos exchange too heavy to fake, so capture them
+from the real Kali attack instead.
 
 **Phase 2 — host / Sigma plane.** *(started)*
 `run-sigma-validation.sh` runs the real Sigma rule against a committed JSON-lines event
