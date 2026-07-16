@@ -86,5 +86,27 @@ the real Kali attack is the honest fixture:
 Partial, trivially extendable (same shape as a covered row): the c2.rules
 oversized-query-name / echo-reply variants.
 
-The host plane (Sigma vs EVTX via chainsaw/zircolite) is a later phase — see
-[`../LAB-VALIDATION-PLAN.md`](../LAB-VALIDATION-PLAN.md).
+## Host / Sigma plane — coverage & findings
+
+Covered (23 rules, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
+every shape — Kerberoast, AS-REP, DCSync, GPP cpassword, coercion, DPAPI, LSASS access,
+NTDS dump, rogue-account / machine-account / scheduled-task / WMI-subscription persistence,
+DCShadow, RBCD, shadow-credentials, ADCS ESC1, RDP-hijack, PsExec, WMIexec, and the
+correlation rules (password-spray, pass-the-hash, LDAP-recon, SharpHound). Each was
+verified firing against the real engine locally.
+
+**Finding — `privilege_escalation/potato_seimpersonate_4688` does not fire through pysigma.**
+The rule is dual-channel by design: `selection_svc_identity` matches the service account in
+EITHER `User` (Sysmon-1) OR `SubjectUserName` (Security-4688). But putting both fields in one
+rule breaks it under a single pysigma pipeline — the **sysmon** pipeline can't resolve
+`SubjectUserName` and the **windows-audit** pipeline can't resolve `User`, and in each case
+the unresolved branch nulls the whole rule (verified: `User`-only fires under sysmon; adding
+the `SubjectUserName` branch → 0 matches on the same event; symmetric under windows-audit).
+So on real single-channel telemetry via any pysigma-based tool, this rule likely never fires.
+The fix is a detection-content decision (split into a per-channel pair, or drop the cross-
+channel field), so it's flagged here for review rather than changed under a validation PR.
+Reproduce: a Sysmon-1 `cmd.exe` with `User: "IIS APPPOOL\\…"` under `--pipeline sysmon`.
+
+The network plane (above) is PCAP replay; this plane is JSONL-event replay. Remaining Sigma
+work: the cloud/SaaS rules (azure/aws/okta/…), each needing its product-specific event schema
+and pipeline. Tracked in [`../LAB-VALIDATION-PLAN.md`](../LAB-VALIDATION-PLAN.md).

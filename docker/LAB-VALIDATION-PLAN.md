@@ -43,12 +43,14 @@ protocol state to fake faithfully; capture them from the real Kali attack instea
 `run-sigma-validation.sh` runs the real Sigma rule against a committed JSON-lines event
 fixture with **zircolite** (native Sigma via the pysigma `windows-audit` / `sysmon`
 pipelines), asserting the rule id lands in the detections — gated by `sigma-validation.yml`
-(pinned zircolite). First wave validated across every rule shape: single-selection
-(rogue-account 4720, coercion 5145), filtered (DPAPI 5145, DCSync 4662, LSASS Sysmon-10),
-and `value_count` correlation (password-spray 4625, pass-the-hash 4624). Remaining: extend
-to the rest of the Windows/Sysmon corpus, then the cloud/SaaS rules (each needs its
-product-specific event schema + pipeline). Unlike the network engines, zircolite runs in
-the authoring environment, so every rule+fixture is verified locally before CI.
+(pinned zircolite). The Windows-security + Sysmon corpus is now covered — 23 rules across every shape
+(single-selection, filtered, `value_count` correlation) on the `windows-audit` and `sysmon`
+pipelines. That sweep already earned its keep: it surfaced that
+`potato_seimpersonate_4688` doesn't fire through pysigma at all — its dual-channel
+`User`/`SubjectUserName` selection nulls under either single pipeline (see
+validation/README's finding). Remaining: the cloud/SaaS rules (azure/aws/okta/…), each
+needing its product-specific event schema + pipeline. Unlike the network engines, zircolite
+runs in the authoring environment, so every rule+fixture is verified locally before CI.
 
 **Phase 3 — fixtures from the real attacks.** *(not CI)*
 A documented `regen-fixtures.sh` that runs the paired Kali attacks (the htpx pairs)

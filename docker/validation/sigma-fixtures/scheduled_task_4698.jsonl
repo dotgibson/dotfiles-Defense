@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 4698, "Channel": "Security", "Computer": "DC01"}, "EventData": {"TaskName": "\\EvilTask", "TaskContent": "<Command>powershell.exe</Command><Arguments>-w hidden -enc SQBFAFgA</Arguments>"}}}

