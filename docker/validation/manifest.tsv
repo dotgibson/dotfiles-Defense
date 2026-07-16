@@ -1,0 +1,9 @@
+# network detection validation manifest — TAB-separated. Paths are repo-root-relative.
+# name<TAB>engine<TAB>generator<TAB>detection-script<TAB>expected-signal
+#
+# Each row: the generator synthesizes attack-shaped traffic, the engine replays it
+# through the shipped detection, and run-validation.sh asserts the expected signal
+# (a Zeek Notice::Type here) appears. Add a row when a network detection gains a
+# synthesizable fixture; suricata rows (engine=suricata, expected=sid/msg) come next.
+dns-tunnel	zeek	docker/validation/fixtures/gen_dns_tunnel.py	detections/network/zeek/dns-c2.zeek	DNSC2::DNS_Tunnel
+icmp-tunnel	zeek	docker/validation/fixtures/gen_icmp_tunnel.py	detections/network/zeek/icmp-tunnel.zeek	ICMPTunnel::ICMP_Tunnel
