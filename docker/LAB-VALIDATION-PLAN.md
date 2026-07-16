@@ -47,8 +47,8 @@ pipelines), asserting the rule id lands in the detections — gated by `sigma-va
 (single-selection, filtered, `value_count` correlation) on the `windows-audit` and `sysmon`
 pipelines. That sweep already earned its keep: it surfaced that
 `potato_seimpersonate_4688` doesn't fire through pysigma at all — its dual-channel
-`User`/`SubjectUserName` selection nulls under either single pipeline (see
-validation/README's finding). Remaining: the cloud/SaaS rules (azure/aws/okta/…), each
+`User`/`SubjectUserName` selection nulls under either single pipeline (see the finding in
+[`validation/README.md`](validation/README.md)). Remaining: the cloud/SaaS rules (azure/aws/okta/…), each
 needing its product-specific event schema + pipeline. Unlike the network engines, zircolite
 runs in the authoring environment, so every rule+fixture is verified locally before CI.
 

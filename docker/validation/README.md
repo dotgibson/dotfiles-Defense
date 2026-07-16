@@ -95,7 +95,7 @@ DCShadow, RBCD, shadow-credentials, ADCS ESC1, RDP-hijack, PsExec, WMIexec, and 
 correlation rules (password-spray, pass-the-hash, LDAP-recon, SharpHound). Each was
 verified firing against the real engine locally.
 
-**Finding — `privilege_escalation/potato_seimpersonate_4688` does not fire through pysigma.**
+**Finding — `detections/sigma/privilege_escalation/potato_seimpersonate_4688.yml` does not fire through pysigma.**
 The rule is dual-channel by design: `selection_svc_identity` matches the service account in
 EITHER `User` (Sysmon-1) OR `SubjectUserName` (Security-4688). But putting both fields in one
 rule breaks it under a single pysigma pipeline — the **sysmon** pipeline can't resolve
