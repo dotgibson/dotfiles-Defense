@@ -26,16 +26,18 @@ attacks becomes a *fixture-generation* step (Phase 3), not a CI dependency.
 generators through the real Zeek scripts and asserting the Notice. Two golden paths wired
 (`dns-c2` DNS-tunnel, `icmp-tunnel`), gated by `network-validation.yml`.
 
-**Phase 1 — network plane coverage.** *(in progress)*
-A generator + manifest row per network detection, across both engines. The Suricata `-r`
-runner is now wired alongside Zeek (engine=`suricata`, expected=rule `msg`), with
-`run-validation.sh <engine>` running one plane per CI job/image. Validated so far: Zeek
-DNS-tunnel, DGA, ICMP-tunnel; Suricata DNS-tunnel + ICMP-oversized (the c2.rules that were
-authored in #66 but never run). This closes the "authored to-spec, never run" gap for the
-C2 network detections. Still to add: coercion (DCERPC binds — synthesizable). Deferred to
-Phase 3 fixtures: TLS/JA3 (needs a real handshake), Kerberoast (ASN.1), reverse-tunnel
-(multi-MB, 30-min flow) — synthesizing these faithfully is more fragile than capturing
-them once.
+**Phase 1 — network plane coverage.** *(mostly done)*
+A generator + manifest row per network detection, across both engines, with
+`run-validation.sh <engine>` running one plane per CI job/image. Validated: Zeek
+DNS-tunnel, DGA, ICMP-tunnel, reverse-tunnel/egress; Suricata DNS-tunnel and ICMP-oversized.
+This closed the "authored to-spec, never run" gap for the C2 network detections — and
+immediately caught a real bug (dns-c2's DGA path keyed on the wrong Zeek event, so it never
+fired on NXDOMAIN). reverse-tunnel turned out synthesizable after all (compact 8 KB segments
+over a 31-min span). Remaining, deferred to Phase-3 captured fixtures: TLS self-signed / JA3
+(real handshake + X.509), Kerberoast (ASN.1 TGS-REP), and coercion — a byte-correct DCERPC
+bind was built, but Suricata's app-layer wouldn't parse the interface out of a hand-crafted
+raw-TCP flow (it wants a real bind/bind-ack over SMB/epmapper). All three need too much
+protocol state to fake faithfully; capture them from the real Kali attack instead.
 
 **Phase 2 — host / Sigma plane.**
 Add `chainsaw` (or `zircolite`) in a container and run `detections/sigma/` against curated
