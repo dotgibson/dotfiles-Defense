@@ -28,26 +28,29 @@ breaks the detection turns the gate red.
 ## Run it
 
 CI runs this on every `detections/network/**` or `docker/validation/**` change (see
-`.github/workflows/network-validation.yml`), inside the `zeek/zeek` image. Locally:
+`.github/workflows/network-validation.yml`) — one job per engine, each in that engine's
+image (`zeek/zeek`, `jasonish/suricata`). Locally, run one plane at a time:
 
 ```sh
 pip install scapy
-# needs `zeek` on PATH — install Zeek, or drop a shim that wraps the image:
+docker/validation/run-validation.sh zeek        # needs `zeek` on PATH
+docker/validation/run-validation.sh suricata    # needs `suricata` on PATH
+docker/validation/run-validation.sh             # both
+# no engine installed? wrap the image in a shim on PATH, e.g.:
 #   printf '#!/usr/bin/env bash\nexec docker run --rm -i -v "$PWD":/w -w /w zeek/zeek:lts zeek "$@"\n' > ~/bin/zeek && chmod +x ~/bin/zeek
-docker/validation/run-validation.sh
 ```
 
-`ZEEK_CMD` / `PYTHON` override the binaries.
+`ZEEK_CMD` / `SURICATA_CMD` / `PYTHON` override the binaries. The preflight only requires
+the engine(s) the selected rows actually use.
 
 ## Adding a detection
 
 1. Write `fixtures/gen_<name>.py` that takes an output path and synthesizes the
    attack-shaped traffic just past the detection's threshold (keep it seeded/deterministic).
-2. Add a row to `manifest.tsv` pointing at the generator, the detection script, and the
-   `Module::Notice_Type` you expect.
-
-Suricata rows (engine `suricata`, expected = a `sid`/`msg`) are the next addition — the
-manifest and runner already leave room for them.
+   One fixture can feed both engines — e.g. `gen_icmp_tunnel.py`'s 900-byte echo clears
+   Zeek's mean-payload floor *and* Suricata's `dsize:>800`.
+2. Add a row to `manifest.tsv`: the generator, the detection script, and the expected
+   signal — a Zeek `Module::Notice_Type`, or a Suricata rule `msg` (matched literally).
 
 ## Scope
 

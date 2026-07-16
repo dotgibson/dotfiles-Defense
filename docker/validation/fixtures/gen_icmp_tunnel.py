@@ -4,7 +4,10 @@
 The ICMP_Tunnel notice fires on a flow to an EXTERNAL host with >= min_packets (500)
 echo requests AND a mean payload >= min_avg_payload (64) bytes. So we emit 520 echo
 requests (one ICMP id, incrementing seq, so Zeek groups them into one connection) with
-a 100-byte payload, from an internal source to a TEST-NET-3 (external) destination.
+a 900-byte payload, from an internal source to a TEST-NET-3 (external) destination.
+
+The 900-byte payload clears the Zeek mean floor (64) AND the Suricata c2.rules
+`dsize:>800` oversized-echo rule, so the one fixture validates both engines.
 
 Deterministic so the fixture is reproducible. Usage: gen_icmp_tunnel.py <out.pcap>
 """
@@ -13,7 +16,7 @@ from scapy.all import wrpcap, Ether, IP, ICMP, Raw  # type: ignore
 
 SRC, DST = "10.1.1.50", "203.0.113.5"  # internal -> external (TEST-NET-3)
 N = 520
-PAYLOAD = b"T" * 100  # 100 bytes > the 64-byte mean-payload floor
+PAYLOAD = b"T" * 900  # 900 bytes: > Zeek's 64-byte mean floor AND Suricata's dsize:>800
 ICMP_ID = 0x4242
 
 

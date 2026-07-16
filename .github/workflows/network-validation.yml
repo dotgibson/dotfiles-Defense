@@ -6,11 +6,11 @@ name: network-validation
 # "Validate (purple)" line. Complements sigma.yml (which proves the Sigma rules parse +
 # compile): this proves the network detections *work*.
 #
-# The job runs inside the official Zeek image (zeek on PATH), installs scapy, and runs
-# docker/validation/run-validation.sh — which synthesizes an attack-shaped PCAP per
-# manifest row, replays it through the real shipped detection script, and asserts the
-# expected Notice fired. Deterministic (seeded generators), hermetic (no network capture,
-# no live attack), so it's a hard gate.
+# One job per engine, each in that engine's image (zeek / suricata on PATH), running
+# docker/validation/run-validation.sh <engine> — which synthesizes an attack-shaped PCAP
+# per manifest row, replays it through the real shipped detection, and asserts the
+# expected signal fired. Deterministic (seeded generators), hermetic (no live capture),
+# so both are hard gates.
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -34,21 +34,34 @@ permissions:
   contents: read
 
 jobs:
-  validate:
-    name: network detections fire on synthetic PCAPs
+  zeek:
+    name: zeek detections fire on synthetic PCAPs
     runs-on: ubuntu-latest
     container:
       image: zeek/zeek:lts
     steps:
-      # The zeek image is minimal; git is needed for checkout, python+scapy for fixtures.
+      # The engine image is minimal; git is needed for checkout, python+scapy for fixtures.
       # This step runs before checkout on purpose — it only needs the container, not the repo.
       - name: Install deps (git, python, scapy)
         run: |
           apt-get update
           apt-get install -y --no-install-recommends git ca-certificates python3 python3-pip
           pip3 install --break-system-packages scapy || pip3 install scapy
-
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Validate zeek detections (attack PCAP -> detection fires)
+        run: bash docker/validation/run-validation.sh zeek
 
-      - name: Validate network detections (attack PCAP -> detection fires)
-        run: bash docker/validation/run-validation.sh
+  suricata:
+    name: suricata detections fire on synthetic PCAPs
+    runs-on: ubuntu-latest
+    container:
+      image: jasonish/suricata:latest
+    steps:
+      - name: Install deps (git, python, scapy)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates python3 python3-pip
+          pip3 install --break-system-packages scapy || pip3 install scapy
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Validate suricata detections (attack PCAP -> alert fires)
+        run: bash docker/validation/run-validation.sh suricata
