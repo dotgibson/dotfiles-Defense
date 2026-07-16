@@ -27,13 +27,15 @@ generators through the real Zeek scripts and asserting the Notice. Two golden pa
 (`dns-c2` DNS-tunnel, `icmp-tunnel`), gated by `network-validation.yml`.
 
 **Phase 1 — network plane coverage.** *(in progress)*
-A generator + manifest row per network detection, and a Suricata `-r` runner alongside
-Zeek (engine=`suricata`, expected=`sid`). This is where the engine-side code authored
-to-spec but never run — the C2 Zeek scripts, the JA3 `dataset`/feed — finally gets
-validated. Cleanly synthesizable now: DNS tunnel/DGA, ICMP tunnel, coercion (DCERPC
-binds). Deferred to Phase 3 fixtures: TLS/JA3 (needs a real handshake), Kerberoast (ASN.1),
-reverse-tunnel (multi-MB, 30-min flow) — synthesizing these faithfully is more fragile
-than capturing them once.
+A generator + manifest row per network detection, across both engines. The Suricata `-r`
+runner is now wired alongside Zeek (engine=`suricata`, expected=rule `msg`), with
+`run-validation.sh <engine>` running one plane per CI job/image. Validated so far: Zeek
+DNS-tunnel, DGA, ICMP-tunnel; Suricata DNS-tunnel + ICMP-oversized (the c2.rules that were
+authored in #66 but never run). This closes the "authored to-spec, never run" gap for the
+C2 network detections. Still to add: coercion (DCERPC binds — synthesizable). Deferred to
+Phase 3 fixtures: TLS/JA3 (needs a real handshake), Kerberoast (ASN.1), reverse-tunnel
+(multi-MB, 30-min flow) — synthesizing these faithfully is more fragile than capturing
+them once.
 
 **Phase 2 — host / Sigma plane.**
 Add `chainsaw` (or `zircolite`) in a container and run `detections/sigma/` against curated

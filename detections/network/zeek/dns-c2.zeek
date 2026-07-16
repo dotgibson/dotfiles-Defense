@@ -138,11 +138,13 @@ event dns_request(c: connection, msg: dns_msg, query: string, qtype: count, qcla
                       [$str=query]);
     }
 
-# DGA: NXDOMAIN replies with long, vowel-poor labels. Keyed on dns_query_reply
-# (fires on the *reply*, echoes the Question, and exposes msg$rcode) gated to
-# rcode 3 = NXDOMAIN — the precise DGA tell. This avoids depending on the exact
-# RCODE range dns_rejected covers; broaden to `msg$rcode != 0` for SERVFAIL/etc.
-event dns_query_reply(c: connection, msg: dns_msg, query: string, qtype: count, qclass: count)
+# DGA: NXDOMAIN replies with long, vowel-poor labels. Gated to rcode 3 = NXDOMAIN, the
+# precise DGA tell. A failed reply surfaces as EITHER event depending on Zeek's dispatch:
+# dns_rejected is the classic NXDOMAIN path, but dns_query_reply carries the Question of a
+# reply too — so observe from both. The UNIQUE reducer dedups by query, so a reply that
+# raises both isn't double-counted. (Keying on only one silently misses NXDOMAIN — exactly
+# what the lab's dns-dga fixture caught.) Broaden the gate to `!= 0` for SERVFAIL/etc.
+function observe_dga(c: connection, msg: dns_msg, query: string)
     {
     if ( msg$rcode != 3 )   # DNS_CODE_NAME_ERR (NXDOMAIN)
         return;
@@ -156,4 +158,14 @@ event dns_query_reply(c: connection, msg: dns_msg, query: string, qtype: count, 
     SumStats::observe("dnsc2.dga",
                       [$host=c$id$orig_h],
                       [$str=query]);
+    }
+
+event dns_rejected(c: connection, msg: dns_msg, query: string, qtype: count, qclass: count)
+    {
+    observe_dga(c, msg, query);
+    }
+
+event dns_query_reply(c: connection, msg: dns_msg, query: string, qtype: count, qclass: count)
+    {
+    observe_dga(c, msg, query);
     }
