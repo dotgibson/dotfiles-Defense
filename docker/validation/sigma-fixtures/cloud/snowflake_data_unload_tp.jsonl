@@ -1,0 +1,1 @@
+{"query_type": "UNLOAD", "query_text": "COPY INTO @external_stage/dump FROM customers"}

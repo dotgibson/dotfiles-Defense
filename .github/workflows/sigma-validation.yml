@@ -17,15 +17,21 @@ on:
     paths:
       - "detections/sigma/**"
       - "docker/validation/sigma-manifest.tsv"
+      - "docker/validation/sigma-cloud-manifest.tsv"
       - "docker/validation/sigma-fixtures/**"
+      - "docker/validation/sigma_eval.py"
       - "docker/validation/run-sigma-validation.sh"
+      - "docker/validation/run-cloud-validation.sh"
       - ".github/workflows/sigma-validation.yml"
   pull_request:
     paths:
       - "detections/sigma/**"
       - "docker/validation/sigma-manifest.tsv"
+      - "docker/validation/sigma-cloud-manifest.tsv"
       - "docker/validation/sigma-fixtures/**"
+      - "docker/validation/sigma_eval.py"
       - "docker/validation/run-sigma-validation.sh"
+      - "docker/validation/run-cloud-validation.sh"
       - ".github/workflows/sigma-validation.yml"
 
 concurrency:
@@ -58,3 +64,19 @@ jobs:
 
       - name: Validate sigma rules (attack events -> rule fires)
         run: ZIRCOLITE="$PWD/.zircolite/zircolite.py" bash docker/validation/run-sigma-validation.sh
+
+  validate-cloud:
+    name: cloud sigma rules fire on synthetic events (nested-field plane)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pysigma (the evaluator's only dependency)
+        run: pip install pysigma
+
+      - name: Validate cloud sigma rules (TP fires + TN silent, nested fields preserved)
+        run: bash docker/validation/run-cloud-validation.sh

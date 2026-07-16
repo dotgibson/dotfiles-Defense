@@ -15,6 +15,13 @@ manual Kali box. Two planes:
   `ZIRCOLITE=/path/to/zircolite.py docker/validation/run-sigma-validation.sh` (CI clones a
   pinned zircolite — see `.github/workflows/sigma-validation.yml`). Gated the same way the
   network plane is: a rule that stops firing turns it red.
+- **Cloud / SaaS (nested-field)** — the cloud rules zircolite's EVTX flattener can't reach
+  (dotted paths + underscored keys, see the finding below), driven through
+  [`sigma_eval.py`](sigma_eval.py) (`run-cloud-validation.sh`). Manifest:
+  [`sigma-cloud-manifest.tsv`](sigma-cloud-manifest.tsv)
+  (`name / rule / tp-fixture / tn-fixture / expected-id`). Each rule is checked both ways —
+  the true-positive fires the expected id, the true-negative (a benign near-miss) does not.
+  Pure Python: `pip install pysigma && docker/validation/run-cloud-validation.sh`.
 
 ## How it works (network plane)
 
@@ -113,16 +120,35 @@ Reproduce: a Sysmon-1 `cmd.exe` with `User: "IIS APPPOOL\\…"` under `--pipelin
 Slack (app-installed, external-share). These have no EventID and match on raw field names,
 so they run without a pysigma pipeline.
 
-**Deferred — an engine limitation, not rule bugs (26 rules).** zircolite is EVTX-oriented:
-its flattener collapses a nested/dotted event path to the **last key with underscores
-stripped** (verified with `--keepflat`: `gcp.audit.method_name` → `methodname`,
-`resource.type` → `type`, with collisions). So cloud rules that match on dotted field names
-can't be exercised through zircolite — their column never carries the name the rule expects.
-This hits every rule for **GCP, Cloudflare, GitLab, Kubernetes, Harbor, Snowflake, Terraform,
-Vault**, plus a few others (npm-malicious-publish, PyPI token/trusted-publisher, Slack-2FA).
-The rules themselves are correct (they compile clean in `sigma.yml`); validating them needs
-a Sigma engine that preserves nested field names (per-product zircolite field-mappings, or a
-cloud-native matcher) — a separate effort, tracked in the plan.
+**Nested-field cloud plane — the 26 zircolite can't reach, now covered.** zircolite is
+EVTX-oriented: its flattener collapses a nested/dotted event path to the **last key with
+underscores stripped** (verified with `--keepflat`: `gcp.audit.method_name` → `methodname`,
+`resource.type` → `type`, with collisions; and it strips `_` from flat keys too, so
+`resource_type` → `resourcetype`, `event_type` → `eventtype`). So cloud rules that match on
+dotted paths *or* underscored keys can't be exercised through zircolite — the column never
+carries the name the rule expects. This hit every rule for **GCP, Cloudflare, GitLab,
+Kubernetes, Harbor, Snowflake, Terraform, Vault**, plus a few others (npm-malicious-publish,
+PyPI token/trusted-publisher, Slack-2FA): 26 rules.
 
-The network plane (above) is PCAP replay; this plane is JSONL-event replay. Tracked in
-[`../LAB-VALIDATION-PLAN.md`](../LAB-VALIDATION-PLAN.md).
+These are now validated by a small dedicated matcher, [`sigma_eval.py`](sigma_eval.py),
+rather than zircolite. It matches a rule against natural cloud-event JSON by walking
+**pysigma's own parsed, fully-resolved condition tree** — so the field modifiers
+(`contains`/`startswith`/`endswith`/`all`) and the `and`/`or`/`not` logic come from the
+authoritative parser, not a re-implementation — and does a dotted-path lookup into nested
+JSON (fanning out lists, e.g. a pod's `containers[].securityContext.privileged`), which is
+exactly the step zircolite drops. It supports only what this corpus uses (field-equals over
+string/number/bool/null, with wildcards); anything outside that surface raises rather than
+guessing, so an unsupported rule fails loudly. Two guards keep this from being "my matcher
+agrees with my fixture": every rule must fire its true-positive **and** stay silent on a
+benign true-negative near-miss, and the tree it walks is pysigma's, not ours. The stateful
+correlation rule (`vault_bulk_secret_read`, `value_count gte 20`) is validated at its base
+per-event detection; the count/timespan aggregation is out of scope for a single-event
+matcher (noted, not silently claimed).
+
+The 21 flat-field cloud rules (AWS, Entra, GitHub, Google Workspace, Jenkins, Okta, npm,
+PyPI-collaborator, Slack app/share) stay on zircolite — keeping an independent third-party
+engine in the loop wherever one can actually run the rule; the evaluator is introduced only
+where no available engine preserves the field names.
+
+The network plane (above) is PCAP replay; both Sigma planes are JSONL-event replay. Tracked
+in [`../LAB-VALIDATION-PLAN.md`](../LAB-VALIDATION-PLAN.md).
