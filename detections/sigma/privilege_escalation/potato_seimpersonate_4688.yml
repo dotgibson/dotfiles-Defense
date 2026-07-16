@@ -26,13 +26,11 @@ tags:
   - attack.privilege_escalation
   - attack.t1134.001
 logsource:
+  category: process_creation
   product: windows
-  service: security
-  definition: 'Security 4688 (A new process has been created), SubjectUserName populated'
 detection:
   selection_shell:
-    EventID: 4688
-    NewProcessName|endswith:
+    Image|endswith:
       - '\cmd.exe'
       - '\powershell.exe'
       - '\pwsh.exe'

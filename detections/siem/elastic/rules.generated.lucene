@@ -157,7 +157,7 @@ EventID:20 AND (Destination:(*powershell* OR *cmd.exe* OR *mshta* OR *wscript* O
 EventID:(4886 OR 4887)
 
 // privilege_escalation/potato_seimpersonate_4688.yml — Potato privesc - service identity spawning an interactive shell (Security 4688)
-(EventID:4688 AND (NewProcessName:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe))) AND (SubjectUserName:(*APPPOOL* OR *NETWORK\ SERVICE* OR *LOCAL\ SERVICE*))
+(Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe)) AND (SubjectUserName:(*APPPOOL* OR *NETWORK\ SERVICE* OR *LOCAL\ SERVICE*))
 
 // privilege_escalation/potato_seimpersonate_sysmon_1.yml — Potato privesc - service identity spawning an interactive shell (Sysmon 1)
 (Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe)) AND (User:(*APPPOOL* OR *NETWORK\ SERVICE* OR *LOCAL\ SERVICE*))
