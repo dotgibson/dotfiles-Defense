@@ -41,13 +41,11 @@ total=0
 
 # Runs the evaluator; echoes "fire" or "nofire". Any evaluator error (unsupported rule
 # shape, bad fixture) surfaces on stderr and counts as neither — the row then FAILs below.
-verdict() {
-  if "$PYTHON" "$EVAL" "$REPO_ROOT/$1" "$REPO_ROOT/$2" >/dev/null 2>"$3"; then
-    echo fire
-  else
-    echo nofire
-  fi
-}
+# sigma_eval.py exit codes are a three-way contract: 0 FIRE, 1 clean NOFIRE, 2 ERROR.
+# We must NOT collapse ERROR into NOFIRE — an evaluator error on the TN (unsupported rule
+# shape, malformed JSON, missing file) would otherwise be misread as a passing true-negative
+# and hide a broken gate. So we branch on the exact rc and only rc==1 counts as a real "no".
+state_of() { case "$1" in 0) echo fire ;; 1) echo nofire ;; *) echo ERROR ;; esac; }
 
 while IFS=$'\t' read -r name rule tp tn expect; do
   case "$name" in '' | \#*) continue ;; esac
@@ -57,20 +55,23 @@ while IFS=$'\t' read -r name rule tp tn expect; do
     fail=$((fail + 1)); continue
   fi
 
-  # TP must fire with the expected id; TN must not fire at all.
   tp_err="$(mktemp "${TMPDIR:-/tmp}/cloudval.XXXXXX")"
-  tp_out="$("$PYTHON" "$EVAL" "$REPO_ROOT/$rule" "$REPO_ROOT/$tp" --expect "$expect" 2>"$tp_err")" && tp_rc=0 || tp_rc=$?
-  tn_verdict="$(verdict "$rule" "$tn" "/dev/null")"
+  tn_err="$(mktemp "${TMPDIR:-/tmp}/cloudval.XXXXXX")"
+  # TP: must exit 0 (FIRE) with the expected id enforced via --expect.
+  "$PYTHON" "$EVAL" "$REPO_ROOT/$rule" "$REPO_ROOT/$tp" --expect "$expect" >/dev/null 2>"$tp_err" && tp_rc=0 || tp_rc=$?
+  # TN: must exit 1 (clean NOFIRE) — NOT 0 (fired on benign) and NOT 2 (evaluator error).
+  "$PYTHON" "$EVAL" "$REPO_ROOT/$rule" "$REPO_ROOT/$tn" >/dev/null 2>"$tn_err" && tn_rc=0 || tn_rc=$?
 
-  if [[ "$tp_rc" -eq 0 && "$tp_out" == "FIRE $expect" && "$tn_verdict" == "nofire" ]]; then
+  if [[ "$tp_rc" -eq 0 && "$tn_rc" -eq 1 ]]; then
     echo "PASS $name — TP fired $expect, TN silent ($(basename "$rule"))"
     pass=$((pass + 1))
   else
-    echo "FAIL $name — TP=[$tp_out rc=$tp_rc] TN=[$tn_verdict] (expected TP FIRE $expect / TN nofire)"
-    [[ -s "$tp_err" ]] && sed 's/^/    /' "$tp_err"
+    echo "FAIL $name — TP=[$(state_of "$tp_rc") rc=$tp_rc] TN=[$(state_of "$tn_rc") rc=$tn_rc] (want TP fire / TN nofire)"
+    [[ -s "$tp_err" ]] && sed 's/^/    TP: /' "$tp_err"
+    [[ -s "$tn_err" ]] && sed 's/^/    TN: /' "$tn_err"
     fail=$((fail + 1))
   fi
-  rm -f "$tp_err"
+  rm -f "$tp_err" "$tn_err"
 done <"$MANIFEST"
 
 echo "──────────────────────────────────────────"

@@ -75,8 +75,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install pysigma (the evaluator's only dependency)
-        run: pip install pysigma
+      - name: Install pysigma (the evaluator's only dependency, pinned for determinism)
+        run: pip install pysigma==1.4.0
 
       - name: Validate cloud sigma rules (TP fires + TN silent, nested fields preserved)
         run: bash docker/validation/run-cloud-validation.sh

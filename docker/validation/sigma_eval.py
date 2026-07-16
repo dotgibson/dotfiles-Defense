@@ -91,10 +91,22 @@ def _match_value(event_value, sigma_value):
     if isinstance(sigma_value, SigmaBool):
         return any(v is sigma_value.boolean for v in values)
     if isinstance(sigma_value, SigmaNumber):
-        return any(str(v) == str(sigma_value.number) for v in values)
+        return any(_number_eq(v, sigma_value.number) for v in values)
     if isinstance(sigma_value, SigmaNull):
-        return event_value is None
+        return any(v is None for v in values)
     raise ValueError(f"unsupported Sigma value type: {type(sigma_value).__name__}")
+
+
+def _number_eq(event_value, number):
+    """Numeric equality across JSON's int/float/string spellings — 1, 1.0 and "1"
+    all match the same Sigma number. Booleans never match a number (JSON true is
+    not 1 here), and non-numeric strings simply don't."""
+    if isinstance(event_value, bool) or event_value is None:
+        return False
+    try:
+        return float(event_value) == float(number)
+    except (TypeError, ValueError):
+        return False
 
 
 def _eval(node, event):
@@ -114,7 +126,9 @@ def _base_rule(rule_path):
     carries a SigmaCorrelationRule with no `.detection`; we validate the base
     per-event detection here — the stateful count/timespan aggregation is out of
     scope for a single-event matcher (documented, not silently claimed)."""
-    for rule in SigmaCollection.from_yaml(open(rule_path).read()).rules:
+    with open(rule_path) as fh:
+        collection = SigmaCollection.from_yaml(fh.read())
+    for rule in collection.rules:
         if getattr(rule, "detection", None) is not None:
             return rule
     raise ValueError(f"no rule with a detection block in {rule_path}")
@@ -141,6 +155,15 @@ def _load_events(fixture_path):
     return events
 
 
+# Exit codes are a contract the runner relies on: 0 FIRE, 1 clean NOFIRE, 2 ERROR.
+# Keeping ERROR distinct from NOFIRE is what stops a broken rule/fixture (unsupported
+# shape, malformed JSON, missing file, id mismatch) from being misread as a passing
+# true-negative — the caller can trust "1" to mean "the rule genuinely did not match".
+EXIT_FIRE = 0
+EXIT_NOFIRE = 1
+EXIT_ERROR = 2
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Evaluate a Sigma rule over JSONL events.")
     ap.add_argument("rule", help="path to the Sigma rule .yml")
@@ -148,18 +171,22 @@ def main(argv=None):
     ap.add_argument("--expect", help="assert this rule id fired", default=None)
     args = ap.parse_args(argv)
 
-    rid = rule_id(args.rule)
-    if args.expect and args.expect != rid:
-        print(f"NOFIRE {rid} — expected id {args.expect} does not match rule id", file=sys.stderr)
-        return 1
+    try:
+        rid = rule_id(args.rule)
+        if args.expect and args.expect != rid:
+            print(f"ERROR {rid} — expected id {args.expect} does not match rule id", file=sys.stderr)
+            return EXIT_ERROR
+        events = _load_events(args.fixture)
+        fired = any(rule_fires(args.rule, ev) for ev in events)
+    except Exception as exc:  # noqa: BLE001 — any failure is an ERROR, never a silent NOFIRE
+        print(f"ERROR {type(exc).__name__}: {exc}", file=sys.stderr)
+        return EXIT_ERROR
 
-    events = _load_events(args.fixture)
-    fired = any(rule_fires(args.rule, ev) for ev in events)
     if fired:
         print(f"FIRE {rid}")
-        return 0
+        return EXIT_FIRE
     print(f"NOFIRE {rid}")
-    return 1
+    return EXIT_NOFIRE
 
 
 if __name__ == "__main__":
