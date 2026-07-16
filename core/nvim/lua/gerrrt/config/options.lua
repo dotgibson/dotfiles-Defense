@@ -116,3 +116,15 @@ vim.opt.foldlevel = 99 -- Keep all folds open by default
 -- Split Behavior
 vim.opt.splitbelow = true -- Horizontal splits open below
 vim.opt.splitright = true -- Vertical splits open to the right
+
+-- Project-local config (:h exrc). Loads a per-project `.nvim.lua` / `.exrc` / `.nvimrc` from the
+-- cwd, so a repo can carry its own settings without polluting the global config.
+--
+-- SECURITY: exrc executes code that lives IN the repo you open. On the offensive/Defense layers
+-- you open UNTRUSTED repos, so this is a code-execution vector. Two mitigations, both on:
+--   • Gated on `not dotfiles_offline` — never enabled on engagement/Kali boxes (same switch that
+--     silences the update checker, mason, and the git-fetch toast). See config/globals.lua.
+--   • Neovim 0.9+ exrc is trust-gated by vim.secure: an untrusted project file is NOT sourced
+--     until you explicitly allow it (:trust), and any edit re-prompts. Legacy blind-source is gone.
+-- If even the trusted-on-non-engagement-boxes behaviour is more than you want, set this to false.
+vim.opt.exrc = not vim.g.dotfiles_offline

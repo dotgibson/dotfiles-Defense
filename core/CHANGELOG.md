@@ -13,6 +13,22 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.6.0] - 2026-07-16
+
+### Added
+
+- **`feat(nvim)`: five editor quality-of-life tweaks.** Cherry-picked from an external
+  config the handful of behaviours that beat or fill a gap in ours (the rest we already run
+  better-configured equivalents of). (1) `i`/`a`/`A` on a blank line auto-indents via `"_cc`
+  (black-hole register, guarded on `count == 0` so `3i`/`10a` keep native behaviour);
+  (2) an async `git fetch` on `VimEnter` toasts when the upstream is ahead of `HEAD` — pinned
+  to the startup cwd, argv-form (Windows-portable), and only reported after a _successful_
+  fetch; (3) `vimade` dims inactive windows and cursorline is now shown only in the active
+  window (markdown/text/gitcommit keep their cursorline-off policy); (4) a macro-recording
+  indicator in the lualine mode block; (5) `exrc` for project-local config. The `git fetch`
+  toast and `exrc` are both gated on `DOTFILES_OFFLINE` so they stay inert on engagement boxes,
+  and `exrc` additionally relies on Neovim's `vim.secure` trust prompt for untrusted repos.
+
 ## [v3.5.2] - 2026-07-14
 
 ### Fixed
