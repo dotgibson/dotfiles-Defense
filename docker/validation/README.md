@@ -15,6 +15,13 @@ manual Kali box. Two planes:
   `ZIRCOLITE=/path/to/zircolite.py docker/validation/run-sigma-validation.sh` (CI clones a
   pinned zircolite — see `.github/workflows/sigma-validation.yml`). Gated the same way the
   network plane is: a rule that stops firing turns it red.
+- **Cloud / SaaS (nested-field)** — the cloud rules zircolite's EVTX flattener can't reach
+  (dotted paths + underscored keys, see the finding below), driven through
+  [`sigma_eval.py`](sigma_eval.py) (`run-cloud-validation.sh`). Manifest:
+  [`sigma-cloud-manifest.tsv`](sigma-cloud-manifest.tsv)
+  (`name / rule / tp-fixture / tn-fixture / expected-id`). Each rule is checked both ways —
+  the true-positive fires the expected id, the true-negative (a benign near-miss) does not.
+  Pure Python: `pip install pysigma && docker/validation/run-cloud-validation.sh`.
 
 ## How it works (network plane)
 
@@ -66,8 +73,16 @@ the engine(s) the selected rows actually use.
 ## Scope — what's covered, what isn't
 
 This is the **network plane** (PCAP replay — offline, deterministic, hermetic). Covered:
-Zeek DNS tunnel + DGA, ICMP tunnel, reverse-tunnel/egress; Suricata DNS-tunnel and ICMP
-oversized-echo.
+Zeek DNS tunnel + DGA, ICMP tunnel, reverse-tunnel/egress; Suricata DNS-tunnel, ICMP
+oversized-echo, and all four DCERPC coercion vectors (MS-EFSRPC/RPRN/DFSNM/FSRVP).
+
+**Coercion — synthesized after all (`suricata/coercion.rules`, all 4 interfaces).** An
+earlier bind-only attempt was deferred because Suricata parsed the interface but emitted no
+alert. The missing piece wasn't the bind bytes: `dce_iface` matches when a **request** is
+issued on a *bound* interface, not on the bind alone. `gen_coercion.py` now builds the full
+DCERPC/TCP exchange per vector — TCP handshake → bind → bind_ack → a request PDU on the
+bound context — one flow each for MS-EFSRPC (PetitPotam), MS-RPRN (PrinterBug), MS-DFSNM
+(DFSCoerce) and MS-FSRVP (ShadowCoerce), all in one PCAP. Four manifest rows, all firing.
 
 **Known gaps — deferred to Phase-3 captured fixtures**, not silently uncovered. These
 depend on protocol state a faithful synthetic can't cheaply fake, so a captured PCAP from
@@ -76,36 +91,32 @@ the real Kali attack is the honest fixture:
 - `zeek/tls-c2.zeek` (self-signed cert) and `zeek/tls-c2-ja3.zeek` (JA3) — need a real TLS
   handshake + X.509 chain for Zeek's SSL analyzer and the ja3 add-on.
 - `zeek/kerberoast-rc4.zeek` — needs a real Kerberos TGS-REP (ASN.1, RC4 etype).
-- `suricata/coercion.rules` — a byte-correct scapy DCERPC bind (v5 `05 00 0b`, MS-EFSRPC +
-  NDR UUIDs) was built and tried, but Suricata 7's app-layer didn't parse the interface
-  out of a hand-crafted raw-TCP/135 flow (it read the packets, emitted no alert). The DCERPC
-  app-layer wants a real bind/bind-ack exchange over SMB or the epmapper — captured from
-  the real coercer, not synthesized. Trivially extendable once one interface validates:
-  the other three (MS-RPRN/DFSNM/FSRVP — swap the UUID).
 
 Partial, trivially extendable (same shape as a covered row): the c2.rules
 oversized-query-name / echo-reply variants.
 
 ## Host / Sigma plane — coverage & findings
 
-Covered (23 rules, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
+Covered (25 rules, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
 every shape — Kerberoast, AS-REP, DCSync, GPP cpassword, coercion, DPAPI, LSASS access,
 NTDS dump, rogue-account / machine-account / scheduled-task / WMI-subscription persistence,
-DCShadow, RBCD, shadow-credentials, ADCS ESC1, RDP-hijack, PsExec, WMIexec, and the
-correlation rules (password-spray, pass-the-hash, LDAP-recon, SharpHound). Each was
-verified firing against the real engine locally.
+DCShadow, RBCD, shadow-credentials, ADCS ESC1, RDP-hijack, PsExec, WMIexec, the potato
+SeImpersonate pair, and the correlation rules (password-spray, pass-the-hash, LDAP-recon,
+SharpHound). Each was verified firing against the real engine locally.
 
-**Finding — `detections/sigma/privilege_escalation/potato_seimpersonate_4688.yml` does not fire through pysigma.**
-The rule is dual-channel by design: `selection_svc_identity` matches the service account in
-EITHER `User` (Sysmon-1) OR `SubjectUserName` (Security-4688). But putting both fields in one
-rule breaks it under a single pysigma pipeline — the **sysmon** pipeline can't resolve
-`SubjectUserName` and the **windows-audit** pipeline can't resolve `User`, and in each case
-the unresolved branch nulls the whole rule (verified: `User`-only fires under sysmon; adding
-the `SubjectUserName` branch → 0 matches on the same event; symmetric under windows-audit).
-So on real single-channel telemetry via any pysigma-based tool, this rule likely never fires.
-The fix is a detection-content decision (split into a per-channel pair, or drop the cross-
-channel field), so it's flagged here for review rather than changed under a validation PR.
-Reproduce: a Sysmon-1 `cmd.exe` with `User: "IIS APPPOOL\\…"` under `--pipeline sysmon`.
+**Resolved — the potato SeImpersonate rule now fires (split into a per-channel pair).**
+The original `potato_seimpersonate_4688.yml` was dual-channel by design: one
+`selection_svc_identity` matched the service account in EITHER `User` (Sysmon-1) OR
+`SubjectUserName` (Security-4688). Both fields in one rule broke it under a single pysigma
+pipeline — the **sysmon** pipeline can't resolve `SubjectUserName` and the **windows-audit**
+pipeline can't resolve `User`, so in each case the unresolved branch nulled the whole rule
+(reproduced: adding the second-channel branch → 0 matches on an event the single-channel form
+caught). The fix was a detection-content decision, so it was flagged rather than changed under
+the cloud-plane PR. It's now split into a per-channel pair — `potato_seimpersonate_sysmon_1.yml`
+(field `User`, validated on the **sysmon** pipeline) and `potato_seimpersonate_4688.yml`
+(field `SubjectUserName`, EventID 4688, validated on **windows-audit**) — with the original id
+preserved on the 4688 half so the htpx cross-link holds. Both are wired into the manifest and
+verified firing locally; deploy both and whichever channel a host forwards will match.
 
 **Cloud / SaaS** (`pipeline=none`): 21 rules covered — AWS (IAM key, login profile), Entra
 (consent, SP credential), GitHub (branch-protection, credential, runner), Google Workspace
@@ -113,16 +124,35 @@ Reproduce: a Sysmon-1 `cmd.exe` with `User: "IIS APPPOOL\\…"` under `--pipelin
 Slack (app-installed, external-share). These have no EventID and match on raw field names,
 so they run without a pysigma pipeline.
 
-**Deferred — an engine limitation, not rule bugs (26 rules).** zircolite is EVTX-oriented:
-its flattener collapses a nested/dotted event path to the **last key with underscores
-stripped** (verified with `--keepflat`: `gcp.audit.method_name` → `methodname`,
-`resource.type` → `type`, with collisions). So cloud rules that match on dotted field names
-can't be exercised through zircolite — their column never carries the name the rule expects.
-This hits every rule for **GCP, Cloudflare, GitLab, Kubernetes, Harbor, Snowflake, Terraform,
-Vault**, plus a few others (npm-malicious-publish, PyPI token/trusted-publisher, Slack-2FA).
-The rules themselves are correct (they compile clean in `sigma.yml`); validating them needs
-a Sigma engine that preserves nested field names (per-product zircolite field-mappings, or a
-cloud-native matcher) — a separate effort, tracked in the plan.
+**Nested-field cloud plane — the 26 zircolite can't reach, now covered.** zircolite is
+EVTX-oriented: its flattener collapses a nested/dotted event path to the **last key with
+underscores stripped** (verified with `--keepflat`: `gcp.audit.method_name` → `methodname`,
+`resource.type` → `type`, with collisions; and it strips `_` from flat keys too, so
+`resource_type` → `resourcetype`, `event_type` → `eventtype`). So cloud rules that match on
+dotted paths *or* underscored keys can't be exercised through zircolite — the column never
+carries the name the rule expects. This hit every rule for **GCP, Cloudflare, GitLab,
+Kubernetes, Harbor, Snowflake, Terraform, Vault**, plus a few others (npm-malicious-publish,
+PyPI token/trusted-publisher, Slack-2FA): 26 rules.
 
-The network plane (above) is PCAP replay; this plane is JSONL-event replay. Tracked in
-[`../LAB-VALIDATION-PLAN.md`](../LAB-VALIDATION-PLAN.md).
+These are now validated by a small dedicated matcher, [`sigma_eval.py`](sigma_eval.py),
+rather than zircolite. It matches a rule against natural cloud-event JSON by walking
+**pysigma's own parsed, fully-resolved condition tree** — so the field modifiers
+(`contains`/`startswith`/`endswith`/`all`) and the `and`/`or`/`not` logic come from the
+authoritative parser, not a re-implementation — and does a dotted-path lookup into nested
+JSON (fanning out lists, e.g. a pod's `containers[].securityContext.privileged`), which is
+exactly the step zircolite drops. It supports only what this corpus uses (field-equals over
+string/number/bool/null, with wildcards); anything outside that surface raises rather than
+guessing, so an unsupported rule fails loudly. Two guards keep this from being "my matcher
+agrees with my fixture": every rule must fire its true-positive **and** stay silent on a
+benign true-negative near-miss, and the tree it walks is pysigma's, not ours. The stateful
+correlation rule (`vault_bulk_secret_read`, `value_count gte 20`) is validated at its base
+per-event detection; the count/timespan aggregation is out of scope for a single-event
+matcher (noted, not silently claimed).
+
+The 21 flat-field cloud rules (AWS, Entra, GitHub, Google Workspace, Jenkins, Okta, npm,
+PyPI-collaborator, Slack app/share) stay on zircolite — keeping an independent third-party
+engine in the loop wherever one can actually run the rule; the evaluator is introduced only
+where no available engine preserves the field names.
+
+The network plane (above) is PCAP replay; both Sigma planes are JSONL-event replay. Tracked
+in [`../LAB-VALIDATION-PLAN.md`](../LAB-VALIDATION-PLAN.md).

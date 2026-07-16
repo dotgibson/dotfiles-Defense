@@ -19,6 +19,8 @@ gpp-cpassword-5145	windows-audit	docker/validation/sigma-fixtures/gpp_cpassword_
 kerberoast-4769	windows-audit	docker/validation/sigma-fixtures/kerberoast_4769.jsonl	detections/sigma/credential_access/kerberoasting_rc4_tgs.yml	f61b8f0e-d702-42e6-8c4b-7a96f166b44f
 dcshadow-4742	windows-audit	docker/validation/sigma-fixtures/dcshadow_4742.jsonl	detections/sigma/defense_evasion/dcshadow_rogue_dc_4742.yml	3c3d5649-ecd1-40dc-b602-1bfe104d55c8
 adcs-esc1-4886	windows-audit	docker/validation/sigma-fixtures/adcs_esc1_4886.jsonl	detections/sigma/privilege_escalation/adcs_esc1_san_mismatch_4886.yml	a696e561-3c04-43da-9014-a4f6611ac897
+potato-seimpersonate-sysmon-1	sysmon	docker/validation/sigma-fixtures/potato_sysmon1.jsonl	detections/sigma/privilege_escalation/potato_seimpersonate_sysmon_1.yml	03e878f6-bbdc-41e1-afa6-68b2979938fe
+potato-seimpersonate-4688	windows-audit	docker/validation/sigma-fixtures/potato_security_4688.jsonl	detections/sigma/privilege_escalation/potato_seimpersonate_4688.yml	9486ed6c-4c38-457f-a475-188a978eaa4a
 rbcd-5136	windows-audit	docker/validation/sigma-fixtures/rbcd_5136.jsonl	detections/sigma/privilege_escalation/rbcd_allowedtoact_5136.yml	275d5b31-41ce-4777-989d-b1eb016e09c5
 shadow-creds-5136	windows-audit	docker/validation/sigma-fixtures/shadow_credentials_5136.jsonl	detections/sigma/privilege_escalation/shadow_credentials_keycredentiallink_5136.yml	97ee214e-8e8a-4bee-bb1e-88ae6a40d782
 scheduled-task-4698	windows-audit	docker/validation/sigma-fixtures/scheduled_task_4698.jsonl	detections/sigma/persistence/scheduled_task_suspicious_4698.yml	8ae44ad2-6331-4444-97f4-b2eac893717c
@@ -31,9 +33,11 @@ asrep-probing-4771	windows-audit	docker/validation/sigma-fixtures/asrep_probing_
 ldap-recon-4648	windows-audit	docker/validation/sigma-fixtures/ldap_recon_4648.jsonl	detections/sigma/discovery/ldap_recon_explicit_creds_4648.yml	4268aa00-9150-42f2-a14b-e2548e15a72e
 sharphound-4662	windows-audit	docker/validation/sigma-fixtures/sharphound_4662.jsonl	detections/sigma/discovery/sharphound_ldap_sweep_4662.yml	9c4e7d21-3a5b-42f0-8e6d-1b0a4f7c9e33
 machine-account-4741	windows-audit	docker/validation/sigma-fixtures/machine_account_4741.jsonl	detections/sigma/persistence/machine_account_creation_burst_4741.yml	ae5a0814-7222-4c3d-9710-258b0c4045ba
-# Cloud/SaaS rules (pipeline=none: no EventID, match raw field names). Products with
-# dotted/nested field schemas are deferred — zircolite flattens nested paths to the last
-# key, so those rules cannot be matched here (see README). Verified locally.
+# Cloud/SaaS rules (pipeline=none: no EventID, match raw field names). Only the 21
+# flat-field cloud rules run here. Products with dotted/nested field names (GCP, Cloudflare,
+# GitLab, Kubernetes, Harbor, Snowflake, Terraform, Vault, …) are validated on the
+# nested-field cloud plane instead — zircolite's flattener can't preserve those names (see
+# README + sigma-cloud-manifest.tsv). Verified locally.
 cloud_aws_iam_access_key_created	none	docker/validation/sigma-fixtures/cloud_aws_iam_access_key_created.jsonl	detections/sigma/cloud/aws_iam_access_key_created.yml	8b569fc9-809b-4e3a-87e6-b77cac86a643
 cloud_aws_login_profile_created	none	docker/validation/sigma-fixtures/cloud_aws_login_profile_created.jsonl	detections/sigma/cloud/aws_login_profile_created.yml	47f3ada3-a78d-423a-881e-6a5352ce892b
 cloud_entra_illicit_consent_grant	none	docker/validation/sigma-fixtures/cloud_entra_illicit_consent_grant.jsonl	detections/sigma/cloud/entra_illicit_consent_grant.yml	06d00b40-680e-4f4b-a675-889c2a2dd0ed

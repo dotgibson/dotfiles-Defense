@@ -32,32 +32,40 @@ A generator + manifest row per network detection, across both engines, with
 DNS-tunnel, DGA, ICMP-tunnel, reverse-tunnel/egress; Suricata DNS-tunnel and ICMP-oversized.
 This closed the "authored to-spec, never run" gap for the C2 network detections — and
 immediately caught a real bug (dns-c2's DGA path keyed on the wrong Zeek event, so it never
-fired on NXDOMAIN). reverse-tunnel turned out synthesizable after all (compact 8 KB segments
-over a 31-min span). Remaining, deferred to Phase-3 captured fixtures: TLS self-signed / JA3
-(real handshake + X.509), Kerberoast (ASN.1 TGS-REP), and coercion — a byte-correct DCERPC
-bind was built, but Suricata's app-layer wouldn't parse the interface out of a hand-crafted
-raw-TCP flow (it wants a real bind/bind-ack over SMB/epmapper). All three need too much
-protocol state to fake faithfully; capture them from the real Kali attack instead.
+fired on NXDOMAIN). Two detections deferred as "un-synthesizable" turned out crackable with
+more protocol state: reverse-tunnel (compact 8 KB segments over a 31-min span), and all four
+**DCERPC coercion** vectors (MS-EFSRPC/RPRN/DFSNM/FSRVP). Coercion had been deferred because a
+bind-only PCAP parsed but never alerted; the fix was realizing `dce_iface` matches on a
+*request* issued over a bound interface, not the bind — so `gen_coercion.py` emits the full
+handshake → bind → bind_ack → request per vector, and all four fire. Remaining, deferred to
+Phase-3 captured fixtures: TLS self-signed / JA3 (real handshake + X.509) and Kerberoast
+(ASN.1 TGS-REP) — those need a real TLS/Kerberos exchange too heavy to fake, so capture them
+from the real Kali attack instead.
 
 **Phase 2 — host / Sigma plane.** *(started)*
 `run-sigma-validation.sh` runs the real Sigma rule against a committed JSON-lines event
 fixture with **zircolite** (native Sigma via the pysigma `windows-audit` / `sysmon`
 pipelines), asserting the rule id lands in the detections — gated by `sigma-validation.yml`
-(pinned zircolite). The Windows-security + Sysmon corpus is now covered — 23 rules across every shape
+(pinned zircolite). The Windows-security + Sysmon corpus is now covered — 25 rules across every shape
 (single-selection, filtered, `value_count` correlation) on the `windows-audit` and `sysmon`
-pipelines. That sweep already earned its keep: it surfaced that
-`potato_seimpersonate_4688` doesn't fire through pysigma at all — its dual-channel
-`User`/`SubjectUserName` selection nulls under either single pipeline (see the finding in
-[`validation/README.md`](validation/README.md)). Cloud/SaaS: 21 rules covered
-(AWS, Entra, GitHub, Google Workspace, Jenkins, Okta, npm, PyPI, Slack) via `pipeline=none`
-— they match raw field names. The remaining 26 (GCP, Cloudflare, GitLab, Kubernetes, Harbor,
-Snowflake, Terraform, Vault, and a few others) are deferred: their rules match on
-dotted/nested field names, and zircolite's EVTX flattener collapses nested paths to the last
-key (verified with `--keepflat`), so the column never carries the dotted name. Validating
-them needs a Sigma engine that preserves nested field names (per-product field-mappings or a
-cloud-native matcher). Host-plane total: 44 rules (23 Windows/Sysmon + 21 cloud). Unlike the
-network engines, zircolite runs in the authoring environment, so every rule+fixture is
-verified locally before CI.
+pipelines. That sweep already earned its keep: it surfaced that the original
+`potato_seimpersonate_4688` didn't fire through pysigma at all — a single rule naming both
+`User` (Sysmon-1) and `SubjectUserName` (Security-4688) nulls under either pipeline, since the
+one that can't resolve a field drops the whole rule. It's now fixed by splitting into a
+per-channel pair (`potato_seimpersonate_sysmon_1` on `User`/sysmon and `potato_seimpersonate_4688`
+on `SubjectUserName`/windows-audit), both wired in and firing (see the write-up in
+[`validation/README.md`](validation/README.md)). Cloud/SaaS splits in two by whether
+zircolite can see the field names. 21 flat-field rules (AWS, Entra, GitHub, Google Workspace,
+Jenkins, Okta, npm, PyPI-collaborator, Slack app/share) run on zircolite via `pipeline=none`.
+The other 26 (GCP, Cloudflare, GitLab, Kubernetes, Harbor, Snowflake, Terraform, Vault, and a
+few others) match on field names zircolite's EVTX flattener can't preserve — dotted paths
+*and* underscored keys (verified with `--keepflat`: `gcp.audit.method_name` → `methodname`,
+`resource_type` → `resourcetype`) — so they run on a dedicated **nested-field cloud plane**
+(`run-cloud-validation.sh`): `sigma_eval.py` matches the real rule against natural cloud-event
+JSON by walking pysigma's own parsed condition tree, and each rule is checked both ways — its
+true-positive fires, a benign true-negative near-miss stays silent. Host-plane total: 72 rules
+(25 Windows/Sysmon + 21 zircolite cloud + 26 evaluator cloud). Both Sigma engines run in the
+authoring environment, so every rule+fixture is verified locally before CI.
 
 **Phase 3 — fixtures from the real attacks.** *(not CI)*
 A documented `regen-fixtures.sh` that runs the paired Kali attacks (the htpx pairs)
