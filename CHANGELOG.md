@@ -13,6 +13,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.6.1] - 2026-07-16
+
+### Documentation
+
+- **`docs(runbook)`: spell out how release cuts differ by bump type.**
+  `RELEASE-RUNBOOK.md` now adds the Core-release bump-selection table, the step-4
+  `@vN` alias split for PATCH/MINOR vs MAJOR, the extra MAJOR rollout `uses:` bump,
+  the htpx SemVer guide, and the "undo a staged `make release`" troubleshooting
+  path. `RELEASE-STRATEGY.md` is updated alongside it so the current-version examples
+  stay aligned with the live Core release line.
+
 ## [v3.6.0] - 2026-07-16
 
 ### Added
