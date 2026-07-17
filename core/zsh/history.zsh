@@ -17,10 +17,8 @@ SAVEHIST=200000 # lines written to $HISTFILE
 [[ -d ${HISTFILE:h} ]] || mkdir -p "${HISTFILE:h}"
 
 setopt EXTENDED_HISTORY     # write :start:elapsed;command (atuin import-friendly)
-setopt INC_APPEND_HISTORY   # append as you go, not just at shell exit
-setopt SHARE_HISTORY        # share across live sessions
-setopt HIST_IGNORE_ALL_DUPS # drop older dup when a command repeats
-setopt HIST_IGNORE_DUPS
+setopt SHARE_HISTORY        # share across live sessions (implies incremental append)
+setopt HIST_IGNORE_ALL_DUPS # drop older dup when a command repeats (supersedes HIST_IGNORE_DUPS)
 setopt HIST_FIND_NO_DUPS # don't show dups when searching
 setopt HIST_IGNORE_SPACE # a leading space keeps a command out of history
 setopt HIST_REDUCE_BLANKS
@@ -32,4 +30,4 @@ setopt HIST_SAVE_NO_DUPS
 # has its own richer filtering (history_filter in config.toml) — this is the
 # belt-and-suspenders for the flat file. Operator habit: prefix anything spicy
 # with a space (HIST_IGNORE_SPACE) and it never lands anywhere.
-HISTORY_IGNORE='(pass show *|pass read *|pass insert *|*--password *|*--token *|*API_KEY*|*SECRET*|op read*)'
+HISTORY_IGNORE='(pass show *|pass read *|pass insert *|op read*|*--password[ =]*|*--token[ =]*|*--api-key[ =]*|*PASSWORD=*|*TOKEN=*|*API_KEY*|*APIKEY*|*SECRET*|*ACCESS_KEY=*)'

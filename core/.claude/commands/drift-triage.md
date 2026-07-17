@@ -1,7 +1,7 @@
 ---
 description: Interpret fleet-drift into ranked, per-repo remediation (report-first)
 argument-hint: "[repo, optional — defaults to the whole fleet]"
-allowed-tools: Read, Grep, Glob, Bash, WebSearch
+allowed-tools: Read, Grep, Glob, WebSearch, Bash(./scripts/fleet-drift.sh:*), Bash(git log:*), Bash(git describe:*), Bash(git tag:*)
 ---
 
 # /drift-triage

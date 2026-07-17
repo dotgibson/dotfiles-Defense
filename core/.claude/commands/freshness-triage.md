@@ -1,7 +1,7 @@
 ---
 description: Review open dependency-bump PRs against upstream changelogs
 argument-hint: "[PR number, optional — defaults to all open bot PRs]"
-allowed-tools: Task, Read, Grep, Glob, WebSearch, WebFetch, Bash(./scripts/update-plugins.sh --check), Bash(./scripts/update-nvim-plugins.sh --check), Bash(git log:*), Bash(git diff:*)
+allowed-tools: Task, Read, Grep, Glob, WebSearch, WebFetch, Bash(./scripts/update-plugins.sh --check), Bash(git log:*), Bash(git diff:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr checks:*)
 ---
 
 # /freshness-triage
@@ -19,12 +19,18 @@ Target for this run: **$ARGUMENTS** (empty = all open automation PRs).
   `automation/freshness-zsh-plugins` and `automation/freshness-nvim-plugins`.
 - **`dependabot.yml`** (weekly) — bumps GitHub Actions in `.github/workflows/`.
 
-The `--check` modes are the source of truth for "is it behind":
+For the zsh pins, `--check` is the source of truth for "is it behind" and is safe to run
+(it only `git ls-remote`s + `zsh -n` parses — no upstream code runs):
 
 ```bash
 ./scripts/update-plugins.sh --check
-./scripts/update-nvim-plugins.sh --check
 ```
+
+For the **nvim** pins, do NOT run `update-nvim-plugins.sh --check` here — it runs
+`nvim --headless +Lazy! sync`, which executes upstream plugin _build hooks_ inside this
+token-bearing job (a supply-chain path to `CLAUDE_CODE_OAUTH_TOKEN`). Read the staleness
+from the open `automation/freshness-nvim-plugins` PR the bot already opened — `gh pr diff`
+/ `gh pr view` show exactly which pins moved.
 
 ## What to do per PR
 

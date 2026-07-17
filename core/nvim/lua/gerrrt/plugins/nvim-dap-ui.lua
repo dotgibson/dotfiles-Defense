@@ -120,19 +120,24 @@ return {
 		})
 
 		-- ── uv-aware Python debugging ────────────────────────────────────────────
+		-- Windows venvs put the interpreter at \Scripts\python.exe (not /bin/python) and ship
+		-- only `python` on PATH (no `python3`), so the interpreter paths below branch on OS.
+		local is_win = vim.fn.has("win32") == 1
+		local venv_python = is_win and "\\Scripts\\python.exe" or "/bin/python"
 		local function uv_python()
 			if vim.env.VIRTUAL_ENV and vim.env.VIRTUAL_ENV ~= "" then
-				return vim.env.VIRTUAL_ENV .. "/bin/python"
+				return vim.env.VIRTUAL_ENV .. venv_python
 			end
-			local venv = vim.fn.getcwd() .. "/.venv/bin/python"
+			local venv = vim.fn.getcwd() .. (is_win and "/.venv\\Scripts\\python.exe" or "/.venv/bin/python")
 			if vim.fn.executable(venv) == 1 then
 				return venv
 			end
-			local sys = vim.fn.exepath("python3")
+			local sys = vim.fn.exepath(is_win and "python" or "python3")
 			return sys ~= "" and sys or "python"
 		end
 
-		local debugpy_python = vim.fn.stdpath("data") .. "/mason/packages/debugpy/venv/bin/python"
+		local debugpy_python = vim.fn.stdpath("data")
+			.. (is_win and "/mason/packages/debugpy/venv\\Scripts\\python.exe" or "/mason/packages/debugpy/venv/bin/python")
 
 		dap.adapters.python = function(cb, config)
 			if config.request == "attach" then
@@ -141,7 +146,7 @@ return {
 			else
 				cb({
 					type = "executable",
-					command = vim.fn.executable(debugpy_python) == 1 and debugpy_python or "python3",
+					command = vim.fn.executable(debugpy_python) == 1 and debugpy_python or (is_win and "python" or "python3"),
 					args = { "-m", "debugpy.adapter" },
 					options = { source_filetype = "python" },
 				})

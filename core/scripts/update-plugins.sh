@@ -71,7 +71,14 @@ case "${1:-}" in
 --check) DRY=1 CHECK=1 ;;
 "") ;;
 -h | --help)
-  sed -n '15,24p' "$0"
+  cat <<'EOF'
+update-plugins.sh — roll the pinned zsh-plugin SHAs in zsh/plugins.zsh to upstream HEAD.
+
+  ./scripts/update-plugins.sh            bump every pin to upstream HEAD, in place
+  ./scripts/update-plugins.sh --dry-run  show what WOULD change, touch nothing
+  ./scripts/update-plugins.sh --check    like --dry-run but exit 2 if any pin is stale
+                                         (the freshness gate .github/workflows/freshness.yml runs)
+EOF
   exit 0
   ;;
 *)

@@ -1,7 +1,14 @@
 -- LSP client capabilities now come from blink.cmp (was: cmp_nvim_lsp). blink
 -- advertises the completion capabilities its sources support; get_lsp_capabilities
 -- merges them onto Neovim's defaults. (Migration: see plugins/blink-cmp.lua.)
-local capabilities = require("blink.cmp").get_lsp_capabilities()
+-- Guard the blink require: if it fails to load (fresh box, plugin not built yet), fall back to
+-- Neovim's default client capabilities rather than aborting the whole server stack.
+local ok, capabilities = pcall(function()
+	return require("blink.cmp").get_lsp_capabilities()
+end)
+if not ok then
+	capabilities = vim.lsp.protocol.make_client_capabilities()
+end
 
 -- Language Server Protocol (LSP)
 require("gerrrt.servers.lua_ls")(capabilities)
