@@ -47,8 +47,37 @@ elseif vim.fn.executable("clip.exe") == 1 then
       ["*"] = "clip.exe",
     },
     paste = {
-      ["+"] = { pwsh, "-NoProfile", "-Command", "Get-Clipboard" },
-      ["*"] = { pwsh, "-NoProfile", "-Command", "Get-Clipboard" },
+      -- -Raw returns the clipboard as a single string; bare Get-Clipboard yields a
+      -- string[] split on newlines, which nvim rejoins with CRLF and mangles multi-line pastes.
+      ["+"] = { pwsh, "-NoProfile", "-Command", "Get-Clipboard -Raw" },
+      ["*"] = { pwsh, "-NoProfile", "-Command", "Get-Clipboard -Raw" },
+    },
+    cache_enabled = 0,
+  }
+elseif vim.fn.has("nvim-0.10") == 1
+  and vim.fn.executable("pbcopy") == 0
+  and vim.fn.executable("wl-copy") == 0
+  and vim.fn.executable("xclip") == 0
+  and vim.fn.executable("xsel") == 0
+  and vim.fn.executable("win32yank") == 0
+then
+  -- Last-resort fallback, applied ONLY when there is genuinely no native clipboard backend
+  -- on PATH: no Core clip/clip.exe AND none of the OS-native tools Neovim would auto-detect
+  -- (pbcopy / wl-copy / xclip / xsel / win32yank). This keeps the module contract above — a
+  -- working native provider is NEVER overridden (so its blocking OSC52 paste query is never
+  -- imposed on a box that has a real provider) — while still closing the "yank does nothing
+  -- over tmux/psmux/SSH" gap on a headless/remote box. Neovim 0.10+'s OSC52 provider carries
+  -- yanks to the system clipboard over the terminal escape sequence, no external helper needed.
+  local osc52 = require("vim.ui.clipboard.osc52")
+  vim.g.clipboard = {
+    name = "clip-osc52",
+    copy = {
+      ["+"] = osc52.copy("+"),
+      ["*"] = osc52.copy("+"),
+    },
+    paste = {
+      ["+"] = osc52.paste("+"),
+      ["*"] = osc52.paste("+"),
     },
     cache_enabled = 0,
   }

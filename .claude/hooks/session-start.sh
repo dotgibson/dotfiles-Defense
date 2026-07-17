@@ -73,12 +73,22 @@ CA=/etc/ssl/certs/ca-certificates.crt
 [ -r "$CA" ] && export NODE_EXTRA_CA_CERTS="$CA"
 
 # Helper: install a pinned release tarball to /usr/local/bin (like CI does).
-install_tarball() { # install_tarball <bin> <url> <tar-flags> [member]
-  local bin="$1" url="$2" flags="$3" member="${4:-}"
+# Downloads to a file, VERIFIES the pinned SHA-256 (fail closed — no checksum, no
+# install), THEN extracts. Mirrors setup-core-tools/action.yml: the tarball must
+# never be piped straight into tar unverified (a MITM'd asset would run as the gate).
+install_tarball() { # install_tarball <bin> <url> <sha256> <tar-flags> [member]
+  local bin="$1" url="$2" sha="$3" flags="$4" member="${5:-}"
   have "$bin" && return 0
-  local tmp
+  local tmp f
   tmp="$(mktemp -d)"
-  if curl -fsSL "$url" | tar "$flags" -C "$tmp" ${member:+"$member"} 2>/dev/null; then
+  f="$tmp/${url##*/}"
+  if [ -z "$sha" ]; then
+    log "no pinned SHA-256 for $bin — refusing unverified install (check scripts/tool-versions.env)"
+  elif ! curl -fsSL -o "$f" "$url"; then
+    log "could not download $bin from $url"
+  elif ! echo "${sha}  ${f}" | sha256sum -c - >/dev/null 2>&1; then
+    log "SHA-256 mismatch for $bin — refusing to install (expected ${sha})"
+  elif tar "$flags" -f "$f" -C "$tmp" ${member:+"$member"} 2>/dev/null; then
     local found
     found="$(find "$tmp" -type f -name "$bin" 2>/dev/null | head -n1)"
     [ -n "$found" ] && $SUDO install -m755 "$found" "/usr/local/bin/$bin" 2>/dev/null
@@ -87,25 +97,35 @@ install_tarball() { # install_tarball <bin> <url> <tar-flags> [member]
   have "$bin" || log "could not install $bin from $url"
 }
 
-# ── shellcheck (pinned) ───────────────────────────────────────────────────────
+# ── shellcheck (pinned + verified) ────────────────────────────────────────────
 [ -n "${SHELLCHECK_VERSION:-}" ] && install_tarball shellcheck \
-  "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" -xJ
+  "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" "${SHELLCHECK_SHA256:-}" -xJ
 
-# ── actionlint (pinned) ───────────────────────────────────────────────────────
+# ── actionlint (pinned + verified) ────────────────────────────────────────────
 [ -n "${ACTIONLINT_VERSION:-}" ] && install_tarball actionlint \
-  "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" -xz actionlint
+  "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" "${ACTIONLINT_SHA256:-}" -xz actionlint
 
-# ── gitleaks (pinned) — the audit's secrets section runs `gitleaks dir`, so without
-# this a remote session's secrets gate would SKIP: a "green because absent" for secrets,
-# the exact false-green this hook exists to prevent. Same tarball pattern as above. ──
+# ── gitleaks (pinned + verified) — the audit's secrets section runs `gitleaks dir`, so
+# without this a remote session's secrets gate would SKIP: a "green because absent" for
+# secrets, the exact false-green this hook exists to prevent. Same tarball pattern above. ──
 [ -n "${GITLEAKS_VERSION:-}" ] && install_tarball gitleaks \
-  "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -xz gitleaks
+  "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" "${GITLEAKS_SHA256:-}" -xz gitleaks
 
-# ── neovim (pinned) — extracted to /opt, symlinked onto PATH (CI's Linux path) ─
+# ── neovim (pinned + verified) — extracted to /opt, symlinked onto PATH (CI's Linux path).
+# Verify the pinned SHA-256 before unpacking as root — same fail-closed rule as above. ──
 if [ -n "${NVIM_VERSION:-}" ] && ! have nvim; then
-  if curl -fsSL "https://github.com/neovim/neovim/releases/download/v${NVIM_VERSION}/nvim-linux-x86_64.tar.gz" | $SUDO tar -xz -C /opt 2>/dev/null; then
+  nvim_tmp="$(mktemp -d)"
+  nvim_tgz="$nvim_tmp/nvim-linux-x86_64.tar.gz"
+  if [ -z "${NVIM_SHA256:-}" ]; then
+    log "no pinned SHA-256 for neovim — refusing unverified install (check scripts/tool-versions.env)"
+  elif ! curl -fsSL -o "$nvim_tgz" "https://github.com/neovim/neovim/releases/download/v${NVIM_VERSION}/nvim-linux-x86_64.tar.gz"; then
+    log "could not download neovim"
+  elif ! echo "${NVIM_SHA256}  ${nvim_tgz}" | sha256sum -c - >/dev/null 2>&1; then
+    log "SHA-256 mismatch for neovim — refusing to install (expected ${NVIM_SHA256})"
+  elif $SUDO tar -xz -f "$nvim_tgz" -C /opt 2>/dev/null; then
     $SUDO ln -sf /opt/nvim-linux-x86_64/bin/nvim /usr/local/bin/nvim 2>/dev/null
   fi
+  rm -rf "$nvim_tmp"
   have nvim || log "could not install neovim"
 fi
 

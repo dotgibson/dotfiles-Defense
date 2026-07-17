@@ -18,7 +18,9 @@ return {
 	event = "InsertEnter",
 	dependencies = {
 		"rafamadriz/friendly-snippets",
-		{ "L3MON4D3/LuaSnip", version = "v2.*", build = "make install_jsregexp" },
+		-- install_jsregexp needs make + a C toolchain, absent on stock Windows; skip the build there.
+		-- LuaSnip degrades gracefully without jsregexp (only regex-transform snippets are affected).
+		{ "L3MON4D3/LuaSnip", version = "v2.*", build = vim.fn.has("win32") == 0 and "make install_jsregexp" or nil },
 	},
 	---@module 'blink.cmp'
 	---@type blink.cmp.Config

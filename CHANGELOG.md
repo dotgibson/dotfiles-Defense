@@ -13,6 +13,71 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.7.0] - 2026-07-17
+
+### Changed
+
+- **Neovim clipboard gains a gated OSC52 last-resort provider.** When no native clipboard
+  backend is on PATH (no Core `clip`/`clip-paste`, no `clip.exe`, and none of `pbcopy` /
+  `wl-copy` / `xclip` / `xsel` / `win32yank`), `"+y`/`"+p` route over the terminal's OSC52
+  sequence — closing the "yank does nothing over tmux/psmux/SSH" gap on headless/remote boxes.
+  A working native provider is never overridden, so a normal desktop is unaffected.
+- **Neovim clipboard paste uses `Get-Clipboard -Raw` on Windows**, so multi-line pastes no
+  longer arrive split/CRLF-mangled.
+- **Windows-correct Neovim Python DAP + LuaSnip build.** debugpy/venv interpreters resolve to
+  `Scripts\python.exe` (and `python`, not `python3`) on Windows; LuaSnip skips its
+  `make install_jsregexp` build where there's no toolchain. All gated on `has("win32")`.
+- **Neovim LSP capabilities fetch is `pcall`-guarded** (a blink load failure no longer aborts
+  the whole server stack), and `emmet_ls` now attaches to `html`.
+- **Starship prompt gains venv, package, git-metrics, and WSL indicators.** `[python]` shows the
+  active `$virtualenv`; a `$package` version indicator and an `$env_var` slot are wired into
+  `format` (surfacing a previously-unplaced `ENGAGEMENT` var and a new `WSL_DISTRO_NAME` badge);
+  `git_metrics` is enabled; a documented opt-in `docker_version` custom is included (off by default).
+- **`git_main_branch` resolves the trunk in one call.** It reads `origin/HEAD` directly
+  (`git symbolic-ref`) and only falls back to probing the trunk-name candidate list when
+  that is unset — instead of firing up to 18 `git show-ref` subprocesses every call. It sits
+  on the hot path (`gcom` / `gswm` / `grbm`).
+- **`git_current_branch` uses the git porcelain.** It now reads `git branch --show-current`
+  (git 2.22+) instead of the hand-rolled `symbolic-ref` + return-code dance; the short-SHA
+  fallback on a detached HEAD and the empty result outside a repo are both preserved.
+- **`_core_suggest` no longer forks per candidate.** `_core_lev` gained a fork-free out-var
+  mode, so scoring a mistyped Core verb against the alias/subcommand list runs in-process
+  rather than spawning a command substitution for each candidate (~80+ on a bad `please`).
+- **`pullall` tallies its summary in a single `awk` pass** instead of four `grep -c` scans of
+  the same buffer.
+- **Collapsed a dead `status-left` conditional** in `tmux/tmux.conf` to a constant — all three
+  branches resolved to the same colour.
+- **Decoupled `--help` from header line numbers.** `update-plugins.sh`,
+  `update-nvim-plugins.sh`, and `freshness-dashboard.sh` now print usage from a heredoc rather
+  than `sed -n '<a>,<b>p' "$0"`, which silently mis-printed whenever the header comment moved
+  (the coupling `sync-core.sh` already documents having removed).
+- **Removed redundant zsh history setopts** (`zsh/history.zsh`): `INC_APPEND_HISTORY` (implied
+  by `SHARE_HISTORY`) and `HIST_IGNORE_DUPS` (superseded by `HIST_IGNORE_ALL_DUPS`) were
+  no-ops, so they are dropped.
+
+### Security
+
+- **session-start hook verifies its tool downloads.** `install_tarball` and the neovim
+  install in `.claude/hooks/session-start.sh` now download to a file and check the pinned
+  SHA-256 from `scripts/tool-versions.env` before extracting — failing closed when a
+  checksum is absent or mismatched — instead of piping `curl … | tar` unverified. Brings the
+  remote-session gate toolchain in line with the CI composite action, which already verifies.
+- **claude-routines run with least-privilege tools.** Each job's `--allowedTools` now mirrors
+  its routine's own `allowed-tools` frontmatter rather than granting unrestricted `Bash`; the
+  web-reading routines (tool-scout, freshness-triage, modernize, release-readiness,
+  drift-triage) no longer pair arbitrary shell with `WebFetch`/`WebSearch`, closing a
+  prompt-injection → `CLAUDE_CODE_OAUTH_TOKEN` exfiltration path. `drift-triage`'s command
+  frontmatter is scoped to match.
+- **`HISTORY_IGNORE` covers more secret shapes** (`zsh/history.zsh`): `--flag=value` forms and
+  env-assignment credentials (`TOKEN=`, `PASSWORD=`, `*ACCESS_KEY=`, `APIKEY`) that the
+  space-only patterns let slip now stay out of the plaintext `$HISTFILE`.
+
+### Fixed
+
+- **Cheatsheet uses a non-deprecated highlight API.** `nvim/lua/gerrrt/cheatsheet.lua` now
+  calls `nvim_buf_set_extmark` instead of the deprecated `nvim_buf_add_highlight` (slated for
+  removal on Neovim nightly), so `:Cheatsheet` / `<leader>?` keeps working on current Neovim.
+
 ## [v3.6.1] - 2026-07-16
 
 ### Documentation

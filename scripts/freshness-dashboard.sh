@@ -39,7 +39,18 @@ OWNER="${GITHUB_REPOSITORY_OWNER:-dotgibson}"
 while [ $# -gt 0 ]; do
   case "$1" in
   --root) ROOT="${2:?--root needs a directory}"; shift 2 ;;
-  -h | --help) sed -n '2,19p' "$0"; exit 0 ;;
+  -h | --help)
+    cat <<'EOF'
+freshness-dashboard.sh — compose the weekly fleet freshness dashboard (markdown → stdout).
+
+  ./scripts/freshness-dashboard.sh              build the dashboard for the whole fleet
+  ./scripts/freshness-dashboard.sh --root DIR   use DIR as the parent holding the repos
+
+Consolidates vendoring drift, vendored-core integrity, and zsh/nvim plugin-pin freshness
+with live GitHub signals (own-tag release drift, open dependency PRs, judgment-layer issue
+links). Reporter only — never mutates, never fails the build; live signals need `gh` + a token.
+EOF
+    exit 0 ;;
   *) echo "freshness-dashboard: unknown arg: $1" >&2; exit 2 ;;
   esac
 done
