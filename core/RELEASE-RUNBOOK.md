@@ -25,8 +25,41 @@ cuts for host work (both flows in §3). It vendors no `core/` subtree.
 
 ## 1. Cut a Core release
 
-Run these in a clean `dotfiles-core` checkout. `vX.Y.Z` is the new version — bump the
-**minor** for features, the **patch** for fixes only (see `core.version` for current).
+Run these in a clean `dotfiles-core` checkout. `vX.Y.Z` is the new version; **pick the
+bump first** with §1.0, then run the cut in §1.1 (see `core.version` for the current
+number — the current major is what the `@vN` alias points at, e.g. `v3` while on `3.x`).
+
+### 1.0 Pick the bump: major, minor, or patch
+
+Choose by **blast radius on a host, not by how big the diff looks**. The canonical
+policy is `RELEASE-STRATEGY.md` §2 ("SemVer, mapped to dotfiles"); this is the
+operator-facing summary so you don't have to leave the runbook:
+
+| Bump | `X.Y.Z` moves | Cut it when… | Concrete triggers |
+| --- | --- | --- | --- |
+| **PATCH** | `Z` → `Z+1` | a fix or doc change with **no interface change** | a bug fix; a zsh-plugin / nvim pin bump with no observable behavior change; a doc correction |
+| **MINOR** | `Y` → `Y+1`, `Z` → `0` | **additive** and backward-compatible | a new zsh module, alias, function, or keybinding that **displaces nothing** a host already relies on |
+| **MAJOR** | `X` → `X+1`, `Y`,`Z` → `0` | a host must **adapt** to keep working | reordering the load chain; removing/renaming a public alias, binding, or function; changing the `bootstrap.sh` symlink contract; dropping a `core.manifest` path |
+
+When it's ambiguous, decide with these three:
+
+- If a host that blindly re-bootstraps could **break, or lose a command it relied on**,
+  it's **MAJOR** — even if the diff is a single line.
+- If nothing a host already uses changes meaning, it's at most **MINOR** — even if the
+  diff is large (a whole new module is still just additive).
+- "Is this fix visible to a user?" is **not** the MAJOR test — a visible fix is still a
+  **PATCH** as long as no interface is added, removed, or renamed.
+
+Two consequences to remember before you type anything:
+
+- **Flag a MAJOR loudly in the CHANGELOG.** It forces action on every OS repo at rollout
+  (they must adapt), so the `[Unreleased]` → `[vX.Y.Z]` section should call the break out
+  explicitly, not bury it under "changed".
+- **The cut commands are identical for all three bumps except one step** — the moving
+  `@vN` major-alias handling in §1.1 step 4. Read that callout; it's the only place major
+  and minor/patch diverge mechanically.
+
+### 1.1 Run the cut
 
 ```bash
 # 0. Start from a clean, green, up-to-date main.
@@ -46,11 +79,36 @@ gh pr create --base main --head release/vX.Y.Z --title "release vX.Y.Z"
 #    ... review, let CI go green, then MERGE with a merge commit ...
 
 # 4. After the PR merges, tag the MERGED tip and push the tags (keeps git describe clean).
+#    The `vN` line is the ONE step that differs by bump type — see the callout below.
 git fetch origin
 git tag -fa vX.Y.Z origin/main -m vX.Y.Z
-git tag -f  vN     origin/main          # vN = the major alias, e.g. v2
+git tag -f  vN     origin/main          # vN = the major alias, e.g. v3 (v4 on a MAJOR)
 git push origin vX.Y.Z ; git push -f origin vN   # ';' not '&&' — independent pushes
 ```
+
+#### Step 4, by bump type — the moving `@vN` major alias
+
+Every reusable workflow in the fleet pins its caller to `@vN` (currently `@v3`), and step 4
+is where that alias moves. What you do with it depends on the bump you chose in §1.0
+(policy: `RELEASE-STRATEGY.md` §"Pinning reusable workflows"):
+
+- **PATCH or MINOR** — the major number is unchanged, so `vN` stays the **same** alias
+  (e.g. `v3`). Step 4 as written force-advances it to the new tip, and every caller pinned
+  `@v3` picks the change up automatically on its next run. **No caller edits.** This
+  auto-fan-out of guard/bootstrap fixes is the whole reason the alias moves.
+- **MAJOR** — you are minting a **new** major. In step 4, `vN` is the **new** alias (e.g.
+  `v4`), created fresh at the merged tip (`git tag -f v4 origin/main && git push -f origin v4`).
+  **Leave the previous alias frozen:** do *not* run the `vN` line against `v3` — advancing it
+  would push the breaking change onto every caller still pinned `@v3`. Then bump the callers
+  that should adopt the new major from `@v3` to `@v4` **by hand** — that fleet-wide `uses:`
+  edit is the single intentional, reviewed change a MAJOR is meant to be, and it's tracked as
+  part of rollout (§2), not this step.
+
+> The `make tag` shortcut path handles the alias itself, safely for either case:
+> `tag-release.sh` derives the alias from the version (`MAJOR="v${VERSION%%.*}"`), so a
+> `v4.0.0` cut force-moves **`v4`** (creating it) and never touches `v3`. It does **not**,
+> however, bump the fleet's callers from `@v3` to `@v4` — that hand edit is still yours on a
+> MAJOR.
 
 ### What happens automatically after the tag
 
@@ -78,6 +136,14 @@ never all at once (per `RELEASE-STRATEGY.md`).
 1. Merge **`dotfiles-MacBook`** first (the canary). Let it bake.
 2. Then merge the remaining Linux/Role repos' `core.lock` PRs.
 3. On each host, the change lands when you re-run `./bootstrap.sh` (or pull).
+
+**If this was a MAJOR release,** the fan-out `core.lock` PRs are not the whole rollout: any
+repo whose CI pins a reusable workflow at the old `@vN` also needs its `uses:` ref bumped to
+the new major (`@v3` → `@v4`) — the deliberate caller edit from §1.1 step 4. `make fleet-drift`
+won't surface this: it compares each repo's recorded `core.lock` / `nvim/.core-ref` provenance
+against Core, not its workflow `uses:` pins — so finding the stragglers is a manual sweep
+(e.g. `grep -rl 'uses:.*@v3' .github/workflows` across the repos in `scripts/os-repos.txt`).
+PATCH/MINOR releases skip this entirely: the moving alias already carried them.
 
 If an OS-repo PR's `links-only` job fails on a **mirror timeout** (e.g. openSUSE's OSS
 CDN), just re-run the job — the prep step retries automatically. A genuinely broken
@@ -189,6 +255,21 @@ Then close the `release-readiness` / `release-notes` tracking issues for the cut
 
 Run in a clean `htpx` checkout. htpx versions itself from its `CHANGELOG.md`.
 
+**Which bump?** htpx is a content corpus, so read SemVer as impact on its consumers —
+`dotfiles-Kali` (which regenerates the marked `hacktheplanet` / `PURPLE-TEAM.md` blocks from
+the entries via `gen-views.sh`, drift-gated by `companion.yml`) and anyone browsing with the
+`htpx` picker:
+
+- **PATCH** — an existing entry is corrected in place: a fixed or retargeted detection, a
+  metadata/typo fix, a tightened query. No new entries, no format change. (The v2.4.0
+  `### Changed` "asrep-probing-4771 retargeted" line is patch-shaped work.)
+- **MINOR** — the corpus **grows** backward-compatibly: new red↔blue pairs, a new unpaired
+  entry, a new tactic/technique covered. (v2.4.0's "+2 pairs, +1 recon entry" = minor.)
+- **MAJOR** — a change Kali's regeneration or the `htpx` picker must **adapt** to: the entry
+  frontmatter / `{{slot}}` format, the `gen-views.sh` marker contract, or the
+  `entries/red|blue/` layout. These break the `companion.yml` drift-gate until Kali re-syncs,
+  so flag them loudly.
+
 ```bash
 git checkout main && git fetch origin && git pull --ff-only origin main
 ```
@@ -264,6 +345,7 @@ This catches the auth-scope, argument, and resolve-path bugs that PR CI cannot s
 | fan-out fails `could not read Username for 'https://github.com'` | a git op reading a private repo without auth | the read must be authenticated (built-in token for own repo, `FLEET_SYNC_TOKEN` for cross-repo) |
 | fan-out aborts `core.lock differs ...` | an htpx sync touched Core | by design — htpx fan-out must never change `core.lock`; investigate the sync |
 | `make tag` refuses: `no '## [vX.Y.Z]' heading` | `make release` wasn't run | run `make release VERSION=X.Y.Z` first |
+| staged a release with `make release` but want to hold off (add more commits first) | changed your mind before committing | `make release` only edits two files (no commit, no tag), so `git checkout -- core.version CHANGELOG.md` fully undoes it — restoring the single `[Unreleased]` so later commits append to it. If you *also* ran `make tag`, first `git tag -d vX.Y.Z` then `git reset --hard HEAD~1` (confirm `git show --stat HEAD` is the release commit). If you already pushed the tag, also `git push origin :refs/tags/vX.Y.Z` |
 
 For the policy behind all of this — cadence, canary order, why only Core is versioned —
 see `RELEASE-STRATEGY.md`.

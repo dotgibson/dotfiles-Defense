@@ -24,7 +24,7 @@ The fleet is not eight things that each version themselves. It is **one
 versioned thing (Core) vendored into thin per-OS consumers**:
 
 - **Core** (`dotfiles-core`) carries the SemVer in `core.version` (currently
-  `1.2.0`). It is the single source of truth, vendored into each OS repo's
+  `3.6.0`). It is the single source of truth, vendored into each OS repo's
   `core/` via `git subtree`. A defect here fans out N-way, so Core is the thing
   that earns a version number, a tag, and a changelog.
 - **OS-native repos** (`dotfiles-{MacBook,Fedora,Arch,openSUSE,Alpine,Gentoo}`)
@@ -190,7 +190,7 @@ tag**:
 
 ```sh
 # in an OS repo, adopt a specific Core release rather than main's tip
-git subtree pull --prefix=core <core-remote> v1.3.0 --squash
+git subtree pull --prefix=core <core-remote> v3.6.0 --squash
 ```
 
 Now "what Alpine runs" is a frozen, named version, and rolling one OS back is
@@ -214,7 +214,7 @@ of the vendored commit), so the named version is recorded automatically and
    still works locally). `make fleet-drift` confirms every repo converged on the new
    tag. The PRs are opened, never auto-merged — the opt-in gates above are intact.
 5. **Roll back per OS** if needed: re-pull the previous tag in just the affected
-   repo. Alpine rolling back to `v1.2.0` does not touch macOS on `v1.3.0` — the
+   repo. Alpine rolling back to `v3.5.0` does not touch macOS on `v3.6.0` — the
    repos are independent consumers.
 
 ### Pinning reusable workflows (the `@vN` policy)
@@ -273,10 +273,10 @@ available for drafting a body by hand if you want to edit it before publishing.
 
 ### Tag baseline
 
-The fleet already carries annotated tags `v1.0.0`–`v1.2.0`, so there is no
-one-time adoption step — `core.version` (`1.2.0`) matches the latest tag, and the
-next release just runs the checklist above to cut `v1.2.1` / `v1.3.0`. The
-`core_tag` provenance only appears in each `core.lock` on the next `make sync`,
+The fleet has carried annotated `vX.Y.Z` tags since `v1.0.0`, so there is no
+one-time adoption step — `core.version` (currently `3.6.0`) matches the latest
+tag, and the next release just runs the checklist above to cut `v3.6.1` / `v3.7.0`.
+The `core_tag` provenance only appears in each `core.lock` on the next `make sync`,
 which is when `git describe` first has a tag to resolve against the vendored
 commit.
 
