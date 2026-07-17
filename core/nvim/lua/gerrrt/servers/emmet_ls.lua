@@ -2,6 +2,7 @@ return function(capabilities)
 	vim.lsp.config("emmet_ls", {
 		capabilities = capabilities,
 		filetypes = {
+			"html",
 			"typescript",
 			"javascript",
 			"javascriptreact",

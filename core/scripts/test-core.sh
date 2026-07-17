@@ -1533,6 +1533,8 @@ else
     'd=$(mktemp -d); cd "$d"; git -c init.defaultBranch=master init -q .; git commit -q --allow-empty -m x; [[ $(git_main_branch) == master ]]'
   gcheck "git_main_branch defaults to master when no known trunk exists" \
     'd=$(mktemp -d); cd "$d"; git -c init.defaultBranch=main init -q .; git commit -q --allow-empty -m x; git branch -m weirdtrunk; [[ $(git_main_branch) == master ]]'
+  gcheck "git_main_branch ignores a dangling origin/HEAD (stale after a remote rename)" \
+    'd=$(mktemp -d); cd "$d"; git -c init.defaultBranch=master init -q .; git commit -q --allow-empty -m x; git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main; [[ $(git_main_branch) == master ]]'
 fi
 
 # ── update.zsh per-manager parse (B5) ─────────────────────────────────────────

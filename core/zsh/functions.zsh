@@ -746,13 +746,14 @@ pullall() {
 
   print -r -- "$output"
 
-  # Tally from the emoji markers. grep -c always prints exactly one integer (0 on no
-  # match), so these stay safe for the arithmetic below even when $output is empty.
+  # Tally the emoji markers in ONE awk pass instead of four grep -c scans of the same
+  # buffer. index() is byte-based (locale-independent for the multibyte glyphs) and, like
+  # grep -c, counts matching LINES; awk always prints four integers, so the arithmetic
+  # below stays safe even when $output is empty (0 0 0 0).
   local ok warn fail pruned
-  ok=$(printf '%s\n' "$output"   | grep -c '✅')
-  warn=$(printf '%s\n' "$output" | grep -c '⚠️')
-  fail=$(printf '%s\n' "$output" | grep -c '❌')
-  pruned=$(printf '%s\n' "$output" | grep -c '🧹')
+  read -r ok warn fail pruned <<<"$(printf '%s\n' "$output" | awk '
+    index($0,"✅"){o++} index($0,"⚠️"){w++} index($0,"❌"){f++} index($0,"🧹"){p++}
+    END{printf "%d %d %d %d\n", o, w, f, p}')"
 
   print
   print -r -- "${bold}📊 pullall summary${rst}"

@@ -40,7 +40,14 @@ case "${1:-}" in
 --check) DRY=1 CHECK=1 ;;
 "") ;;
 -h | --help)
-  sed -n '21,26p' "$0"
+  cat <<'EOF'
+update-nvim-plugins.sh — roll the pinned Neovim plugin revisions in nvim/lazy-lock.json.
+
+  ./scripts/update-nvim-plugins.sh            bump pins to latest, rewrite the lock
+  ./scripts/update-nvim-plugins.sh --dry-run  show what WOULD change, restore the lock
+  ./scripts/update-nvim-plugins.sh --check    like --dry-run but exit 2 if the lock is stale
+                                              (the lazy-lock half of the weekly freshness gate)
+EOF
   exit 0
   ;;
 *)

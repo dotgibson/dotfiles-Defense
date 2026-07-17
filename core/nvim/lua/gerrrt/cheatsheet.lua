@@ -94,7 +94,7 @@ M.sections = {
 		{ "<leader>fh", "Help tags" },
 		{ "<leader>fk", "Keymaps" },
 		{ "<leader>ft", "Todo comments" },
-		{ "<leader>fd / fD", "Diagnostics doc / workspace" },
+		{ "<leader>fx / fX", "Diagnostics doc / workspace" },
 		{ "<leader>fs / fw", "Symbols doc / workspace" },
 	},
 	{
@@ -312,7 +312,7 @@ local function pack(cards, ncol)
 end
 
 -- Merge the packed columns into flat buffer lines + a flat highlight list (0-indexed rows, byte
--- cols) ready for nvim_buf_set_lines / nvim_buf_add_highlight.
+-- cols) ready for nvim_buf_set_lines / nvim_buf_set_extmark.
 local function compose(cols, height)
 	local ncol = #cols
 	local out_lines, out_hls = {}, {}
@@ -369,7 +369,8 @@ function M.open()
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 	local ns = vim.api.nvim_create_namespace("gerrrt_cheatsheet")
 	for _, h in ipairs(hls) do
-		vim.api.nvim_buf_add_highlight(buf, ns, h.hl, h.row, h.s, h.e)
+		-- nvim_buf_add_highlight is deprecated (0.11+); set_extmark is the exact equivalent
+		vim.api.nvim_buf_set_extmark(buf, ns, h.row, h.s, { end_col = h.e, hl_group = h.hl })
 	end
 	vim.bo[buf].modifiable = false
 	vim.bo[buf].filetype = "cheatsheet"

@@ -14,6 +14,17 @@ name: claude-routines
 # INERT BY DEFAULT: with no CLAUDE_CODE_OAUTH_TOKEN secret the jobs no-op with a warning (so a
 # fork — or this repo before you opt in — never gets a red X). Add the secret to enable.
 # Scheduled runs draw on the subscription's usage; the weekly cadence keeps that predictable.
+#
+# LEAST PRIVILEGE: each job's `--allowedTools` MIRRORS the routine's own `allowed-tools`
+# frontmatter (.claude/commands/<routine>.md) and is never broader. Critically, a job that
+# reads web content (WebFetch/WebSearch) must NOT also grant unrestricted `Bash` — a prompt
+# injection in fetched content could otherwise run arbitrary shell and exfiltrate
+# CLAUDE_CODE_OAUTH_TOKEN. Scope Bash to the exact verbs the routine runs (see shell-review).
+# For the same reason, freshness-triage / release-readiness are NOT granted
+# `update-nvim-plugins.sh --check`: that script runs `nvim --headless +Lazy! sync`, which
+# executes UPSTREAM plugin build hooks in this token-bearing job (a supply-chain path to the
+# token). They read nvim-pin staleness from the open freshness PR via `gh` instead. The zsh
+# `update-plugins.sh --check` stays — it only `git ls-remote`s + `zsh -n` parses, no code exec.
 
 on:
   schedule:
@@ -90,7 +101,7 @@ jobs:
           claude -p "/tool-scout" \
             --model opus \
             --permission-mode default \
-            --allowedTools "Task,Read,Grep,Glob,Bash,WebSearch,WebFetch" \
+            --allowedTools "Task,Read,Grep,Glob,WebSearch,WebFetch" \
             --output-format text | tee "$RUNNER_TEMP/tool-scout.md"
       - name: File the report as an issue
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/tool-scout.md"
@@ -139,7 +150,7 @@ jobs:
             --add-dir "$GITHUB_WORKSPACE" \
             --model opus \
             --permission-mode default \
-            --allowedTools "Task,Read,Grep,Glob,Bash" \
+            --allowedTools "Task,Read,Grep,Glob,Bash(git status:*),Bash(git diff:*),Bash(git ls-files:*),Bash(git log:*),Bash(ls:*)" \
             --output-format text | tee "$RUNNER_TEMP/doc-audit.md"
       - name: File the report as an issue
         working-directory: dotfiles-core
@@ -177,7 +188,7 @@ jobs:
           claude -p "/freshness-triage" \
             --model opus \
             --permission-mode default \
-            --allowedTools "Task,Read,Grep,Glob,Bash,WebSearch,WebFetch" \
+            --allowedTools "Task,Read,Grep,Glob,WebSearch,WebFetch,Bash(./scripts/update-plugins.sh --check),Bash(git log:*),Bash(git diff:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*)" \
             --output-format text | tee "$RUNNER_TEMP/freshness-triage.md"
       - name: File the report as an issue
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/freshness-triage.md"
@@ -214,7 +225,7 @@ jobs:
           claude -p "/modernize" \
             --model opus \
             --permission-mode default \
-            --allowedTools "Task,Read,Grep,Glob,Bash,WebSearch,WebFetch" \
+            --allowedTools "Task,Read,Grep,Glob,WebSearch,WebFetch,Bash(./scripts/check-modern.sh),Bash(git ls-files:*),Bash(git log:*)" \
             --output-format text | tee "$RUNNER_TEMP/modernize.md"
       - name: File the report as an issue
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/modernize.md"
@@ -235,6 +246,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      pull-requests: read # gh pr list — observe the open freshness PR + Hold verdicts
     env:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       GH_TOKEN: ${{ github.token }}
@@ -252,7 +264,7 @@ jobs:
           claude -p "/release-readiness" \
             --model opus \
             --permission-mode default \
-            --allowedTools "Task,Read,Grep,Glob,Bash,WebSearch,WebFetch" \
+            --allowedTools "Task,Read,Grep,Glob,Bash(./scripts/audit-core.sh:*),Bash(./scripts/fleet-drift.sh:*),Bash(./scripts/update-plugins.sh --check),Bash(git log:*),Bash(git tag:*),Bash(cat core.version),Bash(gh pr list:*),Bash(gh issue list:*),Bash(gh run list:*)" \
             --output-format text | tee "$RUNNER_TEMP/release-readiness.md"
       - name: File the report as an issue
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/release-readiness.md"
@@ -287,7 +299,7 @@ jobs:
           claude -p "/release-notes" \
             --model opus \
             --permission-mode default \
-            --allowedTools "Task,Read,Grep,Glob,Bash" \
+            --allowedTools "Task,Read,Grep,Glob,Bash(make release-notes),Bash(./scripts/gen-release-notes.sh:*),Bash(git log:*),Bash(git tag:*)" \
             --output-format text | tee "$RUNNER_TEMP/release-notes.md"
       - name: File the report as an issue
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/release-notes.md"
@@ -372,7 +384,7 @@ jobs:
             --add-dir "$GITHUB_WORKSPACE" \
             --model opus \
             --permission-mode default \
-            --allowedTools "Read,Grep,Glob,Bash,WebSearch" \
+            --allowedTools "Read,Grep,Glob,WebSearch,Bash(./scripts/fleet-drift.sh:*),Bash(git log:*),Bash(git describe:*),Bash(git tag:*)" \
             --output-format text | tee "$RUNNER_TEMP/drift-triage.md"
       - name: File the report as an issue
         working-directory: dotfiles-core

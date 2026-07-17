@@ -1,7 +1,7 @@
 ---
 description: Go/no-go readiness check before cutting a Core release
 argument-hint: "[target version X.Y.Z — optional]"
-allowed-tools: Task, Read, Grep, Glob, Bash(./scripts/audit-core.sh:*), Bash(./scripts/fleet-drift.sh:*), Bash(./scripts/update-plugins.sh --check), Bash(./scripts/update-nvim-plugins.sh --check), Bash(git log:*), Bash(git tag:*), Bash(cat core.version)
+allowed-tools: Task, Read, Grep, Glob, Bash(./scripts/audit-core.sh:*), Bash(./scripts/fleet-drift.sh:*), Bash(./scripts/update-plugins.sh --check), Bash(git log:*), Bash(git tag:*), Bash(cat core.version), Bash(gh pr list:*), Bash(gh issue list:*), Bash(gh run list:*)
 ---
 
 # /release-readiness
@@ -24,8 +24,10 @@ Target for this run: **$ARGUMENTS** (empty = infer the next version from the unr
    fresh one). Propose the next SemVer from the unreleased content: a breaking change → major,
    a `feat` → minor, only `fix`/`chore`/`docs` → patch.
 4. **Is the fleet in a releasable state?** `fleet-drift.sh` (are the OS repos on the latest
-   Core?) and pin freshness (`update-*-plugins.sh --check`). A release fans out, so surface
-   any drift or stale pins that ought to settle first — **advisory**, not hard blockers.
+   Core?) and pin freshness (`update-plugins.sh --check` for zsh; for nvim, note any open
+   `automation/freshness-nvim-plugins` PR via `gh pr list` rather than rebuilding locally,
+   which would run upstream build hooks in this token-bearing job). A release fans out, so
+   surface any drift or stale pins that ought to settle first — **advisory**, not hard blockers.
 5. **Any open blockers?** Open `freshness-triage` **Hold** verdicts, a failing scheduled
    sweep, or a security bump that should ride the release.
 

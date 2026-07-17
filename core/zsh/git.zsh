@@ -19,19 +19,28 @@
 # Current branch name (empty outside a repo / on detached HEAD failure).
 function git_current_branch() {
   local ref
-  ref=$(command git symbolic-ref --quiet HEAD 2>/dev/null)
-  local ret=$?
-  if [[ $ret != 0 ]]; then
-    [[ $ret == 128 ]] && return     # not a git repo
-    ref=$(command git rev-parse --short HEAD 2>/dev/null) || return
-  fi
-  echo "${ref#refs/heads/}"
+  # `git branch --show-current` (git 2.22+) is the porcelain for the checked-out branch.
+  # It prints empty on a detached HEAD — fall back to a short SHA there — and stays empty
+  # outside a repo (rev-parse also fails), preserving both original behaviours.
+  ref=$(command git branch --show-current 2>/dev/null)
+  [[ -n $ref ]] && { echo "$ref"; return; }
+  command git rev-parse --short HEAD 2>/dev/null
 }
 
 # Resolve the trunk branch for this repo (main, master, trunk, ...).
 function git_main_branch() {
   command git rev-parse --git-dir &>/dev/null || return
   local ref
+  # Fast path: origin/HEAD names the remote's default branch authoritatively in ONE call
+  # (the usual case for a cloned repo) — no need to probe the candidate list. symbolic-ref
+  # succeeds even when origin/HEAD is DANGLING (points at a branch pruned/renamed upstream),
+  # so verify the referent actually exists before trusting it; a stale target falls through.
+  if ref=$(command git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) \
+    && command git show-ref -q --verify "refs/remotes/$ref"; then
+    echo "${ref#origin/}"
+    return 0
+  fi
+  # Fallback (origin/HEAD unset or stale): probe the known trunk names locally + on remotes.
   for ref in refs/{heads,remotes/{origin,upstream}}/{main,trunk,mainline,default,stable,master}; do
     if command git show-ref -q --verify "$ref"; then
       echo "${ref:t}"

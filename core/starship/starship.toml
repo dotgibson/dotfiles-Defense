@@ -77,6 +77,7 @@ $haskell\
 $python\
 $ruby\
 $lua\
+$package\
 [](fg:color_srf2 bg:color_srf1)\
 $docker_context\
 $kubernetes\
@@ -84,6 +85,7 @@ $aws\
 $conda\
 $pixi\
 $direnv\
+$env_var\
 $custom\
 $jobs\
 $time\
@@ -186,7 +188,7 @@ format = '([ $all_status $ahead_behind ]($style))'
 # text matching git's own diff colors. only_nonzero_diffs keeps it silent in a clean tree,
 # so the segment only appears once you've actually changed something.
 [git_metrics]
-disabled = true
+disabled = false
 added_style = "fg:color_green bg:color_srf2"
 deleted_style = "fg:color_red bg:color_srf2"
 format = '([ +$added ]($added_style))([ -$deleted ]($deleted_style))'
@@ -262,7 +264,19 @@ format = '[[ $symbol($version) ](fg:color_aqua bg:color_srf2)]($style)'
 [python]
 symbol = " "
 style = "bg:color_srf2"
-format = '[[ $symbol($version) ](fg:color_aqua bg:color_srf2)]($style)'
+# Show the active virtualenv/venv name next to the version. The previous format
+# was version-only, so a plain `python -m venv .venv && activate` project showed
+# nothing about the env you're in. `(...)` is an optional group that renders ONLY
+# when a venv is active, so a bare interpreter stays clean. venv name in purple.
+format = '[[ $symbol($version) ](fg:color_aqua bg:color_srf2)]($style)([\($virtualenv\) ](fg:color_purple bg:color_srf2))'
+
+# Project package version indicator (package.json / Cargo.toml / pyproject / etc.)
+# - the "package indicator" next to the language segments. Renders only inside a
+# package directory, so it's silent elsewhere. Aqua, on the language surface.
+[package]
+symbol = "󰏗 "
+style = "bg:color_srf2"
+format = '[[ $symbol$version ](fg:color_aqua bg:color_srf2)]($style)'
 
 [docker_context]
 symbol = " "
@@ -283,6 +297,19 @@ format = '[[ $symbol($context) ](fg:color_purple bg:color_srf1)]($style)'
 # installed by default on modern distros, so an ifconfig probe would silently never fire
 # there. A box lacking the probe binary just fast-fails and the segment hides — no timeout,
 # unlike Windows.
+# -- OPT-IN: live Docker engine version (OFF by default - perf) --------------
+# docker_context above is the cheap STATUS (which daemon/context). A live VERSION
+# means shelling out to the daemon every prompt in a Docker dir; command_timeout
+# bounds it, but it can still add latency. Uncomment to enable:
+# [custom.docker_version]
+# description = "docker engine version"
+# command = "docker version --format '{{.Server.Version}}'"
+# when = "docker info"
+# detect_files = ['Dockerfile', 'docker-compose.yml', 'docker-compose.yaml', 'compose.yaml']
+# symbol = "󰡨 "
+# style = "fg:color_purple bg:color_srf1"
+# format = '[ $symbol$output ]($style)'
+
 [custom.vpn_macos]
 description = "active tunnel interface (macOS)"
 os = "macos"
@@ -327,9 +354,19 @@ format = '[ $symbol ($profile) (\($region\)) ]($style)'
 [env_var.ENGAGEMENT] # show a custom env var when present (e.g. client tag)
 variable = "ENGAGEMENT"
 symbol = "🎯 "
-style = "fg:color_red"
+style = "fg:color_red bg:color_srf1"
 format = '[ $symbol $env_value ]($style)'
 
+
+# WSL indicator - shows the distro name when this shell is running inside WSL
+# (WSL_DISTRO_NAME is exported by WSL). Silent on the native Windows host and on
+# bare Linux/macOS. Blue, on the ops surface. Both env_var modules render via the
+# $env_var slot wired into `format`.
+[env_var.WSL]
+variable = "WSL_DISTRO_NAME"
+symbol = "󰌽 "
+style = "fg:color_blue bg:color_srf1"
+format = '[ $symbol$env_value ]($style)'
 [conda]
 style = "bg:color_srf1"
 format = '[[ $symbol ($environment) ](fg:color_purple bg:color_srf1)]($style)'
