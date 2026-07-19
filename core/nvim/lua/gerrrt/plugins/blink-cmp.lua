@@ -55,7 +55,18 @@ return {
 			},
 			menu = {
 				border = "rounded",
-				draw = { treesitter = { "lsp" } }, -- syntax-highlight the LSP items in the menu
+				-- NvChad-style menu draw: a colored kind ICON on the left (colors via BlinkCmpKind*
+				-- in utils/ui-highlights.lua), the label in the middle, and the kind TEXT trailing on
+				-- the right — the same three-column rhythm as NvChad's cmp. treesitter still syntax-
+				-- highlights the LSP label text so identifiers read like code.
+				draw = {
+					treesitter = { "lsp" },
+					columns = {
+						{ "kind_icon" },
+						{ "label", "label_description", gap = 1 },
+						{ "kind", gap = 1 },
+					},
+				},
 			},
 			documentation = { auto_show = true, auto_show_delay_ms = 200, window = { border = "rounded" } },
 			ghost_text = { enabled = true },
