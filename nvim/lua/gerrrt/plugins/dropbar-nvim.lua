@@ -32,7 +32,7 @@ return {
 					return false
 				end
 				local ft = vim.bo[buf].filetype
-				local skip = { NvimTree = true, ["dapui_scopes"] = true, ["dapui_breakpoints"] = true, help = true }
+				local skip = { NvimTree = true, help = true }
 				return not skip[ft]
 			end,
 		},

@@ -56,6 +56,32 @@ function M.apply(hl, c)
 	hl.BlinkCmpSignatureHelpBorder = { fg = c.border_highlight, bg = none }
 	hl.BlinkCmpLabelMatch = { fg = c.blue, bold = true }
 
+	-- ── blink.cmp kind icons: NvChad's colored-kind look. blink draws each item's kind icon (and the
+	-- trailing kind text column) with the group `BlinkCmpKind<Kind>`; coloring those by semantic role
+	-- gives the menu NvChad's rainbow kind column. Grouped so related kinds share a palette accent
+	-- (func=blue, var=magenta, type=yellow, keyword=purple, const/value=orange, text=green, misc=cyan).
+	local kind_palette = {
+		{ c.blue, { "Function", "Method", "Constructor" } },
+		{ c.magenta, { "Variable", "Field", "Property" } },
+		{ c.yellow, { "Class", "Struct", "Interface", "Enum", "EnumMember", "TypeParameter", "Event" } },
+		{ c.purple, { "Keyword", "Operator" } },
+		{ c.orange, { "Constant", "Value", "Unit" } },
+		{ c.green, { "Text", "String", "Snippet" } },
+		{ c.cyan, { "Module", "File", "Folder", "Reference", "Color" } },
+	}
+	for _, spec in ipairs(kind_palette) do
+		local color, kinds = spec[1], spec[2]
+		for _, kind in ipairs(kinds) do
+			hl["BlinkCmpKind" .. kind] = { fg = color }
+		end
+	end
+
+	-- ── LSP renamer float (utils/renamer.lua): NvChad tints the rename prompt's border git-red as a
+	-- "this edits everything" cue, with a matching bold red title. Border/title only; the body uses the
+	-- normal float bg so the input text stays readable.
+	hl.GerrrtRenamerBorder = { fg = c.red, bg = none }
+	hl.GerrrtRenamerTitle = { fg = c.red, bg = none, bold = true }
+
 	-- ── which-key: NvChad's palette on the minimal rounded float — blue keys, red descriptions, ──
 	-- green groups, dim separators. Border/title tint match the LSP + finder floats above so every
 	-- popup in the config reads as one system. (Layout/border geometry is set in plugins/which-key.lua.)

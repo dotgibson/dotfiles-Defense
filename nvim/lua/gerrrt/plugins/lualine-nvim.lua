@@ -6,7 +6,8 @@
 --         NvChad's rounded "bubble" separators and section layout:
 --           left  : mode (rounded bubble) · git branch · git diff (+~-)
 --           center: filename (relative) with modified/readonly markers
---           right : search count · attached LSP servers · diagnostics · filetype · cwd · location
+--           right : search count · attached LSP servers · diagnostics · filetype · cwd ·
+--                   scroll-percentage + location (one rounded bubble)
 -- LOOK  : the signature NvChad move is the ROUNDED block — half-circle caps  (U+E0B6) and
 --          (U+E0B4) instead of powerline arrows, with NO inner component separators so each
 --         half reads as one clean run of blocks. Colors come from a HAND-BUILT theme derived from
@@ -15,8 +16,8 @@
 --         ends, a lighter git/cwd block, a base filename run) and each section keeps a solid bg,
 --         which is what makes the pills read as opaque islands on the transparent bar. Because it
 --         pulls from the same palette tokyonight hands `on_highlights` (utils/ui-highlights.lua),
---         it stays theme- and transparency-aware; swap `style` in plugins/theme.lua and the mirror
---         `style` in build_theme to keep them in sync (both default to "storm").
+--         it stays theme- and transparency-aware; the tokyonight `style` is resolved once in
+--         utils/palette.lua (mirror it in plugins/theme.lua) — both default to "storm".
 -- ICONS : All glyphs are written as \u{XXXX} escapes (Nerd Font private-use codepoints),
 --         NOT raw glyphs. Raw glyphs get silently stripped when text passes through tools
 --         that don't preserve the private-use area; escapes are plain ASCII in the file and
@@ -40,11 +41,10 @@ return {
 		-- pcall so a fresh box where tokyonight hasn't loaded falls back to lualine's bundled theme
 		-- rather than aborting the whole statusline.
 		local function build_theme()
-			local ok, c = pcall(function()
-				-- mirror plugins/theme.lua's `style`; the palette keys used below are style-stable
-				return require("tokyonight.colors").setup({ style = "storm" })
-			end)
-			if not ok or type(c) ~= "table" then
+			-- palette resolved once in utils/palette.lua (single source of the tokyonight `style`);
+			-- nil on a fresh box where tokyonight hasn't loaded → fall back to lualine's bundled theme.
+			local c = require("gerrrt.utils.palette").colors()
+			if type(c) ~= "table" then
 				return "tokyonight"
 			end
 			local base, block = c.bg_dark, c.bg_highlight
@@ -98,7 +98,7 @@ return {
 				-- (an empty string) so each half is one clean run instead of arrow-chevroned.
 				section_separators = { left = "\u{e0b4}", right = "\u{e0b6}" }, -- e0b4  / e0b6
 				component_separators = "",
-				disabled_filetypes = { statusline = { "NvimTree", "dapui_scopes", "dapui_breakpoints" } },
+				disabled_filetypes = { statusline = { "NvimTree" } },
 			},
 			sections = {
 				lualine_a = {
@@ -157,7 +157,12 @@ return {
 					{ cwd },
 				},
 				lualine_z = {
-					-- outer half-circle cap (e0b4) closes the right bubble, mirroring the mode block
+					-- Scroll PERCENTAGE through the file — the "how far in am I" cue. lualine's
+					-- `progress` renders Top / Bot / NN% (NvChad itself shows line/col here; this is the
+					-- one deliberate divergence). The outer half-circle cap (e0b6) opens the right
+					-- bubble, mirroring how the mode block opens the left one.
+					{ "progress", icon = "\u{f0d7}", separator = { left = "\u{e0b6}" } }, -- f0d7 caret-down, e0b6
+					-- location closes the right bubble with e0b4 — progress + location read as one pill.
 					{ "location", icon = "\u{e0a1}", separator = { right = "\u{e0b4}" } }, -- e0a1 line-number, e0b4
 				},
 			},

@@ -64,8 +64,8 @@ local wanted = {
 -- every such buffer. That is exactly what produced the periodic vscode-json-language-server
 -- errors: jsonls (servers/jsonls.lua) has no explicit cmd, so it inherits lspconfig's default
 -- { "vscode-json-language-server", "--stdio" }, whose binary ships in Mason's json-lsp package —
--- which nothing installed before. Mason now installs it (plugins/conform.lua), and this guard
--- makes the whole stack resilient on any box where a server binary isn't present yet (fresh
+-- which nothing installed before. Mason now installs it (plugins/mason-tool-installer.lua), and this
+-- guard makes the whole stack resilient on any box where a server binary isn't present yet (fresh
 -- machine, DOTFILES_OFFLINE, or a uv/npm-provided server like ruff/ty/solidity not installed).
 local function binary_available(name)
 	local cfg = vim.lsp.config[name]
@@ -77,20 +77,32 @@ local function binary_available(name)
 	return vim.fn.executable(cmd[1]) == 1
 end
 
-local to_enable, missing = {}, {}
-for _, name in ipairs(wanted) do
-	if binary_available(name) then
-		to_enable[#to_enable + 1] = name
-	else
-		missing[#missing + 1] = name
+local M = {}
+
+-- Enable every WANTED server whose binary is currently present; return the list still missing.
+-- Safe to call REPEATEDLY: vim.lsp.enable is idempotent and, on 0.11+, attaches a newly-enabled
+-- server to already-open matching buffers. That is what lets the post-install hook in
+-- plugins/mason-tool-installer.lua (User MasonToolsUpdateCompleted) bring a fresh box's LSP up in
+-- the SAME session — the initial pass ran at BufReadPre before the binaries existed and skipped
+-- them; re-running after the install attaches them without a restart.
+function M.enable_available()
+	local to_enable, missing = {}, {}
+	for _, name in ipairs(wanted) do
+		if binary_available(name) then
+			to_enable[#to_enable + 1] = name
+		else
+			missing[#missing + 1] = name
+		end
 	end
+	vim.lsp.enable(to_enable)
+	return missing
 end
 
-vim.lsp.enable(to_enable)
-
--- Surface (once) which servers were skipped so a missing binary is discoverable, not silent.
--- Suppressed on engagement/offline boxes (DOTFILES_OFFLINE=1, see config/globals.lua), where
--- tools are intentionally not installed and the warning would just be startup noise.
+-- Initial pass at load. Surface (once) which servers were skipped so a missing binary is
+-- discoverable, not silent. Suppressed on engagement/offline boxes (DOTFILES_OFFLINE=1, see
+-- config/globals.lua), where tools are intentionally not installed and the warning would be noise.
+-- (The post-install re-enable hook does NOT re-notify — it only enables what's now available.)
+local missing = M.enable_available()
 if #missing > 0 and not vim.g.dotfiles_offline then
 	vim.schedule(function()
 		vim.notify(
@@ -102,3 +114,5 @@ if #missing > 0 and not vim.g.dotfiles_offline then
 		)
 	end)
 end
+
+return M

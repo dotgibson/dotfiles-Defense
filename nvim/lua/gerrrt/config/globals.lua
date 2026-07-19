@@ -12,8 +12,7 @@ vim.g.loaded_netrwPlugin = 1
 -- Fleet "offline" switch. When the environment exports DOTFILES_OFFLINE=1 (the offensive/Kali
 -- layer sets it on engagement boxes), Neovim suppresses unattended/background network activity:
 --   • lazy.nvim's update checker        — config/lazy.lua
---   • mason-tool-installer run_on_start  — plugins/conform.lua
---   • mason-nvim-dap automatic_installation — plugins/nvim-dap-ui.lua
+--   • mason-tool-installer run_on_start  — plugins/mason-tool-installer.lua
 -- Read once here into a boolean so every consumer just checks `vim.g.dotfiles_offline`. globals
 -- is required before lazy.setup, so this is set before any plugin spec/opts/config evaluates.
 vim.g.dotfiles_offline = vim.env.DOTFILES_OFFLINE == "1"

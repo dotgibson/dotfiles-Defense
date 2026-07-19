@@ -13,6 +13,61 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.9.0] - 2026-07-19
+
+### Added
+
+- **Neovim: shared `utils/palette.lua`** — a single source of truth for the active tokyonight
+  palette. The `"storm"` style string and the `require("tokyonight.colors").setup{}` pcall dance
+  were duplicated across lualine, bufferline, and the cheatsheet; they now all resolve through this
+  one module (change the style once). It also exposes a NvChad-`base_30` semantic map (`black2`,
+  `statusline_bg`, `nord_blue`, `dark_purple`, …) so the block/pill styling is written in NvChad's
+  own vocabulary while still tracking the theme.
+- **Neovim: scroll-percentage indicator** in the lualine statusline (right bubble, next to the
+  cursor location) so you can see how far through a file you are.
+- **Neovim: NvChad-style inline LSP renamer** (`utils/renamer.lua`) — `<leader>rn` now opens a
+  small cursor-anchored, git-red-bordered prompt prefilled with the symbol (`<CR>` applies across
+  the workspace, `<Esc>`/`q` cancels) instead of the bare cmdline prompt.
+- **Neovim: colorify-style colour highlighter** (`nvim-colorizer.lua`, catgoose fork) — inline
+  colour swatches over the visible viewport: CSS colour literals (`#rrggbb`, `rgb()/hsl()`) plus
+  Tailwind utility-class colours via the Tailwind LSP. ccc.nvim is kept for the interactive
+  `:CccPick` picker (its always-on highlighter is now off).
+
+### Changed
+
+- **Neovim: statusline & tabline go hybrid-NvChad.** The bufferline adopts NvChad's tabufline model
+  where buffer state is conveyed by BACKGROUND on a solid opaque bar — the active buffer lifts to a
+  lighter raised block, inactive buffers recede to the bar colour — while the editor stays
+  transparent. The blink.cmp menu gains NvChad's colored kind-icon column (via `BlinkCmpKind*`
+  highlights) with an icon-left / kind-text-right layout. The `<leader>?` cheatsheet renders as a
+  solid opaque card.
+- **Neovim: signature help is owned by blink.cmp.** The manual `CursorHoldI`
+  `vim.lsp.buf.signature_help` autocmd was removed — blink's own signature window handled the same
+  case and the two floats could stack while idle. `<C-s>` stays as the manual trigger.
+- **Neovim: the central Mason install manifest moved** out of conform.nvim (which is lazy on
+  `BufWritePre`, so `run_on_start` really meant "on first save") into its own `VeryLazy`-loaded
+  `plugins/mason-tool-installer.lua`, so a fresh box installs its toolchain near startup.
+
+### Removed
+
+- **Neovim: trimmed unused plugins** — the full in-editor **debugger stack** (nvim-dap,
+  nvim-dap-ui, nvim-dap-virtual-text, mason-nvim-dap, and every `<leader>d*` keymap), the **test
+  runner** (neotest + neotest-python/-golang), vim-dadbod (DB UI), incline.nvim (dropbar's winbar
+  covers split identity), aerial.nvim (Trouble + fzf-lua + dropbar cover symbols), nvim-spectre,
+  git-conflict.nvim, and mini.indentscope — along with their keymaps, which-key groups, and
+  cheatsheet sections. (16 entries removed from `lazy-lock.json`, including transitive dependencies.)
+
+### Fixed
+
+- **Neovim: heavy linters no longer run on `InsertLeave`.** golangci-lint / cpplint scan the whole
+  package per run; they are now restricted to `BufWritePost` (save-only) while fast per-file linters
+  keep the snappier cadence.
+- **Neovim: bash-language-server no longer emits `SC1071` on zsh.** Its built-in shellcheck
+  integration is disabled (`bashIde.shellcheckPath = ""`) so zsh buffers keep completion/hover
+  without the "shellcheck only supports sh/bash/…" phantom diagnostic.
+- **Neovim: `:w` can't be broken by a missing mini.nvim.** The format-on-save
+  `mini.trailspace.trim()` call is now pcall-guarded.
+
 ## [v3.8.0] - 2026-07-18
 
 ### Changed
