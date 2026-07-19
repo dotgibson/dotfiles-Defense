@@ -9,8 +9,14 @@
 --           right : search count · attached LSP servers · diagnostics · filetype · cwd · location
 -- LOOK  : the signature NvChad move is the ROUNDED block — half-circle caps  (U+E0B6) and
 --          (U+E0B4) instead of powerline arrows, with NO inner component separators so each
---         half reads as one clean run of blocks. Colors come from lualine's tokyonight theme
---         (which sets a bg per section), so this stays readable even under transparency.
+--         half reads as one clean run of blocks. Colors come from a HAND-BUILT theme derived from
+--         tokyonight's resolved palette (build_theme below) — not lualine's bundled tokyonight
+--         theme — so the blocks map onto NvChad's structure (accent mode/location PILLS at both
+--         ends, a lighter git/cwd block, a base filename run) and each section keeps a solid bg,
+--         which is what makes the pills read as opaque islands on the transparent bar. Because it
+--         pulls from the same palette tokyonight hands `on_highlights` (utils/ui-highlights.lua),
+--         it stays theme- and transparency-aware; swap `style` in plugins/theme.lua and the mirror
+--         `style` in build_theme to keep them in sync (both default to "storm").
 -- ICONS : All glyphs are written as \u{XXXX} escapes (Nerd Font private-use codepoints),
 --         NOT raw glyphs. Raw glyphs get silently stripped when text passes through tools
 --         that don't preserve the private-use area; escapes are plain ASCII in the file and
@@ -26,6 +32,44 @@ return {
 	event = "VeryLazy",
 	dependencies = { "nvim-tree/nvim-web-devicons" },
 	config = function()
+		-- Build a lualine theme from tokyonight's resolved palette so the statusline mirrors NvChad's
+		-- St_* block structure: a/z = accent PILLS (mode on the left, cursor location on the right —
+		-- lualine feeds theme `a` to both), b/y = a lighter git/cwd block, c/x = the base filename
+		-- run. Mode → accent follows NvChad (Normal=blue, Insert=purple, Visual=cyan, Replace=orange,
+		-- Command/Terminal=green). Dark text (bg_dark) on the bright accents keeps the pills legible.
+		-- pcall so a fresh box where tokyonight hasn't loaded falls back to lualine's bundled theme
+		-- rather than aborting the whole statusline.
+		local function build_theme()
+			local ok, c = pcall(function()
+				-- mirror plugins/theme.lua's `style`; the palette keys used below are style-stable
+				return require("tokyonight.colors").setup({ style = "storm" })
+			end)
+			if not ok or type(c) ~= "table" then
+				return "tokyonight"
+			end
+			local base, block = c.bg_dark, c.bg_highlight
+			local function mk(accent)
+				return {
+					a = { fg = c.bg_dark, bg = accent, gui = "bold" },
+					b = { fg = c.fg_dark, bg = block },
+					c = { fg = c.fg, bg = base },
+				}
+			end
+			return {
+				normal = mk(c.blue),
+				insert = mk(c.magenta), -- NvChad Insert pill = purple
+				visual = mk(c.cyan),
+				replace = mk(c.orange),
+				command = mk(c.green),
+				terminal = mk(c.green),
+				inactive = {
+					a = { fg = c.comment, bg = base },
+					b = { fg = c.comment, bg = base },
+					c = { fg = c.comment, bg = base },
+				},
+			}
+		end
+
 		-- Show the language servers attached to the current buffer.
 		local function lsp_servers()
 			local clients = vim.lsp.get_clients({ bufnr = 0 })
@@ -47,7 +91,7 @@ return {
 
 		require("lualine").setup({
 			options = {
-				theme = "tokyonight",
+				theme = build_theme(),
 				icons_enabled = true,
 				globalstatus = true,
 				-- NvChad's rounded blocks: half-circle section caps, and NO component separators

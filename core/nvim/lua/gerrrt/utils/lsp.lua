@@ -9,6 +9,47 @@
 -- ================================================================================================
 local M = {}
 
+-- Return a COPY of `capabilities` with completionItem.snippetSupport advertised. Servers whose
+-- completions ship as snippets (html-lsp, css-lsp) need this or their items arrive as plain text.
+-- Extracted here so servers/html.lua and servers/cssls.lua stop hand-rolling the identical
+-- deepcopy + nested-table dance (kept them in lockstep was pure drift risk). deepcopy so a server
+-- flipping this can never mutate the shared `capabilities` table the other servers were built from.
+function M.with_snippets(capabilities)
+	local caps = vim.deepcopy(capabilities)
+	caps.textDocument = caps.textDocument or {}
+	caps.textDocument.completion = caps.textDocument.completion or {}
+	caps.textDocument.completion.completionItem = caps.textDocument.completion.completionItem or {}
+	caps.textDocument.completion.completionItem.snippetSupport = true
+	return caps
+end
+
+-- True when the server's advertised code-action support could include source.organizeImports.
+-- A server that enumerates its codeActionKinds without a "source"/"source.organizeImports" kind is
+-- ruled out; a bare boolean `true` (no kinds enumerated) is allowed through since we can't tell.
+local function offers_organize_imports(client)
+	local prov = client.server_capabilities and client.server_capabilities.codeActionProvider
+	if prov == true then
+		return true
+	end
+	if type(prov) == "table" then
+		local kinds = prov.codeActionKinds
+		if type(kinds) ~= "table" then
+			return true -- provider present but kinds unspecified — allow it
+		end
+		-- Code-action kinds are HIERARCHICAL, so accept descendants too: some servers advertise a more
+		-- specific kind (e.g. ruff → "source.organizeImports.ruff") while still honoring a request for
+		-- the parent "source.organizeImports". Match the bare "source" umbrella, the exact kind, or any
+		-- "source.organizeImports.*" descendant.
+		for _, k in ipairs(kinds) do
+			if k == "source" or k == "source.organizeImports" or vim.startswith(k, "source.organizeImports.") then
+				return true
+			end
+		end
+		return false
+	end
+	return false
+end
+
 M.on_attach = function(event)
 	if not event.data then
 		return
@@ -49,11 +90,48 @@ M.on_attach = function(event)
 	end
 
 	-- ── Native LSP (built into Neovim 0.12) ──────────────────────────────────
-	keymap("n", "K", vim.lsp.buf.hover, opts("Hover documentation"))
+	-- hover/signature pass an explicit rounded border + size caps. winborder (options.lua) already
+	-- makes floats rounded globally; passing `border` here is self-documenting AND lets us bound the
+	-- width/height so a huge docstring becomes a tidy, padded NvChad-style card instead of a wall.
+	local float_opts = { border = "rounded", max_width = 80, max_height = 25 }
+	keymap("n", "K", function()
+		vim.lsp.buf.hover(float_opts)
+	end, opts("Hover documentation"))
 	keymap("n", "gD", vim.lsp.buf.declaration, opts("Go to declaration"))
 	keymap("n", "<leader>rn", vim.lsp.buf.rename, opts("Rename symbol"))
 	keymap({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, opts("Code action"))
-	keymap("i", "<C-s>", vim.lsp.buf.signature_help, opts("Signature help"))
+	keymap("i", "<C-s>", function()
+		vim.lsp.buf.signature_help(float_opts)
+	end, opts("Signature help"))
+
+	-- Auto signature help while resting in a function's arguments. blink.cmp already surfaces
+	-- signatures DURING completion; this covers the other case — you've paused typing inside the
+	-- parens and want the params without reaching for <C-s>. Gated on server support, and otherwise
+	-- self-gating (signature_help draws nothing when the cursor isn't inside a signature). Skipped
+	-- while the blink menu is open so two signature floats never stack. focusable=false so it can't
+	-- steal the cursor; silent=true swallows the "no signature help" message. Fires after
+	-- 'updatetime' (300ms, options.lua) of no typing. Per-buffer augroup (clear=true) dedupes across
+	-- multiple attached clients.
+	if client:supports_method("textDocument/signatureHelp", bufnr) then
+		local sig_group = vim.api.nvim_create_augroup("GerrrtLspSignature_" .. bufnr, { clear = true })
+		vim.api.nvim_create_autocmd("CursorHoldI", {
+			group = sig_group,
+			buffer = bufnr,
+			callback = function()
+				local blink_ok, blink = pcall(require, "blink.cmp")
+				if blink_ok and blink.is_visible() then
+					return
+				end
+				pcall(vim.lsp.buf.signature_help, {
+					border = "rounded",
+					max_width = 80,
+					max_height = 25, -- same bounded card as manual K/<C-s> so many-overload sigs stay tidy
+					focusable = false,
+					silent = true,
+				})
+			end,
+		})
+	end
 
 	-- ── Diagnostics (native) ─────────────────────────────────────────────────
 	keymap("n", "<leader>cd", vim.diagnostic.open_float, opts("Line diagnostics"))
@@ -72,16 +150,23 @@ M.on_attach = function(event)
 	keymap("n", "<leader>fs", "<cmd>FzfLua lsp_document_symbols<CR>", opts("Document symbols"))
 	keymap("n", "<leader>fw", "<cmd>FzfLua lsp_workspace_symbols<CR>", opts("Workspace symbols"))
 
-	-- ── Organize imports (if the server supports it) ─────────────────────────
-	if client:supports_method("textDocument/codeAction", bufnr) then
+	-- ── Organize imports (only where the server actually offers it) ──────────
+	-- The old guard was generic `textDocument/codeAction` support — nearly every server advertises
+	-- that, so <leader>oi bound even for servers (lua_ls, etc.) that have no organizeImports action
+	-- and would silently no-op. Now we inspect the advertised codeActionKinds: a server that
+	-- ENUMERATES its kinds without "source[.organizeImports]" is skipped; a server that only reports
+	-- a bare `true` (kinds unknown) still gets the map, since we can't rule it out.
+	--
+	-- The old body also formatted after a fixed `defer_fn(…, 50)` — racy: 50ms could fire before the
+	-- import edit applied (formatting stale text) or needlessly late. Dropped entirely; formatting is
+	-- owned by format-on-save (config/autocmds.lua) and <leader>cf, so organizeImports just does the
+	-- one thing it names.
+	if offers_organize_imports(client) then
 		keymap("n", "<leader>oi", function()
 			vim.lsp.buf.code_action({
 				context = { only = { "source.organizeImports" }, diagnostics = {} },
 				apply = true,
 			})
-			vim.defer_fn(function()
-				vim.lsp.buf.format({ bufnr = bufnr })
-			end, 50)
 		end, opts("Organize imports"))
 	end
 end

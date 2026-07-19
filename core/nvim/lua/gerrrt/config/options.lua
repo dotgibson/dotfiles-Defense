@@ -109,8 +109,12 @@ vim.opt.guicursor = {
 }
 
 -- Folding Settings
-vim.opt.foldmethod = "expr" -- Use expression for folding
-vim.opt.foldexpr = "v:lua.vim.treesitter.foldexpr()" -- Use treesitter for folding
+-- Folds are owned by nvim-ufo (plugins/nvim-ufo.lua), which computes them via its own treesitter +
+-- indent providers. We deliberately do NOT set foldmethod=expr + a global treesitter foldexpr here:
+-- UFO does not read 'foldexpr', so those only added redundant per-buffer fold computation on top of
+-- what UFO already does. We keep just the "folds open on open" intent; UFO re-asserts
+-- foldlevel/foldlevelstart=99 in its init. To fall back to plain folding, remove nvim-ufo.lua AND
+-- restore `foldmethod=expr` + `foldexpr=v:lua.vim.treesitter.foldexpr()` here.
 vim.opt.foldlevel = 99 -- Keep all folds open by default
 
 -- Split Behavior
