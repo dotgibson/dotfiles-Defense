@@ -5,10 +5,16 @@
 local on_attach = require("gerrrt.utils.lsp").on_attach
 
 -- Restore last cursor position when reopening a file
-local last_cursor_group = vim.api.nvim_create_augroup("LastCursorGroup", {})
+local last_cursor_group = vim.api.nvim_create_augroup("LastCursorGroup", { clear = true })
 vim.api.nvim_create_autocmd("BufReadPost", {
   group = last_cursor_group,
   callback = function()
+    -- Commit/rebase buffers should open at the top (you're writing a new message / editing the
+    -- todo list), not wherever the cursor last sat in a previous commit — skip the restore there.
+    local ft = vim.bo.filetype
+    if ft == "gitcommit" or ft == "gitrebase" then
+      return
+    end
     local mark = vim.api.nvim_buf_get_mark(0, '"')
     local lcount = vim.api.nvim_buf_line_count(0)
     if mark[1] > 0 and mark[1] <= lcount then
@@ -18,7 +24,7 @@ vim.api.nvim_create_autocmd("BufReadPost", {
 })
 
 -- Highlight the yanked text for 200ms
-local highlight_yank_group = vim.api.nvim_create_augroup("HighlightYank", {})
+local highlight_yank_group = vim.api.nvim_create_augroup("HighlightYank", { clear = true })
 vim.api.nvim_create_autocmd("TextYankPost", {
   group = highlight_yank_group,
   pattern = "*",
@@ -37,7 +43,7 @@ vim.api.nvim_create_autocmd("TextYankPost", {
 -- Format on save: trim trailing whitespace, then run conform.
 -- lsp_format = "fallback" means filetypes without a conform formatter still get
 -- formatted by their LSP (e.g. gopls), and filetypes with neither are left alone.
-local lsp_fmt_group = vim.api.nvim_create_augroup("FormatOnSaveGroup", {})
+local lsp_fmt_group = vim.api.nvim_create_augroup("FormatOnSaveGroup", { clear = true })
 vim.api.nvim_create_autocmd("BufWritePre", {
   group = lsp_fmt_group,
   callback = function(args)
@@ -55,7 +61,7 @@ vim.api.nvim_create_autocmd("BufWritePre", {
 })
 
 -- on attach function shortcuts
-local lsp_on_attach_group = vim.api.nvim_create_augroup("LspMappings", {})
+local lsp_on_attach_group = vim.api.nvim_create_augroup("LspMappings", { clear = true })
 vim.api.nvim_create_autocmd("LspAttach", {
   group = lsp_on_attach_group,
   callback = on_attach,

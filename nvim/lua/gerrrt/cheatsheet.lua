@@ -236,21 +236,46 @@ local HL = {
 	footer = "GerrrtCheatFooter",
 }
 
+-- Number of accent "pill" highlight groups; cards cycle through them by index so adjacent headings
+-- get different colors — NvChad's grid look (black text on a vivid accent bar). Populated by
+-- define_highlights when the palette is available; 0 on a bare box (headings fall back to plain).
+local NPILL = 0
+
 local function define_highlights()
-	-- default = true so a user's colorscheme / overrides always win. Linked to semantic groups
-	-- every theme defines, so it inherits tokyonight here and Just Works on a bare box too.
 	local set = vim.api.nvim_set_hl
-	set(0, HL.title, { link = "Title", default = true })
-	set(0, HL.key, { link = "Constant", default = true })
-	set(0, HL.rule, { link = "Comment", default = true })
-	set(0, HL.sep, { link = "Comment", default = true })
-	set(0, HL.footer, { link = "Comment", default = true })
+	-- Prefer the tokyonight palette so the panel reads as NvChad's grid: heading bars in cycling
+	-- accents, blue keys, dim rules/footer. pcall so a fresh box (tokyonight not loaded) degrades to
+	-- the old semantic links instead of erroring — the cheatsheet is deps-free by design.
+	local ok, c = pcall(function()
+		return require("tokyonight.colors").setup({ style = "storm" }) -- mirror plugins/theme.lua
+	end)
+	if ok and type(c) == "table" then
+		local accents = { c.blue, c.green, c.magenta, c.cyan, c.orange, c.yellow, c.red, c.teal, c.purple }
+		for i, accent in ipairs(accents) do
+			-- black (bg_dark) bold text on a vivid accent → the pill heading
+			set(0, "GerrrtCheatPill" .. i, { fg = c.bg_dark, bg = accent, bold = true })
+		end
+		NPILL = #accents
+		set(0, HL.title, { fg = c.blue, bold = true }) -- heading fallback (unused when NPILL>0)
+		set(0, HL.key, { fg = c.blue, bold = true })
+		set(0, HL.rule, { fg = c.fg_gutter })
+		set(0, HL.sep, { fg = c.comment })
+		set(0, HL.footer, { fg = c.comment, italic = true })
+	else
+		-- bare-box fallback: link to semantic groups every colorscheme defines (previous behavior).
+		NPILL = 0
+		set(0, HL.title, { link = "Title", default = true })
+		set(0, HL.key, { link = "Constant", default = true })
+		set(0, HL.rule, { link = "Comment", default = true })
+		set(0, HL.sep, { link = "Comment", default = true })
+		set(0, HL.footer, { link = "Comment", default = true })
+	end
 end
 
 -- Build one card into an array of "rich lines" ({ text = str, hls = { {s,e,hl}, ... } }) where s/e
 -- are BYTE offsets local to that line. Multibyte (the ─ rule) is fine because everything downstream
 -- measures with #str (bytes) for offsets and strdisplaywidth() for padding.
-local function build_card(section)
+local function build_card(section, idx)
 	local lines = {}
 	local function rich(text, hls)
 		table.insert(lines, { text = text, hls = hls or {} })
@@ -263,9 +288,16 @@ local function build_card(section)
 	end
 	keyw = math.min(keyw, CARD_W - 6) -- never let keys eat the whole card
 
-	rich(section[1], { { s = 0, e = #section[1], hl = HL.title } })
-	local rule = string.rep("─", CARD_W)
-	rich(rule, { { s = 0, e = #rule, hl = HL.rule } })
+	-- Heading as a full-width PILL: one leading space, title, padded to the card width, and the whole
+	-- run painted with a cycling accent group (black bold text on a vivid bar) — NvChad's grid look.
+	-- Falls back to the plain HL.title span on a bare box where no pill groups were defined.
+	local head = " " .. section[1]
+	local pad = CARD_W - vim.fn.strdisplaywidth(head)
+	if pad > 0 then
+		head = head .. string.rep(" ", pad)
+	end
+	local head_hl = NPILL > 0 and ("GerrrtCheatPill" .. ((idx - 1) % NPILL + 1)) or HL.title
+	rich(head, { { s = 0, e = #head, hl = head_hl } })
 
 	for i = 2, #section do
 		local key, desc = section[i][1], section[i][2]
@@ -352,8 +384,8 @@ function M.open()
 	ncol = math.min(ncol, #M.sections)
 
 	local cards = {}
-	for _, s in ipairs(M.sections) do
-		table.insert(cards, build_card(s))
+	for i, s in ipairs(M.sections) do
+		table.insert(cards, build_card(s, i))
 	end
 
 	local cols, tallest = pack(cards, ncol)

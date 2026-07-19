@@ -73,8 +73,9 @@ return {
 		require("mini.notify").setup({})
 		-- setup() alone does NOT replace vim.notify — without this line mini.notify is configured
 		-- but unused, and vim.notify(...) calls (e.g. harpoon's "added" toast) still hit Neovim's
-		-- built-in notifier. make_notify() returns a drop-in replacement. (No competing notifier
-		-- like noice/fidget is installed, so there's nothing to clash with.)
+		-- built-in notifier. make_notify() returns a drop-in replacement. fidget.nvim is also
+		-- installed (plugins/fidget-nvim.lua) but only renders LSP *progress* — it is not a
+		-- vim.notify backend, so the two don't clash; this owns vim.notify, fidget owns $/progress.
 		vim.notify = require("mini.notify").make_notify()
 	end,
 }

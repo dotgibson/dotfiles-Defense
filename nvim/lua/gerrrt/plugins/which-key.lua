@@ -6,6 +6,21 @@ return {
 	"folke/which-key.nvim",
 	event = "VeryLazy",
 	opts = {
+		-- NvChad-flavored popup: the classic bottom prompt, but a minimal rounded float with a bit of
+		-- breathing room and a clean left-aligned column layout — the colors (blue keys, red
+		-- descriptions, green groups) are set palette-aware in utils/ui-highlights.lua so they track
+		-- the theme instead of being hardcoded here.
+		preset = "classic",
+		win = {
+			border = "rounded",
+			padding = { 1, 2 }, -- one row / two cols of inner padding, so entries don't kiss the border
+			title = true,
+			title_pos = "center",
+		},
+		layout = {
+			spacing = 4, -- gap between the key and its description column
+			align = "left",
+		},
 		spec = {
 			{ "<leader>b", group = "buffer" },
 			{ "<leader>c", group = "code / LSP" },

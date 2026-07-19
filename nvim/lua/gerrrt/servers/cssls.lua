@@ -9,11 +9,8 @@
 -- INSTALL: mason — package name "css-lsp" (added to ensure_installed in plugins/conform.lua).
 -- ================================================================================================
 return function(capabilities)
-	local caps = vim.deepcopy(capabilities)
-	caps.textDocument = caps.textDocument or {}
-	caps.textDocument.completion = caps.textDocument.completion or {}
-	caps.textDocument.completion.completionItem = caps.textDocument.completion.completionItem or {}
-	caps.textDocument.completion.completionItem.snippetSupport = true
+	-- css-lsp ships snippet completions; advertise the client capability so they come through.
+	local caps = require("gerrrt.utils.lsp").with_snippets(capabilities)
 
 	local lint = { validate = true, lint = { unknownAtRules = "warning" } }
 

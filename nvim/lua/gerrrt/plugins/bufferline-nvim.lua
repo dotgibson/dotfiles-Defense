@@ -23,7 +23,62 @@
 --
 -- ICONS : diagnostic glyphs use \u{XXXX} escapes (matching utils/diagnostics.lua + lualine) so
 --         they survive transfer — raw Nerd-Font private-use glyphs get silently stripped.
+-- LOOK  : palette-aware highlights (build_highlights below) push the line toward NvChad's tabufline:
+--         the ACTIVE buffer lifts as a subtle raised block (bg = bg_highlight) with a bright accent
+--         underline; inactive buffers dim into the transparent bar (bg = NONE, fg = comment). Colors
+--         come from tokyonight's resolved palette so they track the theme, computed at load time (in
+--         `config`, when tokyonight is guaranteed loaded) rather than at spec-eval — same reasoning
+--         as the hand-built lualine theme. pcall-guarded so a fresh box falls back to bufferline's
+--         own auto-theming instead of erroring.
 -- ================================================================================================
+
+-- Build bufferline's `highlights` from the tokyonight palette. Returns nil on a box where
+-- tokyonight hasn't loaded, so setup() falls back to bufferline's colorscheme-derived defaults.
+local function build_highlights()
+	local ok, c = pcall(function()
+		return require("tokyonight.colors").setup({ style = "storm" }) -- mirror plugins/theme.lua
+	end)
+	if not ok or type(c) ~= "table" then
+		return nil
+	end
+	local none = "NONE"
+	local active = { fg = c.fg, bg = c.bg_highlight } -- the raised active-buffer block
+	local dim = { fg = c.comment, bg = none } -- inactive, blended into the transparent bar
+	return {
+		fill = { bg = none },
+		background = dim,
+		buffer_visible = { fg = c.fg_dark, bg = none },
+		-- `sp` set here too: for indicator style="underline" bufferline draws the accent line on the
+		-- selected buffer's own highlight using its `sp`, so pin it to the accent explicitly.
+		buffer_selected = { fg = c.fg, bg = c.bg_highlight, bold = true, italic = false, sp = c.blue },
+		-- thin separators kept hairline-subtle, never heavy dividers
+		separator = { fg = c.bg_dark, bg = none },
+		separator_visible = { fg = c.bg_dark, bg = none },
+		separator_selected = { fg = c.bg_dark, bg = c.bg_highlight },
+		-- accent underline under the active buffer (indicator style = "underline"). The underline
+		-- color is taken from `sp`, not `fg` — and because setup deep-merges with bufferline's
+		-- defaults, an unset `sp` would keep the default and the blue line wouldn't render. Set both.
+		indicator_selected = { fg = c.blue, sp = c.blue, bg = c.bg_highlight },
+		indicator_visible = { fg = none, bg = none },
+		-- unsaved dot: green when active (matches lualine/incline), amber otherwise
+		modified = { fg = c.orange, bg = none },
+		modified_visible = { fg = c.orange, bg = none },
+		modified_selected = { fg = c.green, bg = c.bg_highlight },
+		-- per-buffer diagnostic counts track the gutter/statusline colors
+		error = { fg = c.red, bg = none },
+		error_visible = { fg = c.red, bg = none },
+		error_selected = { fg = c.red, bg = c.bg_highlight, bold = true },
+		warning = { fg = c.yellow, bg = none },
+		warning_visible = { fg = c.yellow, bg = none },
+		warning_selected = { fg = c.yellow, bg = c.bg_highlight, bold = true },
+		-- tab-mode (mode="tabs") blocks, styled to match the buffer blocks
+		tab = dim,
+		tab_selected = active,
+		tab_separator = { fg = c.bg_dark, bg = none },
+		tab_separator_selected = { fg = c.bg_dark, bg = c.bg_highlight },
+	}
+end
+
 return {
 	"akinsho/bufferline.nvim",
 	version = "*",
@@ -95,4 +150,11 @@ return {
 			hover = { enabled = true, delay = 150, reveal = { "close" } },
 		},
 	},
+	config = function(_, opts)
+		-- Attach the palette-aware highlights (nil on a fresh box → bufferline uses its own
+		-- colorscheme defaults) and hand the merged table to setup. Kept in `config` rather than
+		-- `opts` so build_highlights() runs at bufferline load, when tokyonight is loaded.
+		opts.highlights = build_highlights()
+		require("bufferline").setup(opts)
+	end,
 }
