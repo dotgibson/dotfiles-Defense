@@ -5,10 +5,12 @@
 --         contents, `zR`/`zM` open/close all with proper restore, and `zK` peeks the folded lines
 --         under the cursor in a popup (falling back to LSP hover when there's no fold). Uses the
 --         treesitter parsers you already install, with an indent fallback for parserless filetypes.
--- INTERPLAY: your options.lua sets foldmethod=expr + a treesitter foldexpr and foldlevel=99. UFO
---         drives folds through its own providers, so we mirror foldlevel/foldlevelstart=99 here to
---         keep everything open on open (UFO requirement). Remove this file to fall straight back to
---         your existing treesitter foldexpr — nothing else depends on it.
+-- INTERPLAY: UFO is the SOLE fold owner. options.lua sets only foldlevel=99 (folds open on open) and
+--         NO LONGER sets foldmethod=expr / a global treesitter foldexpr — UFO computes folds through
+--         its own providers below, so that global foldexpr was redundant per-buffer work (UFO never
+--         reads 'foldexpr'). We re-assert foldlevel/foldlevelstart=99 here (UFO requirement). To fall
+--         back to plain folding, remove this file AND restore foldmethod=expr +
+--         foldexpr=v:lua.vim.treesitter.foldexpr() in options.lua.
 -- ================================================================================================
 return {
 	"kevinhwang91/nvim-ufo",

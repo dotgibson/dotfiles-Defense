@@ -13,6 +13,53 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v3.8.0] - 2026-07-18
+
+### Changed
+
+- **Neovim UI moves to an NvChad-styled statusline + bufferline.** `lualine` now uses a
+  hand-built theme derived from tokyonight's resolved palette (mode/location render as rounded
+  accent **pills**, git/cwd as a lighter block, filename on the base run) instead of the bundled
+  `tokyonight` theme — so the blocks read as opaque islands on the transparent bar and follow
+  NvChad's structure. `bufferline` gains palette-aware highlights so the active buffer lifts as a
+  subtle raised block with an accent underline while inactive buffers dim into the bar. Both are
+  computed at plugin-load (pcall-guarded), so a fresh box falls back to the bundled/auto theming.
+- **LSP hover, signature help, and the diagnostic float share one padded, rounded card style.**
+  Hover/signature pass an explicit rounded border with width/height caps (a huge docstring becomes
+  a tidy box); the diagnostic float drops its header row and gains a left pad + width cap.
+  Signature help now also pops **automatically** when you rest inside a function's arguments
+  (`CursorHoldI`, gated on server support, suppressed while the completion menu is open).
+- **`which-key` and the `<leader>?` cheatsheet restyled to mirror NvChad's keymap visualizer.**
+  which-key gets a minimal rounded, padded, left-aligned column popup with NvChad-palette colors
+  (blue keys, red descriptions, green groups); the cheatsheet's category headings become
+  full-width accent **pill** bars (cycling colors) with blue keys — both palette-aware, with a
+  semantic-link fallback on a bare box.
+
+### Fixed
+
+- **Neovim `taplo` (TOML) root detection.** `root_markers` listed the glob `"*.toml"`, which
+  `vim.fs.root`/`vim.fs.find` do not support — so it never matched and taplo always fell back to
+  `.git`, giving a lone TOML file outside a repo a cwd root. Replaced with real manifest names
+  (`pyproject.toml`, `Cargo.toml`, `foundry.toml`, `taplo.toml`, `.taplo.toml`, `.git`).
+- **Neovim `<leader>oi` (organize imports) no longer binds where it can't work or races the
+  formatter.** A server that ENUMERATES its code-action kinds without `source[.organizeImports]` is
+  now skipped (so the map no longer silently no-ops on e.g. `lua_ls`); a server that only reports a
+  bare `true` or a provider table without kinds still gets the map, since it can't be ruled out. The
+  racy fixed-`50ms` post-format timer is dropped — formatting stays owned by format-on-save and
+  `<leader>cf`.
+- **Neovim cursor-restore skips commit buffers.** `gitcommit`/`gitrebase` buffers open at the top
+  again instead of jumping to a stale mark from a previous commit.
+- **Neovim folding has a single owner.** `nvim-ufo` computes folds via its own treesitter+indent
+  providers, so the global `foldmethod=expr` + treesitter `foldexpr` in `options.lua` was redundant
+  per-buffer work (UFO never reads `foldexpr`). Dropped it; UFO now owns folding outright.
+
+### Changed (internal)
+
+- Deduped the identical `snippetSupport` capability boilerplate in the Neovim `html`/`cssls`
+  server specs into a shared `utils.lsp.with_snippets` helper; standardized autocmd augroups on an
+  explicit `{ clear = true }`; corrected a stale comment claiming no `vim.notify`-competing
+  notifier is installed (fidget is, for LSP progress only — no clash).
+
 ## [v3.7.0] - 2026-07-17
 
 ### Changed

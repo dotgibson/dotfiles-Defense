@@ -56,6 +56,18 @@ function M.apply(hl, c)
 	hl.BlinkCmpSignatureHelpBorder = { fg = c.border_highlight, bg = none }
 	hl.BlinkCmpLabelMatch = { fg = c.blue, bold = true }
 
+	-- ── which-key: NvChad's palette on the minimal rounded float — blue keys, red descriptions, ──
+	-- green groups, dim separators. Border/title tint match the LSP + finder floats above so every
+	-- popup in the config reads as one system. (Layout/border geometry is set in plugins/which-key.lua.)
+	hl.WhichKey = { fg = c.blue } -- the key itself
+	hl.WhichKeyGroup = { fg = c.green } -- a +prefix group (e.g. "+git")
+	hl.WhichKeyDesc = { fg = c.red } -- the action description
+	hl.WhichKeySeparator = { fg = c.comment } -- the → between key and desc
+	hl.WhichKeyValue = { fg = c.green }
+	hl.WhichKeyNormal = { bg = none }
+	hl.WhichKeyBorder = { fg = c.border_highlight, bg = none }
+	hl.WhichKeyTitle = { fg = c.blue, bg = none, bold = true }
+
 	-- ── gutter: NvChad's dim line numbers with a bright, obvious current line ────────────────
 	hl.LineNr = { fg = c.fg_gutter }
 	hl.CursorLineNr = { fg = c.orange, bold = true }

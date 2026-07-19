@@ -27,7 +27,17 @@ M.setup = function()
 		-- survives copy/paste like the other glyphs here. `source` is kept to the float to avoid
 		-- cluttering the end-of-line text when several servers attach.
 		virtual_text = { spacing = 2, prefix = "\u{25cf}" }, -- 25cf BLACK CIRCLE
-		float = { border = "rounded", source = true },
+		-- The diagnostic float (<leader>cd, and [d/]d jumps) styled to match the LSP hover/signature
+		-- cards: rounded border (also the global winborder), no "Diagnostics:" header row (the border
+		-- is chrome enough), a 2-space prefix so text doesn't kiss the border, and a width cap so a
+		-- long multi-server message wraps into a tidy padded box instead of a full-width strip.
+		float = {
+			border = "rounded",
+			source = true,
+			header = "",
+			prefix = "  ",
+			max_width = 80,
+		},
 	})
 end
 

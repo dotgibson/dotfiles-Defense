@@ -9,11 +9,7 @@
 -- ================================================================================================
 return function(capabilities)
 	-- html-lsp ships snippet completions; advertise the client capability so they come through.
-	local caps = vim.deepcopy(capabilities)
-	caps.textDocument = caps.textDocument or {}
-	caps.textDocument.completion = caps.textDocument.completion or {}
-	caps.textDocument.completion.completionItem = caps.textDocument.completion.completionItem or {}
-	caps.textDocument.completion.completionItem.snippetSupport = true
+	local caps = require("gerrrt.utils.lsp").with_snippets(capabilities)
 
 	vim.lsp.config("html", {
 		capabilities = caps,
