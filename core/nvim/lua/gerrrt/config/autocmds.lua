@@ -47,7 +47,12 @@ local lsp_fmt_group = vim.api.nvim_create_augroup("FormatOnSaveGroup", { clear =
 vim.api.nvim_create_autocmd("BufWritePre", {
   group = lsp_fmt_group,
   callback = function(args)
-    require("mini.trailspace").trim()
+    -- pcall-guarded: on a fresh box (or if mini failed to load) a bare require().trim() would
+    -- throw here and abort the whole BufWritePre before conform ever runs, breaking `:w`. mini
+    -- loads on VeryLazy so this is rare, but the rest of Core guards cross-plugin calls the same way.
+    pcall(function()
+      require("mini.trailspace").trim()
+    end)
     -- Never auto-format zsh. shfmt (whether reached through conform OR through the
     -- lsp_format="fallback" path via bash-language-server, which shells out to shfmt)
     -- parses zsh as bash and silently corrupts zsh-only syntax. Skipping by FILETYPE
@@ -68,7 +73,7 @@ vim.api.nvim_create_autocmd("LspAttach", {
 })
 
 -- custom options for text/markdown files
-local markdown_options = vim.api.nvim_create_augroup("MarkdownOptions", {})
+local markdown_options = vim.api.nvim_create_augroup("MarkdownOptions", { clear = true })
 vim.api.nvim_create_autocmd("FileType", {
   group = markdown_options,
   pattern = { "markdown", "text", "gitcommit" },

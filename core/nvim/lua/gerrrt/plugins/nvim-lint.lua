@@ -3,7 +3,7 @@
 -- LINKS : https://github.com/mfussenegger/nvim-lint
 -- ABOUT : Runs a filetype's linter on write / leaving insert mode, surfacing results as
 --         normal diagnostics (Trouble, <leader>cd, [d/]d all work). Binaries installed by
---         mason-tool-installer in conform.lua.
+--         mason-tool-installer in plugins/mason-tool-installer.lua.
 -- ASTRAL: Python is intentionally NOT here — the ruff language server (servers/ruff.lua)
 --         provides Python lint diagnostics AND code actions. Listing ruff here too would
 --         double-report.
@@ -98,11 +98,19 @@ return {
 			})[1] ~= nil
 		end
 
+		-- HEAVY linters that scan the WHOLE package/translation-unit per run (golangci-lint on go,
+		-- cpplint on c/cpp) are too costly to fire on every InsertLeave — async, but the invocations
+		-- pile up while you edit. Restrict them to BufWritePost (save-only); the fast per-file linters
+		-- (luacheck, shellcheck, eslint_d, ...) keep the snappier BufWritePost+InsertLeave cadence.
+		local heavy_fts = { go = true, c = true, cpp = true }
 		local grp = vim.api.nvim_create_augroup("NvimLint", { clear = true })
 		vim.api.nvim_create_autocmd({ "BufWritePost", "InsertLeave" }, {
 			group = grp,
-			callback = function()
+			callback = function(args)
 				local ft = vim.bo.filetype
+				if args.event == "InsertLeave" and heavy_fts[ft] then
+					return -- heavy whole-package linter → save-only, don't run on InsertLeave
+				end
 				if eslint_fts[ft] and not has_eslint_config() then
 					return -- no eslint config in tree → skip (avoids eslint_d's hard error)
 				end

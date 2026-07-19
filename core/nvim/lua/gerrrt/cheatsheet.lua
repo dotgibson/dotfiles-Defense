@@ -111,7 +111,6 @@ M.sections = {
 		{ "<C-s>", "Signature help (i)" },
 		{ "<leader>oi", "Organize imports" },
 		{ "<leader>cf", "Format buffer / range" },
-		{ "<leader>co", "Code outline (Aerial)" },
 		{ "<leader>cs", "Symbols (Trouble)" },
 		{ "<leader>cn", "Annotation (Neogen)" },
 		{ "<leader>;", "Breadcrumb pick (dropbar)" },
@@ -146,41 +145,6 @@ M.sections = {
 		{ "<leader>gy / gY", "Permalink: yank / open" },
 	},
 	{
-		"Git — conflicts",
-		{ "]x / [x", "Next / prev conflict" },
-		{ "<leader>gxo / gxt", "Choose ours / theirs" },
-		{ "<leader>gxb / gx0", "Choose both / none" },
-		{ "<leader>gxl", "List conflicts (quickfix)" },
-	},
-	{
-		"Debug (DAP)",
-		{ "<leader>db / dB", "Breakpoint / conditional" },
-		{ "<leader>dc", "Continue / start" },
-		{ "<leader>do / di", "Step over / into" },
-		{ "<leader>du", "Step out" },
-		{ "<leader>dr", "Open REPL" },
-		{ "<leader>dl", "Run last" },
-		{ "<leader>dt", "Toggle UI" },
-		{ "<leader>de", "Evaluate expression" },
-		{ "<leader>dx", "Terminate" },
-	},
-	{
-		"Test (neotest)",
-		{ "<leader>tt", "Run nearest" },
-		{ "<leader>tf", "Run current file" },
-		{ "<leader>td", "Debug nearest (DAP)" },
-		{ "<leader>ts", "Summary panel" },
-		{ "<leader>to / tO", "Show output / panel" },
-		{ "<leader>tx", "Stop" },
-	},
-	{
-		"Search & Replace",
-		{ "<leader>Sp", "Spectre panel (toggle)" },
-		{ "<leader>Sw", "Search current word" },
-		{ "<leader>Sc", "Search current file" },
-		{ "<leader>Sr", "Search selection (v)" },
-	},
-	{
 		"Folds (ufo)",
 		{ "zR / zM", "Open / close all folds" },
 		{ "zK", "Peek fold / hover" },
@@ -209,7 +173,6 @@ M.sections = {
 		{ "<leader>z", "Zen mode" },
 		{ "<leader>U", "Undotree" },
 		{ "<leader>um", "Markdown render" },
-		{ "<leader>uD / uF", "Database UI / find buffer" },
 	},
 	{
 		"Packages",
@@ -229,6 +192,7 @@ local GUTTER = 3 -- blank cells between columns
 local MARGIN = 2 -- blank cells inside the window border, left/right
 
 local HL = {
+	normal = "GerrrtCheatNormal",
 	title = "GerrrtCheatTitle",
 	rule = "GerrrtCheatRule",
 	key = "GerrrtCheatKey",
@@ -243,19 +207,22 @@ local NPILL = 0
 
 local function define_highlights()
 	local set = vim.api.nvim_set_hl
-	-- Prefer the tokyonight palette so the panel reads as NvChad's grid: heading bars in cycling
-	-- accents, blue keys, dim rules/footer. pcall so a fresh box (tokyonight not loaded) degrades to
-	-- the old semantic links instead of erroring — the cheatsheet is deps-free by design.
-	local ok, c = pcall(function()
-		return require("tokyonight.colors").setup({ style = "storm" }) -- mirror plugins/theme.lua
-	end)
-	if ok and type(c) == "table" then
+	-- Prefer the resolved tokyonight palette (one source of truth in utils/palette.lua) so the panel
+	-- reads as NvChad's grid: heading bars in cycling accents, blue keys, dim rules/footer. nil on a
+	-- fresh box (tokyonight not loaded) → degrade to the semantic links below instead of erroring —
+	-- the cheatsheet stays deps-free by design.
+	local c = require("gerrrt.utils.palette").colors()
+	if type(c) == "table" then
 		local accents = { c.blue, c.green, c.magenta, c.cyan, c.orange, c.yellow, c.red, c.teal, c.purple }
 		for i, accent in ipairs(accents) do
 			-- black (bg_dark) bold text on a vivid accent → the pill heading
 			set(0, "GerrrtCheatPill" .. i, { fg = c.bg_dark, bg = accent, bold = true })
 		end
 		NPILL = #accents
+		-- Solid panel background (NvChad's cheatsheet is an opaque card, not transparent) — the one
+		-- place the hybrid look goes solid inside a float. bg_dark is the darkest surface so the accent
+		-- pills and blue keys pop off it.
+		set(0, HL.normal, { bg = c.bg_dark })
 		set(0, HL.title, { fg = c.blue, bold = true }) -- heading fallback (unused when NPILL>0)
 		set(0, HL.key, { fg = c.blue, bold = true })
 		set(0, HL.rule, { fg = c.fg_gutter })
@@ -264,6 +231,7 @@ local function define_highlights()
 	else
 		-- bare-box fallback: link to semantic groups every colorscheme defines (previous behavior).
 		NPILL = 0
+		set(0, HL.normal, { link = "NormalFloat", default = true })
 		set(0, HL.title, { link = "Title", default = true })
 		set(0, HL.key, { link = "Constant", default = true })
 		set(0, HL.rule, { link = "Comment", default = true })
@@ -426,6 +394,9 @@ function M.open()
 	})
 	vim.wo[win].wrap = false
 	vim.wo[win].cursorline = false
+	-- Paint the panel as a solid card (NvChad's cheatsheet is opaque). Only NormalFloat is
+	-- remapped; the border/title keep the config-wide FloatBorder/FloatTitle tint.
+	vim.wo[win].winhighlight = "NormalFloat:" .. HL.normal
 
 	-- close keys — the buffer wipes on hide, so just close the window
 	for _, key in ipairs({ "q", "<Esc>" }) do

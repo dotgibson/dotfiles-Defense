@@ -4,8 +4,7 @@
 -- NOTE  : Neovim 0.12 ships capable native LSP, so this uses vim.lsp.buf.* directly
 --         (hover / rename / code action / signature) and fzf-lua for the picker-style
 --         lookups (definitions / references / symbols). lspsaga was removed — it only
---         duplicated what's now built in. DAP keymaps live in the nvim-dap plugin spec,
---         not here, so they aren't gated behind an LSP attach.
+--         duplicated what's now built in.
 -- ================================================================================================
 local M = {}
 
@@ -98,40 +97,21 @@ M.on_attach = function(event)
 		vim.lsp.buf.hover(float_opts)
 	end, opts("Hover documentation"))
 	keymap("n", "gD", vim.lsp.buf.declaration, opts("Go to declaration"))
-	keymap("n", "<leader>rn", vim.lsp.buf.rename, opts("Rename symbol"))
+	-- NvChad-style inline rename float (prefilled prompt at the cursor) instead of the bare
+	-- cmdline vim.lsp.buf.rename. Falls back to the native prompt when there's no <cword>.
+	keymap("n", "<leader>rn", function()
+		require("gerrrt.utils.renamer").rename()
+	end, opts("Rename symbol"))
 	keymap({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, opts("Code action"))
 	keymap("i", "<C-s>", function()
 		vim.lsp.buf.signature_help(float_opts)
 	end, opts("Signature help"))
 
-	-- Auto signature help while resting in a function's arguments. blink.cmp already surfaces
-	-- signatures DURING completion; this covers the other case — you've paused typing inside the
-	-- parens and want the params without reaching for <C-s>. Gated on server support, and otherwise
-	-- self-gating (signature_help draws nothing when the cursor isn't inside a signature). Skipped
-	-- while the blink menu is open so two signature floats never stack. focusable=false so it can't
-	-- steal the cursor; silent=true swallows the "no signature help" message. Fires after
-	-- 'updatetime' (300ms, options.lua) of no typing. Per-buffer augroup (clear=true) dedupes across
-	-- multiple attached clients.
-	if client:supports_method("textDocument/signatureHelp", bufnr) then
-		local sig_group = vim.api.nvim_create_augroup("GerrrtLspSignature_" .. bufnr, { clear = true })
-		vim.api.nvim_create_autocmd("CursorHoldI", {
-			group = sig_group,
-			buffer = bufnr,
-			callback = function()
-				local blink_ok, blink = pcall(require, "blink.cmp")
-				if blink_ok and blink.is_visible() then
-					return
-				end
-				pcall(vim.lsp.buf.signature_help, {
-					border = "rounded",
-					max_width = 80,
-					max_height = 25, -- same bounded card as manual K/<C-s> so many-overload sigs stay tidy
-					focusable = false,
-					silent = true,
-				})
-			end,
-		})
-	end
+	-- AUTOMATIC signature help is owned by blink.cmp (plugins/blink-cmp.lua, signature.enabled):
+	-- it pops the params float as you type inside the parens, in its own rounded window. A manual
+	-- CursorHoldI vim.lsp.buf.signature_help used to live here too, but blink's signature window is
+	-- a SEPARATE surface from its completion menu, so the two floats could stack while idle. blink
+	-- owns the automatic case now; <C-s> above stays the on-demand manual trigger.
 
 	-- ── Diagnostics (native) ─────────────────────────────────────────────────
 	keymap("n", "<leader>cd", vim.diagnostic.open_float, opts("Line diagnostics"))
