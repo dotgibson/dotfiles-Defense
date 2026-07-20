@@ -24,6 +24,7 @@ return {
 		spec = {
 			{ "<leader>b", group = "buffer" },
 			{ "<leader>c", group = "code / LSP" },
+			{ "<leader>d", group = "debug (dap)" },
 			{ "<leader>f", group = "find (fzf)" },
 			{ "<leader>g", group = "git" },
 			{ "<leader>h", group = "harpoon" },
@@ -34,6 +35,14 @@ return {
 			{ "<leader>w", group = "which-key" },
 			{ "<leader>x", group = "trouble / lists" },
 			{ "<leader><tab>", group = "tabs" },
+			-- These three had real children but no group entry, so which-key rendered them as bare
+			-- unnamed prefixes: <leader>r (rc = edit config, rn = rename symbol), <leader>o
+			-- (oi = organize imports), <leader>p (pa = copy file path).
+			{ "<leader>r", group = "rename / config" },
+			{ "<leader>o", group = "organize" },
+			-- normal mode only: in visual, <leader>p is itself a mapping (paste-without-yank,
+			-- config/keymaps.lua), not a prefix — declaring a group there would misdescribe it.
+			{ "<leader>p", group = "path", mode = "n" },
 			-- non-leader: mini.surround moved here off `s` so flash owns `s` (see mini-nvim.lua)
 			{ "gs", group = "surround", mode = { "n", "x" } },
 		},

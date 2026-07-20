@@ -4,6 +4,85 @@
 -- ================================================================================================
 local on_attach = require("gerrrt.utils.lsp").on_attach
 
+-- ================================================================================================
+-- User FilePost — "a real file is open AND the UI has painted"
+-- ================================================================================================
+-- WHY : BufReadPre/BufReadPost fire BEFORE the first UI paint, so every plugin hung off them sits
+--       between launching nvim and SEEING your file. Measured on this config, that was ~125ms of
+--       nvim-lspconfig + gitsigns + nvim-lint + todo-comments on the critical path. This event
+--       re-hangs that work AFTER the first paint, so the file appears immediately and the machinery
+--       arrives a frame later. (The idea is NvChad's `User FilePost`; the implementation is ours.)
+--
+-- CONTRACT : fires exactly ONCE per session, only when
+--              • the buffer is a real file (non-empty name), and
+--              • it isn't a utility buffer (buftype ~= "" / "help"), and
+--              • the UI has attached (UIEnter has run).
+--            The augroup deletes itself on the first successful fire, so there is zero ongoing cost
+--            — no lingering autocmd re-checking these conditions on every later buffer.
+--
+-- MEASURED on this config (`nvim file.lua`, real TTY): BufReadPre 43ms, BufReadPost 44ms,
+--            VimEnter 126ms, UIEnter 131ms. So the plugins below moved from ~44ms to ~131ms —
+--            ~87ms of work lifted out of the window before the UI is ready.
+--
+-- WHY BOTH UIEnter AND VimEnter — AND WHY THEY ARE NOT INTERCHANGEABLE : UIEnter is the precise
+--            "a UI attached" signal and is the one we want interactively, but it NEVER FIRES under
+--            `nvim --headless` — which is how scripts, CI, and this repo's own audit
+--            (scripts/test-core.sh) run Neovim. Gating on UIEnter alone silently meant no LSP, no
+--            gitsigns and no linting in every headless session.
+--
+--            But VimEnter must NOT be accepted as readiness when a UI exists. Per the timings above
+--            it lands ~5ms BEFORE UIEnter, and with `nvim file.lua` the buffer is already named by
+--            then — so treating it as ready would fire FilePost at ~126ms instead of ~131ms, pulling
+--            all four plugins back in front of the first paint and giving away part of the win this
+--            whole change exists to get. VimEnter is therefore accepted ONLY when there is genuinely
+--            no UI to wait for (`nvim_list_uis()` is empty), i.e. real headless. In a TTY a UI is
+--            already attached well before VimEnter (uis == 1 as early as BufReadPre), so the check
+--            reliably distinguishes the two.
+--            (NvChad gates on UIEnter only; they don't run headless LSP tests, so they never hit it.)
+--
+-- BOTH ORDERS ARE HANDLED : with `nvim file.lua`, BufReadPost fires long before VimEnter/UIEnter;
+--            with a bare `nvim` it's the reverse (and the empty buffer has no name, so nothing fires
+--            until you actually open something). Whichever event arrives LAST finds the conditions
+--            satisfied and does the work — which is why the startup events only set a flag rather
+--            than firing FilePost directly.
+--
+-- NO FileType REPLAY NEEDED : plugins loading here have missed this buffer's FileType. NvChad
+--            compensates with a blunt global `nvim_exec_autocmds("FileType", {})` re-fire, which on
+--            this config would re-run every FileType handler across 285 registered autocmds. We
+--            deliberately do NOT do that — each migrated plugin already self-attaches to open
+--            buffers, verified individually:
+--              • vim.lsp.enable() re-runs `doautoall nvim.lsp.enable FileType` whenever it's called
+--                after startup (neovim runtime lua/vim/lsp.lua — the `vim_did_enter` branch),
+--              • gitsigns iterates nvim_list_bufs() in its setup,
+--              • todo-comments attaches to all bufs in visible windows,
+--              • nvim-lint is driven by BufWritePost/InsertLeave only — nothing to replay.
+--            A plugin that needs options set AT READ TIME (vim-sleuth) must NOT be moved here, and
+--            one that is already `ft`-gated (nvim-colorizer) is better off staying that way.
+local filepost_group = vim.api.nvim_create_augroup("GerrrtFilePost", { clear = true })
+vim.api.nvim_create_autocmd({ "UIEnter", "VimEnter", "BufReadPost", "BufNewFile" }, {
+  group = filepost_group,
+  callback = function(args)
+    -- UIEnter always means ready. VimEnter only counts when no UI will ever attach (headless) —
+    -- see the "WHY THEY ARE NOT INTERCHANGEABLE" note above; accepting it in a TTY would fire
+    -- FilePost ~5ms early, back in front of the first paint.
+    if args.event == "UIEnter" or (args.event == "VimEnter" and #vim.api.nvim_list_uis() == 0) then
+      vim.g.startup_done = true
+    end
+    if not vim.g.startup_done then
+      return
+    end
+    if vim.api.nvim_buf_get_name(args.buf) == "" then
+      return -- scratch / unnamed (e.g. the empty buffer of a bare `nvim`)
+    end
+    local buftype = vim.bo[args.buf].buftype
+    if buftype ~= "" and buftype ~= "help" then
+      return -- terminal, quickfix, prompt, nofile, ...
+    end
+    vim.api.nvim_exec_autocmds("User", { pattern = "FilePost", modeline = false })
+    vim.api.nvim_del_augroup_by_name("GerrrtFilePost")
+  end,
+})
+
 -- Restore last cursor position when reopening a file
 local last_cursor_group = vim.api.nvim_create_augroup("LastCursorGroup", { clear = true })
 vim.api.nvim_create_autocmd("BufReadPost", {
@@ -29,11 +108,19 @@ vim.api.nvim_create_autocmd("TextYankPost", {
   group = highlight_yank_group,
   pattern = "*",
   callback = function()
-    -- vim.hl.on_yank is the current API (it succeeded vim.highlight.on_yank when the
-    -- highlight helpers moved to the vim.hl namespace). TextYankPost fires on yanks
-    -- AND deletes, so a bad call here throws E5108 on every such edit — the op still
-    -- runs, but a red error trails it. There is no vim.hl.hl_op.
-    vim.hl.on_yank({
+    -- TextYankPost fires on yanks AND deletes, so a bad call here throws E5108 on every such
+    -- edit — the op still runs, but a red error trails it. Hence the capability probe rather
+    -- than a hard-coded name.
+    --
+    -- VERSION-GATED, NOT SWAPPED. `vim.hl.on_yank` is correct on 0.12 and is what this config
+    -- has always called. On Neovim HEAD (0.13-dev) it is deprecated in favour of `vim.hl.hl_op`
+    -- (runtime lua/vim/hl.lua: `vim.deprecate('vim.hl.on_yank', 'vim.hl.hl_op', '0.14')`), which
+    -- also serves the new TextPutPost event. But hl_op does NOT exist on 0.12.4 — verified — so
+    -- a straight rename would break every machine still on stable. Core is vendored to a
+    -- ten-repo fleet that will not upgrade in lockstep, so probe for the new name and fall back.
+    -- When the whole fleet is on 0.13+, collapse this to a bare vim.hl.hl_op call.
+    local hl = vim.hl.hl_op or vim.hl.on_yank
+    hl({
       higroup = "IncSearch",
       timeout = 200,
     })

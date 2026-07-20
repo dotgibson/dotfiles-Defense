@@ -21,9 +21,9 @@ Before researching, read what the system already ships so you do not "discover"
 something already in use:
 
 - `PORTING-MATRIX.md` — the modern-CLI stack and per-distro package names.
-- `zsh/tools.zsh`, `zsh/aliases.zsh` — what is detected and aliased.
+- `zsh/00-tools.zsh`, `zsh/20-aliases.zsh` — what is detected and aliased.
 - `mise/config.toml` — pinned language runtimes.
-- `zsh/plugins.zsh`, `nvim/lazy-lock.json` — pinned plugins.
+- `zsh/45-plugins.zsh`, `nvim/lazy-lock.json` — pinned plugins.
 
 ## What to research
 

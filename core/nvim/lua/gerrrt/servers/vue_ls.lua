@@ -9,20 +9,17 @@
 -- NAME  : we use the identifier `vue_ls` (lspconfig renamed `volar` → `vue_ls`). Because we supply
 --         cmd/filetypes/root_markers ourselves, this does not depend on lspconfig shipping the
 --         config under either name.
--- INSTALL: mason — package "vue-language-server" (added to ensure_installed in plugins/conform.lua).
+-- INSTALL: mason — package "vue-language-server" (added to ensure_installed in plugins/mason-tool-installer.lua).
 -- ================================================================================================
-return function(capabilities)
-	vim.lsp.config("vue_ls", {
-		capabilities = capabilities,
-		cmd = { "vue-language-server", "--stdio" },
-		filetypes = { "vue" },
-		root_markers = {
-			"vue.config.js",
-			"vue.config.ts",
-			"nuxt.config.js",
-			"nuxt.config.ts",
-			"package.json",
-			".git",
-		},
-	})
-end
+return {
+	cmd = { "vue-language-server", "--stdio" },
+	filetypes = { "vue" },
+	root_markers = {
+		"vue.config.js",
+		"vue.config.ts",
+		"nuxt.config.js",
+		"nuxt.config.ts",
+		"package.json",
+		".git",
+	},
+}

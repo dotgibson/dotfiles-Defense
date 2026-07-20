@@ -66,7 +66,18 @@ core() {
   "" | -h | --help | help) core-help "$@" ;;
   doctor) core-doctor "$@" ;;
   version | -V | --version) core-version "$@" ;;
-  update) up "$@" ;;
+  update)
+    # `up` lives in 60-update, which the minimal/standard CORE_PROFILEs omit. Dispatch only
+    # when it is actually loaded — otherwise report cleanly instead of reaching a missing
+    # command (the front door stays availability-aware even when the surface is reduced).
+    if (( $+functions[up] )); then
+      up "$@"
+    else
+      _core_err "core update: the updater (\`up\`) is not loaded under CORE_PROFILE=${CORE_PROFILE:-full}"
+      _core_hint "it lives in the update/maintenance bands — set CORE_PROFILE=full to enable it"
+      return 1
+    fi
+    ;;
   *)
     _core_err "core: unknown subcommand: ${sub}"
     local _sug

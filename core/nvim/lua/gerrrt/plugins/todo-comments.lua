@@ -5,15 +5,18 @@
 --         understands your whole tree) and gives you a searchable list. Wires into the tools you
 --         already run: `<leader>xt` opens the matches in Trouble (same group as your other lists)
 --         and `<leader>ft` searches them with fzf-lua (your find prefix). `]t` / `[t` jump.
--- LAZY  : event = BufReadPost/BufNewFile (same trigger as gitsigns/lint) + cmd/keys, so it costs
---         nothing at startup. ripgrep is already your grepprg (options.lua), so no new dependency.
+-- LAZY  : event = "User FilePost" (same trigger as gitsigns/lint — see config/autocmds.lua) plus
+--         cmd/keys, so it costs nothing at startup AND nothing before the first paint. ripgrep is
+--         already your grepprg (options.lua), so no new dependency.
 -- ICONS : keyword glyphs are written as \u{XXXX} escapes (Nerd Font codepoints) so they survive
 --         transfer — raw private-use glyphs get silently stripped. Matches the house convention.
 -- ================================================================================================
 return {
 	"folke/todo-comments.nvim",
 	dependencies = { "nvim-lua/plenary.nvim" },
-	event = { "BufReadPost", "BufNewFile" },
+	-- `User FilePost` (config/autocmds.lua). Its highlighter attaches to every buffer in a visible
+	-- window on setup, so the triggering buffer gets highlighted without a FileType replay.
+	event = "User FilePost",
 	cmd = { "TodoTrouble", "TodoFzfLua", "TodoQuickFix", "TodoLocList" },
 	keys = {
 		{

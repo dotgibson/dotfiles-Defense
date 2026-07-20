@@ -13,6 +13,295 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.0.0] - 2026-07-20
+
+### Added
+
+- **`CORE_PROFILE` (`minimal` / `standard` / `full`).** Selects which
+  Core-band fragments (`00`–`69`) the loader sources — `minimal` stops after `30-functions`,
+  `standard` after `50-op`, `full` loads all Core — so a headless box can skip the
+  interactive-heavy stages `minimal` omits: fzf widgets (`35`), vi-mode bindings (`40`), the
+  plugin stack (`45` — autosuggestions/syntax-highlighting/carapace/fzf-tab), the 1Password
+  helpers (`50`), and the maintenance + update surface (`55`/`60`). (Atuin/history and the
+  aliases live in `00`–`30`, so they still load under `minimal`.) It resolves from the
+  environment or a `$ZSH_CFG/profile` one-liner, and gates **only** Core fragments;
+  OS/role/host fragments (`>=70`) always load, so
+  a lean profile never drops essential OS setup or `99-local.zsh`. It is a pure loader
+  concern — install-time provisioning selection stays with `bootstrap.sh`'s existing
+  `--only`/`--skip` (`blib_want`) groups, so `bootstrap.sh --only zsh` + `CORE_PROFILE=minimal`
+  compose orthogonally. Defaults to `full` (today's behaviour).
+- **Neovim: debugging via `nvim-dap` + `nvim-dap-python`.** Breakpoints, stepping, and variable
+  inspection under a new `<leader>d` which-key group, with palette-aware gutter signs and rows in
+  the cheatsheet. Loaded on its keymaps and `Dap*` commands **only** — it costs nothing at startup
+  and nothing on file open, not even the `User FilePost` hook. That required turning off
+  rustaceanvim's `dap.autoload_configurations` (on by default): it calls `require('dap')` on
+  rust-analyzer attach, which lazy.nvim module-autoloads, so merely opening a `.rs` file pulled in
+  the whole DAP stack and could kick off background `cargo` work. The tradeoff is explicit — a bare
+  `<leader>dc` no longer sees rust-analyzer's debuggables, so Rust sessions start from the new
+  `<leader>dR` (`:RustLsp debuggables`), after which the normal `<leader>d*` keys apply.
+  `nvim-dap-ui` is deliberately not
+  included: `dap.ui.widgets` covers scopes/frames/hover (`<leader>ds`/`df`/`dw`) without the extra
+  plugin, its `nvim-nio` dependency, or session-driven window management. The debug adapter is
+  resolved most-preferred-first — Mason's `debugpy` if you installed it, then `uv`, then
+  `python3`. `debugpy` is deliberately **not** in `ensure_installed`: Mason's PyPI installer always
+  runs `python -m venv` then pip, so listing it would fail the install pass on every startup on the
+  Debian/Kali and Alpine hosts that lack `python3-venv`/`py3-pip` — the exact dependency the `uv`
+  fallback exists to avoid. Install it by hand with `:MasonInstall debugpy` where you want it. Verified end to end on a real session via the `uv` path: breakpoint hit,
+  frame `add @ line 2`, locals `a = 2` / `b = 3`.
+  This also revives `plugins/rustaceanvim.lua`'s DAP adapter block, which was dead code — it needs
+  `nvim-dap` present, and `nvim-dap` was never installed.
+- **Neovim: the statusline shows the active Python virtual environment.** A new block left of the
+  LSP server list renders the uv/venv name (`.venv`) in Python buffers, resolving
+  `VIRTUAL_ENV` → `UV_PROJECT_ENVIRONMENT` → `<project root>/.venv`, probing `pyvenv.cfg` so it is
+  correct on every platform. Absolute `UV_PROJECT_ENVIRONMENT` values are detected in all three
+  forms — POSIX `/…`, Windows drive-qualified `C:\…`, and UNC `\\server\share` — since a
+  leading-`/` test alone would misread the latter two as relative and silently report the wrong env. It walks upward from the buffer, so a file in a subdirectory still
+  reports the project's env, and it collapses to nothing outside Python so no width is spent
+  elsewhere. The lookup is memoised in `vim.b` — a statusline component is re-evaluated on every
+  redraw, so the filesystem walk runs once per buffer, never inline. Display only: it does not
+  configure ty, which already discovers `.venv` on its own.
+
+### Removed
+
+- **Neovim: the `matchparen`, `rplugin` and `spellfile` runtime plugins are no longer sourced**, and
+  `showmatch` is no longer set. `matchparen` was the costly one: it registers 10 autocmds, three of
+  which (`CursorMovedI`, `TextChangedI`, `TextChangedP`) re-scan for a matching bracket on _every
+  keystroke_ in insert mode. `showmatch` doubled that from the other side — it does not highlight
+  the match, it jumps the cursor to it for `matchtime` tenths of a second every time you type a
+  closing bracket. `rplugin` (remote-plugin manifest) is dead weight with the perl/ruby providers
+  already off, and `spellfile` auto-downloads spellfiles over the network — unwanted generally and
+  wrong on a `DOTFILES_OFFLINE` box. **`%` is unaffected**: `matchit` (extended `%` over
+  `if`/`end`, tags, …) and `editorconfig` are deliberately kept, and both the matchit and builtin
+  `%` motions were verified identical before and after. What this does give up is the automatic
+  highlight of the bracket paired with the one under the cursor — `rainbow-delimiters` colors by
+  nesting depth and only where a treesitter parser is installed, so it is a different cue, not a
+  replacement. NvChad disables 26 runtime plugins including
+  `matchit`; that list is not copied — each entry here carries a stated reason.
+
+### Changed
+
+- **BREAKING (v4.0.0) — loader & layout overhaul.** Core's zsh modules are renamed to
+  numbered fragments (`00-tools` … `60-update`), and the loader (`zsh/loader.zsh`) now
+  globs `NN-*.zsh` in `$ZSH_CFG`, sorts by the `NN` prefix, and sources each — replacing
+  the hand-declared `_CORE_MODULES` name array an OS `.zshrc` used to pass. The `NN`
+  prefix is the ordering contract; bands are Core `00`–`69`, OS-native `70`–`84`, role
+  `85`–`94`, host-local `95`–`99` (the OS layer is now `80-os.zsh`, a role stage `85-*.zsh`,
+  host tweaks `99-local.zsh`). A layer may still place a fragment in a Core gap to run
+  mid-chain, but gating and ordering key off the `NN` number, not authorship: a fragment in
+  `00`–`69` is profile-gated as Core (number always-load setup `>=70`), and a same-`NN` tie
+  breaks lexically by filename. This aligns the zsh module structure with the
+  PowerShell host layer's `NN-name` convention (`PARITY.md`). **Every OS/Role repo must
+  re-vendor and update its `bootstrap.sh` loader stanza** — `blib_write_zshrc_loader` now
+  emits a stanza that simply `source`s `$ZSH_CFG/loader.zsh` (managed marker
+  `dotfiles-managed v4`) and takes no module list; it deliberately does **not** assign
+  `CORE_PROFILE`, leaving resolution to the loader (env → `$ZSH_CFG/profile` one-liner →
+  `full`). `blib_migrate_v4` relocates the pre-v4 layout automatically on re-bootstrap.
+  Design + per-repo runbook in `V4-PROPOSAL.md`.
+- **BREAKING (v4.0.0) — mutable zsh state moves to XDG dirs.** History
+  (`$XDG_STATE_HOME/zsh/history`), the completion dump (`$XDG_CACHE_HOME/zsh/zcompdump`),
+  and plugins (`$XDG_DATA_HOME/zsh/plugins`) leave the symlinked `$ZDOTDIR` config tree,
+  which now holds config **plus** the byte-compiled `.zwc` wordcode written beside each
+  fragment symlink — the one deliberate exception, because that is how zsh's automatic
+  wordcode pickup works (`source file` loads `file.zwc` only when it sits beside `file`).
+  `bootstrap.sh` (`blib_migrate_v4`) relocates an existing `~/.config/zsh/.zsh_history`,
+  `plugins/`, and drops the stale pre-v4 symlinks/compdump on re-bootstrap so nothing is
+  lost. Hosts must **re-bootstrap**, not just re-source.
+- **Neovim: statusline components now read the statusline's window, not the current one.** With
+  `globalstatus = true` one bar is shared by every window, so `bufnr = 0` was subtly wrong whenever
+  the bar was redrawn for a window you weren't in. Custom components now resolve through
+  `vim.g.statusline_winid` (the discipline NvChad's `stl/utils.lua` uses). The attached-server list
+  is also width-gated at 100 columns, since the diagnostic counts beside it carry the actionable
+  information on a narrow window.
+- **Neovim: LSP server modules are now plain config tables, and the server list exists once.**
+  Each `lua/gerrrt/servers/<name>.lua` returned a `function(capabilities)` factory that called
+  `vim.lsp.config()` itself; `servers/init.lua` then invoked all 19 by hand and re-listed the same
+  19 names in a separate `wanted` table, so every name was written twice. The leaves are now pure
+  data, capabilities are advertised once on the `vim.lsp.config("*")` wildcard, and one `servers`
+  list drives both registration and enabling. `utils/lsp.lua`'s `with_snippets()` is gone —
+  html/cssls set only the `snippetSupport` leaf and inherit the rest via the wildcard deep-merge.
+  Verified by diffing the fully-resolved config of all 19 servers before and after: **identical**.
+  Note the configs deliberately stay on explicit `vim.lsp.config(name, …)` calls rather than moving
+  to `lsp/<name>.lua` on the runtimepath: rtp files are merged in rtp order with the user config dir
+  _first_, so nvim-lspconfig's own `lsp/<name>.lua` would override ours (verified — a probe setting
+  `cmd = { "PROBE_CMD" }` resolved to `cmd = { "gopls" }`). Explicit calls always win.
+  `scripts/test-core.sh` is updated to assert the new contract (a non-empty table, not a function).
+- **Neovim: the SchemaStore catalogues are no longer built unconditionally.** `servers/jsonls.lua`
+  and `servers/yamlls.lua` resolved `require("schemastore").{json,yaml}.schemas()` inline in their
+  `settings`, which ran while the server was being _configured_ — and `servers/init.lua` configures
+  all 19 servers in one pass. That pass runs **once per session** (the `User FilePost` loader is
+  one-shot), so the cost was not per-buffer; the problem is that it was paid **regardless of
+  filetype** — a session that only ever opens Lua files still materialised the entire 1,368-entry
+  JSON schema catalogue. Both now resolve it in `before_init`, which Neovim runs once per client
+  instance, so the cost lands only when a jsonls/yamlls client actually starts. Verified: a Lua
+  buffer no longer loads the `schemastore` module at all, a JSON buffer still gets all 1,368 schemas.
+- **Neovim: treesitter's installed-parser lookup is cached.** `get_installed()` walks two install
+  directories off disk (~0.19ms) and returns a fresh list; it was called inside the `FileType`
+  callback and then scanned linearly, so every buffer open paid a directory walk plus an O(n)
+  search. It is now built once into a set and answered by hash lookup, and invalidated on every
+  parser mutation — including `:TSInstall`/`:TSUpdate`/`:TSUninstall`, which bypass the plugin's own
+  install entry point — so the set can never go stale against what is on disk.
+- **Neovim: `lazy.nvim` now defaults specs to `lazy = true`.** Every spec is already covered — most
+  declare an `event`/`ft`/`cmd`/`keys` trigger, and the pure-data/dependency specs
+  (`webdev-icons.lua`, `schemastore.lua`, the luvit-meta entry in `lazydev-nvim.lua`) declare
+  `lazy = true` explicitly and load via `require` or another spec's `dependencies`. So the
+  loaded-plugin set is byte-identical before and after (verified, 25 plugins on first file open).
+  This is a regression net: a future spec added with neither a trigger nor an explicit `lazy` stays
+  lazy instead of silently landing on the startup path.
+
+- **Neovim: file-plugins now load after the UI is ready (`User FilePost`)** — `nvim-lspconfig`,
+  `gitsigns`, `nvim-lint` and `todo-comments` hung off `BufReadPre`/`BufReadPost`, which fire
+  _before_ Neovim finishes starting. Measured on a real TTY, `BufReadPost` lands at ~44ms while the
+  UI isn't ready until ~131ms, so ~87ms of plugin work sat in front of the editor appearing. A new
+  self-deleting autocmd in `config/autocmds.lua` emits a `User FilePost` event once startup is done
+  and a real file buffer is open, and those four specs now load on it.
+  **Opening a file: 165.9ms → 99.0ms (-40%).** Bare `nvim` is unchanged (~37ms).
+  The event waits for `UIEnter` when a UI exists, and falls back to `VimEnter` only when there is
+  genuinely no UI (`nvim --headless`), where `UIEnter` never fires — gating on `UIEnter` alone (as
+  NvChad does) would silently disable LSP, linting and git signs in every headless/CI session,
+  including this repo's own audit, while accepting `VimEnter` in a TTY would fire ~5ms early and pull
+  the plugins back in front of the first paint. `scripts/test-core.sh` asserts the exactly-once
+  contract in both startup shapes. No `FileType` replay is needed; each of the
+  four self-attaches to already-open buffers (`vim.lsp.enable()` re-runs `doautoall`, gitsigns
+  iterates `nvim_list_bufs()`, todo-comments attaches to visible windows, nvim-lint is write-driven).
+
+### Fixed
+
+- **Neovim: focusing the file tree blanked the whole statusline.** `plugins/lualine-nvim.lua` set
+  both `disabled_filetypes = { statusline = { "NvimTree" } }` and `extensions = { "nvim-tree", … }`.
+  lualine evaluates `disabled_filetypes` and returns `nil` **before** it consults extensions
+  (`lualine.nvim/lua/lualine.lua:298-306`), so the `nvim-tree` extension was permanently unreachable
+  — and because `globalstatus = true` means one shared bar, that `nil` blanked the statusline for
+  _every_ window whenever the tree held focus. Dropped the disable and kept the extension. Verified:
+  with `ft=NvimTree` focused, `lualine.statusline()` returned `nil` before, renders 81 cells now.
+- **Neovim: visual-mode git staging silently staged the entire hunk.** `<leader>gs` / `<leader>gr`
+  were mapped in `{ "n", "v" }` to bare `gs.stage_hunk` / `gs.reset_hunk`. `range` is the **first**
+  parameter of both (`gitsigns.nvim/lua/gitsigns/actions.lua:288`, `:376`) and a Lua keymap rhs is
+  invoked with no arguments, so `range` was always `nil` — partial-hunk staging, the only reason to
+  map visual mode, never happened. (Nothing reads the visual selection implicitly; only the
+  `:Gitsigns` command wrapper populates `range`, from command modifiers.) Normal and visual are now
+  separate mappings, with the visual pair passing `{ line("."), line("v") }` — upstream's documented
+  form — and bound to `x` rather than `v` so they do not also fire in select-mode. Verified end to
+  end in a real repo: staging lines 2-3 of a 3-line hunk staged exactly those two.
+- **Neovim: the Node.js and python3 providers are disabled, clearing the config's only health
+  warning.** The node provider's sole consumers are remote plugins, but `config/lazy.lua` disables
+  the `rplugin` manifest loader, no installed plugin ships a manifest, and nothing references
+  `node_host` — so it was unreachable while still emitting a permanent `:checkhealth` WARNING.
+  python3 goes too: `vimade` is the only thing in the tree that mentions python, and it never
+  reaches that path here. `vimade#SetupRenderer()` (`vimade/autoload/vimade.vim:30-43`)
+  short-circuits to the Lua renderer whenever `renderer == 'auto'` and `supports_lua_renderer`, and
+  only the _else_ branch calls `SetupPython()`; `supports_lua_renderer` needs
+  `nvim_get_hl` + `nvim_win_set_hl_ns`, present since 0.11, and nvim-treesitter's main branch
+  already hard-requires 0.12 here — so the python fallback is unreachable. Confirmed at runtime:
+  `ACTIVE renderer = lua`, `vimade_python_setup = 0`, and `has('python3')` was never evaluated.
+  (nvim-dap-python spawns debugpy as an external DAP adapter — a subprocess, not this provider.)
+  Disabling both makes the cleanup portable: otherwise any fleet machine without `pynvim` keeps
+  emitting the same warning. `:checkhealth` is now **0 errors, 0 warnings** across every section.
+- **Neovim: `gsn` (surround `update_n_lines`) never existed.** `plugins/mini-nvim.lua` passed
+  `update_n_lines = "gsn"` in mini.surround's `mappings`, but that is not a key in its schema
+  (`add`/`delete`/`find`/`find_left`/`highlight`/`replace`/`suffix_last`/`suffix_next`) and unknown
+  keys are accepted silently — `setup()` returned OK and no mapping was created, while every other
+  `gs*` map did exist. Mapped explicitly instead, as upstream's own docs prescribe
+  (`mini/surround.lua:909`), so the prefix the file advertises is real.
+
+- **Neovim: SchemaStore catalogues never reached `jsonls` or `yamlls`.** Both resolved their
+  schemas in `before_init` by re-binding `config.settings` with `vim.tbl_deep_extend`. The client
+  binds `client.settings = config.settings` in `Client.create()` (runtime
+  `lua/vim/lsp/client.lua:409`) **before** `before_init` runs (`:571`), and `tbl_deep_extend`
+  returns a _new_ table — so the client kept the original and the catalogue was silently dropped.
+  Both delivery paths (`workspace/didChangeConfiguration` push and the `lookup_section` pull) read
+  `client.settings`. `yamlls` was the worse case: it disables its own built-in store
+  (`schemaStore.enable = false`) and so ended up with _neither_ catalogue. Now mutated in place.
+  Verified live: `jsonls` 0 → **1368** schemas, `yamlls` 0 → **1279** with the built-in store still
+  off. Note Neovim's own docs demonstrate the broken re-binding form (`client.lua:36-41`).
+- **Neovim: the `gr*` default-keymap cleanup deleted nothing, so `gr` still waited `timeoutlen`.**
+  `utils/lsp.lua` called `vim.keymap.del("n", lhs, { buffer = bufnr })`, but Neovim creates
+  `grn`/`gra`/`grr`/`gri`/`grt`/`grx` as **global** maps (`lua/vim/_core/defaults.lua`). Every
+  delete raised `E31: No such mapping`, swallowed by the `pcall`. Dropped the `buffer` key, added
+  the two 0.12 additions (`grt`, `grx`) that were missing, and hoisted the loop out of `on_attach`
+  — it is global state that was being re-attempted per attaching client (twice on a Python buffer:
+  `ruff` + `ty`). Verified: all six now report unmapped after boot. `grx` (`vim.lsp.codelens.run`)
+  was the one default with no existing equivalent in this config, so it gains a replacement under
+  the `<leader>c` "code" prefix: **`<leader>cL` runs CodeLens** (capital L — lowercase
+  `<leader>cl` is Trouble's LSP refs/defs, and these maps are buffer-local, so taking it would have
+  shadowed Trouble on every LSP-attached buffer). The others already had
+  one (`grn` → `<leader>rn`, `gra` → `<leader>ca`, `grr` → `gr`, `gri` → `gi`, `grt` → `gy`).
+- **Neovim: `binary_available()` was a no-op for `ts_ls`, `yamlls` and `tailwindcss`.** Current
+  nvim-lspconfig ships `cmd` as a _function_ (a project-local `node_modules/.bin` probe) for those,
+  and the guard's `type(cmd) ~= "table" → return true` branch waved them straight through. They
+  were enabled unconditionally, still produced the recurring `spawn … ENOENT` the guard exists to
+  suppress, and never appeared in the "LSP not enabled" notice. Now available if the well-known
+  global binary is on `PATH` **or** a `node_modules/.bin/<binary>` is reachable from the cwd. Both
+  tests are needed: those launchers prefer a project-local binary and only then fall back to the
+  global one, but this enable pass runs before any client (so before `root_dir` exists) — answering
+  "unavailable" means no client ever starts and the launcher never runs, so a global-only test would
+  break the common "no global install, just a devDependency" layout. The local test is a heuristic
+  and is deliberately biased to fail open.
+- **Neovim: `mini.nvim` dragged the whole treesitter stack onto the startup path.** It declared
+  `nvim-treesitter-textobjects` as a `dependencies` entry, and lazy.nvim loads dependencies _with_
+  the parent — so mini's `VeryLazy` overrode the `BufReadPost`/`BufNewFile` trigger that both
+  nvim-treesitter and -textobjects declare, running treesitter's parser-directory scan and possible
+  `install` pass on the dashboard. Removed; mini.ai resolves the `textobjects` queries lazily at
+  textobject-use time, by which point `BufReadPost` has loaded them. Measured in a real PTY: a bare
+  `nvim` went from **13 loaded plugins to 11**, dropping ~15.5 ms of post-`UIEnter` work.
+  (Time-to-`NVIM STARTED` is unchanged — this work always landed _after_ that marker.)
+- **Neovim: `vim.hl.on_yank` is version-gated rather than hard-coded.** It is deprecated on Neovim
+  HEAD (0.13-dev) in favour of `vim.hl.hl_op`, which does **not** exist on 0.12.4 — so a rename
+  would break every machine still on stable. Probes for the new name and falls back, and the
+  adjacent comment asserting "there is no `vim.hl.hl_op`" is corrected.
+- **Neovim: `blink.cmp` is now a declared dependency of `nvim-lspconfig`.** `servers/init.lua`
+  calls `require("blink.cmp").get_lsp_capabilities()`, which lazy's require-hook already pulled
+  blink (and `friendly-snippets`) in at `User FilePost` — so blink's own `event = "InsertEnter"`
+  was never the trigger that loaded it. This declares what already happened; it is not a speed-up,
+  and blink cannot be deferred further because capabilities must be advertised in `initialize`.
+
+### Changed (internal)
+
+- **Neovim: the cheatsheet now covers what it claims to.** An audit against the real keymaps found
+  the panel had drifted from the config it documents. Added a **Completion (blink.cmp)** card — the
+  seven completion-menu keys had no row at all — and a **Move lines (mini.move)** card for
+  `<A-hjkl>`, another whole feature that was absent. Also added `<leader>bn`/`bp`, `<leader>cl`
+  (Trouble LSP refs/defs), `]t`/`[t`, `gsh` and `gsn`; corrected two descriptions (`<leader>rc` said
+  "Edit init.lua" where the keymap's `desc` is "Edit config"; `<leader>e` dropped the load-bearing
+  "closes Zen if active" side effect). The header's "EVERY curated binding" claim is now scoped to
+  say what is deliberately excluded (transient-UI keys: the rename float, oil buffers, alpha's
+  buttons, the panel's own `q`/`<Esc>`) rather than overstating.
+- **Neovim: which-key names three prefixes that rendered as unnamed.** `<leader>r` (edit config,
+  rename symbol), `<leader>o` (organize imports) and `<leader>p` (copy file path) had real children
+  but no `group` entry. `<leader>p` is declared for normal mode only — in visual it is itself a
+  mapping (paste-without-yank), not a prefix.
+- **Neovim: removed dead and misleading plugin config.** Each verified against the installed plugin
+  source, not assumed:
+  - `bufferline`: dropped `hover.reveal = { "close" }`. `get_close_icon()`
+    (`bufferline.nvim/lua/bufferline/ui.lua:263-270`) consults `reveal` and then unconditionally
+    bails on `if not options.show_buffer_close_icons then return end` — which is `false` here, so
+    there was never a close icon to reveal. `hover` stays on for hover highlighting.
+  - `nvim-tree`: `view = { adaptive_size = true }` → `view = { width = {} }`. `adaptive_size` is a
+    2023-01-15 legacy key that nvim-tree silently rewrites (`legacy.lua:73-81`); with no explicit
+    width it produces `{ min = nil }`, i.e. `{}`. Verified equivalent by running the migration and
+    comparing deep-equal. Note `{}` is not "unbounded" — nvim-tree fills the absent keys with its
+    own defaults (`view-state.lua:5-6,77-78`), so the pane sizes to content but never narrower than
+    30 columns; confirmed at runtime as `width = 30`, `max_width = -1`.
+  - `fidget`: `winblend = 0` → `100` (its default). The old comment said this matched "transparent
+    floats" — backwards; fidget's docs (`notification/window.lua:33-49`) describe `100` as the
+    see-through setting and anything less as blending with what's underneath.
+  - `nvim-treesitter-context`: dropped `separator = nil` — assigning `nil` in a table literal omits
+    the key, and `nil` is already the default, so it read as a setting but did nothing.
+  - `conform`: dropped a `config` function that re-implemented lazy.nvim's default for a spec with
+    `opts`. Verified the 20 `formatters_by_ft` entries still apply without it.
+  - `blink.cmp`: corrected a comment claiming the snippet keys use native `vim.snippet` — with
+    `preset = "luasnip"` they route to LuaSnip; blink picks the engine by preset.
+- **Neovim: `<leader>ha` refuses an unnamed buffer.** harpoon keys its list by file path, so adding
+  a scratch buffer stored an unnavigable empty entry and toasted a bare `"Harpoon: added "`.
+- **Neovim: `keymaps.lua` Ex-command maps use `<Cmd>…<CR>` instead of `:…<CR>`** (11 split/tab/
+  resize maps). `:` switches to cmdline-mode first — it echoes, is subject to cmdline mappings and
+  abbreviations, and clobbers a pending count or visual selection; `<Cmd>` does not.
+- **Neovim: `<leader>pa` reports via `vim.notify`, not `print`**, so the copied path lands in the
+  mini.notify toast like every other message instead of the message area (and no longer risks a
+  hit-enter prompt on a long path). Also handles the no-file case.
+- **Neovim: the `<LeftDrag>`/`<LeftRelease>` maps moved from `options.lua` to `keymaps.lua`**, and
+  the undodir setup dropped two redundant `vim.fn.expand()` calls on an already-absolute
+  `stdpath("state")` path (now built with `vim.fs.joinpath`).
+
 ## [v3.9.0] - 2026-07-19
 
 ### Added

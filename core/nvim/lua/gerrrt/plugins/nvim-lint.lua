@@ -10,7 +10,9 @@
 -- ================================================================================================
 return {
 	"mfussenegger/nvim-lint",
-	event = { "BufReadPost", "BufNewFile" },
+	-- `User FilePost` (config/autocmds.lua). Nothing to replay: linting is driven entirely by the
+	-- BufWritePost/InsertLeave autocmds registered below, both of which fire long after load.
+	event = "User FilePost",
 	config = function()
 		local lint = require("lint")
 		lint.linters_by_ft = {

@@ -33,8 +33,20 @@ vim.opt.incsearch = true -- Show matches as you type
 vim.opt.termguicolors = true -- Enable 24-bit colors
 vim.opt.signcolumn = "yes" -- Always show sign column
 vim.opt.colorcolumn = "100" -- Show column at 100 characters
-vim.opt.showmatch = true -- Highlight matching brackets
-vim.opt.matchtime = 2 -- How long to show matching bracket
+-- NOTE: 'showmatch' is deliberately NOT set. It does not "highlight" the matching bracket — it
+-- physically JUMPS THE CURSOR to the match for 'matchtime' tenths of a second every time you type a
+-- closing bracket, then jumps back. That is a visible stutter while typing, and it was redundant
+-- with the runtime matchparen plugin, which highlighted the pair without moving the cursor.
+--
+-- matchparen is now disabled outright (config/lazy.lua — it cost 3 autocmds on EVERY insert-mode
+-- keystroke). Be clear about what that gives up: the automatic highlight of the bracket PAIRED WITH
+-- THE ONE UNDER YOUR CURSOR is gone, and nothing else restores it. rainbow-delimiters colors
+-- delimiters by NESTING DEPTH, and only in buffers whose language has an installed treesitter
+-- parser — useful, but a different cue, and absent in parserless buffers. What remains everywhere is
+-- the `%` motion (matchit + builtin), which jumps to the match on demand.
+-- That trade is deliberate: a per-keystroke cost in every insert session, for a passive cue.
+-- Want the automatic pair highlight back? Re-enable matchparen in config/lazy.lua — do NOT set
+-- showmatch here, which is the cursor-jumping variant, not a highlight.
 vim.opt.completeopt = "menuone,noinsert,noselect" -- Completion options
 vim.opt.showmode = false -- Don't show mode in command line
 vim.opt.pumheight = 10 -- Popup menu height
@@ -69,11 +81,13 @@ vim.opt.diffopt:append("linematch:60") -- Better diff highlighting (smart line m
 -- Set undo directory and ensure it exists. Derive from Neovim's own state dir
 -- (vim.fn.stdpath("state")) rather than a hardcoded ~/.local/share path, so it lands
 -- in the right tree under a relocated XDG_STATE_HOME and on non-Linux (macOS) nvim.
-local undodir = vim.fn.stdpath("state") .. "/undodir" -- Undo directory path
-vim.opt.undodir = vim.fn.expand(undodir) -- Expand to full path
-local undodir_path = vim.fn.expand(undodir)
-if vim.fn.isdirectory(undodir_path) == 0 then
-  vim.fn.mkdir(undodir_path, "p") -- Create if not exists
+-- No vim.fn.expand() here: stdpath("state") already returns an absolute, fully-expanded path
+-- (it is not a "~/..." string), so expanding it was a no-op — and it was being done twice, into
+-- two variables holding the same value.
+local undodir = vim.fs.joinpath(vim.fn.stdpath("state"), "undodir")
+vim.opt.undodir = undodir
+if vim.fn.isdirectory(undodir) == 0 then
+  vim.fn.mkdir(undodir, "p") -- Create if not exists
 end
 
 -- Behavior Settings
@@ -84,8 +98,8 @@ vim.opt.iskeyword:append("-") -- Treat dash as part of a word
 vim.opt.path:append("**") -- Search into subfolders with `gf`
 vim.opt.selection = "inclusive" -- Use inclusive selection
 vim.opt.mouse = "a" -- Enable mouse support
-vim.keymap.set({ "n", "i", "v" }, "<LeftDrag>", "<Nop>", { silent = true })
-vim.keymap.set({ "n", "i", "v" }, "<LeftRelease>", "<Nop>", { silent = true })
+-- NOTE: the <LeftDrag>/<LeftRelease> <Nop> maps that disable mouse SELECTION (while keeping
+-- click-to-position from 'mouse' above) moved to config/keymaps.lua — this file is options only.
 
 -- NOTE: system clipboard is handled in clipboard.lua via a custom provider and
 -- the "+ register (opt-in). We deliberately do NOT force unnamedplus here, so

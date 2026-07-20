@@ -15,10 +15,14 @@
 #                    is already covered hermetically by dotfiles-core's test-core.sh,
 #                    so this asserts the part bootstrap.sh OWNS: the wiring it produces.
 #
-# A caller stub (in an OS repo) looks like:
+# A caller stub (in an OS repo) looks like — pinned to the moving MAJOR tag @vN per the
+# `@vN` policy in RELEASE-STRATEGY.md, NOT @main: a caller's contract then changes only via
+# a Core release, and a MAJOR bump (this v4 assertion switch) is the one intentional,
+# reviewed caller edit — so an OS repo on @v3 keeps the v3 assertions until it deliberately
+# moves to @v4 as part of the fan-out (re-vendoring v4 Core + updating its bootstrap together):
 #   jobs:
 #     test:
-#       uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@main
+#       uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v3
 #       with:
 #         image: alpine:3.20
 #         prep:  apk add --no-cache bash zsh
@@ -98,7 +102,7 @@ jobs:
             echo "── asserting symlink graph + generated ~/.zshrc ──"
             for link in \
               "$HOME/.config/zsh/loader.zsh" \
-              "$HOME/.config/zsh/os.zsh" \
+              "$HOME/.config/zsh/80-os.zsh" \
               "$HOME/.config/starship.toml" \
               "$HOME/.config/lazygit/config.yml" \
               "$HOME/.config/nvim" \
@@ -115,12 +119,21 @@ jobs:
             if [ -L "$HOME/.config/sesh/sesh.toml" ]; then echo "sesh.toml should be a copy, not a symlink" >&2; exit 1; fi
             # NOTE: keep this block apostrophe-free — it lives inside the single-quoted sh -euc script.
 
-            grep -q "dotfiles-managed v2" "$HOME/.zshrc" || { echo "~/.zshrc not managed" >&2; exit 1; }
-            grep -q "_CORE_MODULES=(tools ui options" "$HOME/.zshrc" || { echo "~/.zshrc missing canonical module list" >&2; exit 1; }
+            grep -q "dotfiles-managed v4" "$HOME/.zshrc" || { echo "~/.zshrc not managed" >&2; exit 1; }
+            # v4: the .zshrc no longer lists modules — it just sources the vendored loader,
+            # which globs the numbered fragments itself.
+            grep -q "source .*loader.zsh" "$HOME/.zshrc" || { echo "~/.zshrc does not source the vendored loader" >&2; exit 1; }
+            # It must NOT assign CORE_PROFILE (only mention it in a comment): the loader owns
+            # resolution (env, else $ZSH_CFG/profile, else full), and a pre-set would disable
+            # the profile file. Strip comment lines first, then reject any CORE_PROFILE= / :=.
+            if grep -vE "^[[:space:]]*#" "$HOME/.zshrc" | grep -qE "CORE_PROFILE[[:space:]]*:?="; then
+              echo "~/.zshrc must NOT assign CORE_PROFILE (v4 leaves resolution to the loader)" >&2; exit 1
+            fi
 
             if [ "$OFFENSIVE" = "true" ]; then
-              grep -q " os offensive local)" "$HOME/.zshrc" || { echo "offensive stage missing from loader" >&2; exit 1; }
-              for link in "$HOME/.config/zsh/offensive.zsh" "$HOME/hacktheplanet"; do
+              # v4: the offensive role stage is the numbered fragment 85-offensive.zsh (band
+              # 85-94); the loader picks it up by NN glob (no module-list entry to grep).
+              for link in "$HOME/.config/zsh/85-offensive.zsh" "$HOME/hacktheplanet"; do
                 if [ ! -L "$link" ]; then echo "MISSING offensive symlink: $link" >&2; exit 1; fi
               done
             fi

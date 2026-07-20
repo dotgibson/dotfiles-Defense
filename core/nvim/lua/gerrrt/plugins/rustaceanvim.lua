@@ -9,6 +9,18 @@
 -- calls server.on_attach with the classic (client, bufnr) signature, but that function expects
 -- an LspAttach *event* table and early-returns on anything else.)
 local config = function()
+	-- Rust's debug entry point. Since dap.autoload_configurations is off (see the note below), this
+	-- is what materialises rust-analyzer's debuggables — it replaces <leader>dc as the way to START
+	-- a Rust session; everything after (breakpoints, stepping, scopes) is the normal <leader>d* set
+	-- from plugins/nvim-dap.lua.
+	--
+	-- Bound HERE rather than in a lazy `keys` entry: this spec already loads on `ft = "rust"`, and a
+	-- lazy `keys` entry is a LOAD TRIGGER — once the plugin is loaded by a different trigger,
+	-- lazy.nvim drops the stub and expects the plugin to own the mapping, which rustaceanvim does
+	-- not. Defining it in config means it exists exactly when rustaceanvim is active (verified: the
+	-- keys-entry version silently never mapped).
+	vim.keymap.set("n", "<leader>dR", "<cmd>RustLsp debuggables<cr>", { desc = "Rust debuggables (start)" })
+
 	vim.g.rustaceanvim = {
 		tools = { hover_actions = { auto_focus = true } },
 		server = {
@@ -17,6 +29,26 @@ local config = function()
 			},
 		},
 		dap = {
+			-- Do NOT materialise Rust debug configurations on LSP attach.
+			--
+			-- rustaceanvim defaults this to true (config/internal.lua), and on rust-analyzer attach
+			-- lsp/init.lua calls add_dap_debuggables(), which `require('dap')`. Under lazy.nvim that
+			-- module access AUTOLOADS nvim-dap and its dependency — so merely opening a Rust file
+			-- pulled in the whole DAP stack, and the debuggables request can kick off background
+			-- `cargo` work to enumerate targets. Measured before this line: opening a .rs file
+			-- reported `nvim-dap loaded = true, nvim-dap-python loaded = true`.
+			--
+			-- That silently contradicted the "loads only on debug keymaps" contract in
+			-- plugins/nvim-dap.lua.
+			--
+			-- TRADEOFF, stated plainly: with autoload off, a bare `<leader>dc` (dap.continue) does
+			-- NOT see rust-analyzer's debuggables, because nothing has asked for them yet. Rust
+			-- debugging therefore goes through rustaceanvim's own entry points, which load the
+			-- configurations on demand — `<leader>dR` below (:RustLsp debuggables) to pick a target,
+			-- or :RustLsp debug. Once loaded, the normal dap keymaps (step/breakpoint/scopes) apply
+			-- as usual. Prefer the old behaviour? Set this back to true and accept that opening any
+			-- .rs file loads the DAP stack and may trigger background cargo work.
+			autoload_configurations = false,
 			adapter = {
 				type = "executable",
 				-- Prefer lldb-dap on PATH. Only consult `xcrun -f lldb-dap` on macOS (and only if

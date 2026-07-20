@@ -62,7 +62,10 @@ if [[ -z $_CORE_COMPINIT_DONE ]]; then
   _CORE_COMPINIT_DONE=1
   autoload -Uz compinit
   () {
-    local zcd="${ZDOTDIR:-$HOME/.config/zsh}/.zcompdump"
+    # v4: the compdump is regenerable CACHE, not config — under $XDG_CACHE_HOME, not the
+    # symlinked $ZDOTDIR config tree. Ensure the dir exists (compinit -d won't create it).
+    local zcd="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompdump"
+    [[ -d ${zcd:h} ]] || mkdir -p "${zcd:h}"
     # (#qN.mh+24): exists, is a file, modified >24h ago → do the full security check
     if [[ -n ${zcd}(#qN.mh+24) ]]; then
       compinit -d "$zcd"

@@ -1,8 +1,9 @@
 # core/zsh/plugins.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Lightweight zsh plugin loader — no Oh My Zsh, no Zinit. Plugins are auto-cloned
-# to ${ZDOTDIR:-~/.config/zsh}/plugins on first launch (gitignored). Portable:
-# needs git + network on first run only. Load AFTER fzf.zsh + bindings.zsh so the
+# to $XDG_DATA_HOME/zsh/plugins on first launch (v4: cloned code is DATA, not config —
+# it leaves the symlinked $ZDOTDIR tree). Portable: needs git + network on first run
+# only. Load AFTER fzf.zsh + bindings.zsh so the
 # vi-mode init fires the binding hook with the widgets already defined, and AFTER
 # options.zsh (which ran compinit — required by fzf-tab AND carapace).
 #
@@ -27,7 +28,7 @@
 # disabling deferral and the fzf-tab styling. Keep them exactly as written.
 # ──────────────────────────────────────────────────────────────────────────────
 
-ZPLUGINDIR="${ZDOTDIR:-$HOME/.config/zsh}/plugins"
+ZPLUGINDIR="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins"
 
 # ── Pinned plugin revisions ───────────────────────────────────────────────────
 # These plugins are the ONLY third-party CODE that runs in every interactive shell
@@ -41,7 +42,7 @@ ZPLUGINDIR="${ZDOTDIR:-$HOME/.config/zsh}/plugins"
 # A plugin with no entry here falls back to the old floating `--depth=1` clone.
 typeset -gA ZPLUGIN_PINS=(
   romkatv/zsh-defer                          53a26e287fbbe2dcebb3aa1801546c6de32416fa
-  jeffreytse/zsh-vi-mode                      08bd1c04520418faee2b9d1afbc410ee1a59a8f1
+  jeffreytse/zsh-vi-mode                      91cafe4a09b6670cb8e761aa413e5f7b9e00816f
   zsh-users/zsh-history-substring-search      14c8d2e0ffaee98f2df9850b19944f32546fdea5
   zsh-users/zsh-autosuggestions               85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
   zsh-users/zsh-syntax-highlighting           1d85c692615a25fe2293bdd44b34c217d5d2bf04

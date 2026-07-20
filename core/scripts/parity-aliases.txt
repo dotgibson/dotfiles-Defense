@@ -3,7 +3,7 @@
 # The flat manifest behind parity-check.sh's alias coverage. Each row is an `aligned`
 # tool-swap (a classic command re-pointed at a modern tool) that BOTH shells provide —
 # zsh (Core, this repo) and PowerShell (dotfiles-Windows host). parity-check.sh asserts,
-# per row, that the zsh alias is defined in zsh/aliases.zsh AND the pwsh name appears in
+# per row, that the zsh alias is defined in zsh/20-aliases.zsh AND the pwsh name appears in
 # 00-aliases.ps1's `provides:` contract (which tests/LoadContract.Tests.ps1 gates to the
 # real definitions). Adding an aligned tool-swap is ONE row here, not a code change.
 #

@@ -11,7 +11,10 @@
 -- ================================================================================================
 return {
 	"lewis6991/gitsigns.nvim",
-	event = { "BufReadPre", "BufNewFile" },
+	-- `User FilePost` (config/autocmds.lua) — signs appear a frame after the file instead of
+	-- blocking it. gitsigns' setup iterates nvim_list_bufs() and attaches to already-open buffers,
+	-- so the triggering buffer is covered without a replay.
+	event = "User FilePost",
 	opts = {
 		on_attach = function(bufnr)
 			local gs = require("gitsigns")
@@ -35,9 +38,25 @@ return {
 				end
 			end, "Prev git hunk")
 
-			-- Stage / reset (stage_hunk toggles: stages an unstaged hunk, unstages a staged one)
-			map({ "n", "v" }, "<leader>gs", gs.stage_hunk, "Stage / unstage hunk (toggle)")
-			map({ "n", "v" }, "<leader>gr", gs.reset_hunk, "Reset hunk")
+			-- Stage / reset (stage_hunk toggles: stages an unstaged hunk, unstages a staged one).
+			--
+			-- NORMAL AND VISUAL ARE SEPARATE MAPPINGS, DELIBERATELY. `range` is the FIRST parameter
+			-- of both functions (gitsigns.nvim/lua/gitsigns/actions.lua:288 and :376), and a Lua
+			-- keymap rhs is invoked with NO arguments — so passing `gs.stage_hunk` bare in visual
+			-- mode left range = nil and staged the whole hunk under the cursor. The visual map was
+			-- decorative: partial-hunk staging, the only reason to map `v` at all, never happened.
+			-- (Nothing in gitsigns reads the visual selection implicitly; the `:Gitsigns` command
+			-- wrapper populates range from command modifiers, which a keymap does not go through.)
+			-- line(".") and line("v") are the two ends of the selection — this is upstream's own
+			-- documented form. `x` rather than `v` so it does not also fire in select-mode.
+			map("n", "<leader>gs", gs.stage_hunk, "Stage / unstage hunk (toggle)")
+			map("n", "<leader>gr", gs.reset_hunk, "Reset hunk")
+			map("x", "<leader>gs", function()
+				gs.stage_hunk({ vim.fn.line("."), vim.fn.line("v") })
+			end, "Stage / unstage selected lines")
+			map("x", "<leader>gr", function()
+				gs.reset_hunk({ vim.fn.line("."), vim.fn.line("v") })
+			end, "Reset selected lines")
 			map("n", "<leader>gS", gs.stage_buffer, "Stage buffer")
 
 			-- Inspect

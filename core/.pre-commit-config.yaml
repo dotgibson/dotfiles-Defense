@@ -48,7 +48,7 @@ repos:
     hooks:
       - id: markdownlint-cli2
 
-  # Secret scanning — Core ships 1Password helpers (zsh/op.zsh), a git-identity
+  # Secret scanning — Core ships 1Password helpers (zsh/50-op.zsh), a git-identity
   # template, and fans out to 9 PUBLIC repos, so a leaked token here amplifies
   # N-way. gitleaks at author time catches it in the commit diff before it lands;
   # the audit's "secrets" section (scripts/audit-core.sh) is the CI mirror. Pinned

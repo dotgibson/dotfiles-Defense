@@ -11,7 +11,7 @@
 # the shared half lives here, vendored under core/lib/, and each bootstrap.sh shrinks
 # to its genuinely OS-specific part (the package install) plus calls into these helpers.
 #
-# zsh/ui.zsh is the zsh-runtime UX lib; lib/ux.sh is its bash sibling; this is the bash
+# zsh/05-ui.zsh is the zsh-runtime UX lib; lib/ux.sh is its bash sibling; this is the bash
 # PROVISIONING sibling. Like ux.sh it IS vendored into every OS repo (it's in
 # core.manifest) precisely so bootstrap.sh — which runs before any zsh config — can
 # `source core/lib/bootstrap-lib.sh` instead of duplicating it.
@@ -35,7 +35,7 @@
 #   wire_links() {
 #     blib_link_core      "$DOTFILES" "$CONFIG"
 #     blib_link_os_layer  "$DOTFILES" "$CONFIG" fedora
-#     blib_write_zshrc_loader        # default module set; Kali passes its own (see below)
+#     blib_write_zshrc_loader        # param-less (v4): the loader globs the numbered fragments
 #     blib_set_login_shell
 #   }
 # ──────────────────────────────────────────────────────────────────────────────
@@ -203,6 +203,70 @@ blib_selected_note() {
   fi
 }
 
+# ── one-time pre-v4 → v4 layout migration ─────────────────────────────────────
+# blib_migrate_v4 <config> — bring a host installed under the pre-v4 layout up to the
+# numbered-fragment + XDG-state layout. Every step is idempotent (a no-op once done),
+# so it is safe to run on every bootstrap:
+#   • history is now mutable STATE: move ~/.config/zsh/.zsh_history → $XDG_STATE_HOME/zsh/history
+#   • a host-local override is now a numbered fragment: rename local.zsh → 99-local.zsh so
+#     the loader's NN-*.zsh glob picks it up (an un-renamed local.zsh would silently stop loading)
+#   • plugins are now DATA: move ~/.config/zsh/plugins → $XDG_DATA_HOME/zsh/plugins so an
+#     upgraded host keeps its existing checkouts (an offline host would otherwise re-clone
+#     the whole stack — and, with no network, simply lose its plugins).
+#   • Core modules are now NN-name.zsh and the OS layer is 80-os.zsh: drop the stale
+#     unnumbered symlinks (tools.zsh … update.zsh, os.zsh) + their .zwc so they don't linger
+#     as dangling links. blib_link_core/blib_link_os_layer relink the new names right after.
+#   • drop the stale pre-v4 compdump that lived in the config tree (now under $XDG_CACHE_HOME).
+blib_migrate_v4() {
+  local config="$1" m
+  local zdir="$config/zsh"
+  local state="${XDG_STATE_HOME:-$HOME/.local/state}/zsh"
+  local data="${XDG_DATA_HOME:-$HOME/.local/share}/zsh"
+  # history → $XDG_STATE_HOME (only when the old file exists and the new one doesn't yet). If
+  # BOTH exist (a partial migration), the v4 shell reads ONLY $state/history — do NOT clobber
+  # it, and do NOT silently leave the pre-v4 file to rot: warn so its lines are merged, not lost.
+  if [[ -f "$zdir/.zsh_history" && ! -e "$state/history" ]]; then
+    if _blib_dry; then
+      blib_say "would move .zsh_history → $state/history"
+    else
+      mkdir -p "$state" && mv "$zdir/.zsh_history" "$state/history" && blib_ok "history moved to $state/history"
+    fi
+  elif [[ -f "$zdir/.zsh_history" && -e "$state/history" ]]; then
+    blib_warn "both $zdir/.zsh_history (pre-v4) and $state/history exist — the v4 shell reads ONLY the latter; the pre-v4 file is left in place to merge (e.g. cat it into $state/history), not discarded."
+  fi
+  # local.zsh → 99-local.zsh (preserve the host's overrides under the new glob). If BOTH
+  # exist (a partial/manual migration), the v4 loader sources ONLY 99-local.zsh — do NOT
+  # silently orphan the old file; warn so the operator merges it rather than losing overrides.
+  if [[ -e "$zdir/local.zsh" && ! -e "$zdir/99-local.zsh" ]]; then
+    if _blib_dry; then
+      blib_say "would rename local.zsh → 99-local.zsh"
+    else
+      mv "$zdir/local.zsh" "$zdir/99-local.zsh" && blib_ok "local.zsh → 99-local.zsh"
+    fi
+  elif [[ -e "$zdir/local.zsh" && -e "$zdir/99-local.zsh" ]]; then
+    blib_warn "both local.zsh and 99-local.zsh exist in $zdir — the v4 loader sources ONLY 99-local.zsh; merge your overrides from local.zsh into it (left in place, not removed)."
+  fi
+  # plugins dir → $XDG_DATA_HOME (v4 moved ZPLUGINDIR out of the config tree). Move the whole
+  # checkout so an upgraded host keeps its cloned plugins instead of re-cloning them (which an
+  # offline host cannot do). If BOTH exist, leave the pre-v4 one in place and warn.
+  if [[ -d "$zdir/plugins" && ! -e "$data/plugins" ]]; then
+    if _blib_dry; then
+      blib_say "would move plugins/ → $data/plugins"
+    else
+      mkdir -p "$data" && mv "$zdir/plugins" "$data/plugins" && blib_ok "plugins moved to $data/plugins"
+    fi
+  elif [[ -d "$zdir/plugins" && -e "$data/plugins" ]]; then
+    blib_warn "both $zdir/plugins (pre-v4) and $data/plugins exist — v4 uses the latter; remove the stale $zdir/plugins once you have confirmed the move."
+  fi
+  _blib_dry && return 0
+  # stale unnumbered Core module symlinks (+ their .zwc) and the old flat os.zsh.
+  for m in tools ui options history aliases git functions fzf bindings plugins op maint update os; do
+    [[ -L "$zdir/$m.zsh" ]] && rm -f "$zdir/$m.zsh" "$zdir/$m.zsh.zwc"
+  done
+  # stale pre-v4 compdump in the config tree (options.zsh now writes it to $XDG_CACHE_HOME).
+  rm -f "$zdir/.zcompdump" "$zdir/.zcompdump.zwc"
+}
+
 # ── symlink the vendored Core surface ─────────────────────────────────────────
 # blib_link_core <dotfiles> <config> — link everything Core ships, identically on
 # every OS: the zsh modules, tmux base + reset + popup scripts, starship, nvim, mise,
@@ -214,7 +278,10 @@ blib_link_core() {
 
   # ── zsh — the Core module chain (os/<os>.zsh comes from blib_link_os_layer) ──
   if blib_want zsh; then
+    blib_migrate_v4 "$config"   # one-time pre-v4 → v4 layout migration (idempotent)
     blib_say "symlinking Core zsh modules"
+    # v4: Core modules are numbered fragments (core/zsh/NN-name.zsh). The glob still links
+    # them by basename into $config/zsh flat; the loader globs NN-*.zsh there.
     for f in "$dotfiles"/core/zsh/*.zsh; do
       blib_link "$f" "$config/zsh/$(basename "$f")"
     done
@@ -322,7 +389,9 @@ blib_link_os_layer() {
   fi
   if blib_want zsh && [[ -f "$dotfiles/os/$os.zsh" ]]; then
     blib_say "symlinking $os OS-native layer"
-    blib_link "$dotfiles/os/$os.zsh" "$config/zsh/os.zsh"
+    # v4: the OS layer is the numbered fragment 80-os.zsh (band 70-84). The loader globs
+    # it by NN prefix; it always loads (>=70), independent of CORE_PROFILE.
+    blib_link "$dotfiles/os/$os.zsh" "$config/zsh/80-os.zsh"
   fi
 }
 
@@ -338,63 +407,63 @@ blib_wire_summary() {
 }
 
 # ── write the .zshrc entry loader ─────────────────────────────────────────────
-# blib_write_zshrc_loader [module...] — write the managed ~/.zshrc that sets the env
-# the Core modules expect and sources the vendored Core loader in the ONE canonical
-# order. Pass a custom module list to add a role stage (Kali passes its `offensive`
-# stage just before `local`); with no args it writes the standard set. Idempotent:
-# a no-op if a "dotfiles-managed v2" loader is already in place; backs up any prior
-# hand-rolled ~/.zshrc first. The heredocs are single-quoted, so $HOME/$ZDOTDIR/etc.
-# stay LITERAL in the written file (evaluated at shell start, not at write time).
+# blib_write_zshrc_loader [ignored...] — write the managed ~/.zshrc that sets the env
+# the Core fragments expect and sources the vendored v4 loader. v4 needs no module list:
+# the loader globs the numbered fragments (Core NN-*.zsh + the OS 80-os.zsh + any role
+# 85-*.zsh + host 99-local.zsh) itself, so a role repo just symlinks its fragment into
+# the 85 band (no custom-list arg). Any legacy args are accepted and IGNORED so a
+# pre-v4 caller does not break. Idempotent: a no-op if a "dotfiles-managed v4" loader is
+# already in place; backs up any prior ~/.zshrc first (incl. a pre-v4 "v2" one, which no
+# longer matches, so it is upgraded). The heredocs are single-quoted, so $HOME/$ZDOTDIR/
+# etc. stay LITERAL in the written file (evaluated at shell start, not at write time).
 blib_write_zshrc_loader() {
   blib_want zsh || return 0   # the .zshrc loader belongs to the zsh group
   local rc="$HOME/.zshrc"
-  local modules="$*"
-  [[ -n "$modules" ]] || modules="tools ui options history aliases git functions fzf bindings plugins op maint update os local"
 
-  if [[ -f "$rc" ]] && grep -q "dotfiles-managed v2" "$rc" 2>/dev/null; then
+  if [[ -f "$rc" ]] && grep -q "dotfiles-managed v4" "$rc" 2>/dev/null; then
     return 0
   fi
   if _blib_dry; then
-    blib_say "would write managed ~/.zshrc loader (modules: $modules)"
+    blib_say "would write managed ~/.zshrc loader (v4 numbered-fragment glob)"
     return 0
   fi
   blib_say "writing .zshrc loader"
   [[ -f "$rc" ]] && cp "$rc" "$rc.pre-dotfiles.$(date +%s)"
 
-  {
-    cat <<'ZRC_HEAD'
-# dotfiles-managed v2 — do not hand-edit; local tweaks go in ~/.config/zsh/local.zsh
-# This entry file sets the env the Core modules expect (no ~/.zshenv is assumed), then
-# sources the vendored Core loader in the ONE correct order.
+  cat >"$rc" <<'ZRC'
+# dotfiles-managed v4 — do not hand-edit; local tweaks go in ~/.config/zsh/99-local.zsh
+# This entry file sets the env the Core fragments expect (no ~/.zshenv is assumed), then
+# sources the vendored v4 loader, which globs the numbered fragments and sources them in
+# NN order.
 
 # ── XDG + env ─────────────────────────────────────────────────────────────────
 : "${XDG_CONFIG_HOME:=$HOME/.config}"
 : "${XDG_STATE_HOME:=$HOME/.local/state}"
 : "${XDG_CACHE_HOME:=$HOME/.cache}"
+: "${XDG_DATA_HOME:=$HOME/.local/share}"
 export EDITOR=nvim VISUAL=nvim
 export NOTES_DIR="${NOTES_DIR:-$HOME/Notes}"
 
-# ── Core modules (+ any role stage) + os + local, in canonical order ──────────
-# options.zsh owns the nav/glob setopts + compinit + completion zstyles; history.zsh
-# owns HISTFILE/HISTSIZE. This file just declares the load order and sources the
-# vendored Core loader (core/zsh/loader.zsh -> $ZSH_CFG/loader.zsh), which
-# byte-compiles + sources each module.
+# ── the vendored v4 loader ────────────────────────────────────────────────────
+# 10-options.zsh owns the nav/glob setopts + compinit + completion zstyles; 15-history.zsh
+# owns HISTFILE/HISTSIZE. v4 keeps mutable state OUT of the config tree: history →
+# $XDG_STATE_HOME, compdump → $XDG_CACHE_HOME, plugins → $XDG_DATA_HOME. ZSH_CFG is the
+# config dir where the numbered fragment symlinks (and their .zwc wordcode) live.
 : "${ZDOTDIR:=$XDG_CONFIG_HOME/zsh}"
-export ZDOTDIR              # Core modules (history/options) key state off ZDOTDIR;
-ZSH_CFG="$ZDOTDIR"          # align the loader to the SAME dir so state never splits
-ZRC_HEAD
+export ZDOTDIR
+ZSH_CFG="$ZDOTDIR"
 
-    printf '_CORE_MODULES=(%s)\n' "$modules"
+# CORE_PROFILE (minimal | standard | full) gates which Core fragments (bands 00-69) load;
+# OS/role/host fragments (>=70) always load. Leave it to the loader to resolve — set it in
+# the environment (wins), or drop a one-liner in "$ZSH_CFG/profile"; unset ⇒ full (today's
+# behaviour). Do NOT pre-set it here, or the $ZSH_CFG/profile file could never take effect.
 
-    cat <<'ZRC_TAIL'
 if [[ -r "$ZSH_CFG/loader.zsh" ]]; then
   source "$ZSH_CFG/loader.zsh"
 else
   print -u2 -- "zshrc: Core loader not found at $ZSH_CFG/loader.zsh — re-run the dotfiles bootstrap to (re)link Core."
 fi
-unset _CORE_MODULES
-ZRC_TAIL
-  } >"$rc"
+ZRC
 }
 
 # ── privilege escalation ──────────────────────────────────────────────────────

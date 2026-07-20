@@ -16,6 +16,14 @@ return {
 			{
 				"<leader>ha",
 				function()
+					-- Guard the unnamed buffer: harpoon keys its list by file path, so adding a
+					-- scratch/[No Name] buffer stored an empty entry AND toasted a bare
+					-- "Harpoon: added " (expand("%:t") is "" there). Refuse instead of silently
+					-- polluting the list with a slot that can never be navigated back to.
+					if vim.api.nvim_buf_get_name(0) == "" then
+						vim.notify("Harpoon: buffer has no file to add", vim.log.levels.WARN)
+						return
+					end
 					require("harpoon"):list():add()
 					vim.notify("Harpoon: added " .. vim.fn.expand("%:t"), vim.log.levels.INFO)
 				end,
