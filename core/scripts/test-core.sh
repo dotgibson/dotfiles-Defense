@@ -1214,6 +1214,22 @@ _prof_is "unset defaults to full"         "$(_prof_load 'true')"                
 printf 'minimal\n' >"$PROF/profile"                       # persistent one-liner
 _prof_is "\$ZSH_CFG/profile one-liner selects minimal" "$(_prof_load 'true')" "00 05 10 15 20 25 30 80 85 99"
 _prof_is "env CORE_PROFILE wins over the file"         "$(_prof_load 'CORE_PROFILE=standard')" "00 05 10 15 20 25 30 35 40 45 50 80 85 99"
+# v4.0.1: a slightly-malformed $ZSH_CFG/profile one-liner must still resolve by its FIRST
+# FIELD. Before the fix, a trailing space / extra token / surrounding whitespace landed in
+# CORE_PROFILE verbatim, so the `case` matched no arm and silently fell through to `full`.
+# `read -r CORE_PROFILE _` now takes just the first word (and trims surrounding whitespace).
+_MIN="00 05 10 15 20 25 30 80 85 99"
+_STD="00 05 10 15 20 25 30 35 40 45 50 80 85 99"
+printf 'minimal \n' >"$PROF/profile" # trailing space
+_prof_is "profile w/ trailing space still selects minimal" "$(_prof_load 'true')" "$_MIN"
+printf 'standard extra tokens\n' >"$PROF/profile" # stray extra tokens after the profile word
+_prof_is "profile w/ extra tokens still selects standard" "$(_prof_load 'true')" "$_STD"
+printf '  full  \n' >"$PROF/profile" # surrounding whitespace
+_prof_is "profile w/ surrounding whitespace still selects full" "$(_prof_load 'true')" "$_ALL"
+# and the persisted CORE_PROFILE must be the TRIMMED first field, not the raw line.
+_prof_val() { zsh -f -c "ZSH_CFG='$PROF'; $1; source '$PROF/loader.zsh'; print -r -- \"[\$CORE_PROFILE]\"" 2>/dev/null | tail -1; }
+printf 'minimal \n' >"$PROF/profile"
+_prof_is "CORE_PROFILE persists as the trimmed first field" "$(_prof_val 'true')" "[minimal]"
 rm -f "$PROF/profile"
 # same-NN tiebreak: two 85- fragments must load in LEXICAL order (85-r10 before 85-r2), NOT
 # numeric/natural order — the loader's contract, and it must hold even under NUMERIC_GLOB_SORT.
