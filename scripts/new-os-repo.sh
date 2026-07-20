@@ -24,9 +24,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/common.sh
 source "${BASH_SOURCE[0]%/*}/lib/common.sh"
 
-# The canonical Core load order — the SAME list the audit/test/bench use. A scaffolded
-# .zshrc sources exactly this, then os + local.
-CORE_MODULES=(tools ui options history aliases git functions fzf bindings plugins op maint update)
+# v4: the load order is the numbered fragments' NN prefix, globbed by the vendored
+# loader — a scaffolded .zshrc no longer lists module names, it just sources the loader.
 CORE_REMOTE="${CORE_REMOTE:-$(git -C "$HERE" remote get-url origin 2>/dev/null || echo '')}"
 CORE_BRANCH="${CORE_BRANCH:-main}"
 
@@ -137,26 +136,32 @@ w "$TARGET/zsh/zprofile" <<'EOF'
 # config lives in .zshrc. Add OS login-time bits here.
 EOF
 
-w "$TARGET/zsh/zshrc" <<EOF
-# zsh/zshrc → \$ZDOTDIR/.zshrc — interactive shell.
-# Sources the vendored Core modules in the ONE correct (canonical) order, then the
-# OS layer and any machine-local overrides. Order is load-bearing — do not reshuffle.
-ZSH_CFG="\${ZDOTDIR:-\$HOME/.config/zsh}"
-for _m in ${CORE_MODULES[*]} os local; do
-  _f="\$ZSH_CFG/\$_m.zsh"
-  [[ -r "\$_f" ]] || continue
-  # byte-compile on change for a faster next start (mirrors Core's documented loader)
-  [[ -s "\$_f.zwc" && ! "\$_f" -nt "\$_f.zwc" ]] || zcompile -R -- "\$_f" 2>/dev/null
-  source "\$_f"
-done
-unset _m _f
+w "$TARGET/zsh/zshrc" <<'EOF'
+# zsh/zshrc → $ZDOTDIR/.zshrc — interactive shell.
+# Sources the vendored v4 Core loader, which globs the numbered fragments (Core NN-*.zsh
+# + this repo's 80-os.zsh + any 99-local.zsh) and sources them in NN order. v4 keeps
+# mutable state out of the config tree: history→$XDG_STATE_HOME, compdump→$XDG_CACHE_HOME,
+# plugins→$XDG_DATA_HOME.
+: "${XDG_STATE_HOME:=$HOME/.local/state}"
+: "${XDG_CACHE_HOME:=$HOME/.cache}"
+: "${XDG_DATA_HOME:=$HOME/.local/share}"
+ZSH_CFG="${ZDOTDIR:-$HOME/.config/zsh}"
+# CORE_PROFILE (minimal | standard | full) gates Core fragments (bands 00-69). The loader
+# resolves it: environment wins, else a one-liner in "$ZSH_CFG/profile", else full. Do not
+# pre-set it here, or that file could never take effect.
+if [[ -r "$ZSH_CFG/loader.zsh" ]]; then
+  source "$ZSH_CFG/loader.zsh"
+else
+  print -u2 -- "zshrc: Core loader not found — re-run bootstrap.sh to (re)link Core."
+fi
 EOF
 
 # ── OS layer stub ─────────────────────────────────────────────────────────────
 w "$TARGET/os/$os_lc.zsh" <<EOF
-# os/$os_lc.zsh — the $OS interactive layer (symlinked to \$ZDOTDIR/os.zsh by bootstrap).
+# os/$os_lc.zsh — the $OS interactive layer (symlinked to \$ZDOTDIR/80-os.zsh by bootstrap;
+# band 80 = OS-native, so the loader always sources it regardless of CORE_PROFILE).
 # Put OS-specific aliases, PATH, and package-manager bits HERE — never in Core.
-# It may use any Core helper (tools.zsh's _cache_eval, ui.zsh's _core_* primitives).
+# It may use any Core helper (00-tools.zsh's _cache_eval, 05-ui.zsh's _core_* primitives).
 EOF
 
 # ── starter bootstrap ─────────────────────────────────────────────────────────
@@ -182,7 +187,7 @@ link() { # link <src> <dest> — back up a real file once, then symlink
 
 # Core zsh modules + entry layer
 for f in "\$REPO"/core/zsh/*.zsh; do link "\$f" "\$CFG/zsh/\$(basename "\$f")"; done
-link "\$REPO/os/$os_lc.zsh" "\$CFG/zsh/os.zsh"
+link "\$REPO/os/$os_lc.zsh" "\$CFG/zsh/80-os.zsh"
 link "\$REPO/zsh/zshenv"   "\$HOME/.zshenv"
 link "\$REPO/zsh/zprofile" "\$CFG/zsh/.zprofile"
 link "\$REPO/zsh/zshrc"    "\$CFG/zsh/.zshrc"
@@ -199,7 +204,7 @@ EOF
 
 w "$TARGET/.gitignore" <<'EOF'
 # machine-local / never tracked
-zsh/local.zsh
+zsh/99-local.zsh
 .config/git/local.gitconfig
 *.zwc
 EOF

@@ -25,7 +25,7 @@ Run these cross-checks (skip any out of the requested scope):
    disk. Flag files present but undocumented, documented but absent, or in the
    wrong layer.
 2. **`aliases.md` ↔ its alias sources, in every repo that ships one.** Core's
-   `aliases.md` against `zsh/aliases.zsh` + `zsh/git.zsh`; **and each role repo's
+   `aliases.md` against `zsh/20-aliases.zsh` + `zsh/25-git.zsh`; **and each role repo's
    `aliases.md` against its own role source** — `dotfiles-Kali/aliases.md` ↔
    `offensive/offensive.zsh`, `dotfiles-Defense/aliases.md` ↔ `defense/defense.zsh`.
    Every documented alias/function should exist in the source, and notable source

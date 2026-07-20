@@ -21,7 +21,14 @@ return {
 		notification = {
 			-- keep mini.notify as THE notifier; fidget only renders LSP progress.
 			override_vim_notify = false,
-			window = { winblend = 0 }, -- match your transparent floats
+			-- winblend 100 is fidget's DEFAULT and is the fully see-through setting; its own docs
+			-- (fidget.nvim/lua/fidget/notification/window.lua:33-49) call anything under 100 the
+			-- blend-with-whatever-is-underneath case and "usually not desirable". The old comment
+			-- here ("match your transparent floats") had that backwards — 0 is the OPAQUE end.
+			-- Practically invisible either way under tokyonight (normal_hl = "Comment" carries no
+			-- bg), so keep the default rather than move away from it for a stated reason that was
+			-- the reverse of the truth.
+			window = { winblend = 100 },
 		},
 	},
 }

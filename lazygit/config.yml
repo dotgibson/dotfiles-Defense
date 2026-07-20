@@ -1,8 +1,8 @@
 # core/lazygit/config.yml
 # ──────────────────────────────────────────────────────────────────────────────
 # lazygit theme — tokyonight-storm, kept in sync with starship.toml, the tmux bar,
-# and zsh/fzf.zsh so the whole stack reads as one palette. lazygit is launched via
-# the `lg` alias (zsh/aliases.zsh) and the `prefix + g` tmux popup; both pick this
+# and zsh/35-fzf.zsh so the whole stack reads as one palette. lazygit is launched via
+# the `lg` alias (zsh/20-aliases.zsh) and the `prefix + g` tmux popup; both pick this
 # up once an OS repo symlinks it to ~/.config/lazygit/config.yml.
 # nerdFontsVersion "3" assumes a Nerd Font — already required by starship's icons.
 # ──────────────────────────────────────────────────────────────────────────────

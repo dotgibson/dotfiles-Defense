@@ -6,9 +6,15 @@
 --         eyeball the whole surface area and rediscover the features you're under-using.
 -- WHY HAND-CURATED : the mappings live across ~30 lazy specs, most bound lazily and not registered
 --         until their plugin loads — so scraping `nvim_get_keymap()` at open time would show a
---         half-empty, load-order-dependent list. This table is the intentional, always-complete
---         picture; when you add a binding to a plugin spec, add its row here too (they sit next to
---         each other in review). Descriptions mirror the `desc =` on the real keymaps.
+--         half-empty, load-order-dependent list. This table is the intentional picture; when you
+--         add a binding to a plugin spec, add its row here too (they sit next to each other in
+--         review). Descriptions mirror the `desc =` on the real keymaps.
+-- SCOPE  : "every curated binding" means every GLOBAL, user-facing one. Deliberately excluded, so
+--         the panel stays a map rather than a dump: keys that only exist inside a transient UI
+--         (the rename float, oil buffers, alpha's dashboard buttons, this panel's own q/<Esc>) and
+--         plain Vim motions that aren't config-specific. An audit found the panel had drifted —
+--         mini.move's <A-hjkl> and the entire blink.cmp completion set were missing — so if you
+--         are adding a card, prefer over-inclusion to a silent gap.
 -- ENTRY : `:Cheatsheet` (alias `:Cheat`) and `<leader>?` (see config/keymaps.lua). `q`/`<Esc>`
 --         close; the panel is a throwaway scratch buffer, nothing to save.
 -- DEPS  : none — pure Neovim API, so it survives on a bare box the same as the rest of Core.
@@ -25,7 +31,7 @@ M.sections = {
 		"Essentials",
 		{ "<leader>?", "Open this cheatsheet" },
 		{ "<leader>wk", "Buffer-local keys" },
-		{ "<leader>rc", "Edit init.lua" },
+		{ "<leader>rc", "Edit config" },
 		{ "<Esc>", "Clear search highlight" },
 		{ "<leader>pa", "Copy full file path" },
 		{ "<leader>p", "Paste over, keep yank (x)" },
@@ -64,6 +70,7 @@ M.sections = {
 	{
 		"Buffers",
 		{ "]b / [b", "Next / previous" },
+		{ "<leader>bn / bp", "Next / previous (leader alias)" },
 		{ "<leader>bj", "Pick (jump to letter)" },
 		{ "<leader>bd", "Delete, keep layout" },
 		{ "<leader>bP", "Pin / unpin" },
@@ -94,6 +101,7 @@ M.sections = {
 		{ "<leader>fh", "Help tags" },
 		{ "<leader>fk", "Keymaps" },
 		{ "<leader>ft", "Todo comments" },
+		{ "]t / [t", "Next / prev todo comment" },
 		{ "<leader>fx / fX", "Diagnostics doc / workspace" },
 		{ "<leader>fs / fw", "Symbols doc / workspace" },
 	},
@@ -111,9 +119,26 @@ M.sections = {
 		{ "<C-s>", "Signature help (i)" },
 		{ "<leader>oi", "Organize imports" },
 		{ "<leader>cf", "Format buffer / range" },
+		{ "<leader>cL", "Run CodeLens" },
 		{ "<leader>cs", "Symbols (Trouble)" },
+		{ "<leader>cl", "LSP refs/defs (Trouble)" },
 		{ "<leader>cn", "Annotation (Neogen)" },
 		{ "<leader>;", "Breadcrumb pick (dropbar)" },
+	},
+	{
+		"Debug (nvim-dap)",
+		{ "<leader>db", "Toggle breakpoint" },
+		{ "<leader>dB", "Conditional breakpoint" },
+		{ "<leader>dc", "Continue / start session" },
+		{ "<leader>di / do", "Step into / over" },
+		{ "<leader>dO", "Step out" },
+		{ "<leader>ds / df", "Scopes / frames (float)" },
+		{ "<leader>dw", "Hover value (n/v)" },
+		{ "<leader>dr", "Toggle REPL" },
+		{ "<leader>dl", "Run last configuration" },
+		{ "<leader>dt", "Terminate session" },
+		{ "<leader>dm", "Debug test method (python)" },
+		{ "<leader>dR", "Rust debuggables (start)" },
 	},
 	{
 		"Trouble & Lists",
@@ -156,9 +181,31 @@ M.sections = {
 		{ "a/i + f c o", "func / class / block (TS)" },
 		{ "gsa / gsd / gsr", "Surround add / del / replace" },
 		{ "gsf / gsF", "Find surround right / left" },
+		{ "gsh", "Highlight surround" },
+		{ "gsn", "Update surround search range" },
 		{ "]f / [f", "Next / prev function" },
 		{ "]a / [a", "Next / prev argument" },
 		{ "<leader>j", "Split / join block (treesj)" },
+	},
+	{
+		-- mini.move (plugins/mini-nvim.lua). Normal mode moves the current LINE; visual mode moves
+		-- the SELECTION and keeps it selected. h/l also re-indent, which is why they earn a row.
+		"Move lines (mini.move)",
+		{ "<A-j> / <A-k>", "Move line/selection down / up" },
+		{ "<A-h> / <A-l>", "Move line/selection left / right" },
+	},
+	{
+		-- blink.cmp (plugins/blink-cmp.lua). preset = "none", so every key here is set explicitly
+		-- in that spec — this card and that keymap block must be edited together.
+		"Completion (blink.cmp)",
+		{ "<C-Space>", "Show menu / toggle docs" },
+		{ "<C-k> / <C-j>", "Select previous / next item" },
+		{ "<CR>", "Accept selected item" },
+		{ "<C-e>", "Hide menu" },
+		{ "<C-b> / <C-f>", "Scroll docs up / down" },
+		{ "<Tab> / <S-Tab>", "Snippet: next / prev placeholder" },
+		-- NOT <C-s>: that is signature help, mapped in utils/lsp.lua (LSP & Code card above), not by
+		-- blink. blink's signature window is automatic (signature.enabled) with no key of its own.
 	},
 	{
 		"Sessions",
@@ -168,7 +215,7 @@ M.sections = {
 	},
 	{
 		"UI & Toggles",
-		{ "<leader>e", "File tree (nvim-tree)" },
+		{ "<leader>e", "File tree (closes Zen if active)" },
 		{ "-", "Parent dir (oil)" },
 		{ "<leader>z", "Zen mode" },
 		{ "<leader>U", "Undotree" },

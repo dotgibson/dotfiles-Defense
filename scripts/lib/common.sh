@@ -23,7 +23,7 @@ _CORE_COMMON_SH=1
 # Palette. Coloured ONLY when stdout is a real terminal and NO_COLOR is unset
 # (https://no-color.org) — so `make audit > log`, `| less`, or a captured CI run
 # gets clean text instead of raw \e[..m escapes littering the file. This mirrors
-# zsh/ui.zsh, which gates its runtime helpers the same way: ONE colour rule across
+# zsh/05-ui.zsh, which gates its runtime helpers the same way: ONE colour rule across
 # the dev tooling and the shell layer. (fail() writes to stderr, but keying the whole
 # palette on stdout keeps it simple and means a redirect strips every escape at once;
 # a plain `2>&1 | tee log` therefore stays readable too.) Codes live here, once.

@@ -15,7 +15,7 @@ Target for this run: **$ARGUMENTS** (empty = all open automation PRs).
 ## What the bots produce
 
 - **`freshness.yml`** (weekly) — rolls the pinned zsh-plugin SHAs in
-  `zsh/plugins.zsh` and refreshes `nvim/lazy-lock.json`, opening PRs on
+  `zsh/45-plugins.zsh` and refreshes `nvim/lazy-lock.json`, opening PRs on
   `automation/freshness-zsh-plugins` and `automation/freshness-nvim-plugins`.
 - **`dependabot.yml`** (weekly) — bumps GitHub Actions in `.github/workflows/`.
 

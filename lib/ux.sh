@@ -4,7 +4,7 @@
 # ONE definition of the colour palette, the UTF-8→ASCII glyph fallback, and the
 # spinner for the bash layer — so the dev-tooling gates (scripts/lib/common.sh) and
 # each OS repo's pre-shell installer (bootstrap.sh) stop hand-rolling their own copies
-# that drift. zsh/ui.zsh is the zsh-runtime counterpart of this file; this is its bash
+# that drift. zsh/05-ui.zsh is the zsh-runtime counterpart of this file; this is its bash
 # sibling, and unlike common.sh it IS vendored into every OS repo (it's in core.manifest)
 # precisely so bootstrap.sh — which runs before any zsh config and so cannot source
 # ui.zsh — can `source core/lib/ux.sh` instead of duplicating ~80 lines.
@@ -28,7 +28,7 @@ _CORE_UX_SH=1
 # ── palette ───────────────────────────────────────────────────────────────────
 # Colour ON only when stdout is a TTY (or CLICOLOR_FORCE) and NO_COLOR is unset
 # (https://no-color.org), gated by UX_COLOR (auto|always|never) so a `--color WHEN` flag
-# can re-evaluate it. Identical rule to scripts/lib/common.sh and zsh/ui.zsh — now in ONE
+# can re-evaluate it. Identical rule to scripts/lib/common.sh and zsh/05-ui.zsh — now in ONE
 # place. Re-callable: change UX_COLOR / the env, call ux_palette again.
 : "${UX_COLOR:=auto}"
 ux_palette() {
@@ -43,7 +43,7 @@ ux_palette() {
     UX_GRN=$'\e[32m' UX_YEL=$'\e[33m' UX_RED=$'\e[31m' UX_BLU=$'\e[34m' UX_DIM=$'\e[2;37m' UX_RST=$'\e[0m'
     # Branded accent + muted grey, the ONE place $COLORTERM is interpreted for the bash
     # layer: a truecolor token when the terminal advertises 24-bit, else a 256-colour
-    # approximation — the same "degrade, don't assume" tiering zsh/ui.zsh applies, now
+    # approximation — the same "degrade, don't assume" tiering zsh/05-ui.zsh applies, now
     # mirrored here so bootstrap.sh's accent (the first thing seen on a new box) matches
     # the steady-state prompt instead of flat 16-colour (U5).
     case "${COLORTERM:-}" in
@@ -59,7 +59,7 @@ ux_palette
 
 # ── glyphs ────────────────────────────────────────────────────────────────────
 # Degrade to ASCII when the locale is NOT UTF-8 (a C/POSIX rescue shell renders the
-# braille spinner + ✓/✗ marks as mojibake otherwise) — the same rule as zsh/ui.zsh and
+# braille spinner + ✓/✗ marks as mojibake otherwise) — the same rule as zsh/05-ui.zsh and
 # bootstrap.sh. bash 3.2-safe lowercasing via tr (no ${x,,}). UX_SPIN_FRAMES is a STRING
 # of single-width frames, indexed per-char by ux_spin.
 ux_glyphs() {
@@ -78,7 +78,7 @@ ux_have() { command -v "$1" >/dev/null 2>&1; }
 # ux_wrap <width> <text...> — echo TEXT hard-wrapped at WORD boundaries to WIDTH
 # columns, one wrapped line per output line. Pure bash (no fold(1) — runs on a bare
 # box / busybox), bash 3.2-safe. WIDTH <= 0 means "width unknown → don't wrap" (emit
-# one line), the same rule zsh/ui.zsh's _core_hint uses for a non-TTY COLUMNS of 0.
+# one line), the same rule zsh/05-ui.zsh's _core_hint uses for a non-TTY COLUMNS of 0.
 # noglob is toggled around the deliberate word-split so a `*` in the text can't expand.
 ux_wrap() {
   local width="$1"
@@ -110,7 +110,7 @@ ux_wrap() {
 
 # ux_hint <text...> — dim follow-up "→" line on stderr (the fix-it after a skip/warn),
 # word-wrapped to $COLUMNS so a long hint doesn't hard-wrap mid-word in a narrow tmux
-# split. The bash sibling of zsh/ui.zsh's _core_hint; the indent aligns under the text.
+# split. The bash sibling of zsh/05-ui.zsh's _core_hint; the indent aligns under the text.
 ux_hint() {
   local prefix='→ ' indent='  ' width="${COLUMNS:-0}"
   ((width > 0 && width < 24)) && width=24 # floor: never collapse into useless slivers
@@ -126,7 +126,7 @@ ux_hint() {
 }
 
 # ux_errbox <headline> [body...] — multi-line error BLOCK on stderr: a red headline,
-# then dim indented body lines (why / fix / docs). The bash sibling of zsh/ui.zsh's
+# then dim indented body lines (why / fix / docs). The bash sibling of zsh/05-ui.zsh's
 # _core_errbox, reserved for the few highest-friction failures (no brew, core/ missing)
 # where the extra layout earns its space; single-line errors stay on a plain printf (U12).
 ux_errbox() {
@@ -143,7 +143,7 @@ ux_errbox() {
 # stays quiet). On a non-TTY (CI, piped) it runs the command with output passing through
 # and emits a scannable done/failed marker, so logs read as discrete steps. A Ctrl-C
 # forwards SIGINT to the child, reaps it, restores the cursor, and returns 130 — the
-# caller's own trap (e.g. bootstrap's on_interrupt) then takes over. Mirrors zsh/ui.zsh's
+# caller's own trap (e.g. bootstrap's on_interrupt) then takes over. Mirrors zsh/05-ui.zsh's
 # _core_spin so the bash + zsh layers behave identically.
 ux_spin() {
   local label="$1"

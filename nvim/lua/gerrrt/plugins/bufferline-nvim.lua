@@ -147,7 +147,12 @@ return {
 					separator = true,
 				},
 			},
-			hover = { enabled = true, delay = 150, reveal = { "close" } },
+			-- No `reveal = { "close" }`: it is unreachable here. get_close_icon()
+			-- (bufferline.nvim/lua/bufferline/ui.lua:263-270) consults hover.reveal and then
+			-- unconditionally bails on `if not options.show_buffer_close_icons then return end` —
+			-- and that is false above, so no close icon is ever drawn to reveal. hover stays enabled
+			-- because bufferline still uses it for hover HIGHLIGHTING.
+			hover = { enabled = true, delay = 150 },
 		},
 	},
 	config = function(_, opts)

@@ -8,11 +8,8 @@
 --         <script> TS/JS; tailwindcss/emmet handle classes/abbreviations — no overlap.
 -- INSTALL: mason — package name "svelte-language-server" (added to ensure_installed in conform.lua).
 -- ================================================================================================
-return function(capabilities)
-	vim.lsp.config("svelte", {
-		capabilities = capabilities,
-		cmd = { "svelteserver", "--stdio" },
-		filetypes = { "svelte" },
-		root_markers = { "svelte.config.js", "svelte.config.mjs", "package.json", ".git" },
-	})
-end
+return {
+	cmd = { "svelteserver", "--stdio" },
+	filetypes = { "svelte" },
+	root_markers = { "svelte.config.js", "svelte.config.mjs", "package.json", ".git" },
+}

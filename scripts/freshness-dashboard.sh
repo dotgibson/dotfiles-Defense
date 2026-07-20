@@ -90,7 +90,7 @@ printf '**Fleet health at a glance** — the weekly freshness signals in one boa
 printf '| Signal | Status |\n| --- | --- |\n'
 printf '| Vendoring drift — every OS repo on the latest Core tag | %s |\n' "$(badge "$drift_st")"
 printf "| Vendored \`core/\` integrity — no hand-edits | %s |\n" "$(badge "$integ_st")"
-printf "| zsh plugin pins (\`zsh/plugins.zsh\`) | %s |\n" "$(badge "$zsh_st")"
+printf "| zsh plugin pins (\`zsh/45-plugins.zsh\`) | %s |\n" "$(badge "$zsh_st")"
 printf "| nvim plugin pins (\`nvim/lazy-lock.json\`) | %s |\n" "$(badge "$nvim_st")"
 
 detail() { # <summary-text> <output-file>

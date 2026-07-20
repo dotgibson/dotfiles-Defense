@@ -18,7 +18,7 @@ A clear description of the bug.
 
 ## Which Core file(s)
 
-e.g. `zsh/tools.zsh`, `scripts/audit-core.sh`, `nvim/lua/gerrrt/...`
+e.g. `zsh/00-tools.zsh`, `scripts/audit-core.sh`, `nvim/lua/gerrrt/...`
 
 ## How to reproduce
 

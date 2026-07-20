@@ -5,7 +5,7 @@
 # usable by both: git keeps doing everything it does (Core's git.zsh aliases, lazygit,
 # the gsync/sync tooling), and jj is just a nicer front-end for the operator who wants
 # one. Nothing in Core depends on jj being installed; the HAVE_JJ-guarded aliases in
-# zsh/aliases.zsh and this file simply do nothing on a box without jj.
+# zsh/20-aliases.zsh and this file simply do nothing on a box without jj.
 #
 # Identity is intentionally NOT hardcoded here — Core is identical on every machine, so a
 # personal name/email can't live in it. NOTE: jj does NOT inherit git's user.name /

@@ -53,7 +53,7 @@ return {
 			-- utils/lsp.lua disables bashls's LSP formatting so the "fallback" path can't shfmt it.)
 		},
 	},
-	config = function(_, opts)
-		require("conform").setup(opts)
-	end,
+	-- No `config` function: `config = function(_, opts) require("conform").setup(opts) end` is
+	-- byte-for-byte what lazy.nvim does by default for a spec that has `opts` and a main module,
+	-- so writing it out only invited drift.
 }

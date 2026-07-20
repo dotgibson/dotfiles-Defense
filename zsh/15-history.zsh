@@ -11,7 +11,10 @@
 
 [[ $- == *i* ]] || return 0
 
-HISTFILE="${ZDOTDIR:-$HOME/.config/zsh}/.zsh_history"
+# v4: history is mutable STATE, not config — it lives under $XDG_STATE_HOME, not in the
+# symlinked $ZDOTDIR config tree. (Pre-v4 hosts had ~/.config/zsh/.zsh_history; the
+# bootstrap relocates it here on re-bootstrap so no history is lost.)
+HISTFILE="${XDG_STATE_HOME:-$HOME/.local/state}/zsh/history"
 HISTSIZE=200000 # lines kept in memory
 SAVEHIST=200000 # lines written to $HISTFILE
 [[ -d ${HISTFILE:h} ]] || mkdir -p "${HISTFILE:h}"

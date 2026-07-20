@@ -111,20 +111,24 @@ Fix Core here, then fan it out.
 
 ## Load order is load-bearing
 
-The zsh module chain is sourced in one canonical order, declared in
-`core.manifest` and driven by `zsh/loader.zsh`:
+The zsh fragment chain is sourced in one canonical order, declared in
+`core.manifest` and driven by `zsh/loader.zsh` — which globs the numbered
+`NN-*.zsh` fragments in `$ZSH_CFG` and sources them by their `NN` prefix:
 
 ```text
-tools → ui → options → history → aliases → git → functions → fzf
-      → bindings → plugins → op → maint → update → os → local
+00-tools → 05-ui → 10-options → 15-history → 20-aliases → 25-git → 30-functions
+      → 35-fzf → 40-bindings → 45-plugins → 50-op → 55-maint → 60-update
+      → 80-os → 85-<role> → 99-local
 ```
 
-The order encodes real dependencies: `tools` initializes atuin and fzf defines
-its widgets before `plugins` loads zsh-vi-mode (which fires the binding hook);
-`options` runs `compinit` before `plugins` (fzf-tab and carapace need it); `git`
-loads after `aliases` so its comprehensive git set is the single source of truth.
-The chain ends with `os` then `local`, so a machine can override Core last
-without editing it. Do not reorder casually.
+The order encodes real dependencies: `00-tools` initializes atuin and `35-fzf`
+defines its widgets before `45-plugins` loads zsh-vi-mode (which fires the binding
+hook); `10-options` runs `compinit` before `45-plugins` (fzf-tab and carapace need
+it); `25-git` loads after `20-aliases` so its comprehensive git set is the single
+source of truth. The chain ends with the OS layer (`80-os`), any role stage
+(`85-*`), then `99-local`, so a machine can override Core last without editing it.
+Bands: Core `00`–`69`, OS-native `70`–`84`, role `85`–`94`, host `95`–`99`. Do not
+reorder casually.
 
 ## The one gate
 

@@ -1,7 +1,7 @@
 name: freshness
 
 # Supply-chain freshness bot for Core's RUNTIME pins. The zsh-plugin SHAs
-# (zsh/plugins.zsh) and the Neovim lockfile (nvim/lazy-lock.json) are pinned so nothing
+# (zsh/45-plugins.zsh) and the Neovim lockfile (nvim/lazy-lock.json) are pinned so nothing
 # floats silently into the 9 OS repos — but a pin, once set, also rots: a
 # pinned-and-forgotten plugin can sit on a known-vuln commit indefinitely across every
 # machine. dependabot only watches the github-actions ecosystem (see dependabot.yml), so
@@ -93,21 +93,21 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/update-plugins.sh        # apply mode: rewrites the pinned SHAs in place
-          if git diff --quiet -- zsh/plugins.zsh; then
+          if git diff --quiet -- zsh/45-plugins.zsh; then
             echo "✅ zsh plugin pins already current — no PR needed" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git switch -C "$BRANCH"
-          git add zsh/plugins.zsh
+          git add zsh/45-plugins.zsh
           git commit -m "chore(deps): roll zsh plugin pins forward (freshness bot)"
           git push -f -u origin "$BRANCH"
           # Idempotent: update the existing PR if one is already open for this branch.
           if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
             gh pr create --head "$BRANCH" --base "$DEFAULT_BRANCH" \
               --title "chore(deps): roll zsh plugin pins forward" \
-              --body "Automated by the freshness bot. Pinned zsh-plugin SHAs in \`zsh/plugins.zsh\` were behind upstream; this rolls them to current HEAD. Review the diff, let CI run, then merge."
+              --body "Automated by the freshness bot. Pinned zsh-plugin SHAs in \`zsh/45-plugins.zsh\` were behind upstream; this rolls them to current HEAD. Review the diff, let CI run, then merge."
           fi
           echo "📦 opened/updated PR on \`$BRANCH\`" >> "$GITHUB_STEP_SUMMARY"
 

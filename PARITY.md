@@ -34,7 +34,7 @@ one of:
 The alias surface is broadly `aligned`: `ll`/`la`, `cat`→bat, `grep`→rg, `http`→xh,
 `dns`→doggo, `du`→dust, `df`→duf, `top`/`htop`→btop, `watch`→viddy, `fm`/`y`→yazi,
 `md`→glow (pwsh `gmd`, since `md` is a builtin), `ping`→gping, `lg`→lazygit. The git
-shorthands are the **full curated OMZ-style set** from `zsh/git.zsh` on both shells —
+shorthands are the **full curated OMZ-style set** from `zsh/25-git.zsh` on both shells —
 `g`, the `gst`/`gss` status family, `ga`/`gaa`/`gap`, the `gc`/`gcm`/`gca`/`gcam`/`gc!`
 commit family, `gco`/`gcb`/`gsw` checkout/switch, `gd`/`gds`/`gdw`, the `glog` graph
 logs, `gf`/`gl`/`gp`/`gpu`/`gpf` (force-with-lease), the `gsta*` stash and `grb*`
@@ -46,7 +46,7 @@ case-insensitive, so it can't coexist with `gbd`). Per-shell extras are noted as
 The **aligned tool-swap aliases** (the classic-command → modern-tool re-points) are
 pinned as a flat manifest — [`scripts/parity-aliases.txt`](scripts/parity-aliases.txt)
 — so `parity-check.sh` enforces each one **bidirectionally**: the zsh alias must be
-defined in `zsh/aliases.zsh` **and** the pwsh name must be in `00-aliases.ps1`'s
+defined in `zsh/20-aliases.zsh` **and** the pwsh name must be in `00-aliases.ps1`'s
 `provides:` contract. Where the two shells must use different names (e.g. `ps`→procs is
 `pss` on pwsh, since `ps` is a core cmdlet) the manifest records the exception, so a
 rename on one side without the other is caught. Adding an aligned tool-swap is one

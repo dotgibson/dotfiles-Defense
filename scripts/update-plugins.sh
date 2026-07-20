@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # scripts/update-plugins.sh
 # ──────────────────────────────────────────────────────────────────────────────
-# Deliberately roll the pinned zsh-plugin revisions in zsh/plugins.zsh forward to
+# Deliberately roll the pinned zsh-plugin revisions in zsh/45-plugins.zsh forward to
 # each upstream's current default-branch HEAD. This is the runtime-plugin mirror of
 # `make update-hooks` (pre-commit autoupdate) and the manual SHELLCHECK_VERSION /
 # LUACHECK_VERSION bumps in ci.yml: pins exist so nothing floats silently into the
 # 9 OS repos, and THIS is the one place they move — under review, not on their own.
 #
-# Single source of truth: the ZPLUGIN_PINS associative array in zsh/plugins.zsh.
+# Single source of truth: the ZPLUGIN_PINS associative array in zsh/45-plugins.zsh.
 # We parse the `owner/name  <40-hex sha>` rows straight out of it, `git ls-remote`
 # each for HEAD, and rewrite only the SHA in place — so the plugin LIST never has
 # to be repeated here and can never drift from what actually loads.
@@ -26,7 +26,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$HERE" || exit 1
-PLUGINS_FILE="zsh/plugins.zsh"
+PLUGINS_FILE="zsh/45-plugins.zsh"
 
 # _verify_pin <slug> <sha> — prove a rolled pin is actually USABLE before it can be
 # committed + fanned out: shallow-fetch EXACTLY that commit (the same way plugins.zsh
@@ -72,7 +72,7 @@ case "${1:-}" in
 "") ;;
 -h | --help)
   cat <<'EOF'
-update-plugins.sh — roll the pinned zsh-plugin SHAs in zsh/plugins.zsh to upstream HEAD.
+update-plugins.sh — roll the pinned zsh-plugin SHAs in zsh/45-plugins.zsh to upstream HEAD.
 
   ./scripts/update-plugins.sh            bump every pin to upstream HEAD, in place
   ./scripts/update-plugins.sh --dry-run  show what WOULD change, touch nothing
