@@ -13,7 +13,7 @@
 # (default ~/cases), which the repo .gitignore also blocks as a backstop.
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Interactive shells only — scripts get raw POSIX (mirrors Core's tools.zsh).
+# Interactive shells only — scripts get raw POSIX (mirrors Core's 00-tools.zsh).
 [[ $- == *i* ]] || return 0
 
 _have() { command -v "$1" >/dev/null 2>&1; }
