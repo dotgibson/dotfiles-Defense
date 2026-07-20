@@ -17,8 +17,9 @@
 # fragments set options (setopt), define aliases, and run compinit; those must persist
 # into the interactive shell. A function body with `emulate -L`/LOCAL_OPTIONS (as most
 # Core helpers use) would REVERT every option change on return — silently breaking the
-# shell. So the loop runs inline; the only state it leaves behind (the `_cl_*` scratch
-# vars) is unset at the end.
+# shell. So the loop runs inline; its `_cl_*` scratch vars are unset at the end. It does
+# deliberately leave `CORE_PROFILE` set in the shell (resolved just below), so subshells
+# and the user can read back the active profile — that persistence is intentional, not a leak.
 #
 # CORE_PROFILE gates by BAND NUMBER, not authorship (the loader has no owner metadata —
 # everything is flattened into one $ZSH_CFG). Fragments numbered 00-69 are the "Core band"
@@ -51,9 +52,12 @@
 
 # Profile resolution — THIS file is the single point of truth (the managed .zshrc no
 # longer pre-sets it): an explicit CORE_PROFILE in the environment wins; else the first
-# line of a persistent $ZSH_CFG/profile one-liner; else the `full` default below.
+# WORD of a persistent $ZSH_CFG/profile one-liner; else the `full` default below.
+# Read the first field only (`_` soaks up the rest): a stray trailing token or trailing
+# whitespace in the file then can't smuggle itself into CORE_PROFILE and make the `case`
+# below miss every arm and fall through to `full`.
 if [[ -z ${CORE_PROFILE:-} && -r "$ZSH_CFG/profile" ]]; then
-  read -r CORE_PROFILE < "$ZSH_CFG/profile"
+  read -r CORE_PROFILE _ < "$ZSH_CFG/profile"
 fi
 
 : "${CORE_PROFILE:=full}"

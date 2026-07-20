@@ -13,6 +13,19 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.0.1] - 2026-07-20
+
+### Fixed
+
+- **`loader.zsh` profile resolution reads only the first field of `$ZSH_CFG/profile`.**
+  A trailing space or stray extra token in the profile one-liner previously landed in
+  `CORE_PROFILE` verbatim, so the `case` matched no arm and silently fell through to
+  `full`. `read -r CORE_PROFILE _ < …` now takes just the first word (and trims
+  surrounding whitespace), so a slightly-malformed one-liner still resolves to the
+  intended profile. Also clarified the loader header comment: `CORE_PROFILE` is
+  deliberately left in scope after sourcing (so subshells and the user can read the
+  active profile), not only the `_cl_*` scratch vars.
+
 ## [v4.0.0] - 2026-07-20
 
 ### Added
