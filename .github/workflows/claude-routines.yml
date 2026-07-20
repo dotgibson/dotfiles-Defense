@@ -82,7 +82,7 @@ jobs:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       ISSUE_TITLE: "detection-review: weekly Sigma corpus review"
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Clone Kali (read-only, shallow) as the ../dotfiles-Kali SIBLING that /detection-review
       # expects — this is what lets its red↔blue MIRROR dimension run: comparing this corpus
       # against Kali's PURPLE-TEAM.md + offensive/companion red entries. Best-effort: a clone
@@ -136,7 +136,7 @@ jobs:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       ISSUE_TITLE: "coverage-gap: weekly ATT&CK coverage holes"
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Clone Kali (read-only, shallow) as the ../dotfiles-Kali SIBLING so the red↔blue
       # hole dimension can run (attacks with no detection here). Best-effort — a clone
       # failure just skips that one dimension. Kali is public, so no token is needed.
