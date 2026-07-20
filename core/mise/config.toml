@@ -46,7 +46,7 @@ lockfile = true
 # ignored with a WARN on every `cd`. (`paranoid` was just mise's default of false anyway.)
 # To trust extra config dirs, set the ENV var in your machine-local shell config — mise
 # reads it globally and it raises no warning:
-#   ~/.config/zsh/local.zsh →  export MISE_TRUSTED_CONFIG_PATHS="$HOME/code"
+#   ~/.config/zsh/99-local.zsh →  export MISE_TRUSTED_CONFIG_PATHS="$HOME/code"
 # (or run `mise trust` inside a given project).
 
 [alias]

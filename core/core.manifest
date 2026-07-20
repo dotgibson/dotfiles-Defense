@@ -9,30 +9,34 @@
 #    commit, this records the SemVer. ──────────────────────────────────────────
 core.version
 # ── zsh ───────────────────────────────────────────────────────────────────────
-# Load order (sourced by each OS repo's .zshrc loader, in THIS order):
-#   tools -> ui -> options -> history -> aliases -> git -> functions -> fzf
-#         -> bindings -> plugins -> op -> maint -> update -> os -> local
-# Order matters: tools inits atuin (defines its widget) and fzf defines its zle
-# widgets BEFORE plugins loads zsh-vi-mode, which fires the binding hook; options
-# runs compinit BEFORE plugins (fzf-tab + carapace need it). git loads AFTER
+# Numbered load-order (v4). The loader globs NN-*.zsh across $ZSH_CFG, sorts by the
+# NN prefix, and sources in THIS order:
+#   00-tools -> 05-ui -> 10-options -> 15-history -> 20-aliases -> 25-git
+#         -> 30-functions -> 35-fzf -> 40-bindings -> 45-plugins -> 50-op
+#         -> 55-maint -> 60-update  (then the OS layer at 80-os, role at 85-*, host at 99-local)
+# The NN prefix — not a hand-listed name array — is the contract now. Bands: Core 00-69,
+# OS-native 70-84, Role 85-94, host-local 95-99. CORE_PROFILE gates only Core (00-69);
+# fragments >=70 always load. Order matters: tools inits atuin (defines its widget) and
+# fzf defines its zle widgets BEFORE plugins loads zsh-vi-mode, which fires the binding
+# hook; options runs compinit BEFORE plugins (fzf-tab + carapace need it). git loads AFTER
 # aliases so its comprehensive git set is the single source of truth (aliases.zsh
 # intentionally carries no git aliases — see the note in that file).
-# loader.zsh is the shared module-loader an OS .zshrc sources (B12); it is NOT itself in
-# the load-order list above — it DRIVES that list (declared as _CORE_MODULES by the caller).
-zsh/loader.zsh         # canonical byte-compile + source loop, vendored so OS .zshrc files stop duplicating it
-zsh/tools.zsh          # detection + the single init point (zoxide/starship/atuin/mise)
-zsh/ui.zsh             # terminal-UX primitives (_core_err/warn/ok/hint/confirm/spin) — gum-aware
-zsh/options.zsh        # setopts + completion system (compinit, cached) + zstyles
-zsh/history.zsh        # HISTFILE/HISTSIZE/SAVEHIST + history setopts + secret-ignore
-zsh/aliases.zsh        # modern-CLI aliases, each guarded by tools.zsh detection
-zsh/git.zsh            # curated OMZ-style git aliases + git_main_branch/current_branch helpers
-zsh/functions.zsh      # cross-OS shell functions (mkcd, extract, serve, genpw, ...)
-zsh/fzf.zsh            # fzf env + zle widgets (Ctrl-F/R, Alt-Z, Ctrl-G) + fif/fbr
-zsh/bindings.zsh       # vi-mode keybindings (zvm_after_init hook)
-zsh/plugins.zsh        # lightweight plugin loader (zsh-defer, carapace, fzf-tab)
-zsh/op.zsh             # 1Password CLI helpers (macOS agent socket -> os layer)
-zsh/maint.zsh          # daily-maintenance control surface (maint-install/run/log/...)
-zsh/update.zsh         # `up` updater + once/day "updates available" nudge
+# loader.zsh is the shared fragment-loader an OS .zshrc sources (B12); it is NOT itself a
+# numbered fragment (no NN- prefix) — it DRIVES the glob, so it is never sourced by it.
+zsh/loader.zsh         # canonical glob+sort+profile+byte-compile+source loop, vendored so OS .zshrc files stop duplicating it
+zsh/00-tools.zsh       # detection + the single init point (zoxide/starship/atuin/mise)
+zsh/05-ui.zsh          # terminal-UX primitives (_core_err/warn/ok/hint/confirm/spin) — gum-aware
+zsh/10-options.zsh     # setopts + completion system (compinit, cached) + zstyles
+zsh/15-history.zsh     # HISTFILE/HISTSIZE/SAVEHIST + history setopts + secret-ignore
+zsh/20-aliases.zsh     # modern-CLI aliases, each guarded by tools.zsh detection
+zsh/25-git.zsh         # curated OMZ-style git aliases + git_main_branch/current_branch helpers
+zsh/30-functions.zsh   # cross-OS shell functions (mkcd, extract, serve, genpw, ...)
+zsh/35-fzf.zsh         # fzf env + zle widgets (Ctrl-F/R, Alt-Z, Ctrl-G) + fif/fbr
+zsh/40-bindings.zsh    # vi-mode keybindings (zvm_after_init hook)
+zsh/45-plugins.zsh     # lightweight plugin loader (zsh-defer, carapace, fzf-tab)
+zsh/50-op.zsh          # 1Password CLI helpers (macOS agent socket -> os layer)
+zsh/55-maint.zsh       # daily-maintenance control surface (maint-install/run/log/...)
+zsh/60-update.zsh      # `up` updater + once/day "updates available" nudge
 # autoloaded completions for Core's own verbs — fpath-added by options.zsh, not symlinked.
 # Listed PER-FILE (not as `zsh/completions/`) so the offline audit catches an ADDED or
 # REMOVED completion, not just a deleted directory (B10): a new Core verb must register its

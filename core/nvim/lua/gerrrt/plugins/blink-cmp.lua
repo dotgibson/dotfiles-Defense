@@ -36,7 +36,10 @@ return {
 			["<C-Space>"] = { "show", "show_documentation", "hide_documentation" },
 			["<C-e>"] = { "hide", "fallback" },
 			["<CR>"] = { "accept", "fallback" },
-			-- snippet jumps (blink uses the native vim.snippet engine under luasnip preset)
+			-- snippet jumps. NOTE: with `snippets.preset = "luasnip"` (above) these route to LuaSnip,
+			-- NOT to native vim.snippet — blink picks the engine by preset
+			-- (blink.cmp/lua/blink/cmp/config/snippets.lua:28-60). Switch the preset to "default" to
+			-- get vim.snippet.
 			["<Tab>"] = { "snippet_forward", "fallback" },
 			["<S-Tab>"] = { "snippet_backward", "fallback" },
 		},

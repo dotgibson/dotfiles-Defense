@@ -26,6 +26,9 @@ return {
 		multiline_threshold = 1, -- collapse multiline signatures to a single line
 		trim_scope = "outer",
 		mode = "cursor",
-		separator = nil,
+		-- No `separator = nil` line: assigning nil in a table literal simply omits the key, and
+		-- nil is already the default (nvim-treesitter-context/lua/treesitter-context/config.lua:44)
+		-- — it read as a deliberate setting but did nothing. Set it to a string to draw a rule
+		-- under the context (which also makes it require 2+ lines above the cursorline).
 	},
 }

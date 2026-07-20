@@ -2,7 +2,7 @@
 # core/maint/dotfiles-maint.sh — the daily "update everything (that's safe)" runner.
 # ──────────────────────────────────────────────────────────────────────────────
 # Invoked by a scheduler (systemd user timer / launchd / cron) at a fixed time —
-# install it with `maint-install` (see core/zsh/maint.zsh). Designed to run
+# install it with `maint-install` (see core/zsh/55-maint.zsh). Designed to run
 # UNATTENDED and NON-INTERACTIVE: every step is guarded, time-limited, and failure
 # of one step never aborts the rest. Updates the USER-SPACE stack (brew, plugin
 # managers, editor) automatically — those are low-risk. SYSTEM packages are only
@@ -11,7 +11,7 @@
 #
 # Env knobs (set in the scheduler unit or your shell before a manual run):
 #   MAINT_SYSTEM_UPGRADE=0   # 1 = also apply system pkgs (apt/dnf/zypper/brew ONLY)
-#   ZPLUGINDIR=~/.config/zsh/plugins
+#   ZPLUGINDIR=~/.local/share/zsh/plugins
 #   MAINT_NVIM_TIMEOUT=600    MAINT_BREW_TIMEOUT=900    MAINT_TS_TIMEOUT=300
 #   MAINT_ENABLED=1          # 0 = no-op (e.g. drop a guard on a Kali engagement box)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -28,7 +28,9 @@ export HOME="${HOME:?}"
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
 : "${XDG_CACHE_HOME:=$HOME/.cache}"
 : "${XDG_STATE_HOME:=$HOME/.local/state}"
-: "${ZPLUGINDIR:=${ZDOTDIR:-$HOME/.config/zsh}/plugins}"
+: "${XDG_DATA_HOME:=$HOME/.local/share}"
+# v4: plugins are DATA (under $XDG_DATA_HOME), no longer in the $ZDOTDIR config tree.
+: "${ZPLUGINDIR:=${XDG_DATA_HOME}/zsh/plugins}"
 : "${MAINT_ENABLED:=1}"
 : "${MAINT_SYSTEM_UPGRADE:=0}"
 : "${MAINT_NVIM_TIMEOUT:=600}"
@@ -122,7 +124,7 @@ fi
 # a rolled pin is actually applied here; only genuinely unpinned plugins fast-forward.
 # Pins are read from plugins.zsh (the sourced Core module in $ZDOTDIR) with the same
 # grep update-plugins.sh uses — no bash-4 assoc array, so this stays macOS bash-3.2 safe.
-PLUGINS_ZSH="${ZDOTDIR:-$HOME/.config/zsh}/plugins.zsh"
+PLUGINS_ZSH="${ZDOTDIR:-$HOME/.config/zsh}/45-plugins.zsh"
 # _pin_for <plugin-dir-name> → prints the 40-hex pin for owner/<name>, or nothing.
 # The trailing whitespace+sha in the pattern anchors the match to a full pin row, so a
 # name can't partial-match a longer sibling slug.
@@ -172,23 +174,25 @@ fi
 # to zsh (-f: skip rc files; $1: the resolved ZDOTDIR). Failures are non-fatal.
 if have zsh; then
   ZDOTDIR_RESOLVED="${ZDOTDIR:-$HOME/.config/zsh}"
-  # shellcheck disable=SC2016  # single quotes are intentional: $zd/$f/$1 are
-  # expanded by the INNER `zsh -f -c` (with $1 = ZDOTDIR passed as an arg below),
-  # not by this outer bash. Expanding them here would break the compile loop.
-  step "zsh: byte-compile modules + plugins" zsh -f -c '
+  ZCOMPDUMP_RESOLVED="${XDG_CACHE_HOME}/zsh/zcompdump"
+  # v4: the compdump moved to $XDG_CACHE_HOME and plugins to $XDG_DATA_HOME, so pass all
+  # three paths as args rather than deriving them from $zd (the config dir) inside.
+  # shellcheck disable=SC2016  # single quotes are intentional: $zd/$cd/$pd/$f are expanded
+  # by the INNER `zsh -f -c` (with $1/$2/$3 passed as args below), not by this outer bash.
+  step "zsh: byte-compile fragments + plugins" zsh -f -c '
     emulate -L zsh
     setopt extended_glob null_glob
-    local zd=$1 f
+    local zd=$1 cd=$2 pd=$3 f
     local -a targets=(
-      $zd/*.zsh                 # Core modules (what .zshrc sources each shell)
-      $zd/.zcompdump            # completion dump (options.zsh compiles at start; pre-warm)
-      $zd/plugins/**/*.zsh      # plugin sources (heavy; deferred — loop skips these)
+      $zd/<->-*.zsh             # numbered Core fragments (what .zshrc sources each shell)
+      $cd                       # completion dump (10-options.zsh compiles at start; pre-warm)
+      $pd/**/*.zsh              # plugin sources (heavy; deferred — loop skips these)
     )
     for f in $targets; do
       [[ -f $f ]] || continue
       [[ -s $f.zwc && ! $f -nt $f.zwc ]] || zcompile -R -- $f 2>/dev/null
     done
-  ' dotfiles-maint-zcompile "$ZDOTDIR_RESOLVED"
+  ' dotfiles-maint-zcompile "$ZDOTDIR_RESOLVED" "$ZCOMPDUMP_RESOLVED" "$ZPLUGINDIR"
 fi
 
 # ── tmux plugins (TPM) ────────────────────────────────────────────────────────

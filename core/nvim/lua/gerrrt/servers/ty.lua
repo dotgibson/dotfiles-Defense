@@ -8,16 +8,13 @@
 --         feels thin, re-enable pyright in servers/init.lua.
 -- INSTALL: uv tool install ty      (preferred)  — or: uvx ty / pip install ty
 -- ================================================================================================
-return function(capabilities)
-	vim.lsp.config("ty", {
-		capabilities = capabilities,
-		cmd = { "ty", "server" },
-		filetypes = { "python" },
-		settings = {
-			ty = {
-				-- ty language server settings go here, e.g.:
-				-- configuration = { rules = { ["unresolved-reference"] = "warn" } },
-			},
+return {
+	cmd = { "ty", "server" },
+	filetypes = { "python" },
+	settings = {
+		ty = {
+			-- ty language server settings go here, e.g.:
+			-- configuration = { rules = { ["unresolved-reference"] = "warn" } },
 		},
-	})
-end
+	},
+}

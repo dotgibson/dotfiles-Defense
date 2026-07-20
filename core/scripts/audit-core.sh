@@ -29,7 +29,7 @@
 # intentional compact one-liner style that shfmt would expand. shellcheck (real
 # bugs) is enforced; formatting is left to .editorconfig + the author's eye.
 #
-# Graceful degradation (mirrors zsh/tools.zsh): a missing linter is SKIPPED with
+# Graceful degradation (mirrors zsh/00-tools.zsh): a missing linter is SKIPPED with
 # a notice, never a failure — so this runs on a bare box AND in CI, where the
 # tools are installed. Exit status is non-zero only on a real FAIL.
 #
@@ -246,7 +246,7 @@ trap 'exit 143' TERM
 META_ALLOWLIST=(
   README.md PORTING-MATRIX.md CONTRIBUTING.md CHANGELOG.md LICENSE SECURITY.md aliases.md CLAUDE.md
   ARCHITECTURE.md
-  PARITY.md RELEASE-STRATEGY.md RELEASE-RUNBOOK.md GITHUB-APP-AUTH.md
+  PARITY.md RELEASE-STRATEGY.md RELEASE-RUNBOOK.md GITHUB-APP-AUTH.md V4-PROPOSAL.md
   core.manifest .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc renovate.json
   Makefile cliff.toml
   nvim/.luacheckrc
@@ -398,12 +398,12 @@ fi
 # distros ship bat as `batcat` — a silent breakage that fanned out to those OS repos
 # with no failing gate. The fix routes previews through $BAT_BIN (tools.zsh resolves
 # the real name) with a cat/ls fallback. Lock it so the bug can't recur: no uncommented
-# preview line in zsh/fzf.zsh or zsh/plugins.zsh may invoke a literal bat/batcat, and
+# preview line in zsh/35-fzf.zsh or zsh/45-plugins.zsh may invoke a literal bat/batcat, and
 # fzf.zsh must still reference $BAT_BIN. Pure sed+grep (busybox-safe), shell-scoped.
 hdr "fzf preview binary resolution"
 if ((SCOPE_SHELL)); then
   pv_fail=0
-  for f in zsh/fzf.zsh zsh/plugins.zsh; do
+  for f in zsh/35-fzf.zsh zsh/45-plugins.zsh; do
     # Strip comments (from the first #), then flag a bare lowercase bat/batcat command
     # token — $BAT_BIN (uppercase) is intentionally NOT matched, which is the point.
     if sed 's/#.*//' "$f" | grep -qE '(^|[^A-Za-z_$])bat(cat)?[[:space:]]'; then
@@ -411,9 +411,9 @@ if ((SCOPE_SHELL)); then
       fail "literal bat/batcat in a preview command ($f) — route it through \$BAT_BIN"
     fi
   done
-  grep -q 'BAT_BIN' zsh/fzf.zsh || {
+  grep -q 'BAT_BIN' zsh/35-fzf.zsh || {
     pv_fail=1
-    fail "zsh/fzf.zsh no longer references \$BAT_BIN (preview resolution lost)"
+    fail "zsh/35-fzf.zsh no longer references \$BAT_BIN (preview resolution lost)"
   }
   # fzf-tab appends $realpath itself and does NOT substitute fzf's `{}` placeholder. So a
   # fzf-tab preview must use the placeholder-free $_FZF_TAB_PREVIEW_CMD — NOT $_FZF_PREVIEW_CMD
@@ -427,7 +427,7 @@ if ((SCOPE_SHELL)); then
       pv_fail=1
       fail "fzf-tab preview must use \$_FZF_TAB_PREVIEW_CMD (no {} / no \$_FZF_PREVIEW_CMD): $_pvln"
     fi
-  done < <(sed 's/#.*//' zsh/plugins.zsh)
+  done < <(sed 's/#.*//' zsh/45-plugins.zsh)
   ((pv_fail)) || pass "fzf/fzf-tab previews resolve \$BAT_BIN (no literal bat/batcat, no stray {})"
 else
   skip "fzf preview resolution (out of scope)"
@@ -438,7 +438,7 @@ fi
 # That rule is documented but was ungated — a hard-coded /opt/homebrew, /home/linuxbrew,
 # or macOS ~/Library path could slip into a portable shell module and fan out to 9 repos
 # where it is simply wrong. Assert the sourced zsh modules stay OS-agnostic. EXCLUDED:
-# zsh/maint.zsh — the scheduler CONTROL SURFACE whose launchd arm legitimately writes
+# zsh/55-maint.zsh — the scheduler CONTROL SURFACE whose launchd arm legitimately writes
 # ~/Library/LaunchAgents (it switches on _maint_scheduler, the correct cross-OS shape).
 # Comment-stripped first, so an explanatory comment naming an OS path can't trip it.
 # Pure sed+grep (busybox-safe), shell-scoped like the other shell-layer gates.
@@ -453,7 +453,7 @@ if ((SCOPE_SHELL)); then
   # baked into mise/config.toml). The os/ layer is where those belong. The .example
   # templates are EXCLUDED — they are user-edited illustrations, not the live config.
   while IFS= read -r f; do
-    [[ "$f" == zsh/maint.zsh ]] && continue # OS-switched scheduler surface (see above)
+    [[ "$f" == zsh/55-maint.zsh ]] && continue # OS-switched scheduler surface (see above)
     if sed 's/#.*//' "$f" | grep -qE '/opt/homebrew|/home/linuxbrew|/usr/local/Cellar|/Library/|/mnt/c/'; then
       bnd_fail=1
       fail "OS-specific path in a portable Core file ($f) — it belongs in the OS layer, not Core"
@@ -560,7 +560,7 @@ else
 fi
 
 # ── 8b. secrets (gitleaks) ────────────────────────────────────────────────────
-# Core ships 1Password helpers (zsh/op.zsh), a git-identity template, and history
+# Core ships 1Password helpers (zsh/50-op.zsh), a git-identity template, and history
 # secret-ignore patterns — and fans out to 9 PUBLIC repos, where a committed token
 # amplifies N-way. None of the gates above look for secrets: shellcheck/zsh -n read
 # syntax, the toml/yaml/json checks read structure, markdownlint reads prose. So

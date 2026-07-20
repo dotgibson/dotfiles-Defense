@@ -14,9 +14,9 @@ config; you research and recommend.
 ## Establish the baseline before researching
 
 Read what the system already ships so you do not propose something in use:
-`PORTING-MATRIX.md` (the stack + per-distro packaging), `zsh/tools.zsh` and
-`zsh/aliases.zsh` (what is detected and aliased), `mise/config.toml` (pinned
-runtimes), `zsh/plugins.zsh` and `nvim/lazy-lock.json` (pinned plugins).
+`PORTING-MATRIX.md` (the stack + per-distro packaging), `zsh/00-tools.zsh` and
+`zsh/20-aliases.zsh` (what is detected and aliased), `mise/config.toml` (pinned
+runtimes), `zsh/45-plugins.zsh` and `nvim/lazy-lock.json` (pinned plugins).
 
 ## Research discipline
 

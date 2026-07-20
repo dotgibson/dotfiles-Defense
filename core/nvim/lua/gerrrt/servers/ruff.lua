@@ -10,10 +10,7 @@
 --         ty owns hover on Python buffers.
 -- INSTALL: uv tool install ruff    (preferred)  — or add "ruff" back to mason in conform.lua
 -- ================================================================================================
-return function(capabilities)
-	vim.lsp.config("ruff", {
-		capabilities = capabilities,
-		cmd = { "ruff", "server" },
-		filetypes = { "python" },
-	})
-end
+return {
+	cmd = { "ruff", "server" },
+	filetypes = { "python" },
+}

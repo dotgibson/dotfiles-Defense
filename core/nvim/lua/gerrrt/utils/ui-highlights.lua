@@ -94,6 +94,16 @@ function M.apply(hl, c)
 	hl.WhichKeyBorder = { fg = c.border_highlight, bg = none }
 	hl.WhichKeyTitle = { fg = c.blue, bg = none, bold = true }
 
+	-- ── nvim-dap (plugins/nvim-dap.lua): breakpoint + stopped-line gutter signs ──────────────
+	-- Breakpoints are git-red like the renamer border (both mean "this is consequential"), the
+	-- conditional variant is amber to read as "sometimes", and the stopped frame is green with a
+	-- tinted line so the current execution point is unmistakable against the cursorline.
+	hl.DapBreakpoint = { fg = c.red }
+	hl.DapBreakpointCondition = { fg = c.yellow }
+	hl.DapLogPoint = { fg = c.blue }
+	hl.DapStopped = { fg = c.green }
+	hl.DapStoppedLine = { bg = c.bg_visual }
+
 	-- ── gutter: NvChad's dim line numbers with a bright, obvious current line ────────────────
 	hl.LineNr = { fg = c.fg_gutter }
 	hl.CursorLineNr = { fg = c.orange, bold = true }

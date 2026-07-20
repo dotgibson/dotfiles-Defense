@@ -63,7 +63,7 @@ update-hooks: ## Bump pinned pre-commit hook revisions (dependabot has no pre-co
 	@command -v pre-commit >/dev/null 2>&1 || { echo "pre-commit not found: pip install pre-commit"; exit 1; }
 	@pre-commit autoupdate
 
-update-plugins: ## Roll the pinned zsh-plugin SHAs in zsh/plugins.zsh to upstream HEAD (deliberate bump)
+update-plugins: ## Roll the pinned zsh-plugin SHAs in zsh/45-plugins.zsh to upstream HEAD (deliberate bump)
 	@./scripts/update-plugins.sh
 
 update-nvim-plugins: ## Roll the pinned nvim plugin commits in nvim/lazy-lock.json forward (deliberate bump)

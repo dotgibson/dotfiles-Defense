@@ -26,7 +26,7 @@ VERSIONS="scripts/tool-versions.env"
 _ver() { sed -n "s/^$1=//p" "$VERSIONS" 2>/dev/null | head -n1; }
 
 # Dim follow-up "→" hint line (the fix-it, after a skip/warn) — one consistent voice
-# for the actionable next step, mirroring zsh/ui.zsh's _core_hint in the runtime layer.
+# for the actionable next step, mirroring zsh/05-ui.zsh's _core_hint in the runtime layer.
 hint() { printf '%s→%s %s\n' "$c_yel" "$c_rst" "$*"; }
 
 # --doctor runs ONLY the read-only version doctor (section 3): no installs, no audit —

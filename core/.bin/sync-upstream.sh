@@ -3,7 +3,7 @@ set -euo pipefail
 
 # sync-upstream.sh — push an OS repo's vendored `core/` subtree back upstream to
 # dotfiles-core (the source of truth). Reached through the `gsync` alias
-# (zsh/aliases.zsh resolves this file relative to itself, so the alias survives
+# (zsh/20-aliases.zsh resolves this file relative to itself, so the alias survives
 # the core/ subtree vendoring — same trick maint.zsh uses).
 #
 # The subtree boundary is `core/` ⇄ dotfiles-core root@main: OS repos vendor ALL

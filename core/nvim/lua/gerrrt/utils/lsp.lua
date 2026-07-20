@@ -8,19 +8,11 @@
 -- ================================================================================================
 local M = {}
 
--- Return a COPY of `capabilities` with completionItem.snippetSupport advertised. Servers whose
--- completions ship as snippets (html-lsp, css-lsp) need this or their items arrive as plain text.
--- Extracted here so servers/html.lua and servers/cssls.lua stop hand-rolling the identical
--- deepcopy + nested-table dance (kept them in lockstep was pure drift risk). deepcopy so a server
--- flipping this can never mutate the shared `capabilities` table the other servers were built from.
-function M.with_snippets(capabilities)
-	local caps = vim.deepcopy(capabilities)
-	caps.textDocument = caps.textDocument or {}
-	caps.textDocument.completion = caps.textDocument.completion or {}
-	caps.textDocument.completion.completionItem = caps.textDocument.completion.completionItem or {}
-	caps.textDocument.completion.completionItem.snippetSupport = true
-	return caps
-end
+-- NOTE: M.with_snippets() was removed. It hand-deepcopied the shared capabilities table just to
+-- flip completionItem.snippetSupport for html-lsp/css-lsp. Capabilities are now advertised once on
+-- the "*" wildcard (servers/init.lua) and vim.lsp.config deep-merges each server's table over it,
+-- so those two servers set only the snippetSupport LEAF and inherit everything else — no copy, no
+-- risk of mutating the shared table. See servers/html.lua for the shape.
 
 -- True when the server's advertised code-action support could include source.organizeImports.
 -- A server that enumerates its codeActionKinds without a "source"/"source.organizeImports" kind is
@@ -49,6 +41,27 @@ local function offers_organize_imports(client)
 	return false
 end
 
+-- Neovim 0.11+/0.12 ships default LSP maps grn/gra/grr/gri/grt/grx. Our `gr`=references (below)
+-- is a *complete* mapping, so leaving these in place makes `gr` wait timeoutlen (500ms) before
+-- firing. We have <leader>rn / <leader>ca / gr / gi for these already, so clear the defaults.
+--
+-- GLOBAL, NOT BUFFER-LOCAL, AND DONE ONCE. These are created with a plain `vim.keymap.set('n', ...)`
+-- in the runtime (lua/vim/_core/defaults.lua), so they live in the global map table. The previous
+-- form passed `{ buffer = bufnr }`, which raises E31 ("No such mapping") for every one of them —
+-- swallowed by the pcall, so the maps survived and `gr` kept waiting. Deleting global state also
+-- doesn't belong in on_attach, which re-runs per attaching client (twice on a Python buffer:
+-- ruff + ty). grt (type_definition) and grx (codelens.run) were missing from the old list; any
+-- remaining gr* keeps `gr` ambiguous, so all six must go.
+--
+-- EVERY DELETED DEFAULT HAS A REPLACEMENT — check this before adding to the list. grn -> <leader>rn,
+-- gra -> <leader>ca, grr -> gr, gri -> gi, grt -> gy, grx -> <leader>cl (added with grx itself;
+-- codelens was the one default with no prior equivalent here). Deleting a default with no
+-- replacement silently removes a working LSP action.
+-- pcall'd only to tolerate a future Neovim that stops shipping one of them.
+for _, lhs in ipairs({ "grn", "gra", "grr", "gri", "grt", "grx" }) do
+	pcall(vim.keymap.del, "n", lhs)
+end
+
 M.on_attach = function(event)
 	if not event.data then
 		return
@@ -75,14 +88,6 @@ M.on_attach = function(event)
 		client.server_capabilities.documentRangeFormattingProvider = false
 	end
 
-	-- Neovim 0.11+/0.12 ships default LSP maps grn/gra/grr/gri. Our `gr`=references
-	-- below is a *complete* mapping, so leaving these in place makes `gr` wait
-	-- timeoutlen (500ms) before firing. We have <leader>rn / <leader>ca / gr / gi
-	-- for these already, so clear the defaults to make `gr` instant.
-	for _, lhs in ipairs({ "grn", "gra", "grr", "gri" }) do
-		pcall(vim.keymap.del, "n", lhs, { buffer = bufnr })
-	end
-
 	local keymap = vim.keymap.set
 	local function opts(desc)
 		return { noremap = true, silent = true, buffer = bufnr, desc = desc }
@@ -103,6 +108,16 @@ M.on_attach = function(event)
 		require("gerrrt.utils.renamer").rename()
 	end, opts("Rename symbol"))
 	keymap({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, opts("Code action"))
+	-- REPLACEMENT for the deleted `grx` default (vim.lsp.codelens.run — see the deletion loop at
+	-- the top of this file). Unlike the other five defaults we delete, grx had NO equivalent
+	-- anywhere in this config: grn -> <leader>rn, gra -> <leader>ca, grr -> gr, gri -> gi,
+	-- grt -> gy, but codelens had nothing. Deleting it without this line would have silently
+	-- dropped a working LSP action.
+	--
+	-- <leader>cL, NOT <leader>cl: lowercase cl is Trouble's "LSP refs/defs" (plugins/trouble-nvim.lua).
+	-- These maps are BUFFER-LOCAL and buffer-local wins over global, so taking cl here would have
+	-- shadowed Trouble's binding on precisely the LSP-attached buffers where it is used.
+	keymap("n", "<leader>cL", vim.lsp.codelens.run, opts("Run CodeLens"))
 	keymap("i", "<C-s>", function()
 		vim.lsp.buf.signature_help(float_opts)
 	end, opts("Signature help"))

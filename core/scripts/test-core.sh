@@ -307,13 +307,15 @@ for _, f in ipairs(vim.fn.readdir(pdir) or {}) do
     end
   end
 end
--- LSP layer: servers/init.lua wires 13 server configs + the on_attach/diagnostics
+-- LSP layer: servers/init.lua wires 19 server configs + the on_attach/diagnostics
 -- helpers, but ALL of it runs inside a deferred plugin callback (plugins/nvim-lspconfig)
 -- — so the loop above never touches it, and luacheck (static) was its only gate. A bad
 -- vim.lsp.config{} call or a typo'd capability there is luacheck-clean and breaks only on
 -- first file-open, then fans out 9×. Close that: require utils.lsp/diagnostics, and every
--- servers/* LEAF (each returns a `function(capabilities)`; requiring it evaluates the file
--- WITHOUT calling it, so no blink.cmp/lspconfig need be installed). servers/init.lua itself
+-- servers/* LEAF. Each leaf returns a PLAIN CONFIG TABLE (it used to return a
+-- `function(capabilities)` factory; capabilities now come from the "*" wildcard set once in
+-- servers/init.lua, so the leaves are pure data). Requiring one evaluates the file without
+-- registering anything, so no blink.cmp/lspconfig need be installed. servers/init.lua itself
 -- is skipped — it require()s blink.cmp, a plugin absent from this hermetic probe.
 -- utils.ui-highlights has the SAME gap: it's only require()d inside tokyonight's deferred
 -- on_highlights callback (plugins/theme.lua), which the plugins/* loop above never runs — so
@@ -330,8 +332,12 @@ for _, f in ipairs(vim.fn.readdir(sdir) or {}) do
     local ok, res = pcall(require, mod)
     if not ok then
       errs[#errs + 1] = mod .. " → " .. tostring(res)
-    elseif type(res) ~= "function" then
-      errs[#errs + 1] = mod .. " → did not return a function(capabilities)"
+    elseif type(res) ~= "table" then
+      errs[#errs + 1] = mod .. " → did not return a config table (got " .. type(res) .. ")"
+    elseif next(res) == nil then
+      -- An empty table means the file evaluated but configures nothing — almost certainly a
+      -- botched edit rather than intent, and it would silently leave that server on defaults.
+      errs[#errs + 1] = mod .. " → returned an EMPTY config table"
     end
   end
 end
@@ -442,6 +448,199 @@ else
   skip "nvim event callbacks (nvim not installed — runs in CI)"
 fi
 
+# ── D3. Neovim `User FilePost` contract (nvim/, headless) ─────────────────────
+# config/autocmds.lua defers nvim-lspconfig, gitsigns, nvim-lint and todo-comments onto
+# a custom `User FilePost` event so they load AFTER startup instead of in front of the
+# first paint. Four plugins now depend on that event, but D2 above only proves the
+# autocmds load and don't throw — it would still pass if FilePost never fired at all
+# (every deferred plugin silently dead: no LSP, no linting, no git signs) or fired
+# repeatedly (every later buffer re-emitting it). Neither shows up as an error, which
+# is exactly the kind of silent breakage that fans out to 9 repos.
+#
+# So assert the CONTRACT, not just the absence of errors — fires EXACTLY ONCE, in both
+# startup shapes:
+#   A. started WITH a file  — the readiness event arrives after the buffer is already named
+#   B. bare start, then :edit two files — readiness arrives first, the first real file
+#      triggers it, and the second must NOT re-fire (the augroup self-deletes)
+# Counting (not just "did it fire") is what catches the fires-more-than-once regression.
+# Headless is the only mode available in CI, and it is also the mode where UIEnter never
+# fires — so this doubles as the guard on the VimEnter fallback that makes headless work.
+hdr "neovim User FilePost contract (nvim/ headless)"
+if ! ((SCOPE_NVIM)); then
+  skip "nvim FilePost contract (out of scope)"
+elif have nvim; then
+  fp_probe="$SANDBOX/nvim-filepost.lua"
+  # The probe drives itself off the event loop rather than via `-c`: `-c` commands run
+  # BEFORE VimEnter (:h VimEnter — it fires "after ... executing the -c cmd arguments"),
+  # so reporting from a `-c` would sample the counter before readiness ever arrives and
+  # report 0 on perfectly good code. vim.defer_fn lands strictly after startup, which is
+  # also the ordering a real session has. Any :edit is deferred for the same reason —
+  # done from `-c` it would run before readiness and test the wrong sequence.
+  cat >"$fp_probe" <<'LUA'
+vim.opt.runtimepath:prepend(vim.env.CORE_NVIM_DIR)
+-- Count BEFORE requiring the module, so a FilePost emitted during startup is caught.
+_G.filepost_count = 0
+vim.api.nvim_create_autocmd("User", {
+  pattern = "FilePost",
+  callback = function()
+    _G.filepost_count = _G.filepost_count + 1
+  end,
+})
+local ok, err = pcall(require, "gerrrt.config.autocmds")
+if not ok then
+  io.stderr:write("require gerrrt.config.autocmds → " .. tostring(err) .. "\n")
+  vim.cmd("cquit 1")
+end
+vim.defer_fn(function()
+  -- Scenario B only: open two real files AFTER startup. The second must not re-fire.
+  local a, b = vim.env.CORE_FP_A, vim.env.CORE_FP_B
+  if a and a ~= "" then
+    pcall(vim.cmd, "edit " .. vim.fn.fnameescape(a))
+    pcall(vim.cmd, "edit " .. vim.fn.fnameescape(b))
+  end
+  vim.defer_fn(function()
+    io.stdout:write(("filepost=%d ready=%s\n"):format(_G.filepost_count, tostring(vim.g.startup_done)))
+    vim.cmd("qa!")
+  end, 200)
+end, 200)
+LUA
+  fp_a="$SANDBOX/fp_a.txt"; printf 'alpha\n' >"$fp_a"
+  fp_b="$SANDBOX/fp_b.txt"; printf 'bravo\n' >"$fp_b"
+  fp_want='filepost=1 ready=true'
+
+  # A. nvim <file> — buffer is named before the readiness event arrives.
+  fp_got_a=$(CORE_NVIM_DIR="$HERE/nvim" nvim --headless -u "$fp_probe" -i NONE -n "$fp_a" \
+    </dev/null 2>/dev/null | tr -d '\r')
+  # B. bare nvim, then open TWO files — readiness first; only the first file may fire.
+  fp_got_b=$(CORE_NVIM_DIR="$HERE/nvim" CORE_FP_A="$fp_a" CORE_FP_B="$fp_b" \
+    nvim --headless -u "$fp_probe" -i NONE -n \
+    </dev/null 2>/dev/null | tr -d '\r')
+
+  if [[ "$fp_got_a" == "$fp_want" ]]; then
+    pass "FilePost fires exactly once when nvim starts with a file"
+  else
+    fail "FilePost contract broken on 'nvim <file>' — want '$fp_want', got '$fp_got_a'"
+  fi
+  if [[ "$fp_got_b" == "$fp_want" ]]; then
+    pass "FilePost fires exactly once on bare start + two :edits (no re-fire)"
+  else
+    fail "FilePost contract broken on bare-then-edit — want '$fp_want', got '$fp_got_b'"
+  fi
+else
+  skip "nvim FilePost contract (nvim not installed — runs in CI)"
+fi
+
+# ── D4. Neovim LSP server registry (servers/init.lua, headless) ───────────────
+# Section D requires every servers/* LEAF but deliberately SKIPS servers/init.lua, because it
+# require()s blink.cmp — absent from that hermetic probe. That left the registry itself
+# untested: the "*" wildcard capability registration, the per-server vim.lsp.config calls,
+# the failed-module isolation, and which names actually get enabled could all regress while
+# the leaf probe stayed green. It is the file that decides whether you have LSP at all, and
+# it fans out to 9 repos.
+#
+# Close it by stubbing the two things that made it untestable — blink.cmp (via package.preload)
+# and the vim.lsp surface — then require the real module and assert what it registered. No
+# plugins, no servers, no network. Also injects a deliberately broken module to prove one bad
+# server file degrades to "that server is unconfigured" instead of taking the editor down.
+hdr "neovim LSP server registry (servers/init.lua, headless)"
+if ! ((SCOPE_NVIM)); then
+  skip "nvim LSP registry (out of scope)"
+elif have nvim; then
+  reg_probe="$SANDBOX/nvim-registry.lua"
+  cat >"$reg_probe" <<'LUA'
+vim.opt.runtimepath:prepend(vim.env.CORE_NVIM_DIR)
+
+-- Stub blink.cmp so the registry's capabilities call resolves without the plugin.
+package.preload["blink.cmp"] = function()
+  return { get_lsp_capabilities = function() return { STUB_CAPS = true } end }
+end
+-- Break ONE server module to prove failures are isolated, not fatal.
+package.preload["gerrrt.servers.gopls"] = function()
+  error("deliberate probe failure")
+end
+
+-- Pin the binary gate. binary_available() calls vim.fn.executable(), so without this the
+-- enabled count would depend on which language servers happen to be installed on the host —
+-- different locally vs each CI runner. CORE_REG_EXE drives both directions of the gate.
+local exe_result = tonumber(vim.env.CORE_REG_EXE) or 1
+local real_executable = vim.fn.executable
+vim.fn.executable = function() return exe_result end
+
+local registered, enabled = {}, {}
+local real_config, real_enable = vim.lsp.config, vim.lsp.enable
+vim.lsp.config = setmetatable({}, {
+  __call = function(_, name, cfg) registered[name] = cfg end,
+  -- binary_available() reads vim.lsp.config[name]; hand back what was registered.
+  __index = function(_, name) return registered[name] end,
+})
+vim.lsp.enable = function(names)
+  for _, n in ipairs(type(names) == "table" and names or { names }) do enabled[#enabled + 1] = n end
+end
+
+local ok, err = pcall(require, "gerrrt.servers")
+vim.lsp.config, vim.lsp.enable = real_config, real_enable
+vim.fn.executable = real_executable
+if not ok then
+  io.stderr:write("require gerrrt.servers → " .. tostring(err) .. "\n")
+  vim.cmd("cquit 1")
+end
+
+local n_servers, n_nocmd = 0, 0
+for name, cfg in pairs(registered) do
+  if name ~= "*" then
+    n_servers = n_servers + 1
+    -- binary_available() deliberately does NOT second-guess a config without a literal cmd list
+    -- (nil, or a function launcher) — those bypass the executable check entirely.
+    if type(cfg) ~= "table" or type(cfg.cmd) ~= "table" then n_nocmd = n_nocmd + 1 end
+  end
+end
+-- The broken module registered nothing, so its cmd resolves to nil and it bypasses the gate too.
+if registered["gopls"] == nil then n_nocmd = n_nocmd + 1 end
+io.stdout:write(("wildcard=%s caps=%s servers=%d broken_registered=%s enabled=%d nocmd=%d\n"):format(
+  tostring(registered["*"] ~= nil),
+  tostring(registered["*"] and registered["*"].capabilities and registered["*"].capabilities.STUB_CAPS or false),
+  n_servers,
+  tostring(registered["gopls"] ~= nil),
+  #enabled,
+  n_nocmd))
+vim.cmd("qa!")
+LUA
+  reg_err="$SANDBOX/nvim-registry.err"
+  _reg_field() { printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p"; }
+
+  # A. every binary present. The wildcard must carry the stubbed capabilities; the deliberately
+  #    broken module must NOT be registered (isolated) while the module still completes; and every
+  #    configured server must end up enabled — registered ones plus the broken one, which falls
+  #    back to nvim-lspconfig's own defaults rather than disappearing.
+  reg_a=$(CORE_NVIM_DIR="$HERE/nvim" CORE_REG_EXE=1 nvim --headless -u "$reg_probe" -i NONE -n \
+    </dev/null 2>"$reg_err" | tr -d '\r')
+  a_servers=$(_reg_field "$reg_a" servers); a_enabled=$(_reg_field "$reg_a" enabled)
+  if [[ "$(_reg_field "$reg_a" wildcard)" == "true" && "$(_reg_field "$reg_a" caps)" == "true" \
+        && "$(_reg_field "$reg_a" broken_registered)" == "false" \
+        && -n "$a_servers" && "$a_enabled" -eq $((a_servers + 1)) ]]; then
+    pass "LSP registry: wildcard caps set, broken module isolated, all $a_enabled servers enabled"
+  else
+    fail "LSP registry contract broken — got '$reg_a' (expected caps+wildcard true, broken_registered false, enabled = servers+1)"
+    [[ -s "$reg_err" ]] && sed 's/^/    /' "$reg_err" >&2
+  fi
+
+  # B. no binary present. Only configs that bypass the gate by design may remain — those with no
+  #    literal `cmd` list, which binary_available() deliberately does not second-guess. Asserted
+  #    against the probe's own count rather than a magic number, so adding a server can't silently
+  #    invalidate it. Anything more would mean a missing binary gets enabled and then respawn-errors
+  #    on every matching buffer, which is exactly what that guard exists to prevent.
+  reg_b=$(CORE_NVIM_DIR="$HERE/nvim" CORE_REG_EXE=0 nvim --headless -u "$reg_probe" -i NONE -n \
+    </dev/null 2>/dev/null | tr -d '\r')
+  b_enabled=$(_reg_field "$reg_b" enabled); b_nocmd=$(_reg_field "$reg_b" nocmd)
+  if [[ -n "$b_enabled" && "$b_enabled" == "$b_nocmd" ]]; then
+    pass "LSP registry: binary gate enables only the $b_nocmd cmd-less configs when no binary exists"
+  else
+    fail "LSP registry binary gate broken — got '$reg_b' (expected enabled == nocmd)"
+  fi
+else
+  skip "nvim LSP registry (nvim not installed — runs in CI)"
+fi
+
 # ── E. CI path classifier (scripts/ci-classify.sh) ────────────────────────────
 # ci.yml's change-detection picks which gates run per push. That logic now lives in
 # scripts/ci-classify.sh (pulled out of the workflow YAML so it can be linted + tested);
@@ -460,14 +659,14 @@ _classify_is() { # _classify_is <label> <newline-input> <want-shell> <want-nvim>
     fail "$1 (got: ${got//$'\n'/ }; want shell=$3 nvim=$4)"
   fi
 }
-_classify_is "zsh/ change → shell gate only" 'zsh/ui.zsh' true false
+_classify_is "zsh/ change → shell gate only" 'zsh/05-ui.zsh' true false
 _classify_is "nvim/ change → nvim gate only" 'nvim/init.lua' false true
 _classify_is "docs (*.md) change → no gate" 'README.md' false false
 _classify_is "infra (scripts/) change → full run" 'scripts/audit-core.sh' true true
 _classify_is "infra (.shellcheckrc) change → full run" '.shellcheckrc' true true
 _classify_is "__ALL__ sentinel → full run" '__ALL__' true true
 _classify_is "unrecognised path → FAIL CLOSED to full run" 'newdir/thing.xyz' true true
-_classify_is "mixed shell+nvim set → union of both" $'zsh/ui.zsh\nnvim/init.lua' true true
+_classify_is "mixed shell+nvim set → union of both" $'zsh/05-ui.zsh\nnvim/init.lua' true true
 
 # ── F. core/ pre-commit guard (lib/bootstrap-lib.sh blib_install_core_guard) ───
 # The guard hook (installed by sync-core.sh on every fan-out, and by a bootstrap on a
@@ -783,6 +982,73 @@ if [[ "$( blib_select --skip tmux; blib_selected_note )" == " (skipped: tmux)" ]
 # only-mode (showing a skipped suffix that's actually ignored would be misleading).
 if [[ "$( blib_select --only zsh; blib_select --skip nvim; blib_selected_note )" == " (only: zsh)" ]]; then pass "blib_selected_note: --only wins, --skip not shown"; else fail "blib_selected_note: should report only-mode when both set"; fi
 
+# ── H. v4 layout migration (lib/bootstrap-lib.sh blib_migrate_v4) ─────────────
+# The destructive pre-v4 → v4 migration: relocate history to $XDG_STATE_HOME, rename a
+# host local.zsh → 99-local.zsh, and drop the stale unnumbered Core symlinks + compdump.
+# Hermetic (temp dirs, no network). Covers relocation, cleanup, second-run idempotence,
+# and dry-run (must change NOTHING) — so a re-bootstrap cannot silently lose host state.
+hdr "v4 layout migration (blib_migrate_v4)"
+# fixture: a realistic pre-v4 ~/.config/zsh under a throwaway root. Prints the root.
+_mkv4_fixture() {
+  local root zdir
+  root="$(mktemp -d "$SANDBOX/v4mig.XXXXXX")"
+  zdir="$root/.config/zsh"
+  mkdir -p "$zdir"
+  printf 'old history\n' >"$zdir/.zsh_history"
+  printf 'export FOO=bar\n' >"$zdir/local.zsh"
+  ln -s /nonexistent/core/zsh/tools.zsh "$zdir/tools.zsh" # stale unnumbered Core symlink
+  : >"$zdir/tools.zsh.zwc"
+  : >"$zdir/.zcompdump"
+  mkdir -p "$zdir/plugins/zsh-defer"                      # pre-v4 plugin checkout
+  : >"$zdir/plugins/zsh-defer/zsh-defer.plugin.zsh"
+  printf '%s' "$root"
+}
+# run migrate in a SUBSHELL so BLIB_DRY / XDG_* don't leak into the suite shell (a
+# var-prefixed function call would persist in bash). XDG_DATA_HOME is derived from the
+# state path's sibling so the plugins move stays inside the throwaway root (never the real
+# HOME). Filesystem effects still persist.
+_run_migrate() { ( export XDG_STATE_HOME="$2" XDG_DATA_HOME="${2%/state}/share"; BLIB_DRY="$1"; blib_migrate_v4 "$3" ) >/dev/null 2>&1; }
+
+# 1) real run relocates + cleans up.
+_v4root="$(_mkv4_fixture)"; _zd="$_v4root/.config/zsh"
+_run_migrate 0 "$_v4root/.local/state" "$_v4root/.config"
+if [[ -f "$_v4root/.local/state/zsh/history" ]] && grep -q 'old history' "$_v4root/.local/state/zsh/history" && [[ ! -e "$_zd/.zsh_history" ]]; then
+  pass "migrate: history relocated to \$XDG_STATE_HOME"; else fail "migrate: history not relocated"; fi
+if [[ -f "$_zd/99-local.zsh" ]] && grep -q 'FOO=bar' "$_zd/99-local.zsh" && [[ ! -e "$_zd/local.zsh" ]]; then
+  pass "migrate: local.zsh → 99-local.zsh (contents preserved)"; else fail "migrate: local.zsh not renamed"; fi
+if [[ ! -e "$_zd/tools.zsh" && ! -e "$_zd/tools.zsh.zwc" ]]; then
+  pass "migrate: stale unnumbered symlink + .zwc removed"; else fail "migrate: stale symlink/.zwc lingered"; fi
+if [[ ! -e "$_zd/.zcompdump" ]]; then pass "migrate: stale pre-v4 compdump removed"; else fail "migrate: compdump lingered"; fi
+if [[ -f "$_v4root/.local/share/zsh/plugins/zsh-defer/zsh-defer.plugin.zsh" && ! -e "$_zd/plugins" ]]; then
+  pass "migrate: plugins dir relocated to \$XDG_DATA_HOME"; else fail "migrate: plugins not relocated"; fi
+
+# 2) idempotence: a second run changes nothing and returns 0.
+_run_migrate 0 "$_v4root/.local/state" "$_v4root/.config"; _mig_rc=$?
+if [[ $_mig_rc -eq 0 && -f "$_zd/99-local.zsh" && ! -e "$_zd/.zsh_history" ]]; then
+  pass "migrate: second run is an idempotent no-op"; else fail "migrate: not idempotent (rc=$_mig_rc)"; fi
+
+# 3) dry-run (BLIB_DRY=1) mutates NOTHING — fresh fixture, every pre-v4 file untouched.
+_v4dry="$(_mkv4_fixture)"; _dzd="$_v4dry/.config/zsh"
+_run_migrate 1 "$_v4dry/.local/state" "$_v4dry/.config"
+if [[ -f "$_dzd/.zsh_history" && -e "$_dzd/local.zsh" && ! -e "$_dzd/99-local.zsh" && -L "$_dzd/tools.zsh" && -d "$_dzd/plugins" && ! -e "$_v4dry/.local/state/zsh/history" && ! -e "$_v4dry/.local/share/zsh/plugins" ]]; then
+  pass "migrate: dry-run (BLIB_DRY=1) changes nothing"; else fail "migrate: dry-run mutated the fixture"; fi
+
+# 4) partial-migration CONFLICT: when the v4 destinations already exist, migrate must WARN
+# and leave the pre-v4 files in place — never clobber the new file, never silently drop the
+# old one (a re-bootstrap must not lose host state). rc stays 0 (a warning is not a failure).
+_v4cf="$(mktemp -d "$SANDBOX/v4cf.XXXXXX")"
+_cfzd="$_v4cf/.config/zsh"
+mkdir -p "$_cfzd" "$_v4cf/.local/state/zsh"
+printf 'old\n' >"$_cfzd/.zsh_history"
+printf 'new\n' >"$_v4cf/.local/state/zsh/history"
+printf 'old\n' >"$_cfzd/local.zsh"
+printf 'new\n' >"$_cfzd/99-local.zsh"
+mkdir -p "$_cfzd/plugins/old-plugin" "$_v4cf/.local/share/zsh/plugins/new-plugin"
+_run_migrate 0 "$_v4cf/.local/state" "$_v4cf/.config"
+_cf_rc=$?
+if [[ $_cf_rc -eq 0 && -f "$_cfzd/.zsh_history" && "$(cat "$_v4cf/.local/state/zsh/history")" == new && -e "$_cfzd/local.zsh" && "$(cat "$_cfzd/99-local.zsh")" == new && -d "$_cfzd/plugins/old-plugin" && -d "$_v4cf/.local/share/zsh/plugins/new-plugin" ]]; then
+  pass "migrate: conflicting destinations preserved (no clobber, no silent drop)"; else fail "migrate: conflict handling wrong (rc=$_cf_rc)"; fi
+
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
 # Everything below needs a real zsh. On a bare box we SKIP it (not fail) and fall
 # through to the shared summary, so a Section-C failure still surfaces as exit 1.
@@ -802,98 +1068,110 @@ if ! ((SCOPE_SHELL)) || ! have zsh; then
   exit 0
 fi
 
-# ── A. load-order smoke test ──────────────────────────────────────────────────
-hdr "load-order smoke test (canonical .zshrc chain)"
-# The README/manifest canonical order. There is no os/local module here — those
-# are supplied by each OS repo's loader and are out of Core's scope.
-CORE_MODULES=(tools ui options history aliases git functions fzf bindings plugins op maint update)
+# ── A. load-order smoke test (drives the v4 numbered-fragment loader) ─────────
+hdr "load-order smoke test (v4 numbered-fragment loader)"
+# v4: an OS .zshrc sets ZSH_CFG + CORE_PROFILE and sources the vendored loader, which
+# globs the numbered fragments (NN-*.zsh) in ZSH_CFG, sorts by NN, and sources each. We
+# build a sandbox ZSH_CFG of SYMLINKS to the repo's Core fragments + the loader, then
+# drive it exactly as a host would — exercising the REAL glob/sort/profile path, not a
+# hand-rolled source loop. The .zwc land beside the symlinks in the sandbox, never the repo.
+ZDOT="$SANDBOX/zdot"
+mkdir -p "$ZDOT"
+ln -s "$HERE/zsh/loader.zsh" "$ZDOT/loader.zsh"
+core_frags=("$HERE"/zsh/[0-9][0-9]-*.zsh)
+for f in "${core_frags[@]}"; do ln -s "$f" "$ZDOT/$(basename "$f")"; done
 
-# Pre-seed empty plugin dirs so plugins.zsh's first-run clone is a no-op (hermetic,
-# no network). _zplugin_load finds the dir, skips the clone, finds no source file,
-# and moves on — exercising the load-order logic without pulling from GitHub. The dir
-# list lives once in common.sh (_seed_plugin_dirs), shared with the integration + bench.
-_seed_plugin_dirs "$SANDBOX/zdot/plugins"
+# Pre-seed empty plugin dirs at the v4 location ($XDG_DATA_HOME/zsh/plugins) so
+# 45-plugins.zsh's first-run clone is a hermetic no-op (no network). The dir list lives
+# once in common.sh (_seed_plugin_dirs), shared with the integration + bench.
+_seed_plugin_dirs "$SANDBOX/data/zsh/plugins"
 
-# Generate the sandbox .zshrc: source every Core module in canonical order, then
-# print a sentinel. We deliberately do NOT key success on each module's exit code —
-# a module whose LAST statement is a false guard (e.g. aliases.zsh ends on
-# `[[ -n $HAVE_GPING ]] && alias ping=gping`, false on a bare box) returns non-zero
-# while having loaded perfectly. The real signal of a broken load-order contract is
-# a RUNTIME error on stderr (a module using a fn/widget/var an EARLIER module must
-# define first) — so we assert: the chain REACHED THE END (sentinel) with CLEAN
-# stderr. Parse errors are already caught per-file by audit-core.sh's `zsh -n`.
-export CORE_DIR="$HERE/zsh"
+# Generate the sandbox .zshrc the v4 way: set ZSH_CFG + CORE_PROFILE, source the loader,
+# print a sentinel. We deliberately do NOT key success on each fragment's exit code — a
+# fragment whose LAST statement is a false guard (e.g. 20-aliases.zsh ends on
+# `[[ -n $HAVE_GPING ]] && alias ping=gping`, false on a bare box) returns non-zero while
+# having loaded perfectly. The real signal of a broken load-order contract is a RUNTIME
+# error on stderr (a fragment using a fn/widget/var an EARLIER one must define first) — so
+# we assert: the chain REACHED THE END (sentinel) with CLEAN stderr. Parse errors are
+# already caught per-file by audit-core.sh's `zsh -n`.
 {
-  printf 'for _m in %s; do source "$CORE_DIR/$_m.zsh"; done\n' "${CORE_MODULES[*]}"
+  printf 'ZSH_CFG=%q\n' "$ZDOT"
+  printf 'CORE_PROFILE=full\n'
+  printf 'source "$ZSH_CFG/loader.zsh"\n'
   printf 'print -r -- "SMOKE_OK"\n'
-} >"$SANDBOX/zdot/.zshrc"
+} >"$ZDOT/.zshrc"
 
 # Run one interactive zsh against the sandbox rc. We do NOT rely on zsh auto-sourcing
 # $ZDOTDIR/.zshrc: a global /etc/zshenv can force ZDOTDIR (overriding the env we pass), and
 # auto-load doesn't fire when stdout is captured (non-TTY). So -f disables rc auto-load, we
 # set ZDOTDIR INSIDE -c (after /etc/zshenv ran) and `source` the rc explicitly; -i keeps the
-# modules' `[[ $- == *i* ]]` guards live. MISE_TRUSTED_CONFIG_PATHS pre-trusts the vendored
+# fragments' `[[ $- == *i* ]]` guards live. MISE_TRUSTED_CONFIG_PATHS pre-trusts the vendored
 # mise config so `mise activate` doesn't abort under the sandbox HOME.
 smoke_out="$(
-  HOME="$SANDBOX" CORE_DIR="$CORE_DIR" \
+  HOME="$SANDBOX" \
     XDG_CACHE_HOME="$SANDBOX/cache" XDG_STATE_HOME="$SANDBOX/state" \
+    XDG_DATA_HOME="$SANDBOX/data" \
     XDG_RUNTIME_DIR="$SANDBOX/run" MISE_TRUSTED_CONFIG_PATHS="$HERE" \
-    zsh -f -i -c "ZDOTDIR='$SANDBOX/zdot'; source \"\$ZDOTDIR/.zshrc\"" 2>"$SANDBOX/smoke.err"
+    zsh -f -i -c "ZDOTDIR='$ZDOT'; source \"\$ZDOTDIR/.zshrc\"" 2>"$SANDBOX/smoke.err"
 )"
 # High-signal zsh runtime-error markers — what a real load-order break looks like.
 smoke_errs="$(grep -Ei \
   'command not found|parse error|: no such file or directory|not defined|bad pattern|bad math expression|maximum nested' \
   "$SANDBOX/smoke.err" 2>/dev/null || true)"
 if ! printf '%s' "$smoke_out" | grep -q '^SMOKE_OK$'; then
-  fail "load-order chain did not reach the end (no SMOKE_OK sentinel — a module aborted)"
+  fail "load-order chain did not reach the end (no SMOKE_OK sentinel — a fragment aborted)"
   [[ -s "$SANDBOX/smoke.err" ]] && sed 's/^/    /' "$SANDBOX/smoke.err" >&2
 elif [[ -n "$smoke_errs" ]]; then
   fail "runtime errors during canonical load (load-order contract broken):"
   printf '%s\n' "$smoke_errs" | sed 's/^/    /' >&2
 else
-  pass "all ${#CORE_MODULES[@]} modules loaded in canonical order (clean stderr)"
+  pass "all ${#core_frags[@]} fragments loaded in NN order via the loader (clean stderr)"
 fi
 
-# ── A2. consumer integration (Core + os/local layers) ─────────────────────────
-# Core NEVER loads alone in production: each OS repo's .zshrc sources it in canonical
-# order and THEN its own os.zsh + local.zsh (README: tools→…→update→os→local). Section
-# A proves Core-in-isolation; this proves the documented CONSUMPTION — that the Core→OS
-# CONTRACT holds at the real 9-repo fan-out shape. The os.zsh stub here uses exactly
-# what an OS layer relies on Core to have left defined: _cache_eval (tools.zsh's API for
-# the OS layer's gh/uv/ty inits — NOT unfunctioned like _have is), the _core_* UX
-# primitives, and an alias override (the macOS rm→trash pattern). local.zsh overrides a
-# Core default. If Core ever stops exporting one of those, this fails — where Section A,
-# loading Core alone, would stay green.
-hdr "consumer integration (Core + os/local layers, canonical loader)"
+# ── A2. consumer integration (Core + 80-os + 99-local via the loader) ─────────
+# Core NEVER loads alone in production: a host also carries the OS layer (80-os.zsh) and
+# any machine overrides (99-local.zsh), both globbed by the loader from ZSH_CFG (bands
+# >=70 always load, independent of CORE_PROFILE). Section A proves Core-in-isolation;
+# this proves the documented CONSUMPTION — the Core→OS CONTRACT at the real fan-out shape.
+# The 80-os stub uses exactly what an OS layer relies on Core to have left defined:
+# _cache_eval (00-tools's API for the OS layer's gh/uv/ty inits — NOT unfunctioned like
+# _have is), the _core_* UX primitives (05-ui), and an alias override (the macOS rm→trash
+# pattern). 99-local overrides a Core default. If Core ever stops exporting one of those,
+# this fails — where Section A, loading Core alone, would stay green.
+hdr "consumer integration (Core + 80-os + 99-local, v4 loader)"
 INTEG="$SANDBOX/integ"
-_seed_plugin_dirs "$INTEG/plugins"
-# os.zsh: realistic OS-layer file. Exercises the Core helpers an OS repo depends on;
-# any reference to an undefined helper prints to stderr (the failure signal below).
-cat >"$INTEG/os.zsh" <<'OSZSH'
-# stub os.zsh — must be able to use the API Core promises the OS layer.
-(( $+functions[_cache_eval] )) || print -u2 "os.zsh: _cache_eval missing (tools.zsh API gone)"
-(( $+functions[_core_ok]    )) || print -u2 "os.zsh: _core_ok missing (ui.zsh API gone)"
-# the documented gh/uv/ty pattern: _cache_eval a tool AFTER options.zsh set NO_CLOBBER.
+mkdir -p "$INTEG"
+ln -s "$HERE/zsh/loader.zsh" "$INTEG/loader.zsh"
+for f in "${core_frags[@]}"; do ln -s "$f" "$INTEG/$(basename "$f")"; done
+_seed_plugin_dirs "$SANDBOX/integ-data/zsh/plugins"
+# 80-os.zsh: realistic OS-layer fragment. Exercises the Core helpers an OS repo depends
+# on; any reference to an undefined helper prints to stderr (the failure signal below).
+cat >"$INTEG/80-os.zsh" <<'OSZSH'
+# stub 80-os.zsh — must be able to use the API Core promises the OS layer.
+(( $+functions[_cache_eval] )) || print -u2 "80-os.zsh: _cache_eval missing (00-tools API gone)"
+(( $+functions[_core_ok]    )) || print -u2 "80-os.zsh: _core_ok missing (05-ui API gone)"
+# the documented gh/uv/ty pattern: _cache_eval a tool AFTER 10-options.zsh set NO_CLOBBER.
 # The generator must emit SOURCEABLE zsh (real tools emit an init script); a comment is
 # a valid no-op init and proves the generate→cache→source path works under NO_CLOBBER.
 _cache_eval faketool printf '# faketool cached init (integration stub)\n' >/dev/null
 alias rm='rm -i'   # OS layer overriding a safety net (macOS does rm→trash here)
 OSZSH
-# local.zsh: machine-specific overrides (identity/toggles). Overriding a Core default
-# is the whole reason it loads LAST.
-cat >"$INTEG/local.zsh" <<'LOCALZSH'
-# stub local.zsh — last word on this machine.
+# 99-local.zsh: machine-specific overrides (identity/toggles). Overriding a Core default
+# is the whole reason it loads LAST (band 99).
+cat >"$INTEG/99-local.zsh" <<'LOCALZSH'
+# stub 99-local.zsh — last word on this machine.
 UPDATE_CHECK_ENABLED=0
 LOCALZSH
 {
-  printf 'for _m in %s; do source "$CORE_DIR/$_m.zsh"; done\n' "${CORE_MODULES[*]}"
-  printf 'source "$ZDOTDIR/os.zsh"\n'
-  printf 'source "$ZDOTDIR/local.zsh"\n'
+  printf 'ZSH_CFG=%q\n' "$INTEG"
+  printf 'CORE_PROFILE=full\n'
+  printf 'source "$ZSH_CFG/loader.zsh"\n'
   printf 'print -r -- "INTEG_OK"\n'
 } >"$INTEG/.zshrc"
 integ_out="$(
-  HOME="$SANDBOX" CORE_DIR="$CORE_DIR" \
+  HOME="$SANDBOX" \
     XDG_CACHE_HOME="$SANDBOX/integ-cache" XDG_STATE_HOME="$SANDBOX/integ-state" \
+    XDG_DATA_HOME="$SANDBOX/integ-data" \
     XDG_RUNTIME_DIR="$SANDBOX/run" MISE_TRUSTED_CONFIG_PATHS="$HERE" \
     zsh -f -i -c "ZDOTDIR='$INTEG'; source \"\$ZDOTDIR/.zshrc\"" 2>"$INTEG/integ.err"
 )"
@@ -901,22 +1179,57 @@ integ_errs="$(grep -Ei \
   'command not found|parse error|: no such file or directory|not defined|missing|bad pattern|bad math expression|maximum nested' \
   "$INTEG/integ.err" 2>/dev/null || true)"
 if ! printf '%s' "$integ_out" | grep -q '^INTEG_OK$'; then
-  fail "consumer load (Core+os+local) did not reach the end — a layer aborted"
+  fail "consumer load (Core+80-os+99-local) did not reach the end — a layer aborted"
   [[ -s "$INTEG/integ.err" ]] && sed 's/^/    /' "$INTEG/integ.err" >&2
 elif [[ -n "$integ_errs" ]]; then
   fail "errors during consumer load (Core→OS contract broken):"
   printf '%s\n' "$integ_errs" | sed 's/^/    /' >&2
 else
-  pass "Core + os + local loaded in canonical order (Core→OS contract holds)"
+  pass "Core + 80-os + 99-local loaded via the loader (Core→OS contract holds)"
 fi
+
+# ── A3. profile filtering (CORE_PROFILE ceilings + env/file resolution) ───────
+# A2 proves the FULL chain; this proves the minimal/standard ceilings, that outer
+# fragments (>=70) ALWAYS load regardless of profile, that an unknown/unset profile falls
+# back to full, and that CORE_PROFILE resolves from the environment (wins) or a persistent
+# $ZSH_CFG/profile one-liner. Uses lightweight STUB fragments (each echoes its NN) so it is
+# fast and asserts the EXACT loaded set — independent of the real modules' side effects.
+hdr "profile filtering (CORE_PROFILE ceilings + resolution)"
+PROF="$SANDBOX/prof"
+mkdir -p "$PROF"
+ln -s "$HERE/zsh/loader.zsh" "$PROF/loader.zsh"
+for nn in 00 05 10 15 20 25 30 35 40 45 50 55 60 80 85 99; do
+  printf 'print -r -- "F%s"\n' "$nn" >"$PROF/$nn-stub.zsh"
+done
+# _prof_load <pre-source snippet> → space-joined NN list actually loaded. The snippet runs
+# before `source loader.zsh`, so it can set CORE_PROFILE in the env or leave it unset.
+_prof_load() { zsh -f -c "ZSH_CFG='$PROF'; $1; source '$PROF/loader.zsh'" 2>/dev/null | tr '\n' ' ' | sed 's/F//g; s/ *$//'; }
+_prof_is() { if [[ "$2" == "$3" ]]; then pass "profile: $1"; else fail "profile: $1 — got [$2] want [$3]"; fi; }
+_ALL="00 05 10 15 20 25 30 35 40 45 50 55 60 80 85 99"
+_prof_is "full loads every band"          "$(_prof_load 'CORE_PROFILE=full')"     "$_ALL"
+_prof_is "minimal = 00-30 + outer (>=70)" "$(_prof_load 'CORE_PROFILE=minimal')"  "00 05 10 15 20 25 30 80 85 99"
+_prof_is "standard = 00-50 + outer (>=70)" "$(_prof_load 'CORE_PROFILE=standard')" "00 05 10 15 20 25 30 35 40 45 50 80 85 99"
+_prof_is "unknown value falls back to full" "$(_prof_load 'CORE_PROFILE=bogus')"   "$_ALL"
+_prof_is "unset defaults to full"         "$(_prof_load 'true')"                  "$_ALL"
+printf 'minimal\n' >"$PROF/profile"                       # persistent one-liner
+_prof_is "\$ZSH_CFG/profile one-liner selects minimal" "$(_prof_load 'true')" "00 05 10 15 20 25 30 80 85 99"
+_prof_is "env CORE_PROFILE wins over the file"         "$(_prof_load 'CORE_PROFILE=standard')" "00 05 10 15 20 25 30 35 40 45 50 80 85 99"
+rm -f "$PROF/profile"
+# same-NN tiebreak: two 85- fragments must load in LEXICAL order (85-r10 before 85-r2), NOT
+# numeric/natural order — the loader's contract, and it must hold even under NUMERIC_GLOB_SORT.
+printf 'print -r -- r2\n' >"$PROF/85-r2.zsh"
+printf 'print -r -- r10\n' >"$PROF/85-r10.zsh"
+_tie="$(zsh -f -c "ZSH_CFG='$PROF'; setopt numericglobsort; source '$PROF/loader.zsh'" 2>/dev/null | grep -E '^r(2|10)$' | tr '\n' ' ' | sed 's/ *$//')"
+if [[ "$_tie" == "r10 r2" ]]; then pass "profile: same-NN tie breaks lexically (r10 before r2), even under NUMERIC_GLOB_SORT"; else fail "profile: same-NN tiebreak wrong — got [$_tie] want [r10 r2]"; fi
+rm -f "$PROF/85-r2.zsh" "$PROF/85-r10.zsh"
 
 # ── B. function unit tests ────────────────────────────────────────────────────
 hdr "function unit tests (functions.zsh)"
-FN="$HERE/zsh/functions.zsh"
+FN="$HERE/zsh/30-functions.zsh"
 # functions.zsh now routes its errors through ui.zsh's _core_* helpers, so the
 # unit shell must source ui.zsh FIRST — the same ordering the real loader uses
 # (tools → ui → … → functions). It loads before functions in every assertion below.
-UI="$HERE/zsh/ui.zsh"
+UI="$HERE/zsh/05-ui.zsh"
 
 # Run an assertion under zsh; $1 = label, $2 = zsh body that must exit 0.
 # On FAILURE we capture the child's combined stdout+stderr and print it INDENTED
@@ -1114,6 +1427,11 @@ check "core doctor routes to core-doctor" \
   'out=$(NO_COLOR=1 core doctor 2>&1); (( $? == 0 )) && [[ $out == *"modern CLI"* ]]'
 check "core rejects an unknown subcommand with a did-you-mean" \
   'out=$(core verzion 2>&1); (( $? != 0 )) && [[ $out == *"did you mean core version"* ]]'
+# Profile awareness (B1): under minimal/standard, 60-update is not loaded, so `up` is
+# undefined. `core update` must report cleanly (mentioning CORE_PROFILE) rather than reach a
+# missing command. Simulate the gated state by unfunction-ing `up` in a subshell.
+check "core update reports cleanly when up is gated by CORE_PROFILE" \
+  '( unfunction up 2>/dev/null; out=$(core update 2>&1); (( $? != 0 )) && [[ $out == *CORE_PROFILE* ]] )'
 # U5: a usage error points back at the discoverability surface — `see: core-help <verb>`,
 # the verb derived from the synopsis's first token, so every verb gets it for free.
 check "usage errors carry a 'see: core-help <verb>' footer (U5)" \
@@ -1176,8 +1494,8 @@ check_dep "extract guards the gz output at the archive's path, not \$PWD" gzip \
 # actually installed there.
 hdr "detection + UX unit tests (ui / update / maint)"
 _real_zsh="$(command -v zsh)"
-UPD="$HERE/zsh/update.zsh"
-MNT="$HERE/zsh/maint.zsh"
+UPD="$HERE/zsh/60-update.zsh"
+MNT="$HERE/zsh/55-maint.zsh"
 # A fake bin dir holding ONE stub command, used to pin a detection ladder's answer.
 PMBIN="$SANDBOX/pmbin"
 _pm_only() {
@@ -1333,7 +1651,7 @@ ucheck "core-help annotates an unavailable tool (needs fzf when fzf absent)" \
 # fzf.zsh verbs (fif/fbr) must degrade in Core's voice on a bare box — a raw "command
 # not found" is the bug this guards (fcd already did; fif/fbr/zoxide-jump did not).
 # Drive on an isolated PATH (fzf guaranteed absent) so the error path is deterministic.
-FZF_FILE="$HERE/zsh/fzf.zsh"
+FZF_FILE="$HERE/zsh/35-fzf.zsh"
 _pm_only ""
 ucheck "fif rejects cleanly without fzf (Core error voice, not 'command not found')" \
   "source '$UI'; source '$FZF_FILE' 2>/dev/null; out=\$(fif foo 2>&1); (( \$? != 0 )) && [[ \$out == *'fif: requires fzf'* ]]" \
@@ -1496,8 +1814,8 @@ _flag_drift() { # _flag_drift <verb> <completion-file> <source-file>
   done
   ((miss)) || pass "completion '$verb' flags all still present in its source"
 }
-_flag_drift serve "$HERE/zsh/completions/_serve" "$HERE/zsh/functions.zsh"
-_flag_drift up "$HERE/zsh/completions/_up" "$HERE/zsh/update.zsh"
+_flag_drift serve "$HERE/zsh/completions/_serve" "$HERE/zsh/30-functions.zsh"
+_flag_drift up "$HERE/zsh/completions/_up" "$HERE/zsh/60-update.zsh"
 
 # ── git helper unit tests (git.zsh) (B2) ──────────────────────────────────────
 # git.zsh's trunk/branch resolution (git_main_branch's 6-way ref search, git_current_branch's
@@ -1509,7 +1827,7 @@ hdr "git helper unit tests (git.zsh)"
 if ! have git; then
   skip "git helpers (git not installed)"
 else
-  GITZSH="$HERE/zsh/git.zsh"
+  GITZSH="$HERE/zsh/25-git.zsh"
   gcheck() { # gcheck <label> <zsh-body that must exit 0>
     local out
     if out="$(HOME="$SANDBOX" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
@@ -1590,7 +1908,7 @@ ucheck "update: _pkgup_list parses pacman package names" \
 # technique as the clip ladder — and assert the verbs' input-guards, the op:// path
 # construction, and optoken's clip dependency. No real 1Password, no network, no secrets.
 hdr "op.zsh 1Password helpers (hermetic stubs)"
-OPZSH="$HERE/zsh/op.zsh"
+OPZSH="$HERE/zsh/50-op.zsh"
 OPBIN="$SANDBOX/opbin"
 _op_reset() { # _op_reset [with-clip]
   rm -rf "$OPBIN"
@@ -1696,7 +2014,7 @@ else fail "tmux-netinfo should be silent with no net, printed: $out"; fi
 # platform-specific path is testable without the blocking http.server. macOS ships
 # no ip(8), so we isolate PATH to a stub bin WITHOUT `ip` (forcing the route+ipconfig
 # branch), stub ipconfig/route to canned answers, and assert the advertised URLs —
-# mirroring the tmux-netinfo hermetic tests above. ui.zsh/functions.zsh are pure
+# mirroring the tmux-netinfo hermetic tests above. ui.zsh/30-functions.zsh are pure
 # definitions (no source-time forks), so they source cleanly under the isolated PATH.
 hdr "serve macOS IP discovery (_serve_advertise, hermetic)"
 SRVBIN="$SANDBOX/srvbin"
