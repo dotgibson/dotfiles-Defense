@@ -84,27 +84,33 @@ wire_links() {
   [[ -f "$DOTFILES/core/git/gitconfig" ]] && link "$DOTFILES/core/git/gitconfig" "$HOME/.gitconfig"
 
   say "symlinking DEFENSE role layer"
-  link "$DOTFILES/defense/defense.zsh" "$CONFIG/zsh/defense.zsh"
+  # v4: the loader globs NUMBERED fragments ($ZSH_CFG/NN-*.zsh). The defense role stage is
+  # band 85 — it sorts AFTER the OS layer (80-os.zsh, from the OS-native repo) and BEFORE
+  # host-local (99-local.zsh), preserving the old `… os defense local` order. Drop any stale
+  # pre-v4 unnumbered link so the loader doesn't see a dead entry.
+  [[ -L "$CONFIG/zsh/defense.zsh" ]] && rm -f "$CONFIG/zsh/defense.zsh"
+  link "$DOTFILES/defense/defense.zsh" "$CONFIG/zsh/85-defense.zsh"
   [[ -d "$DOTFILES/defense/templates" ]] && link "$DOTFILES/defense/templates" "$CONFIG/defense/templates"
 
-  if [[ ! -f "$HOME/.zshrc" ]] || ! grep -q "dotfiles-managed v2" "$HOME/.zshrc" 2>/dev/null; then
-    say "writing .zshrc loader (adds the 'defense' stage)"
+  if [[ ! -f "$HOME/.zshrc" ]] || ! grep -q "dotfiles-managed v4" "$HOME/.zshrc" 2>/dev/null; then
+    say "writing .zshrc loader (v4 numbered fragments; the defense stage rides band 85)"
     [[ -f "$HOME/.zshrc" ]] && cp "$HOME/.zshrc" "$HOME/.zshrc.pre-dotfiles.$(date +%s)"
     cat >"$HOME/.zshrc" <<'ZRC'
-# dotfiles-managed v2 — do not hand-edit; local tweaks go in ~/.config/zsh/local.zsh
+# dotfiles-managed v4 — do not hand-edit; local tweaks go in ~/.config/zsh/99-local.zsh
 : "${XDG_CONFIG_HOME:=$HOME/.config}"
 export EDITOR=nvim VISUAL=nvim
 : "${ZDOTDIR:=$XDG_CONFIG_HOME/zsh}"
 export ZDOTDIR
 ZSH_CFG="$ZDOTDIR"
-# Core order + the 'defense' stage (unique to this repo), just before local.
-_CORE_MODULES=(tools ui options history aliases git functions fzf bindings plugins op maint update os defense local)
+# v4: the loader globs $ZSH_CFG/NN-*.zsh and sources by numeric prefix. It no longer
+# takes a module-name list — the load order is the numbering itself: Core 00-69, the
+# OS layer at 80-os.zsh, this repo's defense stage at 85-defense.zsh, host-local at
+# 99-local.zsh. (So `… os defense local` is preserved without an explicit array.)
 if [[ -r "$ZSH_CFG/loader.zsh" ]]; then
   source "$ZSH_CFG/loader.zsh"
 else
   print -u2 -- "zshrc: Core loader not found at $ZSH_CFG/loader.zsh — re-run the dotfiles bootstrap."
 fi
-unset _CORE_MODULES
 ZRC
   fi
   ok "symlinks wired"

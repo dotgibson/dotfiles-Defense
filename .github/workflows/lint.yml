@@ -21,4 +21,4 @@ permissions:
 
 jobs:
   lint:
-    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v3
+    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v4

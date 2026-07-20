@@ -4,7 +4,7 @@ name: auto-tag
 # main. Delegates to the reusable workflow in dotfiles-core — one definition of the
 # version math + tagging (scripts/auto-tag.sh): PATCH-bump by default, idempotent (a
 # no-op when HEAD is already tagged vX.Y.Z), and it tags in CI so the second version
-# line (this repo's own tag) stops drifting from the Core it vendors. Pinned @v3.
+# line (this repo's own tag) stops drifting from the Core it vendors. Pinned @v4.
 on:
   push:
     branches: [main]
@@ -19,4 +19,4 @@ concurrency:
 
 jobs:
   tag:
-    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@v3
+    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@v4
