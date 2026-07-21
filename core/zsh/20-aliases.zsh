@@ -1,8 +1,8 @@
-# core/zsh/aliases.zsh
+# core/zsh/20-aliases.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Aliases for the modern CLI stack. Every alias touching an optional tool is
-# GUARDED by a HAVE_* flag from tools.zsh, so on a bare box (fresh server, rescue
-# shell) you transparently get the classic command. Load AFTER tools.zsh.
+# GUARDED by a HAVE_* flag from 00-tools.zsh, so on a bare box (fresh server, rescue
+# shell) you transparently get the classic command. Load AFTER 00-tools.zsh.
 # Anything offensive/engagement-flavoured lives in dotfiles-Kali, not here.
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -20,7 +20,7 @@ else
   alias la='ls -A'
 fi
 
-# ── cat -> bat (resolved name from tools.zsh) ────────────────────────────────
+# ── cat -> bat (resolved name from 00-tools.zsh) ────────────────────────────────
 if [[ -n ${HAVE_BAT:-} ]]; then
   alias cat="$BAT_BIN --paging=never"
   alias catp="$BAT_BIN"   # paged, full bat
@@ -67,7 +67,7 @@ if [[ -n ${HAVE_DUF:-} ]]; then alias df='duf'; else alias df='df -h'; fi
 [[ -n ${HAVE_DOGGO:-} ]] && alias dns='doggo'
 # gron / sd are their own commands (no alias — never shadow sed in scripts).
 # jq / yq / hyperfine / shellcheck / shfmt are likewise their own commands: they
-# shadow nothing classic, so they get HAVE_* detection in tools.zsh but no alias.
+# shadow nothing classic, so they get HAVE_* detection in 00-tools.zsh but no alias.
 
 # ── editor + misc QoL ─────────────────────────────────────────────────────────
 alias vim='nvim'
@@ -89,7 +89,7 @@ alias vim='nvim'
     return
   fi
   # (re)probe once, then persist the verdict (non-empty = supported) for next start.
-  # `>|` forces the write past options.zsh's NO_CLOBBER (loaded before aliases.zsh).
+  # `>|` forces the write past 10-options.zsh's NO_CLOBBER (loaded before 20-aliases.zsh).
   if diff --color=auto /dev/null /dev/null >/dev/null 2>&1; then
     alias diff='diff --color=auto'
     mkdir -p "${cache:h}" 2>/dev/null && print -rn -- 1 >| "$cache" 2>/dev/null
@@ -99,7 +99,7 @@ alias vim='nvim'
 }
 
 # ── git ───────────────────────────────────────────────────────────────────────
-# The git alias set is the single source of truth in git.zsh (OMZ-style, loaded
+# The git alias set is the single source of truth in 25-git.zsh (OMZ-style, loaded
 # right after this file). Only the non-git lazygit launcher lives here.
 alias lg='lazygit'
 
@@ -111,7 +111,7 @@ alias lg='lazygit'
 [[ -n ${HAVE_DIFFT:-} ]] && alias gdft='git difftool --tool=difftastic'
 
 # ── jujutsu (jj) — OPT-IN, colocated git companion (NEVER shadows git) ─────────
-# Guarded by HAVE_JJ (tools.zsh): on a box without jj these simply don't exist, so
+# Guarded by HAVE_JJ (00-tools.zsh): on a box without jj these simply don't exist, so
 # nothing breaks. jj is additive — it runs on top of the same `.git` repo and never
 # replaces git, so we deliberately do NOT alias `git`. Just a few short verbs for the
 # operator who's opted in (config: core/jujutsu/config.toml → ~/.config/jj/config.toml).
@@ -124,7 +124,7 @@ alias lg='lazygit'
 # ── upstream sync (gsync) ─────────────────────────────────────────────────────
 # `gsync` pushes an OS repo's vendored core/ subtree back upstream to dotfiles-core.
 # Resolve the runner relative to THIS file (survives the core/ subtree living
-# inside each OS repo) — the same %x trick maint.zsh uses for its runner, so the
+# inside each OS repo) — the same %x trick 55-maint.zsh uses for its runner, so the
 # shortcut works without putting .bin on PATH. A function (not an alias) so a
 # dotfiles path containing whitespace stays one word and any args pass through.
 typeset -g _SYNC_UPSTREAM_SH="${${(%):-%x}:A:h}/../.bin/sync-upstream.sh"
@@ -154,5 +154,5 @@ alias mkdir='mkdir -p'
 alias myip='curl -fsS https://ifconfig.me 2>/dev/null && echo'
 alias ports='ss -tulpn 2>/dev/null || netstat -tulpn'
 [[ -n ${HAVE_GPING:-} ]] && alias ping='gping'
-# NOTE: `serve` is now a function in functions.zsh (prints the reachable URL and
+# NOTE: `serve` is now a function in 30-functions.zsh (prints the reachable URL and
 # takes an optional port), replacing the old `python3 -m http.server` alias.

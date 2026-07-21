@@ -220,6 +220,10 @@ engagement data in `~/engagements` (outside the repo); the repo ships a paranoid
 - `Kali` (apt + offensive layer) and `MacBook` (Homebrew) are their own lineages,
   built directly rather than stamped from Fedora. `Windows` is tracked separately
   from this matrix.
+- **Role repos:** `Kali` (offensive) and `Defense` (defensive) both vendor
+  Core, but only `Kali` carries an OS-native layer (Debian/apt). `Defense` is
+  **distro-agnostic** — it stacks its blue-team stage on whatever OS-native layer is
+  underneath — so it has no row in this OS-stamp matrix by design, not by omission.
 
 ### Stamping order (all complete — kept as the recommended sequence for reference)
 

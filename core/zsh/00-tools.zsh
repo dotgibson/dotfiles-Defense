@@ -1,4 +1,4 @@
-# core/zsh/tools.zsh
+# core/zsh/00-tools.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Tool detection + the single place every shell-hook tool is initialised. Load
 # this FIRST (before options/history/aliases/fzf/bindings/plugins/op).
@@ -58,12 +58,12 @@ _cache_eval() { # _cache_eval [--salt <sig>] <name> <command...>
   [[ -z "$bin" ]] && return 0
   if [[ ! -s "$cache" || "$bin" -nt "$cache" ]]; then
     [[ -d "$dir" ]] || mkdir -p "$dir"
-    # `>|` forces the overwrite: options.zsh sets NO_CLOBBER, under which a plain
+    # `>|` forces the overwrite: 10-options.zsh sets NO_CLOBBER, under which a plain
     # `>` onto an existing cache raises "file exists" (a shell-level redirection
     # error that 2>/dev/null does NOT suppress). This regen path runs whenever the
     # tool's binary is newer than the cache — e.g. right after a brew upgrade. It
     # surfaced only for the os.zsh callers (gh/uv/ty) because they run AFTER
-    # options.zsh sets NO_CLOBBER; the tools.zsh callers run before it.
+    # 10-options.zsh sets NO_CLOBBER; the 00-tools.zsh callers run before it.
     "$@" >|"$cache" 2>/dev/null
   fi
   source "$cache"
@@ -79,7 +79,7 @@ if _have bat; then
   BAT_BIN=bat
 elif _have batcat; then BAT_BIN=batcat; fi
 
-# ── HAVE_* flags consumed by aliases.zsh / functions.zsh / fzf.zsh ────────────
+# ── HAVE_* flags consumed by 20-aliases.zsh / 30-functions.zsh / 35-fzf.zsh ────────────
 _have eza && HAVE_EZA=1
 _have rg && HAVE_RG=1
 _have zoxide && HAVE_ZOXIDE=1
@@ -92,8 +92,8 @@ _have btop && HAVE_BTOP=1
 _have dust && HAVE_DUST=1
 _have procs && HAVE_PROCS=1
 _have mise && HAVE_MISE=1
-_have carapace && HAVE_CARAPACE=1 # completion engine — init in plugins.zsh
-# 2026 additions (aliases.zsh guards each):
+_have carapace && HAVE_CARAPACE=1 # completion engine — init in 45-plugins.zsh
+# 2026 additions (20-aliases.zsh guards each):
 _have xh && HAVE_XH=1
 _have glow && HAVE_GLOW=1
 _have doggo && HAVE_DOGGO=1
@@ -101,20 +101,20 @@ _have gron && HAVE_GRON=1
 _have sd && HAVE_SD=1
 _have ast-grep && HAVE_ASTGREP=1    # AST-aware structural search/rewrite — own command, no alias (the syntax-tree complement to rg=text, sd=regex, gron=JSON). Opt-in; inert without the binary.
 _have gum && HAVE_GUM=1
-_have viddy && HAVE_VIDDY=1         # modern watch (aliases.zsh: watch → viddy)
-_have gping && HAVE_GPING=1         # graphical ping (aliases.zsh: ping → gping)
-_have tldr  && HAVE_TLDR=1          # tealdeer binary (aliases.zsh: help → tldr)
+_have viddy && HAVE_VIDDY=1         # modern watch (20-aliases.zsh: watch → viddy)
+_have gping && HAVE_GPING=1         # graphical ping (20-aliases.zsh: ping → gping)
+_have tldr  && HAVE_TLDR=1          # tealdeer binary (20-aliases.zsh: help → tldr)
 # mid-2026 additions — data / disk / dev tooling (see PORTING-MATRIX package table):
 _have jq && HAVE_JQ=1               # JSON processor (gron greps; jq transforms — complements)
 _have yq && HAVE_YQ=1              # YAML/JSON/XML processor (the jq of YAML)
-_have duf && HAVE_DUF=1             # modern df (aliases.zsh: df → duf, with df -h fallback)
-_have ouch && HAVE_OUCH=1          # one-binary archive (un)packer (functions.zsh: extract prefers it)
+_have duf && HAVE_DUF=1             # modern df (20-aliases.zsh: df → duf, with df -h fallback)
+_have ouch && HAVE_OUCH=1          # one-binary archive (un)packer (30-functions.zsh: extract prefers it)
 _have hyperfine && HAVE_HYPERFINE=1 # benchmarking (the perf note at the top of this file uses it)
 _have shellcheck && HAVE_SHELLCHECK=1 # shell linter (own command — no alias)
 _have shfmt && HAVE_SHFMT=1        # shell formatter (own command — no alias)
-_have jj && HAVE_JJ=1              # jujutsu — OPT-IN, colocated git companion (aliases.zsh: jjs/jjl/jjd)
-_have sesh && HAVE_SESH=1          # smart tmux session manager — drives Ctrl-G (fzf.zsh) + prefix+f (tmux-sesh.sh); both fall back to find+fzf when unset
-_have difft && HAVE_DIFFT=1        # difftastic — AST/structural diff; OPT-IN companion to delta (git dft), never the default pager (aliases.zsh: gdft)
+_have jj && HAVE_JJ=1              # jujutsu — OPT-IN, colocated git companion (20-aliases.zsh: jjs/jjl/jjd)
+_have sesh && HAVE_SESH=1          # smart tmux session manager — drives Ctrl-G (35-fzf.zsh) + prefix+f (tmux-sesh.sh); both fall back to find+fzf when unset
+_have difft && HAVE_DIFFT=1        # difftastic — AST/structural diff; OPT-IN companion to delta (git dft), never the default pager (20-aliases.zsh: gdft)
 [[ -n ${FD_BIN:-} ]] && HAVE_FD=1
 [[ -n ${BAT_BIN:-} ]] && HAVE_BAT=1
 
@@ -123,7 +123,7 @@ _have difft && HAVE_DIFFT=1        # difftastic — AST/structural diff; OPT-IN 
 # symlinks core/starship/starship.toml there), so no STARSHIP_CONFIG is needed.
 # starship already renders the active venv, so silence Python's own prefix.
 export VIRTUAL_ENV_DISABLE_PROMPT=1
-# atuin binds NOTHING automatically — bindings.zsh owns Ctrl+E (atuin TUI) and
+# atuin binds NOTHING automatically — 40-bindings.zsh owns Ctrl+E (atuin TUI) and
 # keeps Ctrl+R on the custom fzf history widget. (Replaces --disable-up-arrow.)
 export ATUIN_NOBIND=true
 
@@ -136,7 +136,7 @@ export ATUIN_NOBIND=true
 # newer than the cache (e.g. after an upgrade). See the invalidation caveat above.
 [[ -n ${HAVE_STARSHIP:-} ]] && _cache_eval starship starship init zsh
 
-# Keep starship's right prompt alive. plugins.zsh (loaded after this file) pulls
+# Keep starship's right prompt alive. 45-plugins.zsh (loaded after this file) pulls
 # in romkatv/zsh-defer to async-load the heavy plugins; zsh-defer's prompt-reset
 # path blanks RPS1 (== RPROMPT), which silently wipes the right prompt starship
 # just set — left prompt survives, right vanishes. Rather than depend on the

@@ -1,13 +1,13 @@
-# core/zsh/options.zsh
+# core/zsh/10-options.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Portable zsh options + the completion system. NEW in the 2026 refresh: this
 # centralizes setopts and `compinit` that previously had to live in each OS repo's
 # .zshrc loader (i.e. up to seven copies of the same portable config — exactly the
 # drift this whole Core layer exists to kill).
 #
-# LOAD ORDER: source this SECOND, right after tools.zsh. compinit must run here so
-# it's done before fzf-tab and carapace (both in plugins.zsh) and before any
-# `compdef` calls (e.g. the eza completion reuse in aliases.zsh).
+# LOAD ORDER: source this SECOND, right after 00-tools.zsh. compinit must run here so
+# it's done before fzf-tab and carapace (both in 45-plugins.zsh) and before any
+# `compdef` calls (e.g. the eza completion reuse in 20-aliases.zsh).
 #
 # Idempotent: if your OS .zshrc still calls compinit itself, REMOVE it there —
 # the sentinel below makes a double-source here a no-op, but it can't stop a
@@ -54,7 +54,7 @@ typeset -g _CORE_COMPDIR="${${(%):-%x}:A:h}/completions"
 # function-scoped. This file is SOURCED at the caller's top level, where zsh (which
 # has ONLY function scope) turns a bare `local` into an ordinary GLOBAL — leaking
 # `zcd` into every interactive shell, fleet-wide. The anon-function wrap mirrors the
-# cache pattern in aliases.zsh and honours loader.zsh's "no top-level local" rule.
+# cache pattern in 20-aliases.zsh and honours loader.zsh's "no top-level local" rule.
 # compinit is safe to run in here: it declares its state with `typeset -g`, so the
 # completion system persists into the shell after the function returns.
 typeset -g _CORE_COMPINIT_DONE

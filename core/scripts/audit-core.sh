@@ -396,10 +396,10 @@ fi
 # fzf / fzf-tab previews run their command STRING in a subshell, so a LITERAL `bat`
 # there printed "command not found" in every preview pane on Debian/Ubuntu — those
 # distros ship bat as `batcat` — a silent breakage that fanned out to those OS repos
-# with no failing gate. The fix routes previews through $BAT_BIN (tools.zsh resolves
+# with no failing gate. The fix routes previews through $BAT_BIN (00-tools.zsh resolves
 # the real name) with a cat/ls fallback. Lock it so the bug can't recur: no uncommented
 # preview line in zsh/35-fzf.zsh or zsh/45-plugins.zsh may invoke a literal bat/batcat, and
-# fzf.zsh must still reference $BAT_BIN. Pure sed+grep (busybox-safe), shell-scoped.
+# 35-fzf.zsh must still reference $BAT_BIN. Pure sed+grep (busybox-safe), shell-scoped.
 hdr "fzf preview binary resolution"
 if ((SCOPE_SHELL)); then
   pv_fail=0

@@ -27,6 +27,11 @@ banned_patterns:
   # upstreams and are a freshness-triage concern, not a floor one).
   - "using: node16"
   - "using: node20"
+  # The per-step opt-out that forces a node20 action to keep running on node20. It
+  # stops working entirely once node20 leaves the runners (fall 2026), so reaching
+  # for it buys a few months and then browns out — ban the dead end rather than let
+  # a future bump-dodge land on it.
+  - "ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION"
 
 # 2) End-of-life runner labels that must not be used — pick a supported image.
 banned_runners:
@@ -56,3 +61,22 @@ sha_pin_exempt_owner: dotgibson
 # 4) Every container image (`image:` value or a `docker run|build … <image>`) must pin
 #    an @sha256: digest — a tag like `alpine:3.21` or `archlinux:latest` moves under you.
 require_container_digest_pin: true
+
+# 5) Every WORKFLOW must declare a top-level `permissions:` block. Without one a job
+#    inherits the repo-wide default token scope; naming it forces the least-privilege
+#    grant to be a deliberate, reviewable line. Workflows only — `permissions:` is not
+#    a valid key in a composite action.yml, so check-modern.sh scopes this rule to
+#    .github/workflows/ and skips .github/actions/.
+require_workflow_permissions: true
+
+# 6) Every `actions/checkout` step must state `persist-credentials:` explicitly. Left
+#    unset it defaults to TRUE, writing the job's token into .git/config where any later
+#    step — a third-party linter, a scripted tool, an LLM routine reading the tree — can
+#    read it back out. Nearly every checkout here only reads code and wants `false`.
+#
+#    Requiring the KEY rather than hard-requiring the VALUE `false` is deliberate: it is
+#    the exemption path. The few steps that genuinely push (auto-tag's tag push, the
+#    freshness bot's branch push) carry `persist-credentials: true` plus a comment saying
+#    why, right at the call site — so the exemption is reviewed in the diff that needs it
+#    instead of living in a list here that silently drifts out of sync with the workflows.
+require_explicit_persist_credentials: true

@@ -1,4 +1,4 @@
-# core/zsh/update.zsh
+# core/zsh/60-update.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # "Tell me when there are updates, don't make me remember." A throttled,
 # fully-backgrounded check on shell start that prints a single one-line nudge if
@@ -6,7 +6,7 @@
 #
 # WHY NOT update+upgrade on every shell:
 #   • blocks every pane/split/sesh-session on a package sync (kills the startup
-#     work in tools.zsh); concurrent shells deadlock on the dpkg/rpm lock
+#     work in 00-tools.zsh); concurrent shells deadlock on the dpkg/rpm lock
 #   • needs root on every shell (password prompt, or passwordless sudo = privesc)
 #   • unattended `-y` upgrades are dangerous on Arch (partial-upgrade breakage),
 #     Gentoo (multi-hour compiles), and Kali (engagement reproducibility)
@@ -29,13 +29,13 @@ typeset -g _PKGUP_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/pkg-updates"
 
 # Fork-free per-shell path: $EPOCHSECONDS (a zsh/datetime param) replaces `date +%s`,
 # and $(<file) replaces `sed -n Np` — removing three subprocess spawns from EVERY
-# interactive shell (the same anti-fork thesis as tools.zsh's cached inits; `date`/`sed`
+# interactive shell (the same anti-fork thesis as 00-tools.zsh's cached inits; `date`/`sed`
 # each cost ~1.7ms/call vs ~0ms for the builtins). Falls back to `date` if the module
 # is somehow unavailable, so behaviour is identical on an ancient zsh.
 zmodload -F zsh/datetime p:EPOCHSECONDS 2>/dev/null
 
 # Accent colours for the nudge + welcome below (they feed `print -P %F{…}`). These
-# come from ui.zsh's canonical palette ($_CORE_ACCENT_SPEC/$_CORE_MUTED_SPEC — the one
+# come from 05-ui.zsh's canonical palette ($_CORE_ACCENT_SPEC/$_CORE_MUTED_SPEC — the one
 # place $COLORTERM is interpreted) when it's loaded, which it is in canonical order
 # (ui precedes update). The COLORTERM branch below is a STANDALONE fallback for the
 # unit tests, which source this module alone: it reproduces the same truecolor-hex vs
@@ -151,12 +151,12 @@ _pkgup_refresh() {
 
 # Capture _pkgup_list into a file so a spinner can wrap the slow, SILENT fetch (brew
 # outdated / apt -s can stall a second or two with no output) while the caller still gets
-# the names. `>|` forces past options.zsh's NO_CLOBBER (the mktemp target pre-exists).
+# the names. `>|` forces past 10-options.zsh's NO_CLOBBER (the mktemp target pre-exists).
 _pkgup_list_to() { _pkgup_list >|"$1" 2>/dev/null; }
 
 # _up_pending — populate the caller's `pending` array with upgradable package names,
 # behind a spinner on a TTY (U8). Falls back to a plain capture with no spinner on a
-# pipe/non-TTY or when ui.zsh's _core_spin isn't loaded — so captured/scripted runs and
+# pipe/non-TTY or when 05-ui.zsh's _core_spin isn't loaded — so captured/scripted runs and
 # the unit tests are byte-identical to the old inline `pending=(${(f)"$(_pkgup_list)"})`.
 # Relies on zsh dynamic scope: `mgr` + `pending` are the caller's locals.
 _up_pending() {
@@ -208,7 +208,7 @@ _pkgup_notice() {
 # ── Startup hook: throttle + background the check, then show cached nudge ──────
 # The manager probe (_pkgup_mgr — up to 7 `command -v` forks) used to run on EVERY
 # interactive shell, in a synchronous `$()` on the critical path before the first
-# prompt — against this stack's own startup-perf thesis (cached inits in tools.zsh,
+# prompt — against this stack's own startup-perf thesis (cached inits in 00-tools.zsh,
 # deferred plugins, the bench budget gate). It's only NEEDED when the once/day throttle
 # window has actually elapsed and we're about to refresh, so it now lives INSIDE that
 # branch. The nudge (_pkgup_notice) just reads the cache — no probe — so it still prints

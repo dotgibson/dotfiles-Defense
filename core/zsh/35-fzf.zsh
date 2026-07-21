@@ -1,7 +1,7 @@
-# core/zsh/fzf.zsh
+# core/zsh/35-fzf.zsh
 # fzf config + custom zle widgets. Promoted from the Mac; portable across boxes
 # (needs fzf + fd + bat + eza; all in the Core stack). The zle widgets defined
-# here are bound to keys in bindings.zsh, so load this BEFORE bindings/plugins.
+# here are bound to keys in 40-bindings.zsh, so load this BEFORE bindings/plugins.
 
 # =========================================================
 # fzf core
@@ -42,7 +42,7 @@ export FZF_CTRL_R_OPTS='
 '
 
 # Previews run in a subshell with the literal command string baked in, so the binary
-# name must be RESOLVED here — not assumed. tools.zsh (loaded before this file) sets
+# name must be RESOLVED here — not assumed. 00-tools.zsh (loaded before this file) sets
 # $BAT_BIN to the real name (Debian/Ubuntu ship bat as `batcat`); using a literal
 # `bat` printed "command not found" in every preview pane on those distros. Fall back
 # to cat/ls on a bare box so the pane shows the file/dir instead of an error.
@@ -52,7 +52,7 @@ if [[ -n ${BAT_BIN:-} ]]; then
   # So it needs the SAME previewer WITHOUT the trailing `{}`; reusing $_FZF_PREVIEW_CMD
   # there leaked a literal `{}` arg into bat (a phantom "No such file", swallowed by
   # 2>/dev/null — and a wrong preview if a file named `{}` existed). Keep the two forms
-  # distinct: `{}` for fzf proper, placeholder-free for fzf-tab (plugins.zsh appends it).
+  # distinct: `{}` for fzf proper, placeholder-free for fzf-tab (45-plugins.zsh appends it).
   export _FZF_TAB_PREVIEW_CMD="$BAT_BIN --color=always --style=plain,numbers --line-range=:500"
 else
   export _FZF_PREVIEW_CMD='cat {}'
@@ -73,7 +73,7 @@ export FZF_ALT_C_OPTS="--preview '$_FZF_DIR_PREVIEW'"
 # =========================================================
 _fzf_file_no_hidden() {
   local result
-  # Bound unconditionally in bindings.zsh (Ctrl-T), so guard here: on a box without
+  # Bound unconditionally in 40-bindings.zsh (Ctrl-T), so guard here: on a box without
   # fzf/fd, warn in Core's voice and repaint the prompt instead of running an empty
   # "$FD_BIN" (unset on a bare box) piped into a missing fzf ("command not found").
   # Mirrors the Alt-Z (_fzf_zoxide_jump) guard below.
@@ -94,7 +94,7 @@ zle -N _fzf_file_no_hidden
 # =========================================================
 _fzf_zoxide_jump() {
   local result
-  # Bound unconditionally in bindings.zsh, so guard here: on a box without zoxide/fzf,
+  # Bound unconditionally in 40-bindings.zsh, so guard here: on a box without zoxide/fzf,
   # warn in Core's voice and repaint the prompt rather than spewing "command not found".
   if ! _core_have zoxide || ! _core_have fzf; then
     _core_warn "Alt-Z: needs zoxide + fzf"
@@ -117,7 +117,7 @@ zle -N _fzf_zoxide_jump
 # =========================================================
 _fzf_history_clean() {
   local result
-  # Bound unconditionally in bindings.zsh (Ctrl-R), so guard here: on a box without
+  # Bound unconditionally in 40-bindings.zsh (Ctrl-R), so guard here: on a box without
   # fzf, warn in Core's voice and repaint rather than spewing "command not found"
   # from the missing fzf. Mirrors the Alt-Z (_fzf_zoxide_jump) guard above.
   if ! _core_have fzf; then
@@ -170,7 +170,7 @@ fif() {
   _core_wants_help "$1" && { _core_help "fif <search_term>" "find text inside files (rg + fzf + preview)"; return 0; }
   [[ -z "$1" ]] && { _core_usage "fif <search_term>"; return 1; }
   # Defensive: degrade in Core's voice on a bare box instead of a raw "command not
-  # found" — matches fcd's guard (functions.zsh).
+  # found" — matches fcd's guard (30-functions.zsh).
   _core_have fzf || { _core_err "fif: requires fzf"; _core_hint "install fzf, then retry"; return 1; }
   _core_have rg  || { _core_err "fif: requires ripgrep (rg)"; _core_hint "install ripgrep, then retry"; return 1; }
   # Preview the first match with $BAT_BIN's line highlight when bat is present; fall

@@ -1,4 +1,4 @@
-# core/zsh/op.zsh
+# core/zsh/50-op.zsh
 # 1Password CLI helpers — portable across machines. The macOS SSH-agent socket
 # path is OS-specific and lives in os/macos.zsh, NOT here. If `op` isn't
 # installed, this file does nothing.

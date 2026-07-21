@@ -1,12 +1,12 @@
-# core/zsh/history.zsh
+# core/zsh/15-history.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Portable zsh history config. NEW in the 2026 refresh, and it matters even with
 # atuin: atuin IMPORTS from and (by default) shadows zsh history, and
-# zsh-history-substring-search (bound to the arrow keys in bindings.zsh) reads the
+# zsh-history-substring-search (bound to the arrow keys in 40-bindings.zsh) reads the
 # in-memory history list — both need HISTFILE/SAVEHIST set sanely. Previously this
 # lived (if at all) in each OS .zshrc; centralizing it here removes that drift.
 #
-# LOAD ORDER: source THIRD, after options.zsh, before aliases.zsh.
+# LOAD ORDER: source THIRD, after 10-options.zsh, before 20-aliases.zsh.
 # ──────────────────────────────────────────────────────────────────────────────
 
 [[ $- == *i* ]] || return 0
