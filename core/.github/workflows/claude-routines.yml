@@ -90,7 +90,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       ISSUE_TITLE: "tool-scout: weekly modern-CLI scan"
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Load pinned tool versions
         run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >>"$GITHUB_ENV"
       - name: Install Claude Code CLI (pinned)
@@ -126,8 +128,9 @@ jobs:
     steps:
       # Check dotfiles-core into a subdir so the rest of the fleet can sit beside it as
       # siblings — the layout the doc-consistency subagent (and sync-core.sh) expect.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           path: dotfiles-core
       - name: Clone the rest of the fleet (read-only, shallow)
         run: |
@@ -177,7 +180,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       ISSUE_TITLE: "freshness-triage: weekly bump-PR review"
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Load pinned tool versions
         run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >>"$GITHUB_ENV"
       - name: Install Claude Code CLI (pinned)
@@ -214,7 +219,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       ISSUE_TITLE: "modernize: weekly CI-floor scan"
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Load pinned tool versions
         run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >>"$GITHUB_ENV"
       - name: Install Claude Code CLI (pinned)
@@ -252,8 +259,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       ISSUE_TITLE: "release-readiness: weekly go/no-go"
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Load pinned tool versions
         run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >>"$GITHUB_ENV"
@@ -287,8 +295,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       ISSUE_TITLE: "release-notes: draft for the next release"
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Load pinned tool versions
         run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >>"$GITHUB_ENV"
@@ -323,8 +332,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       ISSUE_TITLE: "shell-review: weekly footgun scan"
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Load pinned tool versions
         run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >>"$GITHUB_ENV"
@@ -360,8 +370,9 @@ jobs:
       OWNER: ${{ github.repository_owner }}
       ISSUE_TITLE: "drift-triage: weekly fleet-drift interpretation"
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           path: dotfiles-core
           fetch-depth: 0
       - name: Clone the rest of the fleet (read-only, shallow)

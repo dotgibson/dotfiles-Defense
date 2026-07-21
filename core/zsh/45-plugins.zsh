@@ -1,11 +1,11 @@
-# core/zsh/plugins.zsh
+# core/zsh/45-plugins.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Lightweight zsh plugin loader — no Oh My Zsh, no Zinit. Plugins are auto-cloned
 # to $XDG_DATA_HOME/zsh/plugins on first launch (v4: cloned code is DATA, not config —
 # it leaves the symlinked $ZDOTDIR tree). Portable: needs git + network on first run
-# only. Load AFTER fzf.zsh + bindings.zsh so the
+# only. Load AFTER 35-fzf.zsh + 40-bindings.zsh so the
 # vi-mode init fires the binding hook with the widgets already defined, and AFTER
-# options.zsh (which ran compinit — required by fzf-tab AND carapace).
+# 10-options.zsh (which ran compinit — required by fzf-tab AND carapace).
 #
 # 2026 refresh:
 #   • zsh-defer (romkatv) async-loads the two heaviest plugins (autosuggestions +
@@ -50,9 +50,9 @@ typeset -gA ZPLUGIN_PINS=(
   MichaelAquilina/zsh-you-should-use          5f3d129864ee4505043d88c3486224f1d75b692e
 )
 
-# Show first-run install progress with Core's spinner WHEN ui.zsh is loaded; fall
+# Show first-run install progress with Core's spinner WHEN 05-ui.zsh is loaded; fall
 # back to running the command plainly otherwise. An OS loader mid-migration may not
-# source ui.zsh yet, so `_core_spin` may not exist — never break install for it.
+# source 05-ui.zsh yet, so `_core_spin` may not exist — never break install for it.
 _zp_run() { # _zp_run <title> <cmd...>
   if (($+functions[_core_spin])); then
     _core_spin "$@"
@@ -156,18 +156,18 @@ _defer_or_now() {
 # Plugins
 # =========================================================
 # Loaded NOW: zsh-vi-mode MUST be synchronous — it resets all bindings on init
-# and fires the zvm_after_init hook (bindings.zsh) that registers our keymap, so
+# and fires the zvm_after_init hook (40-bindings.zsh) that registers our keymap, so
 # it has to run on the critical path.
 _zplugin_load jeffreytse zsh-vi-mode
 
 # DEFERRED (heavy; not needed before the first prompt). The widgets these provide
-# are bound in the zvm_after_init hook (bindings.zsh), but — exactly like
+# are bound in the zvm_after_init hook (40-bindings.zsh), but — exactly like
 # autosuggest-toggle below — bindkey happily records a binding to a not-yet-loaded
 # widget, and the widget materialises right after the first prompt, long before
 # you could press the key. So history-substring-search is deferred too: its
-# history-substring-search-up/down widgets (Up/Down in bindings.zsh) only need to
+# history-substring-search-up/down widgets (Up/Down in 40-bindings.zsh) only need to
 # exist by keypress, and deferring takes its source cost off shell startup.
-# NOTE: autosuggest-toggle (bound to Ctrl-\ in bindings.zsh) is bound
+# NOTE: autosuggest-toggle (bound to Ctrl-\ in 40-bindings.zsh) is bound
 # UNCONDITIONALLY there for the same reason — a widget-exists guard at vi-mode
 # init time would always be false and silently drop the bind.
 #
@@ -203,7 +203,7 @@ if [[ -n ${HAVE_CARAPACE:-} ]]; then
   export CARAPACE_BRIDGES='zsh,fish,bash' # borrow completions a tool ships for another shell
   zstyle ':completion:*' format $'\e[2;37m── %d ──\e[m'
   # Salt the cache on CARAPACE_BRIDGES (read at generation) so changing the bridge list
-  # busts the cache — mirrors tools.zsh's atuin/ATUIN_NOBIND salting.
+  # busts the cache — mirrors 00-tools.zsh's atuin/ATUIN_NOBIND salting.
   [[ -n ${HAVE_CARAPACE:-} ]] && _cache_eval --salt "${CARAPACE_BRIDGES:-}" carapace carapace _carapace zsh
 fi
 
@@ -211,10 +211,10 @@ fi
 _zplugin_load Aloxaf fzf-tab
 if (($+functions[fzf-tab-complete])); then
   zstyle ':fzf-tab:*' fzf-command fzf
-  # Resolve the preview binaries the same way fzf.zsh does — fzf-tab runs these in a
+  # Resolve the preview binaries the same way 35-fzf.zsh does — fzf-tab runs these in a
   # subshell, so a literal `eza`/`bat` would break on a bare box (no eza) or Debian
   # (bat is `batcat`). The cd preview degrades to `ls`; the file preview reuses the
-  # placeholder-free $_FZF_TAB_PREVIEW_CMD (bat→cat, set in fzf.zsh, loaded before this)
+  # placeholder-free $_FZF_TAB_PREVIEW_CMD (bat→cat, set in 35-fzf.zsh, loaded before this)
   # and lets fzf-tab append $realpath. NB: $_FZF_PREVIEW_CMD ends in fzf's `{}`, which
   # fzf-tab does NOT substitute — using it here would pass a stray literal `{}` to bat.
   if [[ -n ${HAVE_EZA:-} ]]; then

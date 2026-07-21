@@ -5,6 +5,10 @@ defined in `zsh/30-functions.zsh` (alias for `core-help`). Tool aliases are guar
 by detection flags — if the tool is not installed, the classic command is used instead.
 Load order: `00-tools.zsh` sets `HAVE_*` flags first, then `20-aliases.zsh` reads them.
 
+The user-facing **shell functions** from `zsh/30-functions.zsh` are listed too (see
+[Shell Functions](#shell-functions)) — you type them like any other command, so they
+belong on the same cheat sheet.
+
 ## Modern CLI Replacements
 
 | Alias | Expands To | Requires |
@@ -56,6 +60,16 @@ Load order: `00-tools.zsh` sets `HAVE_*` flags first, then `20-aliases.zsh` read
 | `mv` | `mv -i` (interactive) |
 | `mkdir` | `mkdir -p` (create parents) |
 
+## Named Directories
+
+Zsh named directories (from `zsh/20-aliases.zsh` via `hash -d`) — type them anywhere a
+path is expected, e.g. `cd ~dots` or `nvim ~proj/foo`:
+
+| Shortcut | Expands To |
+| ------- | ------------ |
+| `~dots` | `$HOME/.config` |
+| `~proj` | `$HOME/Projects` |
+
 ## Network
 
 | Alias | Expands To |
@@ -73,6 +87,34 @@ automatically. No manual config required; install `jj` and these aliases appear.
 | `jjs` | `jj status` |
 | `jjl` | `jj log` |
 | `jjd` | `jj diff` |
+
+## Shell Functions
+
+Sourced from `zsh/30-functions.zsh`. These are functions rather than aliases because
+they take arguments, validate them, or need real control flow — but you invoke them
+exactly like any other command. Every one accepts `--help`, ships a completion, and is
+also listed by `core help` (aliased to `cheat` above); the descriptions below are the
+same one-liners those surfaces print.
+
+| Command | Does |
+| ------- | ------------ |
+| `mkcd <dir>` | make a directory (and parents) and cd into it |
+| `cdup [n]` | climb n directories (default 1); `cdup 3` == `cd ../../..` |
+| `fcd` | fuzzy-cd into any subdirectory (fzf + fd, degrades to find) |
+| `extract <archive>` | unpack any archive (tar/zip/7z/rar/…); guards tarbombs + clobbers |
+| `mkbak <file>` | timestamped `.bak` copy of a file before you edit it |
+| `serve [-l\|--local] [port]` | HTTP server in the CWD (default 8000); all interfaces, or loopback with `-l` |
+| `genpw [length]` | random alphanumeric password (default 16) via openssl, `/dev/urandom` fallback |
+| `please` | re-run the last command with sudo (previews + confirms first) |
+| `pullall [dir]` | pull every git repo under a dir in parallel (prunes, stashes, fast-forwards trunk) |
+
+Note `cdup`, not `up` — `up` is the package-updater in `zsh/60-update.zsh`.
+
+`extract` and `please` confirm before doing something destructive or privileged — an
+overwrite/tarbomb scatter, and running your last command as root. That confirmation
+*declines* when there is no TTY, so a scripted or piped run fails safe rather than
+proceeding unattended. `serve` binds all interfaces on purpose (it's an ad-hoc
+file-transfer server); pass `-l` to keep it on loopback.
 
 ## Upstream Sync
 

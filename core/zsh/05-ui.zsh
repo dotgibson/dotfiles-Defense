@@ -1,24 +1,24 @@
-# core/zsh/ui.zsh
+# core/zsh/05-ui.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Shared terminal-UX primitives for Core's interactive commands — one consistent
-# voice for errors, hints, confirms, and progress, so functions.zsh / op.zsh /
-# update.zsh / maint.zsh / plugins.zsh stop hand-rolling ad-hoc `echo "Usage: …"`
+# voice for errors, hints, confirms, and progress, so 30-functions.zsh / 50-op.zsh /
+# 60-update.zsh / 55-maint.zsh / 45-plugins.zsh stop hand-rolling ad-hoc `echo "Usage: …"`
 # lines. The dev-tooling scripts already have this polish (scripts/lib/common.sh);
 # this is its runtime, end-user counterpart.
 #
 # gum-aware, with a plain fallback on every helper, so a bare box (fresh server,
 # rescue shell) degrades to readable text instead of erroring. gum is detected
-# live (`command -v`), NOT via tools.zsh's HAVE_GUM — these helpers must also work
+# live (`command -v`), NOT via 00-tools.zsh's HAVE_GUM — these helpers must also work
 # under the function unit tests, which source this file ALONE in a `zsh -fc`.
 #
-# LOAD ORDER: source EARLY, right after tools.zsh — every later module may call it.
+# LOAD ORDER: source EARLY, right after 00-tools.zsh — every later module may call it.
 # Deliberately NOT interactivity-guarded (no `[[ $- == *i* ]] || return`): it only
 # DEFINES functions, and the unit tests source it non-interactively.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Palette. Colour is applied only when stderr is a TTY and NO_COLOR is unset, so
 # captured/piped output (the unit tests grep stderr) stays plain. Glyphs match the
-# repo's existing ✓/–/✗ idiom (scripts/lib/common.sh, the update.zsh nudge).
+# repo's existing ✓/–/✗ idiom (scripts/lib/common.sh, the 60-update.zsh nudge).
 typeset -g _CORE_C_RED=$'\e[31m' _CORE_C_YEL=$'\e[33m' _CORE_C_GRN=$'\e[32m'
 typeset -g _CORE_C_DIM=$'\e[2;37m' _CORE_C_RST=$'\e[0m'
 
@@ -27,7 +27,7 @@ typeset -g _CORE_C_DIM=$'\e[2;37m' _CORE_C_RST=$'\e[0m'
 # raw ANSI escapes (core-help / core-doctor) and prompt `%F{…}` specs (the update
 # nudge / welcome). Truecolor tokens when the terminal advertises 24-bit, else a
 # 256-colour approximation — the same "degrade, don't assume" rule as NO_COLOR. This
-# replaces the per-module COLORTERM blocks that update.zsh and functions.zsh each
+# replaces the per-module COLORTERM blocks that 60-update.zsh and 30-functions.zsh each
 # hand-rolled (they now consume these), so the accent has one definition, not three.
 if [[ "${COLORTERM:-}" == (24bit|truecolor) ]]; then
   typeset -g _CORE_C_ACCENT=$'\e[1;38;2;122;162;247m' _CORE_C_MUTED=$'\e[38;2;86;95;137m'
@@ -371,7 +371,7 @@ _core_spin() {
   (($#)) || return 0
   if [[ ! -t 2 ]]; then "$@"; return; fi
   # gum spin runs its argument as an EXTERNAL process, so it CANNOT execute a zsh function
-  # — callers legitimately pass one (e.g. update.zsh's _pkgup_list_to), and gum would die
+  # — callers legitimately pass one (e.g. 60-update.zsh's _pkgup_list_to), and gum would die
   # with `exec: "<fn>": executable file not found in $PATH`. Use gum only when the command
   # is a real binary/builtin; for a function, fall through to the hand-rolled spinner below,
   # which runs "$@" in-shell (a backgrounded function still resolves in the subshell).

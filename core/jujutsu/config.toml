@@ -2,7 +2,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # OPT-IN, ADDITIVE companion to git — jj NEVER replaces it. jj runs colocated on top
 # of a normal `.git` repo (`jj git init --colocate`), so the same working tree is
-# usable by both: git keeps doing everything it does (Core's git.zsh aliases, lazygit,
+# usable by both: git keeps doing everything it does (Core's 25-git.zsh aliases, lazygit,
 # the gsync/sync tooling), and jj is just a nicer front-end for the operator who wants
 # one. Nothing in Core depends on jj being installed; the HAVE_JJ-guarded aliases in
 # zsh/20-aliases.zsh and this file simply do nothing on a box without jj.

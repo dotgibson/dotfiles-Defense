@@ -33,8 +33,9 @@ jobs:
       # The calling OS repo. depth 1 is enough: the check only needs its current
       # HEAD:core tree object + root core.lock.
       - name: Check out the calling repo
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           path: osrepo
           fetch-depth: 1
       # dotfiles-core is the reference: full history (fetch-depth 0) so the caller's
@@ -48,8 +49,9 @@ jobs:
       # main (the most complete history); the script it carries is a stable comparison,
       # so reproducibility is a non-issue. Do not "fix" this by adding `ref: v2`.
       - name: Check out dotfiles-core (reference)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           repository: ${{ github.repository_owner }}/dotfiles-core
           path: dotfiles-core
           fetch-depth: 0

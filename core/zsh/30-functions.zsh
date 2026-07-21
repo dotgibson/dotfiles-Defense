@@ -1,4 +1,4 @@
-# core/zsh/functions.zsh
+# core/zsh/30-functions.zsh
 # ──────────────────────────────────────────────────────────────────────────────
 # Cross-OS shell functions. Pure POSIX-ish where possible so they behave the
 # same on macOS zsh, Linux zsh, and Alpine's busybox-adjacent environment.
@@ -7,13 +7,13 @@
 
 # Resolved path to the vendored version stamp. core.version sits one dir ABOVE zsh/,
 # so from this module: %x = the file being sourced, :A resolves the bootstrap symlink
-# back into core/zsh/functions.zsh, :h:h climbs to core/, then /core.version. Captured
-# at source time (the proven pattern from options.zsh / maint.zsh).
+# back into core/zsh/30-functions.zsh, :h:h climbs to core/, then /core.version. Captured
+# at source time (the proven pattern from 10-options.zsh / 55-maint.zsh).
 typeset -g _CORE_VERSION_FILE="${${(%):-%x}:A:h:h}/core.version"
 
 # _core_install_prefix <mgr>  → the copy-pasteable "install" command prefix for a
 # package manager (the verb differs per distro: apt install / pacman -S / apk add / …).
-# Pure mapping, no probing — callers pass the manager from update.zsh's _pkgup_mgr. Used
+# Pure mapping, no probing — callers pass the manager from 60-update.zsh's _pkgup_mgr. Used
 # by core-doctor (U2) and the command-not-found handler (U1) to turn a missing tool into
 # an actionable line instead of a bare ✗. Unknown/none → non-zero, caller stays silent.
 _core_install_prefix() {
@@ -92,7 +92,7 @@ core() {
 # core-doctor — the shell counterpart to nvim's `:checkhealth gerrrt`: a scannable
 # report of which modern-CLI tools Core detected on THIS box and which integrations are
 # live, so you can see at a glance what's degraded to a classic fallback. Probes live
-# via _core_have (command -v), so it's honest even if tools.zsh hasn't run, and shows
+# via _core_have (command -v), so it's honest even if 00-tools.zsh hasn't run, and shows
 # the RESOLVED binary names (fd vs fdfind, bat vs batcat) — the cross-distro detail that
 # silently changes behaviour. Read-only: it inspects, never installs.
 # Public verb: render the health report, paging it when taller than the window (a small
@@ -180,7 +180,7 @@ _core_doctor_render() {
   local g='' c='' d='' r=''
   if [[ ( -t 1 || -n ${_CORE_FORCE_COLOR:-} ) && -z ${NO_COLOR:-} ]]; then
     # green/cyan stay local (doctor's own ✓/group semantics); the dim muted reuses
-    # ui.zsh's canonical $_CORE_C_MUTED so "muted grey" has one definition Core-wide.
+    # 05-ui.zsh's canonical $_CORE_C_MUTED so "muted grey" has one definition Core-wide.
     g=$'\e[32m' c=$'\e[36m' d="${_CORE_C_MUTED:-$'\e[2;37m'}" r=$'\e[0m'
   fi
   local ver="unknown"
@@ -217,7 +217,7 @@ _core_doctor_render() {
 
   # Actionable: turn the ✗'d tools into a copy-pasteable install line for THIS box's
   # package manager (U2), instead of leaving the reader to look each one up. Best-effort
-  # — gated on update.zsh's _pkgup_mgr being loaded (it isn't in the unit harness, which
+  # — gated on 60-update.zsh's _pkgup_mgr being loaded (it isn't in the unit harness, which
   # sources ui+functions alone) and on a known manager. Two honesty caveats, because a
   # blanket `pkg install <all>` misleads: (1) package NAMES can differ from the command
   # (rg=ripgrep); (2) not every modern-CLI tool is PACKAGED on every distro — some are
@@ -270,7 +270,7 @@ mkcd() {
 }
 
 # cdup — climb N directories (cdup 3 == cd ../../..). NOT named `up`: that's the
-# package-updater in update.zsh. N defaults to 1 and must be a positive integer —
+# package-updater in 60-update.zsh. N defaults to 1 and must be a positive integer —
 # a typo'd `cdup x` should say so, not silently no-op (the loop never runs) and leave
 # you wondering why you didn't move.
 cdup() {
@@ -439,7 +439,7 @@ please() {
 
 # mkbak — timestamped backup of a file before you edit it. Validates its input in
 # Core's voice instead of letting `cp` emit a raw "missing operand"/"No such file"
-# (the rest of functions.zsh — mkcd, extract — guards the same way).
+# (the rest of 30-functions.zsh — mkcd, extract — guards the same way).
 mkbak() {
   emulate -L zsh
   _core_wants_help "$1" && { _core_help "mkbak <file>" "timestamped .bak copy of a file before you edit it"; return 0; }
@@ -452,7 +452,7 @@ mkbak() {
     return 1
   }
   # Collision-safe + non-interactive. Two backups in the same second must NOT clobber
-  # the first, and mkbak must never PROMPT — but `cp -i` bleeds in from aliases.zsh
+  # the first, and mkbak must never PROMPT — but `cp -i` bleeds in from 20-aliases.zsh
   # (parsed before this module), so a same-second collision would stop for a y/n. Pick
   # the next free .bak suffix, and copy via `command cp` to bypass the interactive alias.
   local ts dst n=1
@@ -808,7 +808,7 @@ _core_help_render() {
   # Raw ANSI (not prompt %F) + `print -r` below, so a literal backslash in a key
   # (Ctrl-\) survives — print -P would consume it as an escape. Colour only on a
   # TTY; piped/redirected output stays plain.
-  # Accent + muted come from ui.zsh's canonical palette ($_CORE_C_ACCENT/$_CORE_C_MUTED
+  # Accent + muted come from 05-ui.zsh's canonical palette ($_CORE_C_ACCENT/$_CORE_C_MUTED
   # — the one place $COLORTERM is interpreted, truecolor-aware), so the cheat sheet, the
   # update nudge, and core-doctor share one branded blue instead of three hand-rolled
   # copies. The TTY/NO_COLOR blanking below still applies locally.
@@ -836,7 +836,7 @@ _core_help_render() {
     "§search"
     "fif <text>|find text inside files (rg + fzf + preview)|fzf"
     "fbr|fuzzy git-branch checkout|fzf"
-    "§git (most-used — full OMZ-style set in git.zsh)"
+    "§git (most-used — full OMZ-style set in 25-git.zsh)"
     "g <args>|git"
     "gst / gss|status / short status"
     "ga / gaa|stage file(s) / stage all"
@@ -931,7 +931,7 @@ alias cheat='core-help'
 # A mistyped command otherwise gets zsh's terse default (or, on Debian, the distro's
 # package suggester). Replace it with a Core-voice miss that (a) suggests the nearest
 # Core verb/alias when it's a near typo (`extarct` → extract) and (b) offers an install
-# line via the package manager update.zsh already detects — turning a dead end into a
+# line via the package manager 60-update.zsh already detects — turning a dead end into a
 # next step. Defined ONLY in an interactive shell: the unit harness sources this file
 # non-interactively (`zsh -fc`) and must NOT install a global handler. Opt out with
 # CORE_CNF_ENABLED=0 (e.g. an OS layer that prefers the distro's own suggester).

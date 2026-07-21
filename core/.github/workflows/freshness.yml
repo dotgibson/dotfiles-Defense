@@ -71,8 +71,9 @@ jobs:
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
       # Check out with the App token when we have one, so the branch push is App-authored
       # too (a GITHUB_TOKEN push would re-gate CI on the PR's `synchronize` updates).
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: true  # the bot pushes its branch (git push -f -u origin) before opening the PR
           token: ${{ steps.app.outputs.token || github.token }}
       # check-only path (on demand): --check just git-ls-remotes each pinned upstream.
       - name: Check zsh plugin pins (report only)
@@ -131,8 +132,9 @@ jobs:
         with:
           app-id: ${{ vars.FLEET_APP_ID }}
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: true  # the bot pushes its branch (git push -f -u origin) before opening the PR
           token: ${{ steps.app.outputs.token || github.token }}
       - name: Load pinned tool versions
         run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >> "$GITHUB_ENV"

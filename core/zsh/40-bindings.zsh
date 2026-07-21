@@ -1,8 +1,8 @@
-# core/zsh/bindings.zsh
+# core/zsh/40-bindings.zsh
 # Vi-mode keybindings. zsh-vi-mode resets all bindings on init, so we register
-# them via its zvm_after_init hook. Load this BEFORE plugins.zsh (which sources
+# them via its zvm_after_init hook. Load this BEFORE 45-plugins.zsh (which sources
 # zsh-vi-mode) so the hook is defined before vi-mode fires it. Most widgets it
-# references are defined in fzf.zsh / by atuin / by synchronously-loaded plugins and
+# references are defined in 35-fzf.zsh / by atuin / by synchronously-loaded plugins and
 # are present by the time the hook executes. The exception is autosuggest-toggle
 # (deferred) — see the Ctrl+\ note below for why it's bound unconditionally.
 
@@ -24,10 +24,10 @@ zvm_after_init() {
   bindkey -M viins '^T' _fzf_file_no_hidden # Ctrl+T  → file picker (parity w/ pwsh PSFzf)
   bindkey -M viins '^R' _fzf_history_clean  # Ctrl+R  → history
   # Ctrl+E → Atuin TUI. GUARDED: atuin registers _atuin_search_widget only when
-  # it's installed (tools.zsh runs `atuin init zsh` earlier in load order).
+  # it's installed (00-tools.zsh runs `atuin init zsh` earlier in load order).
   (($+widgets[_atuin_search_widget])) && bindkey -M viins '^E' _atuin_search_widget
   # Ctrl+\ → toggle autosuggestions. NOT guarded, on purpose. zsh-autosuggestions is
-  # DEFERRED (plugins.zsh) and is even queued AFTER zsh-vi-mode loads, so autosuggest-toggle
+  # DEFERRED (45-plugins.zsh) and is even queued AFTER zsh-vi-mode loads, so autosuggest-toggle
   # does NOT exist when this hook fires — a $+widgets guard here is always false and silently
   # disables the bind. (That was the bug: a formatter spaced the subscript into arithmetic in
   # `[autosuggest - toggle]`, but even un-spaced the guard never passed because of the deferral.)
