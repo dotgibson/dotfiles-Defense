@@ -13,6 +13,65 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.0.2] - 2026-07-21
+
+### Added
+
+- **`aliases.md` documents the shell functions, not just the aliases.** The cheat sheet
+  covered `zsh/20-aliases.zsh`/`25-git.zsh` but said nothing about the user-facing
+  functions in `zsh/30-functions.zsh`, deferring them to `core help` — so the one
+  reference people actually open omitted nine commands they type daily. New **Shell
+  Functions** section covering `mkcd`, `cdup`, `fcd`, `extract`, `mkbak`, `serve`,
+  `genpw`, `please`, and `pullall`, plus the `cdup`-vs-`up` naming trap and the
+  fail-safe (no-TTY declines) behaviour of the `extract`/`please` confirmations. Each row
+  reuses that function's own `_core_help` one-liner verbatim, so the doc and the
+  `--help`/`core help` output can't drift apart. Docs only — no behavior change.
+
+### Changed
+
+- **Docs/comments: finish the v4 numbered-fragment rename.** The v4.0.0 rename moved the
+  files and updated the manifest/docs but left the pre-v4 flat names (`tools.zsh`,
+  `plugins.zsh`, …) scattered through the fragments' own cross-reference comments and a
+  few dev scripts. Renumbered them all to the `NN-name.zsh` form — every fragment's
+  self-header and every "loads after `10-options.zsh`" / "guarded by `00-tools.zsh`"
+  comment across `zsh/*.zsh`, plus `bench-core.sh`, `audit-core.sh`, `update-plugins.sh`,
+  `ci.yml`, `lib/ux.sh`, `jujutsu/config.toml`, and others. Deliberately left untouched:
+  historical `CHANGELOG.md` entries, `V4-PROPOSAL.md`, and the intentional pre-v4 names in
+  the migration path (`bootstrap-lib.sh`'s stale-symlink cleanup, `test-core.sh`'s migration
+  fixtures). Also: `aliases.md` gains a **Named Directories** section for the `~dots`/`~proj`
+  `hash -d` shortcuts, and `PORTING-MATRIX.md` clarifies that `Defense` is a distro-agnostic
+  Role repo (absent from the OS-stamp table by design, not omission). Comment/doc only —
+  no behavior change.
+
+### Security
+
+- **`actions/checkout` no longer leaves the job token in `.git/config` on 32 of 35 steps.**
+  Checkout persists the token by default, so any later step in the job — a third-party
+  linter, a scripted tool, one of the LLM routines reading the tree — can read it back out
+  of the working copy. Every checkout in the repo now states `persist-credentials:`
+  explicitly: `false` on the 32 that only read code, `true` on the three that genuinely
+  push (auto-tag's tag push and the freshness bot's two branch pushes), each carrying a
+  comment saying why. The eight `claude-routines` checkouts are the biggest win — those
+  jobs run an agent over repository content, so the persisted token was a standing
+  exfiltration target alongside the `--allowedTools` restriction already in place. Enforced
+  by a new `require_explicit_persist_credentials` dimension in
+  `scripts/modern-baseline.yml`; `check-modern.sh` associates each `with:` block with its
+  own `uses:` by walking step bounds, so a `persist-credentials:` on a neighbouring step
+  cannot satisfy the rule. Requiring the _key_ rather than the _value_ `false` is what
+  keeps the pushers' exemptions at the call site instead of in a drift-prone list.
+- **CI floor raised: every workflow must declare a top-level `permissions:` block, and the
+  node20 opt-out is banned.** Two additions to `scripts/modern-baseline.yml`, both of which
+  the fleet already satisfied — this encodes existing practice as a floor rather than asking
+  for a migration. (1) New `require_workflow_permissions` dimension: without a top-level
+  block a job inherits the repo-wide default token scope, so naming it makes the
+  least-privilege grant a deliberate, reviewable line. `check-modern.sh` anchors the match at
+  column 0 — a job-level `permissions:` narrows a default, it doesn't establish one — and
+  scopes the rule to `.github/workflows/` since the key is invalid in a composite
+  `action.yml`. (2) `ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION` joins `banned_patterns`: it
+  forces a node20 action to keep running on node20, which stops working outright when node20
+  leaves the runners in fall 2026, so it's a dead end worth closing before something lands on
+  it. Fleet-wide via the `lint-call.yml@v3` reusable workflow the OS repos inherit.
+
 ## [v4.0.1] - 2026-07-20
 
 ### Fixed

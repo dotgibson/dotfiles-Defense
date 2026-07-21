@@ -40,6 +40,12 @@ while IFS= read -r _f; do [ -n "$_f" ] && FILES+=("$_f"); done < <(git ls-files 
   '.github/actions/*/action.yml' '.github/actions/*/action.yaml' 2>/dev/null)
 [ "${#FILES[@]}" -gt 0 ] || { echo "check-modern: no workflow/action files to check"; exit 0; }
 
+# Workflows alone — rule 5 gates a key that only exists at workflow scope, so it must
+# not see the composite action.yml files above.
+WORKFLOWS=()
+while IFS= read -r _f; do [ -n "$_f" ] && WORKFLOWS+=("$_f"); done < <(git ls-files \
+  '.github/workflows/*.yml' '.github/workflows/*.yaml' 2>/dev/null)
+
 violations=0
 note() { printf '  ✗ %s\n' "$*" >&2; violations=$((violations + 1)); }
 
@@ -84,6 +90,51 @@ if _yaml_bool require_container_digest_pin; then
       note "container image not digest-pinned ($img): $line"
     done < <(printf '%s\n' "$content" | grep -oE "$img_re" 2>/dev/null || true)
   done < <(grep -HnE '(^[[:space:]]*image:[[:space:]]|docker[[:space:]]+(run|build|pull))' "${FILES[@]}" 2>/dev/null || true)
+fi
+
+# ── 5) every workflow declares a top-level permissions: block ────────────────
+# Anchored at column 0 so a job-level `  permissions:` doesn't satisfy the rule —
+# a job grant narrows the workflow default, it doesn't establish one.
+if _yaml_bool require_workflow_permissions && [ "${#WORKFLOWS[@]}" -gt 0 ]; then
+  for wf in "${WORKFLOWS[@]}"; do
+    grep -qE '^permissions:[[:space:]]*$|^permissions:[[:space:]]+' "$wf" \
+      || note "no top-level permissions: block (least-privilege): $wf"
+  done
+fi
+
+# ── 6) every actions/checkout states persist-credentials: explicitly ─────────
+# Needs the step's `with:` block associated with its `uses:`, which a line-at-a-time
+# grep can't do — so walk each checkout back to the `- ` that opens its step, forward to
+# the next sibling `- ` (or any dedent past it), and look for the key inside that window.
+# Both orderings work: the key is found whether `with:` precedes or follows `uses:`.
+if _yaml_bool require_explicit_persist_credentials && [ "${#WORKFLOWS[@]}" -gt 0 ]; then
+  for wf in "${WORKFLOWS[@]}"; do
+    while IFS= read -r hit; do
+      [ -n "$hit" ] && note "checkout without an explicit persist-credentials: $hit"
+    done < <(awk '
+      { l[NR] = $0 }
+      END {
+        for (i = 1; i <= NR; i++) {
+          if (l[i] !~ /uses:[[:space:]]*actions\/checkout@/) continue
+          s = i
+          while (s > 1 && l[s] !~ /^[[:space:]]*-[[:space:]]/) s--
+          match(l[s], /^[[:space:]]*/); ind = RLENGTH
+          e = s + 1
+          while (e <= NR) {
+            if (l[e] ~ /^[[:space:]]*$/) { e++; continue }
+            match(l[e], /^[[:space:]]*/); ii = RLENGTH
+            if (ii < ind) break
+            if (ii == ind && l[e] ~ /^[[:space:]]*-[[:space:]]/) break
+            e++
+          }
+          ok = 0
+          for (j = s; j < e; j++)
+            if (l[j] ~ /^[[:space:]]*persist-credentials:[[:space:]]*(true|false)([[:space:]]|$)/) ok = 1
+          if (!ok) printf "%s:%d\n", FILENAME, i
+        }
+      }
+    ' "$wf" 2>/dev/null || true)
+  done
 fi
 
 if [ "$violations" -eq 0 ]; then

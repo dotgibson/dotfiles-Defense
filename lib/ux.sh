@@ -7,7 +7,7 @@
 # that drift. zsh/05-ui.zsh is the zsh-runtime counterpart of this file; this is its bash
 # sibling, and unlike common.sh it IS vendored into every OS repo (it's in core.manifest)
 # precisely so bootstrap.sh — which runs before any zsh config and so cannot source
-# ui.zsh — can `source core/lib/ux.sh` instead of duplicating ~80 lines.
+# 05-ui.zsh — can `source core/lib/ux.sh` instead of duplicating ~80 lines.
 #
 # SOURCED, not run: no shebang, mode 100644 (the audit's exec-bit section asserts this for
 # lib/*.sh, the bash sibling of the sourced zsh/*.zsh modules). bash 3.2-safe (macOS): no

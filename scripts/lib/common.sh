@@ -140,7 +140,7 @@ _set_scope() { # _set_scope <comma-list: shell,nvim | all | none>
   }
 }
 
-# Pre-seed the EMPTY plugin dirs the hermetic zsh tests + bench need so plugins.zsh's
+# Pre-seed the EMPTY plugin dirs the hermetic zsh tests + bench need so 45-plugins.zsh's
 # first-run `git clone` is a no-op (no network). ONE plugin list, two consumers
 # (test-core.sh load-order/integration sandboxes + bench-core.sh) — previously copied
 # in three places, so a new pinned plugin had to be added to each by hand.

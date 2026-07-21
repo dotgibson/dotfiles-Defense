@@ -2,8 +2,8 @@
 # scripts/bench-core.sh
 # ──────────────────────────────────────────────────────────────────────────────
 # Measure Core's contribution to interactive-shell startup time — the metric this
-# repo invests in (cached starship/zoxide/mise/atuin init in tools.zsh, deferred
-# heavy plugins in plugins.zsh) but never actually MEASURED, so a regression could
+# repo invests in (cached starship/zoxide/mise/atuin init in 00-tools.zsh, deferred
+# heavy plugins in 45-plugins.zsh) but never actually MEASURED, so a regression could
 # ship silently to all 9 OS repos. This is the missing perf guard: run it before
 # and after a change to the load path to see the delta.
 #
@@ -14,7 +14,7 @@
 #
 # Graceful degradation (mirrors audit-core.sh / test-core.sh): with no zsh OR no
 # hyperfine it SKIPs and exits 0, so it is safe to call anywhere. hyperfine is the
-# tool tools.zsh already detects as HAVE_HYPERFINE and the perf note in tools.zsh
+# tool 00-tools.zsh already detects as HAVE_HYPERFINE and the perf note in 00-tools.zsh
 # already points at (`hyperfine 'zsh -i -c exit'`).
 #
 # By default this only REPORTS the number (informational). Set CORE_BENCH_BUDGET_MS
@@ -77,7 +77,7 @@ fi
 # hyperfine is only needed for the aggregate benchmark, NOT for --profile (which times
 # each module in-process via zsh/datetime) — so don't skip the profile run for its absence.
 if ((!PROFILE)) && ! have hyperfine; then
-  skip "bench skipped (hyperfine not installed — tools.zsh detects it as HAVE_HYPERFINE)"
+  skip "bench skipped (hyperfine not installed — 00-tools.zsh detects it as HAVE_HYPERFINE)"
   exit 0
 fi
 

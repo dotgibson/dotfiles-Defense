@@ -41,8 +41,9 @@ jobs:
       shell: ${{ steps.classify.outputs.shell }}
       nvim: ${{ steps.classify.outputs.nvim }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0 # full history so the diff base resolves
       - id: classify
         env:
@@ -88,7 +89,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # Single source of truth for the pinned linter versions: load them into the
       # job env so every step below (and the cache keys) see the same numbers as
@@ -247,7 +250,7 @@ jobs:
           echo "audit scope: $scope ${strict:+(strict)}"
           ./scripts/audit-core.sh --scope "$scope" $strict
 
-  # Alpine (musl libc + busybox coreutils) is a named target repo, and functions.zsh
+  # Alpine (musl libc + busybox coreutils) is a named target repo, and 30-functions.zsh
   # + the maint/test scripts explicitly claim busybox compatibility — yet the matrix
   # above only proves glibc Ubuntu and BSD macOS, never musl/busybox. This leg closes
   # that asserted-but-unverified gap. We deliberately do NOT use `container: alpine`
@@ -266,7 +269,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Audit on Alpine (musl + busybox)
         run: |
           docker run --rm -v "$PWD:/core" -w /core alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d sh -euc '
@@ -297,7 +302,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Audit on Arch (rolling glibc toolchain)
         run: |
           docker run --rm -v "$PWD:/core" -w /core archlinux:latest@sha256:681569955d1d17313ef7134acc8b5cd8adcda2fc24709bed472d95e1cf3d71a1 sh -euc '
@@ -327,7 +334,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Single source of truth for the pinned pre-commit version (see the audit job).
       - name: Load pinned tool versions
         run: grep -E '^[A-Z0-9_]+=' scripts/tool-versions.env >> "$GITHUB_ENV"
@@ -348,7 +357,7 @@ jobs:
         run: pre-commit run --all-files --show-diff-on-failure
 
   # Startup-perf REGRESSION GATE. Core invests in startup speed (cached tool-init in
-  # tools.zsh, deferred plugins in plugins.zsh); a gross regression — re-introducing a
+  # 00-tools.zsh, deferred plugins in 45-plugins.zsh); a gross regression — re-introducing a
   # per-shell subprocess, un-deferring heavy work, an uncached eval — would fan out to
   # all 9 repos silently. This job now ENFORCES a budget instead of only reporting:
   # bench-core.sh fails the build when the canonical-chain MEAN exceeds
@@ -365,7 +374,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install zsh + hyperfine
         run: |
           set -euxo pipefail

@@ -29,7 +29,7 @@ cd "$HERE" || exit 1
 PLUGINS_FILE="zsh/45-plugins.zsh"
 
 # _verify_pin <slug> <sha> — prove a rolled pin is actually USABLE before it can be
-# committed + fanned out: shallow-fetch EXACTLY that commit (the same way plugins.zsh
+# committed + fanned out: shallow-fetch EXACTLY that commit (the same way 45-plugins.zsh
 # installs a pin), resolve the entry file (mirroring _zplugin_load's search order), and
 # `zsh -n` it. The behavioral suite pre-seeds EMPTY plugin dirs (no network), so it never
 # touches the real pinned code — a HEAD that 404s, vanished to GC, or won't parse would
@@ -44,7 +44,7 @@ _verify_pin() {
     git -C "$d" checkout -q --detach FETCH_HEAD 2>/dev/null; then
     # Mirror _zplugin_load's entry-file resolution, INCLUDING its srcfile override: the one
     # pinned plugin whose entry doesn't match ${name}.* is zsh-you-should-use, loaded as
-    # you-should-use.plugin.zsh (plugins.zsh) — i.e. the name with the leading `zsh-` dropped.
+    # you-should-use.plugin.zsh (45-plugins.zsh) — i.e. the name with the leading `zsh-` dropped.
     # Cover that with ${name#zsh-}.plugin.zsh so rolling its pin doesn't falsely fail (rc=4).
     # (zsh-syntax-highlighting's entry is zsh-syntax-highlighting.zsh — matched by $name.zsh.)
     for f in "$name.plugin.zsh" "$name.zsh" "$name.sh" "${name#zsh-}.plugin.zsh"; do
