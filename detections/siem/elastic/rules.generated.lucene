@@ -18,6 +18,12 @@ eventSource:iam.amazonaws.com AND (eventName:(CreateLoginProfile OR UpdateLoginP
 // cloud/entra_sp_credential_backdoor.yml — Entra service-principal credential added (app backdoor)
 OperationName:(Add\ service\ principal\ credentials OR Add\ application\ credentials OR Update\ application\ \-\ Certificates\ and\ secrets\ management OR Update\ application\ –\ Certificates\ and\ secrets\ management)
 
+// cloud/gcp_audit_log_sink_deleted.yml — GCP logging sink deleted / disabled (audit-log tampering)
+(gcp.audit.method_name:(*ConfigServiceV2.DeleteSink OR *ConfigServiceV2.UpdateSink OR *ConfigServiceV2.DeleteBucket)) AND (NOT gcp.audit.principal_email:logging\-terraform@example.iam.gserviceaccount.com)
+
+// cloud/gcp_iam_policy_backdoor.yml — GCP IAM policy binding added (SetIamPolicy backdoor)
+gcp.audit.method_name:*.SetIamPolicy AND (NOT gcp.audit.principal_email:iam\-terraform@example.iam.gserviceaccount.com)
+
 // cloud/gcp_service_account_key_created.yml — GCP user-managed service-account key created
 gcp.audit.method_name:google.iam.admin.v1.CreateServiceAccountKey
 
@@ -30,7 +36,10 @@ resource.type:api_token AND action.type:create
 // cloudflare/cloudflare_worker_deployed.yml — Cloudflare Worker deployed (serverless edge code execution)
 (resource.type:(worker OR workers_script)) AND (action.type:(create OR update))
 
-// credential_access/asrep_roast_probing_4771.yml — AS-REP roast base - Kerberos pre-auth failure 0x18 (4771)
+// credential_access/asrep_roast_4768.yml — AS-REP roast - TGT issued without pre-authentication (4768 type 0)
+(EventID:4768 AND PreAuthType:0) AND (NOT TargetUserName:*$)
+
+// credential_access/asrep_roast_probing_4771.yml — AS-REP / Kerbrute enumeration base - Kerberos pre-auth failure 0x18 (4771)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // credential_access/coercion_named_pipes_5145.yml — Authentication coercion - named-pipe access over IPC$ (5145)
@@ -91,7 +100,10 @@ eventName:(GRANT_DELEGATED_ADMIN_PRIVILEGES OR ASSIGN_ROLE)
 eventName:email_forwarding_out_of_domain
 
 // google_workspace/gws_illicit_oauth_grant.yml — Google Workspace illicit OAuth grant (consent phish)
-eventName:authorize
+eventName:authorize AND (scope:(*mail.google.com* OR *auth\/gmail* OR *auth\/drive* OR *auth\/spreadsheets* OR *auth\/documents* OR *auth\/contacts*)) AND (NOT client_id:000000000000\-example.apps.googleusercontent.com)
+
+// impact/recovery_inhibition_process.yml — Inhibit system recovery - shadow copy / backup / boot-recovery deletion
+((Image:(*\\vssadmin.exe OR *\\wmic.exe)) AND (CommandLine:*shadow* AND CommandLine:*delete*)) OR (Image:*\\wbadmin.exe AND (CommandLine:*delete* AND CommandLine:*catalog*)) OR (Image:*\\bcdedit.exe AND (CommandLine:(*recoveryenabled\ no* OR *bootstatuspolicy\ ignoreallfailures*)))
 
 // jenkins/jenkins_api_token_created.yml — Jenkins user API token created (durable-access backdoor)
 uri:*ApiTokenProperty\/generateNewToken*
@@ -106,7 +118,7 @@ uri:(*\/scriptText* OR *\/script*)
 (verb:(create OR update OR patch)) AND (objectRef.resource:(clusterrolebindings OR rolebindings)) AND requestObject.roleRef.name:cluster\-admin
 
 // kubernetes/k8s_pod_exec_attach.yml — Kubernetes pod exec / attach
-verb:create AND objectRef.resource:pods AND (objectRef.subresource:(exec OR attach))
+(verb:create AND objectRef.resource:pods AND (objectRef.subresource:(exec OR attach))) AND (NOT user.username:system\:serviceaccount\:*)
 
 // kubernetes/k8s_privileged_pod_created.yml — Kubernetes privileged / host-namespace pod created (node escape)
 (verb:create AND objectRef.resource:pods) AND (requestObject.spec.containers.securityContext.privileged:true OR requestObject.spec.hostPID:true OR requestObject.spec.volumes.hostPath.path:\/)
@@ -181,7 +193,7 @@ action:add* AND action:*trusted\ publisher*
 operation:delete AND (resource_type:(artifact OR repository))
 
 // registry/harbor_image_pushed_trusted_tag.yml — Harbor image push (backdoored image / trusted-tag poisoning)
-operation:push AND resource_type:artifact
+(operation:push AND resource_type:artifact) AND (NOT operator:robot$ci\-pipeline)
 
 // registry/harbor_robot_account_created.yml — Harbor robot account created (durable registry credential)
 operation:create AND resource_type:robot

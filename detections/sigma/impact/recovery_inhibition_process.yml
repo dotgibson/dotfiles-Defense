@@ -1,0 +1,47 @@
+title: Inhibit system recovery - shadow copy / backup / boot-recovery deletion
+id: 7dbc97d7-0d27-4a77-8dfd-daf203087726
+status: experimental
+description: |
+  Detects the ransomware kill-chain precursor Inhibit System Recovery (T1490): an
+  operator destroying the means to roll back before or during encryption - vssadmin /
+  wmic deleting shadow copies, wbadmin deleting the backup catalog, or bcdedit disabling
+  Windows Recovery (recoveryenabled no / bootstatuspolicy ignoreallfailures). These run
+  from almost nothing legitimate on endpoints and are near-zero-FP and high-fidelity;
+  they are the natural inverse of ntds_dump_ntdsutil_vss_4688 (which keys on vssadmin
+  *create* shadow). One of these on a workstation is an incident, not a maintenance task.
+  Validate (purple): run the recovery-inhibition commands from dotfiles-Kali (htpx pair
+  inhibit-recovery-vssadmin).
+references:
+  - https://attack.mitre.org/techniques/T1490/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/inhibit-recovery-4688.md
+author: dotfiles-Defense
+date: 2026-07-22
+tags:
+  - attack.impact
+  - attack.t1490
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection_vss:
+    Image|endswith:
+      - '\vssadmin.exe'
+      - '\wmic.exe'
+    CommandLine|contains|all:
+      - 'shadow'
+      - 'delete'
+  selection_wbadmin:
+    Image|endswith: '\wbadmin.exe'
+    CommandLine|contains|all:
+      - 'delete'
+      - 'catalog'
+  selection_bcdedit:
+    Image|endswith: '\bcdedit.exe'
+    CommandLine|contains:
+      - 'recoveryenabled no'
+      - 'bootstatuspolicy ignoreallfailures'
+  condition: 1 of selection_*
+falsepositives:
+  - Sanctioned backup/imaging software or an administrator intentionally clearing shadow
+    storage during maintenance (allowlist the binary path and account/host).
+level: high

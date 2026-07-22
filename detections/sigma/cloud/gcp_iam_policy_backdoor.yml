@@ -1,0 +1,38 @@
+title: GCP IAM policy binding added (SetIamPolicy backdoor)
+id: 1c2ad5ef-c5fb-4e62-9e56-58ff553e6b7b
+status: experimental
+description: |
+  Detects a SetIamPolicy call in GCP Cloud Audit Logs - the primitive behind IAM
+  persistence/backdoors (T1098): granting a controlled principal a role on a project,
+  service account, or resource (add a binding, or the notorious allUsers/allAuthenticated
+  or actAs / roles.owner grant). SetIamPolicy is how an attacker keeps access after the
+  initial foothold. It also fires for legitimate IaC, so allowlist the automation
+  principals and triage the rest by the granted role and the added member - a binding to
+  a personal account, an external domain, or a public principal is the tell.
+  Validate (purple): add an IAM binding from dotfiles-Kali (htpx pair
+  gcp-iam-policy-backdoor).
+references:
+  - https://attack.mitre.org/techniques/T1098/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/gcp-iam-policy-audit.md
+author: dotfiles-Defense
+date: 2026-07-22
+tags:
+  - attack.persistence
+  - attack.t1098
+logsource:
+  product: gcp
+  service: gcp.audit
+detection:
+  selection:
+    gcp.audit.method_name|endswith: '.SetIamPolicy'
+  filter_iac:
+    # DEPLOY-REQUIRED: replace with your IaC / access-management automation principal(s)
+    # so pipeline-driven IAM changes don't alert. Until filled this excludes only the
+    # example. Run detections/sigma/deploy-required.sh to find this.
+    gcp.audit.principal_email:
+      - 'iam-terraform@example.iam.gserviceaccount.com'   # example — replace
+  condition: selection and not filter_iac
+falsepositives:
+  - Terraform / IaC applying IAM bindings (allowlist the automation principal in
+    filter_iac and alert on interactive callers, public principals, and privileged roles).
+level: medium

@@ -82,9 +82,9 @@
     },
     {
       "techniqueID": "T1098",
-      "score": 15,
+      "score": 16,
       "enabled": true,
-      "comment": "15 rule(s): aws_login_profile_created, cloudflare_api_token_created, github_credential_backdoor, gitlab_token_backdoor, harbor_robot_account_created, jenkins_api_token_created, k8s_clusteradmin_binding, npm_maintainer_added, okta_api_token_created, pypi_collaborator_added, pypi_trusted_publisher_added, rbcd_allowedtoact_5136, slack_app_installed, tfc_token_backdoor, vault_approle_backdoor"
+      "comment": "16 rule(s): aws_login_profile_created, cloudflare_api_token_created, gcp_iam_policy_backdoor, github_credential_backdoor, gitlab_token_backdoor, harbor_robot_account_created, jenkins_api_token_created, k8s_clusteradmin_binding, npm_maintainer_added, okta_api_token_created, pypi_collaborator_added, pypi_trusted_publisher_added, rbcd_allowedtoact_5136, slack_app_installed, tfc_token_backdoor, vault_approle_backdoor"
     },
     {
       "techniqueID": "T1098.001",
@@ -159,6 +159,12 @@
       "comment": "1 rule(s): okta_idp_created"
     },
     {
+      "techniqueID": "T1490",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): recovery_inhibition_process"
+    },
+    {
       "techniqueID": "T1525",
       "score": 1,
       "enabled": true,
@@ -220,9 +226,9 @@
     },
     {
       "techniqueID": "T1558.004",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): asrep_roast_probing_4771"
+      "comment": "2 rule(s): asrep_roast_4768, asrep_roast_probing_4771"
     },
     {
       "techniqueID": "T1562.001",
@@ -235,6 +241,12 @@
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): snowflake_network_policy_change"
+    },
+    {
+      "techniqueID": "T1562.008",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): gcp_audit_log_sink_deleted"
     },
     {
       "techniqueID": "T1563.002",
@@ -297,7 +309,7 @@
       "#66b1ff"
     ],
     "minValue": 0,
-    "maxValue": 15
+    "maxValue": 16
   },
   "legendItems": [],
   "showTacticRowBackground": false,

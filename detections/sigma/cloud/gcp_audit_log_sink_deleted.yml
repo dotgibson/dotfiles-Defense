@@ -1,0 +1,41 @@
+title: GCP logging sink deleted / disabled (audit-log tampering)
+id: 97e47b48-c02a-4937-857d-6275e7f634e0
+status: experimental
+description: |
+  Detects an attacker blinding GCP logging: deleting or updating a Cloud Logging sink
+  (google.logging.v2.ConfigServiceV2.DeleteSink / UpdateSink) or deleting a log bucket
+  (DeleteBucket). Killing the export/sink path is the cloud equivalent of clearing the
+  event log - it defeats every other cloud detection downstream, so it is the highest-
+  value logging-tamper signal (T1562.008). Sink lifecycle changes are rare and should
+  come from IaC; a delete/update from an interactive principal is the anomaly. Alert and
+  corroborate with the sink/bucket name and the caller.
+  Validate (purple): delete a logging sink from dotfiles-Kali (htpx pair
+  gcp-audit-log-disable).
+references:
+  - https://attack.mitre.org/techniques/T1562/008/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/gcp-audit-log-tamper-audit.md
+author: dotfiles-Defense
+date: 2026-07-22
+tags:
+  - attack.defense_evasion
+  - attack.t1562.008
+logsource:
+  product: gcp
+  service: gcp.audit
+detection:
+  selection:
+    gcp.audit.method_name|endswith:
+      - 'ConfigServiceV2.DeleteSink'
+      - 'ConfigServiceV2.UpdateSink'
+      - 'ConfigServiceV2.DeleteBucket'
+  filter_iac:
+    # DEPLOY-REQUIRED: replace with your logging/IaC automation principal(s) that manage
+    # sinks so pipeline-driven changes don't alert. Until filled this excludes only the
+    # example. Run detections/sigma/deploy-required.sh to find this.
+    gcp.audit.principal_email:
+      - 'logging-terraform@example.iam.gserviceaccount.com'   # example — replace
+  condition: selection and not filter_iac
+falsepositives:
+  - Terraform / IaC decommissioning a sink or bucket (allowlist the automation principal
+    in filter_iac and alert on interactive callers).
+level: high

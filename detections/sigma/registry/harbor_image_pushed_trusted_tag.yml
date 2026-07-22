@@ -28,8 +28,14 @@ detection:
   selection:
     operation: 'push'
     resource_type: 'artifact'
-  condition: selection
+  filter_ci:
+    # DEPLOY-REQUIRED: replace with your build service account(s) so routine CI pushes -
+    # the busiest event in the registry - don't alert. Until filled this excludes only the
+    # example robot. Run detections/sigma/deploy-required.sh to find this.
+    operator:
+      - 'robot$ci-pipeline'   # example CI robot account — replace
+  condition: selection and not filter_ci
 falsepositives:
-  - Routine CI publishing images - allowlist the build service account and its repos;
+  - Routine CI publishing images - allowlist the build service account in filter_ci;
     alert on pushes by other actors, tag overwrites, and out-of-window pushes.
 level: medium
