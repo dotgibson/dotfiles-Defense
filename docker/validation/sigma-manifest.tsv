@@ -35,10 +35,12 @@ ldap-recon-4648	windows-audit	docker/validation/sigma-fixtures/ldap_recon_4648.j
 sharphound-4662	windows-audit	docker/validation/sigma-fixtures/sharphound_4662.jsonl	detections/sigma/discovery/sharphound_ldap_sweep_4662.yml	9c4e7d21-3a5b-42f0-8e6d-1b0a4f7c9e33
 machine-account-4741	windows-audit	docker/validation/sigma-fixtures/machine_account_4741.jsonl	detections/sigma/persistence/machine_account_creation_burst_4741.yml	ae5a0814-7222-4c3d-9710-258b0c4045ba
 recovery-inhibition-4688	sysmon	docker/validation/sigma-fixtures/recovery_inhibition_4688.jsonl	detections/sigma/impact/recovery_inhibition_process.yml	7dbc97d7-0d27-4a77-8dfd-daf203087726
-# Cloud/SaaS rules (pipeline=none: no EventID, match raw field names). Only the 21
+# Cloud/SaaS rules (pipeline=none: no EventID, match raw field names). Only the 20
 # flat-field cloud rules run here. Products with dotted/nested field names (GCP, Cloudflare,
-# GitLab, Kubernetes, Harbor, Snowflake, Terraform, Vault, …) are validated on the
-# nested-field cloud plane instead — zircolite's flattener can't preserve those names (see
+# GitLab, Kubernetes, Harbor, Snowflake, Terraform, Vault, …) — plus any otherwise-flat rule
+# that keys on an underscored field the flattener strips (e.g. gws_illicit_oauth_grant on
+# client_id) — are validated on the nested-field cloud plane instead — zircolite's flattener
+# can't preserve those names (see
 # README + sigma-cloud-manifest.tsv). Verified locally.
 cloud_aws_iam_access_key_created	none	docker/validation/sigma-fixtures/cloud_aws_iam_access_key_created.jsonl	detections/sigma/cloud/aws_iam_access_key_created.yml	8b569fc9-809b-4e3a-87e6-b77cac86a643
 cloud_aws_login_profile_created	none	docker/validation/sigma-fixtures/cloud_aws_login_profile_created.jsonl	detections/sigma/cloud/aws_login_profile_created.yml	47f3ada3-a78d-423a-881e-6a5352ce892b
