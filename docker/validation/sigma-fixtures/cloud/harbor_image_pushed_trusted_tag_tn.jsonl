@@ -1,1 +1,1 @@
-{"operation": "pull", "resource_type": "artifact"}
+{"operation": "push", "resource_type": "artifact", "operator": "robot$ci-pipeline", "resource": "library/app:1.4.2"}

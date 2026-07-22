@@ -1,0 +1,37 @@
+title: AS-REP roast - TGT issued without pre-authentication (4768 type 0)
+id: 8334b896-9247-4716-b33e-eca7d1e0e883
+status: experimental
+description: |
+  Detects the AS-REP roast invariant itself: a Kerberos TGT (4768) issued for a
+  non-machine account with Pre-Authentication Type 0 - i.e. the account has "do not
+  require Kerberos pre-authentication" set, so the KDC returns an AS-REP encrypted with
+  the account's key that an attacker (GetNPUsers / Rubeus asreproast) cracks offline.
+  The companion 4771 0x18 rule only catches the *enumeration* tell (wrong-password
+  pre-auth failures); an operator roasting accounts already flagged no-preauth harvests
+  AS-REPs via 4768 type 0 and generates zero 4771 failures, sailing past that rule. This
+  is the primary vector and is near-zero-FP - almost no modern account legitimately runs
+  without pre-auth, so a honey no-preauth account makes it a pure tripwire.
+  Validate (purple): run GetNPUsers / Rubeus asreproast from dotfiles-Kali (hacktheplanet
+  "Microsoft Windows Kerberos" fold; htpx pair asreproast-getnpusers).
+references:
+  - https://attack.mitre.org/techniques/T1558/004/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/asrep-probing-4771.md
+author: dotfiles-Defense
+date: 2026-07-22
+tags:
+  - attack.credential_access
+  - attack.t1558.004
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4768
+    PreAuthType: 0
+  filter_machine:
+    TargetUserName|endswith: '$'
+  condition: selection and not filter_machine
+falsepositives:
+  - Legacy accounts or appliances deliberately configured without Kerberos pre-auth
+    (allowlist them by TargetUserName; better, remove the DONT_REQ_PREAUTH flag).
+level: high

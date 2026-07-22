@@ -56,7 +56,7 @@ fi
 
 # Windows tactic dirs → splunk_windows TA pipeline; non-Windows platform dirs → raw.
 # (Same split convert.sh documents; kept explicit so a new dir is a conscious choice.)
-WIN_DIRS=(credential_access privilege_escalation lateral_movement persistence defense_evasion)
+WIN_DIRS=(credential_access privilege_escalation lateral_movement persistence defense_evasion impact)
 NONWIN_DIRS=(cloud kubernetes okta github gitlab registry vault terraform jenkins snowflake google_workspace cloudflare npm pypi slack)
 
 # ── Splunk savedsearches form ─────────────────────────────────────────────────

@@ -28,8 +28,16 @@ detection:
     objectRef.subresource:
       - 'exec'
       - 'attach'
-  condition: selection
+  filter_sa:
+    # Controllers and service accounts exec into pods constantly (operators, debug
+    # sidecars); the tell is a *human* getting an interactive shell. Drop the
+    # service-account principals so this fires on people, not automation.
+    # DEPLOY-REQUIRED: additionally scope objectRef.namespace to your production
+    # namespaces. Run detections/sigma/deploy-required.sh to find this.
+    user.username|startswith: 'system:serviceaccount:'
+  condition: selection and not filter_sa
 falsepositives:
   - Routine developer/operator access in non-production namespaces, and debug
-    controllers - scope to production and allowlist known automation principals.
+    controllers - scope objectRef.namespace to production and allowlist known human
+    break-glass principals.
 level: medium

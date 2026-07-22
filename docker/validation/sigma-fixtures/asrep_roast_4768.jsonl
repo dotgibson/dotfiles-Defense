@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 4768, "Channel": "Security", "Computer": "DC01"}, "EventData": {"PreAuthType": 0, "TargetUserName": "svc_web"}}}
