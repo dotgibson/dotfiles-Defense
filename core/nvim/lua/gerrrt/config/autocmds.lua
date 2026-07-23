@@ -78,8 +78,29 @@ vim.api.nvim_create_autocmd({ "UIEnter", "VimEnter", "BufReadPost", "BufNewFile"
     if buftype ~= "" and buftype ~= "help" then
       return -- terminal, quickfix, prompt, nofile, ...
     end
-    vim.api.nvim_exec_autocmds("User", { pattern = "FilePost", modeline = false })
+    -- Delete FIRST, then fire on the next event-loop tick — both halves are load-bearing.
+    --
+    -- WHY THE FIRE IS DEFERRED (vim.schedule) : firing FilePost synchronously here runs the whole
+    -- deferred-plugin load INSIDE this buffer's BufReadPost chain whenever the first real file
+    -- arrives AFTER startup (bare `nvim` → dashboard/:e/picker — i.e. most sessions). Loading
+    -- nvim-lspconfig calls vim.lsp.enable(), which post-startup replays `doautoall nvim.lsp.enable
+    -- FileType`; that nested, group-scoped FileType trigger sets Vim's global did_filetype flag for
+    -- the STILL-RUNNING BufReadPost sequence. The runtime's filetypedetect handler — registered at
+    -- end of startup, so AFTER this one — then calls `:setf lua`, and setf is a documented no-op
+    -- once did_filetype() is true. Net effect: the FIRST file opened in a bare session got NO
+    -- filetype at all — no syntax/treesitter highlighting, no LSP attach, no linter — while every
+    -- later buffer worked (this augroup had deleted itself, so nothing poisoned their chains).
+    -- Scheduling moves the plugin burst to after the chain completes, so setf runs unpoisoned —
+    -- and the file paints one tick sooner, which is this event's whole purpose anyway. The
+    -- self-attach contract is unchanged: vim.lsp.enable's replay picks the buffer up a tick later.
+    --
+    -- WHY THE DELETE COMES BEFORE THE FIRE : exactly-once must hold even if a second BufReadPost
+    -- lands in the window between scheduling and the tick running (e.g. two quick :edits) — the
+    -- group must already be gone by then, not merely doomed.
     vim.api.nvim_del_augroup_by_name("GerrrtFilePost")
+    vim.schedule(function()
+      vim.api.nvim_exec_autocmds("User", { pattern = "FilePost", modeline = false })
+    end)
   end,
 })
 

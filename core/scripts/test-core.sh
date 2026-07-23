@@ -465,6 +465,19 @@ fi
 # Counting (not just "did it fire") is what catches the fires-more-than-once regression.
 # Headless is the only mode available in CI, and it is also the mode where UIEnter never
 # fires — so this doubles as the guard on the VimEnter fallback that makes headless work.
+#
+# THE FIRST FILE MUST ALSO END UP WITH A FILETYPE. Firing FilePost synchronously inside
+# the first buffer's BufReadPost chain once shipped a real bug: vim.lsp.enable() (loaded
+# by FilePost) replays `doautoall <group> FileType`, and that nested trigger sets Vim's
+# global did_filetype flag for the still-running chain — so the runtime filetypedetect
+# handler's later `:setf` was a documented no-op and the FIRST file of every bare session
+# opened with NO filetype (no highlighting, no LSP, no linter; later files fine). The
+# probe can't see that through plugins — it is hermetic, FilePost loads nothing — so it
+# SIMULATES the one relevant side effect: a `User FilePost` listener that replays a
+# group-scoped FileType exactly like vim.lsp.enable does. If FilePost ever goes back to
+# firing inside the read chain, that replay re-poisons did_filetype and the asserted
+# `ft=lua` collapses to `ft=` on scenario B. (Fixtures are .lua for a filetype that is
+# detected by name alone, no content sniffing.)
 hdr "neovim User FilePost contract (nvim/ headless)"
 if ! ((SCOPE_NVIM)); then
   skip "nvim FilePost contract (out of scope)"
@@ -486,6 +499,18 @@ vim.api.nvim_create_autocmd("User", {
     _G.filepost_count = _G.filepost_count + 1
   end,
 })
+-- Simulate the FileType-firing side effect of a real FilePost consumer: vim.lsp.enable()
+-- replays `doautoall nvim.lsp.enable FileType` when called post-startup. The hermetic probe
+-- loads no plugins, so without this replay the did_filetype poisoning path (see the header)
+-- is invisible here and the ft assertion below would pass on broken code.
+vim.api.nvim_create_augroup("ProbeFtReplay", { clear = true })
+vim.api.nvim_create_autocmd("FileType", { group = "ProbeFtReplay", callback = function() end })
+vim.api.nvim_create_autocmd("User", {
+  pattern = "FilePost",
+  callback = function()
+    vim.cmd("doautoall ProbeFtReplay FileType")
+  end,
+})
 local ok, err = pcall(require, "gerrrt.config.autocmds")
 if not ok then
   io.stderr:write("require gerrrt.config.autocmds → " .. tostring(err) .. "\n")
@@ -494,19 +519,26 @@ end
 vim.defer_fn(function()
   -- Scenario B only: open two real files AFTER startup. The second must not re-fire.
   local a, b = vim.env.CORE_FP_A, vim.env.CORE_FP_B
+  local first_buf -- the FIRST real file's buffer: startup file (A) or first :edit (B)
   if a and a ~= "" then
     pcall(vim.cmd, "edit " .. vim.fn.fnameescape(a))
+    first_buf = vim.api.nvim_get_current_buf()
     pcall(vim.cmd, "edit " .. vim.fn.fnameescape(b))
+  else
+    first_buf = vim.api.nvim_get_current_buf()
   end
   vim.defer_fn(function()
-    io.stdout:write(("filepost=%d ready=%s\n"):format(_G.filepost_count, tostring(vim.g.startup_done)))
+    -- Sampled AFTER the deferred FilePost tick, so this is the filetype the buffer is left
+    -- with — `ft=` here means the first file of the session came up dead (see header).
+    io.stdout:write(("filepost=%d ready=%s ft=%s\n"):format(
+      _G.filepost_count, tostring(vim.g.startup_done), vim.bo[first_buf].filetype))
     vim.cmd("qa!")
   end, 200)
 end, 200)
 LUA
-  fp_a="$SANDBOX/fp_a.txt"; printf 'alpha\n' >"$fp_a"
-  fp_b="$SANDBOX/fp_b.txt"; printf 'bravo\n' >"$fp_b"
-  fp_want='filepost=1 ready=true'
+  fp_a="$SANDBOX/fp_a.lua"; printf 'return "alpha"\n' >"$fp_a"
+  fp_b="$SANDBOX/fp_b.lua"; printf 'return "bravo"\n' >"$fp_b"
+  fp_want='filepost=1 ready=true ft=lua'
 
   # A. nvim <file> — buffer is named before the readiness event arrives.
   fp_got_a=$(CORE_NVIM_DIR="$HERE/nvim" nvim --headless -u "$fp_probe" -i NONE -n "$fp_a" \
@@ -517,12 +549,12 @@ LUA
     </dev/null 2>/dev/null | tr -d '\r')
 
   if [[ "$fp_got_a" == "$fp_want" ]]; then
-    pass "FilePost fires exactly once when nvim starts with a file"
+    pass "FilePost fires exactly once when nvim starts with a file (filetype intact)"
   else
     fail "FilePost contract broken on 'nvim <file>' — want '$fp_want', got '$fp_got_a'"
   fi
   if [[ "$fp_got_b" == "$fp_want" ]]; then
-    pass "FilePost fires exactly once on bare start + two :edits (no re-fire)"
+    pass "FilePost fires exactly once on bare start + two :edits (no re-fire, filetype intact)"
   else
     fail "FilePost contract broken on bare-then-edit — want '$fp_want', got '$fp_got_b'"
   fi
