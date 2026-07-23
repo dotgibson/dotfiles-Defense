@@ -74,7 +74,12 @@ git diff                            # sanity-check: only core.version + CHANGELO
 make tag
 
 # 3. main is protected, so land the release COMMIT via a PR (merge commit, not squash).
-git push origin HEAD:release/vX.Y.Z
+#    --no-follow-tags is LOAD-BEARING: step 2 just created the tag locally, and with
+#    `push.followTags = true` in your git config a plain push carries it along — landing the
+#    tag on the PRE-merge commit and firing release.yml + sync-fanout.yml immediately, which
+#    is exactly the state this ordering exists to avoid. The flag makes the recipe correct
+#    regardless of local config.
+git push --no-follow-tags origin HEAD:release/vX.Y.Z
 gh pr create --base main --head release/vX.Y.Z --title "release vX.Y.Z"
 #    ... review, let CI go green, then MERGE with a merge commit ...
 

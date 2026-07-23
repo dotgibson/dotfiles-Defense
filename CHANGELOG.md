@@ -13,6 +13,28 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **nvim: first file opened in a bare session got no filetype — no syntax/treesitter
+  highlighting, no LSP, no linter.** When Neovim started without a file argument
+  (dashboard, `nvim` then `:e`, any picker), the first real buffer's `BufReadPost`
+  fired `User FilePost` synchronously, loading nvim-lspconfig _inside_ that autocmd
+  chain. `vim.lsp.enable()`'s post-startup `doautoall … FileType` replay set Vim's
+  global `did_filetype` flag mid-chain, so when the runtime's `filetypedetect`
+  handler (registered after ours) reached `:setf`, it was a documented no-op — the
+  buffer ended up with an empty filetype and nothing keyed off `FileType` ever ran.
+  Every _subsequent_ buffer worked (the FilePost augroup had self-deleted), which is
+  why the bug looked like "the first file is dead until I open a second one".
+  `nvim <file>` startups were unaffected (FilePost fires at `UIEnter` there, outside
+  any read chain). Fix: fire FilePost via `vim.schedule()` so the deferred-plugin
+  burst lands after the read chain completes — filetype detection runs unpoisoned,
+  and the exactly-once contract is preserved by deleting the augroup _before_
+  scheduling. The D3 contract test now also asserts the first file ends up with a
+  non-empty filetype, simulating vim.lsp.enable's group-scoped FileType replay in
+  the hermetic probe so the poisoning path stays covered (verified red on the
+  pre-fix code, green after). (`nvim/lua/gerrrt/config/autocmds.lua`,
+  `scripts/test-core.sh`)
+
 ## [v4.0.2] - 2026-07-21
 
 ### Added

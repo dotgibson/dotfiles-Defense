@@ -176,7 +176,7 @@ if ((PUSH)); then
   PR — which adds a merge commit, leaving these tags one behind main's HEAD ('git describe'
   shows $TAG-1-g…). After the PR merges, RE-POINT both at the merged tip for a clean tag:
 
-  1. land the commit:  git push origin HEAD:release/$TAG
+  1. land the commit:  git push --no-follow-tags origin HEAD:release/$TAG
        gh pr create --base main --head release/$TAG --title "release $TAG"
        # merge with a MERGE commit (not squash)
   2. re-point AFTER it merges:
@@ -198,8 +198,13 @@ else
   keeps the tag on main's HEAD and 'git describe' clean. (Tagging before the merge leaves
   the tag one commit behind and needs a re-point — the trap PUSH=1 falls into.)
 
+  --no-follow-tags below is LOAD-BEARING: $TAG already exists locally, and with
+  \`push.followTags = true\` set a plain push carries it to origin — putting the tag on the
+  PRE-merge commit and firing release.yml + sync-fanout.yml right then, which lands you in
+  the very PUSH=1 state this ordering avoids.
+
   1. land the commit:
-       git push origin HEAD:release/$TAG
+       git push --no-follow-tags origin HEAD:release/$TAG
        gh pr create --base main --head release/$TAG --title "release $TAG"
        # merge with a MERGE commit (not squash)
   2. tag the merged tip AFTER the PR merges:
