@@ -15,6 +15,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`sync-core.sh` summary now counts repos, not ✓ lines.** The footer printed the
+  line-level `$PASS` counter as "updated" — the pre-flight audit ✓ plus two `ok()`
+  per healthy repo (subtree pull + core.lock) — so a clean 8-repo fan-out reported
+  "updated 17" (1 + 2×8), reading as if the sync had touched repos that don't
+  exist. Worse, the count didn't even match the ✓ lines on screen: the guard-install
+  ✓ came from `blib_ok`, which prints the same green check without incrementing
+  `$PASS`. The headline row now tallies REPOS, each in exactly one bucket (updated /
+  skipped / failed — failed wins if the repo printed any ✗), plus an "(of N
+  targeted)" total; `blib_ok` is routed through the shared tally so the line-level
+  counters on the second `checks:` row match the visible ✓/–/✗ lines one-for-one.
+  (`scripts/sync-core.sh`)
+
 - **nvim: first file opened in a bare session got no filetype — no syntax/treesitter
   highlighting, no LSP, no linter.** When Neovim started without a file argument
   (dashboard, `nvim` then `:e`, any picker), the first real buffer's `BufReadPost`

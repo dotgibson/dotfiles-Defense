@@ -109,8 +109,9 @@ done
 [[ ${#SELECT[@]} -gt 0 ]] && TARGETS=("${SELECT[@]}") || TARGETS=("${ALL_OS_REPOS[@]}")
 
 # Shared palette + pass/skip/fail/have (one definition for every gate script).
-# This script doesn't tally, so the counters the lib keeps go unread; `ok`/`err`
-# are kept as thin aliases for pass/fail so the call sites below read naturally.
+# The lib's counters ARE read here: the summary footer prints them as the `checks:` row,
+# and the per-repo bucket logic snapshots $FAIL to classify a repo (see the fan-out loop).
+# `ok`/`err` are kept as thin aliases for pass/fail so the call sites below read naturally.
 # shellcheck source=scripts/lib/common.sh
 source "${BASH_SOURCE[0]%/*}/lib/common.sh"
 ok() { pass "$@"; }
@@ -123,6 +124,13 @@ err() { fail "$@"; }
 # shellcheck source=lib/bootstrap-lib.sh
 source "$HERE/lib/bootstrap-lib.sh"
 export DOTFILES_ALLOW_CORE_EDIT=1
+# Route the bootstrap lib's ✓ through the shared tally: blib_ok prints the same green
+# check as pass() but does NOT increment $PASS, so the guard-install line was a visible ✓
+# the `checks:` summary row couldn't account for. Overriding it (after the source above)
+# makes every ✓ this script prints a counted one. blib_warn is left alone deliberately:
+# it is a stderr warning, not a ✗ — mapping it to err() would flip a repo with a benign
+# "custom pre-commit left as-is" notice into the failed bucket via the $FAIL snapshot.
+blib_ok() { ok "$@"; }
 
 [[ -n "$CORE_REMOTE" ]] || {
   err "CORE_REMOTE empty (set origin on dotfiles-core, or export CORE_REMOTE)"
@@ -217,14 +225,24 @@ if ((!DRY)) && ((SYNC_JOBS > 1)) && [[ "$CORE_SHA" != unknown ]]; then
   echo
 fi
 
+# Per-REPO tally for the summary footer. The line-level PASS/SKIP/FAIL counters from
+# common.sh count function calls, not repos: the pre-flight audit ✓ plus two ok() per
+# healthy repo (subtree pull + core.lock) — so reporting $PASS as "updated" once claimed
+# "updated 17" for an 8-repo fleet (1 + 2×8; the guard-install ✓ came from blib_ok and
+# wasn't even counted until the override above). These count REPOS, each landing in
+# exactly one bucket: failed if the repo printed any ✗ (dirty tree, pull or lock-commit
+# failure), else updated if its subtree pull ran, else skipped.
+repos_updated=0 repos_skipped=0 repos_failed=0
 for repo in "${TARGETS[@]}"; do
   path="$REPOS_ROOT/$repo"
   if [[ ! -d "$path/.git" ]]; then
     skip "$repo (not cloned at $path)"
+    repos_skipped=$((repos_skipped + 1))
     continue
   fi
   if [[ ! -d "$path/core" ]]; then
     skip "$repo (no core/ subtree yet — run the one-time 'git subtree add' first)"
+    repos_skipped=$((repos_skipped + 1))
     continue
   fi
   if ((DRY)); then
@@ -234,9 +252,13 @@ for repo in "${TARGETS[@]}"; do
   # bail if the OS repo has a dirty tree — subtree merges into a clean state only
   if [[ -n "$(git -C "$path" status --porcelain)" ]]; then
     err "$repo has uncommitted changes — commit/stash first, skipping"
+    repos_failed=$((repos_failed + 1))
     continue
   fi
   echo ":: $repo"
+  # Snapshot the line-level FAIL counter: any err() emitted inside this repo's body
+  # (pull failure, core.lock commit failure) flips the whole repo into the failed bucket.
+  _repo_fail0=$FAIL
   if git -C "$path" subtree pull --prefix=core "$CORE_REMOTE" "$CORE_BRANCH" --squash; then
     ok "$repo core/ updated → $CORE_SHA"
     # B1: stamp provenance so the OS repo can answer "which Core do I carry?" in O(1),
@@ -275,15 +297,28 @@ for repo in "${TARGETS[@]}"; do
   else
     err "$repo subtree pull failed — resolve, then re-run"
   fi
+  if ((FAIL > _repo_fail0)); then
+    repos_failed=$((repos_failed + 1))
+  else
+    repos_updated=$((repos_updated + 1))
+  fi
   echo
 done
 
 # Scannable tally of the fan-out — sync sources common.sh (which counts every
 # ok/skip/err via PASS/SKIP/FAIL) but used to end on a bare "done", forcing you to
-# scroll an 8-repo run to learn what actually landed. Print the same summary footer the
-# audit/test gates use so the single highest-stakes operation reports at a glance.
+# scroll an 8-repo run to learn what actually landed.
+#
+# The headline counts REPOS (each in exactly one bucket — see the loop above); it used
+# to print the line-level $PASS as "updated", which claimed "updated 17" for an 8-repo
+# fleet. The line-level counters stay on a second `checks:` row and — with blib_ok routed
+# through the tally near the top of this script — match the individual ✓/–/✗ lines above
+# one-for-one, which is what you scroll back for on a red run.
 printf '\n%s──────── sync summary ────────%s\n' "$c_blu" "$c_rst"
-printf '  %supdated %d%s   %sskipped %d%s   %sfailed %d%s\n' \
+printf '  repos:  %supdated %d%s   %sskipped %d%s   %sfailed %d%s   (of %d targeted)\n' \
+  "$c_grn" "$repos_updated" "$c_rst" "$c_yel" "$repos_skipped" "$c_rst" "$c_red" "$repos_failed" "$c_rst" \
+  "${#TARGETS[@]}"
+printf '  checks: %sok %d%s   %sskip %d%s   %serr %d%s\n' \
   "$c_grn" "$PASS" "$c_rst" "$c_yel" "$SKIP" "$c_rst" "$c_red" "$FAIL" "$c_rst"
 if ((DRY)); then
   echo "dry-run — nothing was written."
