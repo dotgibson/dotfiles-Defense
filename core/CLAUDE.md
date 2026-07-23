@@ -72,6 +72,10 @@ On-demand routines that automate the judgment-heavy chores `audit-core.sh` can't
   features worth adopting. Delegates to the `tool-scout` subagent.
 - `/freshness-triage` — review open dependency-bump PRs (zsh plugins, nvim lock,
   actions) against upstream changelogs and flag breaking changes.
+- `/runtime-freshness` — decide whether the **pinned** language runtimes in
+  `mise/config.toml` (python/ruby/java/lua) are due to cross a pin, weighing EOL
+  calendars and tooling compatibility against the maint job's `mise outdated --bump`
+  nudge. Report-first.
 - `/modernize` — scout the next CI modernization floor (newly-EOL runners, deprecated
   action runtimes, new hardening dimensions) and propose bumps to `modern-baseline.yml`.
 - `/release-readiness` — go/no-go before a Core release: unreleased work, audit status,

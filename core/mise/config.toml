@@ -12,8 +12,8 @@
 [tools]
 node   = "lts"
 pnpm   = "latest"     # faster than npm/yarn, less disk; npm/npx still ship with node
-python = "3.12"       # many pentest tools (impacket, bloodhound-python) want a real Python
-ruby   = "3.3"        # evil-winrm, some Metasploit modules, web tooling
+python = "3.14"       # many pentest tools (impacket, bloodhound-python) want a real Python
+ruby   = "3.4"        # evil-winrm, some Metasploit modules, web tooling
 go     = "latest"     # lots of security tooling is `go install`-able; enables gopls
 rust   = "stable"     # see distro note below
 java   = "temurin-21" # Burp Suite, BloodHound legacy — recent LTS

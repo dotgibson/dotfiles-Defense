@@ -13,7 +13,51 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **Bumped the pinned Python and Ruby runtimes off their security-only lines.**
+  `mise/config.toml`: `python = "3.12"` → `"3.14"` and `ruby = "3.3"` → `"3.4"`.
+  Both pins had aged into security-only maintenance, so they no longer receive
+  bugfix releases: Python 3.12's bugfix window ended ~2025-04 (security-only until
+  2028-10), and Ruby 3.3 dropped to security maintenance on 2026-04-01 (EOL
+  ~2027-03). Targets chosen for runway, not just currency: **Python 3.14** (GA
+  2025-10-07) has bugfix support through 2027-10 — 3.13 was skipped because its
+  bugfix window ends 2026-10-06, only months out; **Ruby 3.4** (GA 2024-12-25) is
+  in normal maintenance (the next line is 4.0, too fresh to point security tooling
+  at). Both are supported by the pentest tooling the intent comments name
+  (impacket/bloodhound-python, evil-winrm). Java (`temurin-21`, still a current
+  LTS) and Lua (`5.4`, current stable) stay put. Regenerate `mise.lock` on a real
+  box with `mise install` after syncing. (`mise/config.toml`)
+
+### Added
+
+- **New `/runtime-freshness` routine.** On-demand `.claude/` routine (report-first,
+  like `/freshness-triage`) that decides whether the _pinned_ runtimes in
+  `mise/config.toml` (python/ruby/java/lua) are due to cross a pin — weighing EOL
+  calendars and tooling compatibility, the judgment the maint job's `mise outdated
+  --bump` nudge can't make. Registered in `CLAUDE.md`'s routines list.
+  (`.claude/commands/runtime-freshness.md`)
+
+- **Scheduled maintenance now surfaces cross-pin runtime bumps.** `mise upgrade`
+  keeps each runtime current only _within_ its configured constraint
+  (`python = "3.12"` tracks 3.12.x); crossing a pin to a new minor/major is a
+  deliberate call and stays manual. The daily runner now logs `mise outdated
+  --bump` after the upgrade step — a report-only nudge listing runtimes with a
+  newer version available beyond their pin (apply with `mise up --bump <tool>`),
+  mirroring the existing "system packages: N upgradable (apply with `up`)" line.
+  (`maint/dotfiles-maint.sh`)
+
 ### Fixed
+
+- **Scheduled maintenance now advances the Rust toolchain.** The daily runner ran
+  `mise upgrade --yes`, but mise's rust support delegates to rustup (it sets
+  `RUSTUP_TOOLCHAIN` rather than installing a standalone toolchain), so a rolling
+  channel like `mise/config.toml`'s `rust = "stable"` reads as always-satisfied —
+  `mise upgrade` never moved it forward and Rust silently fell behind until someone
+  ran `rustup update` by hand. `dotfiles-maint.sh` now runs `rustup update` after
+  the mise step, guarded on `have rustup` (no-op where the package manager owns
+  rust and rustup isn't installed) and time-limited by `MAINT_RUSTUP_TIMEOUT`
+  (default 600s). (`maint/dotfiles-maint.sh`)
 
 - **`sync-core.sh` summary now counts repos, not ✓ lines.** The footer printed the
   line-level `$PASS` counter as "updated" — the pre-flight audit ✓ plus two `ok()`

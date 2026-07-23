@@ -13,6 +13,7 @@
 #   MAINT_SYSTEM_UPGRADE=0   # 1 = also apply system pkgs (apt/dnf/zypper/brew ONLY)
 #   ZPLUGINDIR=~/.local/share/zsh/plugins
 #   MAINT_NVIM_TIMEOUT=600    MAINT_BREW_TIMEOUT=900    MAINT_TS_TIMEOUT=300
+#   MAINT_RUSTUP_TIMEOUT=600 # seconds `rustup update` may block
 #   MAINT_ENABLED=1          # 0 = no-op (e.g. drop a guard on a Kali engagement box)
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -25,7 +26,12 @@ set -uo pipefail
 # PATH — append any inherited PATH only when it's set, so a stripped cron/systemd env
 # (which may omit PATH entirely) doesn't trip nounset before we've built one.
 export HOME="${HOME:?}"
-export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
+# ${CARGO_HOME:-$HOME/.cargo}/bin is where rustup drops the `rustup`/`cargo` shims
+# (mise's rust backend installs rustup there too). A scheduler's minimal PATH omits
+# it, so without this the `have rustup` guard below is false and the rust step
+# silently skips — the exact unattended case it exists to cover. `:-` default keeps
+# it nounset-safe when CARGO_HOME is unset.
+export PATH="$HOME/.local/bin:${CARGO_HOME:-$HOME/.cargo}/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
 : "${XDG_CACHE_HOME:=$HOME/.cache}"
 : "${XDG_STATE_HOME:=$HOME/.local/state}"
 : "${XDG_DATA_HOME:=$HOME/.local/share}"
@@ -108,6 +114,33 @@ fi
 if have mise; then
   step "mise plugins update" mise plugins update
   step "mise upgrade" mise upgrade --yes
+  # `mise upgrade` keeps each tool current WITHIN its configured constraint
+  # (python="3.12" tracks 3.12.x) but never crosses a pin — moving 3.12→3.13 is a
+  # deliberate call (breakage risk for pinned tooling), so it stays manual. Surface
+  # the cross-pin bumps that are available so they don't go unnoticed: `--bump`
+  # compares against the latest version BEYOND the pin (plain `outdated` only shows
+  # within-constraint staleness, which the upgrade just cleared). Report-only, like
+  # the `up` nudge for system packages below — apply with `mise up --bump <tool>`.
+  bump="$(mise outdated --bump --no-header 2>/dev/null)"
+  if [[ -n "$bump" ]]; then
+    log "mise: bumps available beyond your pins (apply manually: mise up --bump <tool>):"
+    printf '%s\n' "$bump" | tee -a "$LOG"
+  else
+    log "mise: all runtimes current within their pins (no cross-pin bumps available)"
+  fi
+fi
+
+# ── rust toolchains (mise delegates rolling channels to rustup) ───────────────
+# mise's rust support doesn't install a standalone toolchain — it sets
+# RUSTUP_TOOLCHAIN and hands off to rustup. So a rolling channel (stable/beta/
+# nightly, as in mise/config.toml's `rust = "stable"`) is ALWAYS "satisfied" from
+# mise's view: `mise upgrade` above is a no-op for it and never advances the
+# toolchain. Moving stable forward (1.88 → 1.89 …) is rustup's job, so do it here
+# — otherwise rust silently falls behind until someone runs `rustup update` by
+# hand. Guarded on `have rustup`: no-op on boxes where the package manager owns
+# rust (the distro note in mise/config.toml) and rustup isn't installed.
+if have rustup; then
+  step "rustup update" _to "${MAINT_RUSTUP_TIMEOUT:-600}" rustup update
 fi
 
 # ── zsh plugins (mirrors your zplugin-update) ─────────────────────────────────
