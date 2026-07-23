@@ -18,6 +18,12 @@ eventSource =~ "iam.amazonaws.com" and (eventName in~ ("CreateLoginProfile", "Up
 // cloud/entra_sp_credential_backdoor.yml — Entra service-principal credential added (app backdoor)
 OperationName in~ ("Add service principal credentials", "Add application credentials", "Update application - Certificates and secrets management", "Update application – Certificates and secrets management")
 
+// cloud/gcp_audit_log_sink_deleted.yml — GCP logging sink deleted / disabled (audit-log tampering)
+(['gcp.audit.method_name'] endswith "ConfigServiceV2.DeleteSink" or ['gcp.audit.method_name'] endswith "ConfigServiceV2.UpdateSink" or ['gcp.audit.method_name'] endswith "ConfigServiceV2.DeleteBucket") and (not(['gcp.audit.principal_email'] =~ "logging-terraform@example.iam.gserviceaccount.com"))
+
+// cloud/gcp_iam_policy_backdoor.yml — GCP IAM policy binding added (SetIamPolicy backdoor)
+['gcp.audit.method_name'] endswith ".SetIamPolicy" and (not(['gcp.audit.principal_email'] =~ "iam-terraform@example.iam.gserviceaccount.com"))
+
 // cloud/gcp_service_account_key_created.yml — GCP user-managed service-account key created
 ['gcp.audit.method_name'] =~ "google.iam.admin.v1.CreateServiceAccountKey"
 
@@ -30,7 +36,10 @@ OperationName in~ ("Add service principal credentials", "Add application credent
 // cloudflare/cloudflare_worker_deployed.yml — Cloudflare Worker deployed (serverless edge code execution)
 (['resource.type'] in~ ("worker", "workers_script")) and (['action.type'] in~ ("create", "update"))
 
-// credential_access/asrep_roast_probing_4771.yml — AS-REP roast base - Kerberos pre-auth failure 0x18 (4771)
+// credential_access/asrep_roast_4768.yml — AS-REP roast - TGT issued without pre-authentication (4768 type 0)
+(EventID == 4768 and PreAuthType == 0) and (not(TargetUserName endswith "$"))
+
+// credential_access/asrep_roast_probing_4771.yml — AS-REP / Kerbrute enumeration base - Kerberos pre-auth failure 0x18 (4771)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // credential_access/coercion_named_pipes_5145.yml — Authentication coercion - named-pipe access over IPC$ (5145)
@@ -91,7 +100,10 @@ eventName in~ ("GRANT_DELEGATED_ADMIN_PRIVILEGES", "ASSIGN_ROLE")
 eventName =~ "email_forwarding_out_of_domain"
 
 // google_workspace/gws_illicit_oauth_grant.yml — Google Workspace illicit OAuth grant (consent phish)
-eventName =~ "authorize"
+eventName =~ "authorize" and (scope contains "mail.google.com" or scope contains "auth/gmail" or scope contains "auth/drive" or scope contains "auth/spreadsheets" or scope contains "auth/documents" or scope contains "auth/contacts") and (not(client_id =~ "000000000000-example.apps.googleusercontent.com"))
+
+// impact/recovery_inhibition_process.yml — Inhibit system recovery - shadow copy / backup / boot-recovery deletion
+((Image endswith "\\vssadmin.exe" or Image endswith "\\wmic.exe") and (CommandLine contains "shadow" and CommandLine contains "delete")) or (Image endswith "\\wbadmin.exe" and (CommandLine contains "delete" and CommandLine contains "catalog")) or (Image endswith "\\bcdedit.exe" and (CommandLine contains "recoveryenabled no" or CommandLine contains "bootstatuspolicy ignoreallfailures"))
 
 // jenkins/jenkins_api_token_created.yml — Jenkins user API token created (durable-access backdoor)
 uri contains "ApiTokenProperty/generateNewToken"
@@ -106,7 +118,7 @@ uri contains "/scriptText" or uri contains "/script"
 (verb in~ ("create", "update", "patch")) and (['objectRef.resource'] in~ ("clusterrolebindings", "rolebindings")) and ['requestObject.roleRef.name'] =~ "cluster-admin"
 
 // kubernetes/k8s_pod_exec_attach.yml — Kubernetes pod exec / attach
-verb =~ "create" and ['objectRef.resource'] =~ "pods" and (['objectRef.subresource'] in~ ("exec", "attach"))
+(verb =~ "create" and ['objectRef.resource'] =~ "pods" and (['objectRef.subresource'] in~ ("exec", "attach"))) and (not(['user.username'] startswith "system:serviceaccount:"))
 
 // kubernetes/k8s_privileged_pod_created.yml — Kubernetes privileged / host-namespace pod created (node escape)
 (verb =~ "create" and ['objectRef.resource'] =~ "pods") and (['requestObject.spec.containers.securityContext.privileged'] == true or ['requestObject.spec.hostPID'] == true or ['requestObject.spec.volumes.hostPath.path'] =~ "/")
@@ -181,7 +193,7 @@ action startswith "add" and action contains "trusted publisher"
 operation =~ "delete" and (resource_type in~ ("artifact", "repository"))
 
 // registry/harbor_image_pushed_trusted_tag.yml — Harbor image push (backdoored image / trusted-tag poisoning)
-operation =~ "push" and resource_type =~ "artifact"
+(operation =~ "push" and resource_type =~ "artifact") and (not(operator =~ "robot$ci-pipeline"))
 
 // registry/harbor_robot_account_created.yml — Harbor robot account created (durable registry credential)
 operation =~ "create" and resource_type =~ "robot"

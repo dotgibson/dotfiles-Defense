@@ -30,13 +30,17 @@ rdp-hijack-4688	sysmon	docker/validation/sigma-fixtures/rdp_hijack_4688.jsonl	de
 wmiexec-4688	sysmon	docker/validation/sigma-fixtures/wmiexec_4688.jsonl	detections/sigma/lateral_movement/wmiexec_wmiprvse_child_4688.yml	e367cca9-bbab-4a16-a15e-38839cb0849a
 wmi-consumer-20	sysmon	docker/validation/sigma-fixtures/wmi_consumer_20.jsonl	detections/sigma/persistence/wmi_event_subscription_consumer.yml	361cae33-5391-4dd1-ad67-5c6a13ffe9b5
 asrep-probing-4771	windows-audit	docker/validation/sigma-fixtures/asrep_probing_4771.jsonl	detections/sigma/credential_access/asrep_roast_probing_4771.yml	c34eca90-8774-47f6-a0d7-c01b1a116c00
+asrep-roast-4768	windows-audit	docker/validation/sigma-fixtures/asrep_roast_4768.jsonl	detections/sigma/credential_access/asrep_roast_4768.yml	8334b896-9247-4716-b33e-eca7d1e0e883
 ldap-recon-4648	windows-audit	docker/validation/sigma-fixtures/ldap_recon_4648.jsonl	detections/sigma/discovery/ldap_recon_explicit_creds_4648.yml	4268aa00-9150-42f2-a14b-e2548e15a72e
 sharphound-4662	windows-audit	docker/validation/sigma-fixtures/sharphound_4662.jsonl	detections/sigma/discovery/sharphound_ldap_sweep_4662.yml	9c4e7d21-3a5b-42f0-8e6d-1b0a4f7c9e33
 machine-account-4741	windows-audit	docker/validation/sigma-fixtures/machine_account_4741.jsonl	detections/sigma/persistence/machine_account_creation_burst_4741.yml	ae5a0814-7222-4c3d-9710-258b0c4045ba
-# Cloud/SaaS rules (pipeline=none: no EventID, match raw field names). Only the 21
+recovery-inhibition-4688	sysmon	docker/validation/sigma-fixtures/recovery_inhibition_4688.jsonl	detections/sigma/impact/recovery_inhibition_process.yml	7dbc97d7-0d27-4a77-8dfd-daf203087726
+# Cloud/SaaS rules (pipeline=none: no EventID, match raw field names). Only the 20
 # flat-field cloud rules run here. Products with dotted/nested field names (GCP, Cloudflare,
-# GitLab, Kubernetes, Harbor, Snowflake, Terraform, Vault, …) are validated on the
-# nested-field cloud plane instead — zircolite's flattener can't preserve those names (see
+# GitLab, Kubernetes, Harbor, Snowflake, Terraform, Vault, …) — plus any otherwise-flat rule
+# that keys on an underscored field the flattener strips (e.g. gws_illicit_oauth_grant on
+# client_id) — are validated on the nested-field cloud plane instead — zircolite's flattener
+# can't preserve those names (see
 # README + sigma-cloud-manifest.tsv). Verified locally.
 cloud_aws_iam_access_key_created	none	docker/validation/sigma-fixtures/cloud_aws_iam_access_key_created.jsonl	detections/sigma/cloud/aws_iam_access_key_created.yml	8b569fc9-809b-4e3a-87e6-b77cac86a643
 cloud_aws_login_profile_created	none	docker/validation/sigma-fixtures/cloud_aws_login_profile_created.jsonl	detections/sigma/cloud/aws_login_profile_created.yml	47f3ada3-a78d-423a-881e-6a5352ce892b
@@ -47,7 +51,6 @@ cloud_github_credential_backdoor	none	docker/validation/sigma-fixtures/cloud_git
 cloud_github_self_hosted_runner_registered	none	docker/validation/sigma-fixtures/cloud_github_self_hosted_runner_registered.jsonl	detections/sigma/github/github_self_hosted_runner_registered.yml	d0d00bd8-b122-4909-96e2-49d2775598fb
 cloud_gws_admin_role_grant	none	docker/validation/sigma-fixtures/cloud_gws_admin_role_grant.jsonl	detections/sigma/google_workspace/gws_admin_role_grant.yml	a5dfde3d-3def-41ee-9be9-87e011bf8172
 cloud_gws_external_mail_forwarding	none	docker/validation/sigma-fixtures/cloud_gws_external_mail_forwarding.jsonl	detections/sigma/google_workspace/gws_external_mail_forwarding.yml	6e2a80de-912d-495b-aa3c-c3ce24ac9ef3
-cloud_gws_illicit_oauth_grant	none	docker/validation/sigma-fixtures/cloud_gws_illicit_oauth_grant.jsonl	detections/sigma/google_workspace/gws_illicit_oauth_grant.yml	ee3ba747-0017-46fe-83a8-1918fbbc3241
 cloud_jenkins_api_token_created	none	docker/validation/sigma-fixtures/cloud_jenkins_api_token_created.jsonl	detections/sigma/jenkins/jenkins_api_token_created.yml	970de00f-3f9e-420f-8dbc-5e3c1f9f9445
 cloud_jenkins_job_backdoor	none	docker/validation/sigma-fixtures/cloud_jenkins_job_backdoor.jsonl	detections/sigma/jenkins/jenkins_job_backdoor.yml	a3d57201-71d4-49fb-9a28-df32b823fb10
 cloud_jenkins_script_console	none	docker/validation/sigma-fixtures/cloud_jenkins_script_console.jsonl	detections/sigma/jenkins/jenkins_script_console.yml	a1c74793-c675-4314-9d1d-c71090ccc449

@@ -25,8 +25,27 @@ logsource:
 detection:
   selection:
     eventName: 'authorize'
-  condition: selection
+  selection_scopes:
+    # Scope the bare "any authorize" down to grants that hand the app high-value
+    # mail/file access - the illicit-consent payoff. Firing on every authorize is the
+    # noisiest benign event in the tenant (every Marketplace app connect); the abuse is
+    # the refresh token to mail/drive. Mirrors the Entra rule's high-risk scope set.
+    scope|contains:
+      - 'mail.google.com'
+      - 'auth/gmail'
+      - 'auth/drive'
+      - 'auth/spreadsheets'
+      - 'auth/documents'
+      - 'auth/contacts'
+  filter_known_apps:
+    # DEPLOY-REQUIRED: replace with your sanctioned OAuth client IDs so verified apps that
+    # legitimately hold mail/drive scopes don't alert. Until filled this excludes only the
+    # example. Run detections/sigma/deploy-required.sh to find this.
+    client_id:
+      - '000000000000-example.apps.googleusercontent.com'   # example client id — replace
+  condition: selection and selection_scopes and not filter_known_apps
 falsepositives:
-  - Users authorizing sanctioned Marketplace apps - allowlist known client IDs and alert
-    on new client IDs requesting mail/drive scopes or a burst of grants across users.
+  - Users authorizing sanctioned Marketplace apps - allowlist known client IDs in
+    filter_known_apps and alert on new client IDs requesting mail/drive scopes or a burst
+    of grants across users.
 level: medium

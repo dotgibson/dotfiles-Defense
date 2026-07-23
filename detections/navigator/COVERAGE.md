@@ -2,21 +2,22 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**72 rules · 79 detection documents · 47 techniques · 9 tactics · 21 logsources.**
+**76 rules · 83 detection documents · 49 techniques · 10 tactics · 22 logsources.**
 
 ## By ATT&CK tactic
 
 | Tactic | ID | Techniques | Rules |
 | ------ | -- | ---------: | ----: |
 | Execution | TA0002 | 8 | 10 |
-| Persistence | TA0003 | 13 | 31 |
+| Persistence | TA0003 | 13 | 32 |
 | Privilege Escalation | TA0004 | 6 | 7 |
-| Defense Evasion | TA0005 | 6 | 10 |
-| Credential Access | TA0006 | 12 | 14 |
+| Defense Evasion | TA0005 | 7 | 11 |
+| Credential Access | TA0006 | 12 | 15 |
 | Discovery | TA0007 | 3 | 2 |
 | Lateral Movement | TA0008 | 6 | 6 |
 | Collection | TA0009 | 1 | 1 |
 | Exfiltration | TA0010 | 2 | 2 |
+| Impact | TA0040 | 1 | 1 |
 
 ## By technique
 
@@ -34,7 +35,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1070 | 1 | `harbor_artifact_deleted` |
 | T1072 | 2 | `jenkins_job_backdoor`, `tfc_variable_injection` |
 | T1087.002 | 2 | `ldap_recon_explicit_creds_4648`, `sharphound_ldap_sweep_4662` |
-| T1098 | 15 | `aws_login_profile_created`, `cloudflare_api_token_created`, `github_credential_backdoor`, `gitlab_token_backdoor`, `harbor_robot_account_created`, `jenkins_api_token_created`, `k8s_clusteradmin_binding`, `npm_maintainer_added`, `okta_api_token_created`, `pypi_collaborator_added`, `pypi_trusted_publisher_added`, `rbcd_allowedtoact_5136`, `slack_app_installed`, `tfc_token_backdoor`, `vault_approle_backdoor` |
+| T1098 | 16 | `aws_login_profile_created`, `cloudflare_api_token_created`, `gcp_iam_policy_backdoor`, `github_credential_backdoor`, `gitlab_token_backdoor`, `harbor_robot_account_created`, `jenkins_api_token_created`, `k8s_clusteradmin_binding`, `npm_maintainer_added`, `okta_api_token_created`, `pypi_collaborator_added`, `pypi_trusted_publisher_added`, `rbcd_allowedtoact_5136`, `slack_app_installed`, `tfc_token_backdoor`, `vault_approle_backdoor` |
 | T1098.001 | 3 | `aws_iam_access_key_created`, `entra_sp_credential_backdoor`, `gcp_service_account_key_created` |
 | T1098.003 | 1 | `gws_admin_role_grant` |
 | T1110.003 | 1 | `password_spray_4625` |
@@ -47,6 +48,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1195.002 | 2 | `npm_malicious_package_publish`, `pypi_token_release_upload` |
 | T1207 | 1 | `dcshadow_rogue_dc_4742` |
 | T1484.002 | 1 | `okta_idp_created` |
+| T1490 | 1 | `recovery_inhibition_process` |
 | T1525 | 1 | `harbor_image_pushed_trusted_tag` |
 | T1528 | 2 | `entra_illicit_consent_grant`, `gws_illicit_oauth_grant` |
 | T1543 | 3 | `github_self_hosted_runner_registered`, `gitlab_rogue_runner_associated`, `tfc_rogue_agent_pool` |
@@ -57,9 +59,10 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1556 | 2 | `okta_idp_created`, `shadow_credentials_keycredentiallink_5136` |
 | T1556.006 | 1 | `okta_mfa_factor_reset` |
 | T1558.003 | 1 | `kerberoasting_rc4_tgs` |
-| T1558.004 | 1 | `asrep_roast_probing_4771` |
+| T1558.004 | 2 | `asrep_roast_4768`, `asrep_roast_probing_4771` |
 | T1562.001 | 6 | `cloudflare_waf_rule_disabled`, `github_branch_protection_tamper`, `gitlab_protected_branch_tamper`, `npm_publish_2fa_disabled`, `slack_2fa_enforcement_disabled`, `vault_audit_device_disabled` |
 | T1562.007 | 1 | `snowflake_network_policy_change` |
+| T1562.008 | 1 | `gcp_audit_log_sink_deleted` |
 | T1563.002 | 1 | `rdp_hijack_tscon_4688` |
 | T1567 | 1 | `slack_external_shared_channel` |
 | T1567.002 | 1 | `snowflake_data_unload` |
@@ -74,14 +77,15 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 
 | Directory | product | Rules |
 | --------- | ------- | ----: |
-| `cloud` | `aws`, `azure`, `gcp` | 5 |
+| `cloud` | `aws`, `azure`, `gcp` | 7 |
 | `cloudflare` | `cloudflare` | 3 |
-| `credential_access` | `windows` | 9 |
+| `credential_access` | `windows` | 10 |
 | `defense_evasion` | `windows` | 1 |
 | `discovery` | `windows` | 2 |
 | `github` | `github` | 3 |
 | `gitlab` | `gitlab` | 3 |
 | `google_workspace` | `google_workspace` | 3 |
+| `impact` | `windows` | 1 |
 | `jenkins` | `jenkins` | 3 |
 | `kubernetes` | `kubernetes` | 3 |
 | `lateral_movement` | `windows` | 4 |

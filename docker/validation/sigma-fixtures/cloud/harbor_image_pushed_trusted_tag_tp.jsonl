@@ -1,1 +1,1 @@
-{"operation": "push", "resource_type": "artifact"}
+{"operation": "push", "resource_type": "artifact", "operator": "mallory", "resource": "library/app:latest"}
