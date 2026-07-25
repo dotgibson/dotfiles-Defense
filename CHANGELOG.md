@@ -13,6 +13,52 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.2.0] - 2026-07-24
+
+### Added
+
+- **Ten new languages get the full editor toolchain — Ruby, Java, Kotlin, PHP, Zig,
+  SQL, Protobuf, GraphQL, Terraform/HCL, and Nix.** Each gains an LSP server
+  (`nvim/lua/gerrrt/servers/*.lua`, enabled through `servers/init.lua`), a formatter
+  (`nvim/lua/gerrrt/plugins/conform.lua`), a treesitter parser
+  (`nvim/lua/gerrrt/plugins/nvim-treesitter.lua`), and — where one fits — a linter
+  (`nvim/lua/gerrrt/plugins/nvim-lint.lua`). New Mason packages are declared in
+  `nvim/lua/gerrrt/plugins/mason-tool-installer.lua`; runtime-dependent installers
+  (Ruby/JVM/PHP tools) degrade gracefully via the existing binary-guard. `ruby_lsp`
+  and `jdtls` are registered in `servers/init.lua`'s `fn_cmd_binaries` because
+  lspconfig ships their `cmd` as a function.
+
+- **SAST via semgrep**, wired as a gated `nvim-lint` linter for the security-relevant
+  filetypes — it runs only when a project `.semgrep.yml`/`.semgrep.yaml` is present, so
+  it never triggers a network `--config auto` fetch. (`nvim/lua/gerrrt/plugins/nvim-lint.lua`,
+  `mason-tool-installer.lua`)
+
+- **Solidity formatting** (`forge fmt`) closes the one prior formatter gap, and
+  SCSS/LESS join the prettierd map. (`nvim/lua/gerrrt/plugins/conform.lua`)
+
+- **Broader `<leader>cn` docgen conventions** (rust/go/java/php/ruby/c/cpp/lua) added to
+  neogen. (`nvim/lua/gerrrt/plugins/neogen.lua`)
+
+### Fixed
+
+- **`nvim-lint` now lints compound filetypes.** The runner matched only the exact
+  `filetype`, so dotted filetypes like `yaml.ansible` or a Helm `yaml.gotmpl` were never
+  linted (conform, which splits on `.`, still formatted them). The autocmd now resolves
+  linters across every filetype component and generalises the per-linter config-gating.
+  (`nvim/lua/gerrrt/plugins/nvim-lint.lua`)
+
+- **Cleared the remaining `:checkhealth` warnings.** Disabled render-markdown's unused
+  LaTeX support (three warnings for an uninstalled latex parser + pylatexenc CLIs) and
+  dropped the unregistered `markdown.mdx` filetype from marksman.
+  (`nvim/lua/gerrrt/plugins/render-markdown.lua`, `nvim/lua/gerrrt/servers/marksman.lua`)
+
+- **The sesh session picker no longer prints raw ANSI codes around its icons.**
+  `sesh list --icons` colour-codes its glyphs (blue for sessions/tmux, cyan for zoxide
+  dirs), but the two `fzf` callers lacked `--ansi`, so the escape sequences rendered
+  literally (`[34m…[39m`) instead of colouring the icon. Added `--ansi` to both entry
+  points — the Ctrl-G shell widget and the `prefix+f` tmux picker.
+  (`zsh/35-fzf.zsh`, `tmux/scripts/tmux-sesh.sh`)
+
 ## [v4.1.0] - 2026-07-23
 
 ### Changed
