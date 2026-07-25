@@ -15,7 +15,7 @@ if command -v sesh >/dev/null 2>&1; then
   # sesh list = configs + running tmux sessions + zoxide dirs; connect creates-or-switches
   selected=$(
     sesh list --icons | fzf \
-      --reverse --border-label ' sesh ' --prompt '⚡  ' \
+      --ansi --reverse --border-label ' sesh ' --prompt '⚡  ' \
       --height 100% \
       --bind 'tab:down,btab:up' \
       --bind 'ctrl-a:change-prompt(⚡  )+reload(sesh list --icons)' \
