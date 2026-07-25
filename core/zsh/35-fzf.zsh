@@ -145,7 +145,10 @@ _tmux_sessionizer() {
   local picker="$HOME/.config/tmux/scripts/tmux-sesh.sh"
   if command -v sesh >/dev/null 2>&1; then
     local selected
-    selected=$(sesh list --icons | fzf --reverse --prompt='⚡  ' --preview 'sesh preview {}')
+    # --ansi: `sesh list --icons` color-codes its icons with ANSI escapes (blue for
+    # sessions/tmux, cyan for zoxide dirs). Without --ansi fzf prints those escapes
+    # literally ("[34m…[39m") instead of colouring the glyph. Mirrors tmux-sesh.sh.
+    selected=$(sesh list --icons | fzf --ansi --reverse --prompt='⚡  ' --preview 'sesh preview {}')
     [[ -z "$selected" ]] && {
       zle reset-prompt
       return
