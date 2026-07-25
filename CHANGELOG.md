@@ -13,6 +13,42 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.3.0] - 2026-07-25
+
+### Changed
+
+- **Linters now run on file open, not only on save.** nvim-lint fired only on
+  `BufWritePost`/`InsertLeave`, so an opened file showed no lint diagnostics until you
+  saved it or toggled in/out of insert mode. Added `BufReadPost` to the trigger events
+  (plus a one-shot replay of the first buffer, which loads just after its own
+  `BufReadPost`), so diagnostics surface on open. Heavy whole-package/repo linters
+  (golangci-lint, cpplint, checkstyle, phpstan, sqlfluff, tflint, semgrep) stay
+  save-only — they run on `BufWritePost` and nowhere else.
+  (`nvim/lua/gerrrt/plugins/nvim-lint.lua`)
+
+### Removed
+
+- **Dropped Nix language support** (added in v4.2.0) — unused in practice, and the only
+  language of that batch with ongoing install cost. Removed the `nil_ls` server config,
+  the `alejandra` formatter, the `statix` linter, the `nix` treesitter parser, and the
+  `alejandra`/`statix` Mason packages (so they no longer install on every box). No `.nix`
+  tooling remains; re-add per the v4.2.0 pattern if Nix ever comes back.
+  (`nvim/lua/gerrrt/servers/nil_ls.lua`, `nvim/lua/gerrrt/servers/init.lua`,
+  `nvim/lua/gerrrt/plugins/{conform,nvim-lint,nvim-treesitter,mason-tool-installer}.lua`)
+
+### Fixed
+
+- **Cleared the rustaceanvim `vim.lsp.get_buffers_by_client_id()` deprecation warning
+  (removed in Nvim 0.13).** The v6 line still calls it, so the fix required bumping the
+  version spec from `^6` to `^8` (the fix landed in v7.0.0) and the lockfile to v8.0.5.
+  Chose `^8` over `^9` on purpose — v9's only breaking change is dropping Neovim 0.11
+  support, and Core vendors to a fleet that may not all be on 0.12; v8 keeps the fix and
+  `neovim >= 0.11`. The v7/v8 breaking changes (ra-multiplex → lspmux, drop
+  `.vscode/settings.json`) don't affect this config. (The remaining `vim.validate{}`
+  warning is from diffview.nvim, which upstream hasn't fixed — removal isn't until
+  Nvim 1.0, so it's benign.)
+  (`nvim/lua/gerrrt/plugins/rustaceanvim.lua`, `nvim/lazy-lock.json`)
+
 ## [v4.2.0] - 2026-07-24
 
 ### Added
