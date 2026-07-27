@@ -36,7 +36,19 @@
   // be a deliberate design choice, not a silencer.
   "MD033": {
     "allowed_elements": [
-      "a", "br", "details", "div", "h3", "img", "li", "nobr", "ol", "p", "strong", "summary", "ul"
+      "a",
+      "br",
+      "details",
+      "div",
+      "h3",
+      "img",
+      "li",
+      "nobr",
+      "ol",
+      "p",
+      "strong",
+      "summary",
+      "ul"
     ]
-  },
+  }
 }

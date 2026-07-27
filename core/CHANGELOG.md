@@ -13,6 +13,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.4.0] - 2026-07-27
+
+### Added
+
+- **Terminal web browser wiring.** `00-tools.zsh` now resolves a `BROWSER_BIN`
+  (prefers `w3m`, falls back to any present `lynx`/`links2`/`links`/`elinks`) and
+  sets `HAVE_BROWSER`. `20-aliases.zsh` exposes a `web` verb everywhere the browser
+  is present, and exports `$BROWSER` **only on a headless box** (no `$DISPLAY`/
+  `$WAYLAND_DISPLAY`, non-macOS) so GUI-opening tools aren't hijacked on a desktop.
+  The OS repos add `w3m` to their package lists. (`zsh/00-tools.zsh`,
+  `zsh/20-aliases.zsh`)
+
 ## [v4.3.0] - 2026-07-25
 
 ### Changed

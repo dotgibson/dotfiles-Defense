@@ -48,6 +48,7 @@ typeset -gA ZPLUGIN_PINS=(
   zsh-users/zsh-syntax-highlighting           1d85c692615a25fe2293bdd44b34c217d5d2bf04
   Aloxaf/fzf-tab                              24105b15714bfec37989ed5c5b6e60f572253019
   MichaelAquilina/zsh-you-should-use          5f3d129864ee4505043d88c3486224f1d75b692e
+  olets/zsh-transient-prompt                 ba98fe847ffb31c5529441e14c5a228a74903a75
 )
 
 # Show first-run install progress with Core's spinner WHEN 05-ui.zsh is loaded; fall
@@ -159,6 +160,23 @@ _defer_or_now() {
 # and fires the zvm_after_init hook (40-bindings.zsh) that registers our keymap, so
 # it has to run on the critical path.
 _zplugin_load jeffreytse zsh-vi-mode
+
+# ── Transient prompt (Pass 2, P1) — olets/zsh-transient-prompt ───────────────
+# Collapses each finished command's prompt to a minimal tick, so scrollback isn't full of
+# full-width prompts. zsh has no native starship transient support, so we use this plugin
+# (SHA-pinned above). MUST load AFTER zsh-vi-mode: it registers a `zle-line-finish` widget
+# with `zle -N`, which replaces any prior one — loading it last lets it win over zvm's
+# (zvm's line-finish only reset cursor shape, a cosmetic we can live without). The deferred
+# z-sy-h wraps widgets via add-zle-hook-widget, which CHAINS not clobbers, so it stays OK.
+#   • TRANSIENT_PROMPT_TRANSIENT_PROMPT — what PAST prompts collapse to: a status-colored
+#     ❖ (green ok / red fail), matching starship's [character].
+#   • TRANSIENT_PROMPT_TRANSIENT_RPROMPT='' — drop the right prompt on past lines (P3).
+#   • Live prompt stays starship's: its precmd re-sets PROMPT/RPROMPT every render.
+if [[ -n ${HAVE_STARSHIP:-} ]]; then
+  typeset -g TRANSIENT_PROMPT_TRANSIENT_PROMPT='%(?.%F{#9ece6a}.%F{#f7768e})❖%f '
+  typeset -g TRANSIENT_PROMPT_TRANSIENT_RPROMPT=''
+  _zplugin_load olets zsh-transient-prompt transient-prompt.plugin.zsh
+fi
 
 # DEFERRED (heavy; not needed before the first prompt). The widgets these provide
 # are bound in the zvm_after_init hook (40-bindings.zsh), but — exactly like
