@@ -79,6 +79,13 @@ if _have bat; then
   BAT_BIN=bat
 elif _have batcat; then BAT_BIN=batcat; fi
 
+# Terminal web browser: prefer w3m (the one we package fleet-wide), but fall back
+# to any other text browser already on the box so a bare machine still gets one.
+for _b in w3m lynx links2 links elinks; do
+  if _have "$_b"; then BROWSER_BIN=$_b; break; fi
+done
+unset _b
+
 # ── HAVE_* flags consumed by 20-aliases.zsh / 30-functions.zsh / 35-fzf.zsh ────────────
 _have eza && HAVE_EZA=1
 _have rg && HAVE_RG=1
@@ -117,6 +124,7 @@ _have sesh && HAVE_SESH=1          # smart tmux session manager — drives Ctrl-
 _have difft && HAVE_DIFFT=1        # difftastic — AST/structural diff; OPT-IN companion to delta (git dft), never the default pager (20-aliases.zsh: gdft)
 [[ -n ${FD_BIN:-} ]] && HAVE_FD=1
 [[ -n ${BAT_BIN:-} ]] && HAVE_BAT=1
+[[ -n ${BROWSER_BIN:-} ]] && HAVE_BROWSER=1  # terminal web browser (20-aliases.zsh: web + headless BROWSER)
 
 # ── Tool env — set BEFORE the init evals below ────────────────────────────────
 # starship reads its theme from the default ~/.config/starship.toml (bootstrap
@@ -160,6 +168,31 @@ if [[ -n ${HAVE_STARSHIP:-} && -n ${RPROMPT:-} ]]; then
     ((++_STARSHIP_RPROMPT_TRIES >= 3)) && add-zsh-hook -d precmd _starship_keep_rprompt
   }
   add-zsh-hook precmd _starship_keep_rprompt
+fi
+
+# ── Command-block separators (Pass 2, P12) ────────────────────────────────────
+# A thin full-width rule drawn above each prompt that FOLLOWED a command, colored by
+# that command's exit status: dim (#414868) on success, red (#f7768e) on failure. It
+# turns scrollback into visually delimited "blocks" — scan the left edge for red to
+# find what broke. Pure precmd/preexec output (NO ZLE widget), so unlike a transient
+# prompt it cannot collide with zsh-vi-mode. A bare Enter draws no rule (the preexec
+# flag gates it), so idle prompts don't stack rules.
+if [[ -n ${HAVE_STARSHIP:-} ]]; then
+  autoload -Uz add-zsh-hook
+  typeset -gi _CMD_BLOCK_RAN=0
+  _cmd_block_preexec() { _CMD_BLOCK_RAN=1 }
+  _cmd_block_precmd() {
+    local ec=$?                               # captured FIRST — real command exit code
+    (( _CMD_BLOCK_RAN )) || return            # nothing ran → no rule
+    _CMD_BLOCK_RAN=0
+    local w=${COLUMNS:-80} col
+    if (( ec == 0 )); then col='%F{#414868}'; else col='%F{#f7768e}'; fi
+    print -rP -- "${col}${(l:w::─:)}%f"
+  }
+  add-zsh-hook preexec _cmd_block_preexec
+  add-zsh-hook precmd  _cmd_block_precmd
+  # Run our precmd FIRST so $? is the command's exit code, not starship_precmd's.
+  precmd_functions=(_cmd_block_precmd ${precmd_functions:#_cmd_block_precmd})
 fi
 
 [[ -n ${HAVE_ZOXIDE:-} ]] && _cache_eval zoxide zoxide init zsh

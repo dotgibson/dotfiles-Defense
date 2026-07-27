@@ -1733,6 +1733,54 @@ ucheck "update: accents use truecolor hex when COLORTERM advertises it" \
   "source '$UPD'; [[ \$_PKGUP_ACCENT == '#7aa2f7' ]]" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 COLORTERM=truecolor
 
+# ── terminal-browser detection ladder (00-tools.zsh) + web/$BROWSER wiring (20-aliases.zsh) ──
+# 00-tools.zsh resolves BROWSER_BIN (w3m preferred, then lynx/links2/links/elinks) and
+# 20-aliases.zsh turns it into the `web` verb plus a HEADLESS-ONLY $BROWSER export. A
+# regression here fans out to every OS repo, so pin the whole ladder + consumer
+# hermetically against a stubbed PATH — the same isolation the pkg-mgr ladder uses.
+# DISPLAY/WAYLAND_DISPLAY/OSTYPE are set INSIDE the body (zsh re-derives OSTYPE at
+# startup, so an env prefix wouldn't stick) to drive the headless/GUI/macOS branches.
+TOOLS_FILE="$HERE/zsh/00-tools.zsh"
+ALIASES_FILE="$HERE/zsh/20-aliases.zsh"
+BRBIN="$SANDBOX/brbin"
+_br_only() { # _br_only [browser-name ...] — stub these onto an otherwise-empty bin dir
+  rm -rf "$BRBIN"
+  mkdir -p "$BRBIN"
+  local n
+  for n in "$@"; do
+    printf '#!/bin/sh\n:\n' >"$BRBIN/$n"
+    chmod +x "$BRBIN/$n"
+  done
+}
+# (a) PRECEDENCE — w3m wins even when other text browsers are also present.
+_br_only lynx w3m links
+ucheck "browser: w3m takes precedence over other text browsers" \
+  "source '$TOOLS_FILE'; [[ \$BROWSER_BIN == w3m && -n \${HAVE_BROWSER:-} ]]" \
+  PATH="$BRBIN"
+# (b) FALLBACK — with w3m absent, resolve the next present browser in the ladder.
+_br_only lynx
+ucheck "browser: falls back to lynx when w3m is absent" \
+  "source '$TOOLS_FILE'; [[ \$BROWSER_BIN == lynx && -n \${HAVE_BROWSER:-} ]]" \
+  PATH="$BRBIN"
+# (c) NONE — no browser at all → HAVE_BROWSER stays unset and no `web` alias is defined.
+_br_only
+ucheck "browser: no browser present → HAVE_BROWSER unset, no web alias (graceful no-op)" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; [[ -z \${HAVE_BROWSER:-} ]] && ! (( \$+aliases[web] ))" \
+  PATH="$BRBIN"
+# (d) HEADLESS — no DISPLAY/WAYLAND_DISPLAY, non-macOS → `web` defined AND $BROWSER exported.
+_br_only w3m
+ucheck "browser: headless box defines web and exports \$BROWSER=w3m" \
+  "DISPLAY=''; WAYLAND_DISPLAY=''; OSTYPE=linux-gnu; source '$TOOLS_FILE'; source '$ALIASES_FILE'; (( \$+aliases[web] )) && [[ \$BROWSER == w3m ]]" \
+  PATH="$BRBIN"
+# (e) GUI — a live \$DISPLAY must keep `web` but leave \$BROWSER untouched (no hijack).
+ucheck "browser: a GUI \$DISPLAY keeps web but leaves \$BROWSER unset" \
+  "DISPLAY=':0'; WAYLAND_DISPLAY=''; OSTYPE=linux-gnu; source '$TOOLS_FILE'; source '$ALIASES_FILE'; (( \$+aliases[web] )) && [[ -z \${BROWSER:-} ]]" \
+  PATH="$BRBIN"
+# (f) macOS — always a GUI, so \$BROWSER stays unset even when it looks headless.
+ucheck "browser: macOS (OSTYPE=darwin) leaves \$BROWSER unset even with no DISPLAY" \
+  "DISPLAY=''; WAYLAND_DISPLAY=''; OSTYPE=darwin24; source '$TOOLS_FILE'; source '$ALIASES_FILE'; (( \$+aliases[web] )) && [[ -z \${BROWSER:-} ]]" \
+  PATH="$BRBIN"
+
 # maint.zsh: _maint_scheduler must always resolve to a REAL scheduler token, never empty
 # or garbage. With systemctl absent (isolated PATH) and crontab present as the fallback,
 # it lands on cron (Linux/Alpine) or launchd (macOS, OSTYPE-driven) — both valid — so the

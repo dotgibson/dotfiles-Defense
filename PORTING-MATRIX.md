@@ -72,6 +72,7 @@ _Repo status_ at the bottom).
 | sesh⁹            | AUR⁹                   | go⁹          | go⁹          | go⁹                        | go⁹             |
 | difftastic¹⁰     | `difftastic`           | `difftastic` | `difftastic` | `dev-util/difftastic`      | `difftastic`    |
 | ast-grep¹¹       | `ast-grep`             | cargo³       | `ast-grep`   | cargo³                     | cargo³          |
+| w3m              | `w3m`                  | `w3m`        | `w3m`        | `www-client/w3m`           | `w3m`           |
 
 ¹ openSUSE: in Tumbleweed main OSS as `tealdeer` (also Leap 15.6); on older Leap, `cargo install tealdeer`.
 ² Alpine default shell is `ash`; you must `apk add zsh` explicitly.
