@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/prettierrc",
+  "//": "Prettier's default trailingComma:'all' adds a trailing comma to the last item — which the JSON language server (jsonls) flags as an error in .json/.jsonc, so format-on-save and the LSP fought forever. Scope trailingComma:'none' to JSON/JSONC only; JS/TS keep the default 'all'.",
+  "overrides": [
+    {
+      "files": ["*.json", "*.jsonc"],
+      "options": { "trailingComma": "none" }
+    }
+  ]
+}

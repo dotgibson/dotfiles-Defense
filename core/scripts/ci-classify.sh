@@ -44,7 +44,7 @@ while IFS= read -r f; do
   scripts/* | .github/* | .claude/* | core.manifest | core.version | .pre-commit-config.yaml | .shellcheckrc | Makefile) full ;;
   nvim/*) nvim=true ;;
   zsh/* | bin/* | maint/* | tmux/* | sesh/* | starship/* | mise/* | git/* | *.sh) shell=true ;;
-  *.md | LICENSE | CODEOWNERS | .gitignore | .gitattributes | .editorconfig | .markdownlint.jsonc) ;;
+  *.md | LICENSE | CODEOWNERS | .gitignore | .gitattributes | .editorconfig | .markdownlint.jsonc | .prettierrc.json) ;;
   *)
     printf "ci-classify: unrecognised path '%s' → forcing full run (add it to a bucket)\n" "$f" >&2
     full
