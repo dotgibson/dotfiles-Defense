@@ -1,0 +1,50 @@
+id: a06d0818-36d3-4103-ab0b-ba3481dfe8a0
+name: Golden Ticket - service tickets without a preceding TGT (T1558.001)
+description: |
+  Microsoft Sentinel form of the Golden-Ticket absence detection that Sigma can't
+  express (the Splunk twin is the stanza "Golden Ticket - TGS without preceding TGT
+  (T1558.001)" in siem/splunk/correlation_searches.conf).
+  A forged TGT is minted offline from the KRBTGT key, so the DC issues no 4768 for
+  the account, yet the ticket is used to request service tickets - producing 4769
+  (TGS) activity with zero preceding 4768 (TGT) per account+client. KQL expresses the
+  absence natively (countif over the window), which is why this lives here and not in
+  sigma/. Set queryPeriod to your ticket-renewal cadence: too short and a legitimate
+  TGT from an earlier window looks absent (false positive); too long and you dilute
+  the signal. htpx pair: golden-ticket / golden-ticket-4769. Cross-links the red side
+  in dotfiles-Kali/PURPLE-TEAM.md.
+severity: High
+status: Available
+requiredDataConnectors:
+  - connectorId: SecurityEvents
+    dataTypes:
+      - SecurityEvent
+queryFrequency: 4h
+queryPeriod: 4h
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - CredentialAccess
+relevantTechniques:
+  - T1558.001
+query: |
+  SecurityEvent
+  | where EventID in (4768, 4769)
+  | where TargetUserName !endswith "$"
+  | summarize
+      tgts = countif(EventID == 4768),
+      tgs_reqs = countif(EventID == 4769),
+      Computers = make_set(Computer, 100)
+      by TargetUserName, IpAddress
+  | where tgs_reqs > 0 and tgts == 0
+  | project TargetUserName, IpAddress, tgs_reqs, tgts, Computers
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: Name
+        columnName: TargetUserName
+  - entityType: IP
+    fieldMappings:
+      - identifier: Address
+        columnName: IpAddress
+version: 1.0.0
+kind: Scheduled
