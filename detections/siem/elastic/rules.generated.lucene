@@ -135,6 +135,9 @@ EventID:7045 AND (ImagePath:(*\\cmd.exe* OR *powershell* OR *%COMSPEC%* OR *\\AD
 // lateral_movement/wmiexec_wmiprvse_child_4688.yml — WMI remote exec - shell spawned by WmiPrvSE
 (ParentImage:*\\WmiPrvSE.exe AND (Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe))) AND (CommandLine:*\/Q* AND CommandLine:*\/c* AND CommandLine:*127.0.0.1\\ADMIN$*)
 
+// linux/ccache_theft_staging.yml — Kerberos ccache file staged by a copy/transfer/interpreter process
+(CommandLine:(*\/tmp\/krb5cc_* OR *.ccache* OR *krb5.ccache*)) AND (Image:(*\/cp OR *\/mv OR *\/dd OR *\/cat OR *\/tac OR *\/tar OR *\/gzip OR *\/bzip2 OR *\/xz OR *\/zip OR *\/base64 OR *\/xxd OR *\/scp OR *\/rsync OR *\/sftp OR *\/nc OR *\/ncat OR *\/socat OR *\/curl OR *\/wget OR *\/openssl OR *\/python OR *\/python3 OR *\/perl OR *\/ruby))
+
 // npm/npm_maintainer_added.yml — npm maintainer or owner added (durable publish backdoor)
 action:(package.owner_add OR team.user_add)
 

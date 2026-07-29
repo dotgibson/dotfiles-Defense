@@ -79,7 +79,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 72 rules / 79 documents, organized by ATT&CK tactic
+### `sigma/` — 77 rules / 84 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -134,6 +134,12 @@ purple-validatable out of the box.
 | Rule | Event / source | ATT&CK | Validate with |
 | ---- | -------------- | ------ | ------------- |
 | `dcshadow_rogue_dc_4742` | 4742 `GC/` SPN write (+5137/4662) | T1207 | AD attack paths · dcshadow |
+
+**`linux/`** (Linux host telemetry — `product: linux`, `category: process_creation`; auditd/Sysmon-for-Linux)
+
+| Rule | Event / source | ATT&CK | Validate with |
+| ---- | -------------- | ------ | ------------- |
+| `ccache_theft_staging` | ccache path in argv of a copy/transfer/interpreter process | T1558.005 | Kerberos · cp/base64 an `*.ccache` |
 
 **`cloud/`** (multi-cloud — Entra `product: azure`, AWS `product: aws`, GCP `product: gcp`)
 
@@ -261,11 +267,11 @@ purple-validatable out of the box.
 `ldap_recon_explicit_creds_4648`, `passthehash_4624_fanout`,
 `machine_account_creation_burst_4741`, and `vault_bulk_secret_read` are Sigma
 **correlation** rules (a base event + a `value_count` over a window); the rest are
-single-event selections. The `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,
+single-event selections. The `linux/`, `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,
 `gitlab/`, `vault/`, `terraform/`, `jenkins/`, `snowflake/`, `google_workspace/`,
 `cloudflare/`, `npm/`, `pypi/`, and `slack/`
 rules are the non-Windows logsources here
-(`product: azure|aws|gcp|kubernetes|okta|github|harbor|gitlab|vault|terraform|jenkins|snowflake|google_workspace|cloudflare|npm|pypi|slack`)
+(`product: linux|azure|aws|gcp|kubernetes|okta|github|harbor|gitlab|vault|terraform|jenkins|snowflake|google_workspace|cloudflare|npm|pypi|slack`)
 and mirror the htpx corpus's companion-only cloud, K8s, Okta, GitHub Actions, Harbor
 registry, GitLab CI/CD, HashiCorp Vault, Terraform Cloud, Jenkins, Snowflake,
 Google Workspace, Cloudflare, npm + PyPI registry, and Slack pairs.
@@ -354,7 +360,8 @@ placeholders.
   Sigma tree only, so T1558.001/.002 and T1557.001 read as "0" there despite being
   instrumented here. Read the coverage report as *Sigma* coverage, not total.
   (T1557.001 was renamed by MITRE to "Name Resolution Poisoning and SMB Relay";
-  T1558 has since gained a `.005` Ccache Files sub-technique, not yet instrumented.)
+  T1558's `.005` Ccache Files sub-technique is now instrumented on Linux — see
+  `sigma/linux/ccache_theft_staging.yml`.)
 - **`sentinel/*.yaml`** — Microsoft Sentinel scheduled-analytics-rule deploy forms.
   Two families: the Entra cloud detections (illicit consent grant, SP credential
   backdoor, device-code sign-in), and the KQL twins of the three absence/join-based
