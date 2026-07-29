@@ -1,0 +1,51 @@
+id: e2550bdf-7472-4344-894b-3a2c031a96c9
+name: NTLM relay - 4624 workstation/source mismatch (T1557.001)
+description: |
+  Microsoft Sentinel form of the NTLM-relay detection that Sigma can't express (the
+  Splunk twin is siem/splunk/correlation_searches.conf "NTLM relay"). A relayed logon
+  carries the victim's WorkstationName but arrives from the relay's source address, so
+  the invariant is a 4624 whose WorkstationName doesn't resolve to its source IP - a
+  field-to-field comparison against a name->address map, which is why it lives here
+  rather than in sigma/.
+  DEPLOY-REQUIRED: provide a host->IP mapping named 'HostIpMap' (Sentinel Watchlist
+  with columns Hostname, IPAddress) - the KQL twin of the SPL's `lookup dnslookup`.
+  Until it exists the join returns nothing and this rule is inert (fails safe, no false
+  positives). Populate from DHCP/DNS/AD or your CMDB; normalize case (WorkstationName is
+  usually upper-case). htpx pair: ntlm-relay-ntlmrelayx / ntlm-relay-4624. Cross-links
+  the red side in dotfiles-Kali/PURPLE-TEAM.md.
+severity: High
+status: Available
+requiredDataConnectors:
+  - connectorId: SecurityEvents
+    dataTypes:
+      - SecurityEvent
+queryFrequency: 1h
+queryPeriod: 1h
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - CredentialAccess
+relevantTechniques:
+  - T1557.001
+query: |
+  let hostmap = _GetWatchlist('HostIpMap');
+  SecurityEvent
+  | where EventID == 4624 and LogonType == 3
+  | where isnotempty(WorkstationName) and WorkstationName !in ("-", "")
+  | where IpAddress !in ("-", "127.0.0.1", "::1")
+  | extend WorkstationName = toupper(WorkstationName)
+  | lookup kind=leftouter (hostmap | project Hostname = toupper(tostring(Hostname)), MappedIP = tostring(IPAddress))
+      on $left.WorkstationName == $right.Hostname
+  | where isnotempty(MappedIP) and MappedIP != IpAddress
+  | project TimeGenerated, Computer, TargetUserName, WorkstationName, ClaimedIP = MappedIP, ActualSource = IpAddress
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: Name
+        columnName: TargetUserName
+  - entityType: IP
+    fieldMappings:
+      - identifier: Address
+        columnName: ActualSource
+version: 1.0.0
+kind: Scheduled

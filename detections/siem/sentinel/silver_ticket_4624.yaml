@@ -1,0 +1,47 @@
+id: 1a1fb59a-c922-4d20-aa2e-f22188292817
+name: Silver Ticket - Kerberos service logon without a matching 4769 (T1558.002)
+description: |
+  Microsoft Sentinel form of the Silver-Ticket absence detection that Sigma can't
+  express (the Splunk twin is siem/splunk/correlation_searches.conf "Silver Ticket").
+  A silver ticket is a service ticket forged offline from a service account's key, so
+  it never touches the DC - there is no 4769 - yet it produces a Kerberos network
+  logon (4624 type 3, package Kerberos) on the service host. So the invariant is a
+  Kerberos type-3 logon for an account the DC issued no 4769 to in the window.
+  Posture is SOFT: absence rules are environment-sensitive and a legitimate logon can
+  reuse a service ticket issued in an earlier window, so this is level Medium, not
+  High. The durable control is PAC validation, not this alert. Set queryPeriod to your
+  ticket-renewal cadence. htpx pair: silver-ticket / silver-ticket-4769. Cross-links
+  the red side in dotfiles-Kali/PURPLE-TEAM.md.
+severity: Medium
+status: Available
+requiredDataConnectors:
+  - connectorId: SecurityEvents
+    dataTypes:
+      - SecurityEvent
+queryFrequency: 4h
+queryPeriod: 4h
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - CredentialAccess
+relevantTechniques:
+  - T1558.002
+query: |
+  SecurityEvent
+  | where (EventID == 4624 and LogonType == 3 and AuthenticationPackageName == "Kerberos" and TargetUserName !endswith "$")
+      or EventID == 4769
+  | summarize
+      kerb_logons = countif(EventID == 4624),
+      tgs_issued = countif(EventID == 4769),
+      Sources = make_set(IpAddress, 100),
+      Computers = make_set(Computer, 100)
+      by TargetUserName
+  | where kerb_logons > 0 and tgs_issued == 0
+  | project TargetUserName, kerb_logons, tgs_issued, Sources, Computers
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: Name
+        columnName: TargetUserName
+version: 1.0.0
+kind: Scheduled

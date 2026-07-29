@@ -348,16 +348,24 @@ placeholders.
 - **`splunk/correlation_searches.conf`** — the three *absence/join-based* detections
   Sigma can't express — **Golden Ticket** (4769-without-4768, T1558.001), **Silver
   Ticket** (4624-without-4769, T1558.002), and **NTLM relay** (4624 workstation/source
-  mismatch, T1557.001) — as deployable Splunk saved searches. **These are covered
-  detections that the `navigator/COVERAGE.md` roll-up does not count** — that report is
-  generated from the Sigma tree only, so T1558.001/.002 and T1557.001 read as "0" there
-  despite being instrumented here. Read the coverage report as *Sigma* coverage, not
-  total. (T1557.001 was renamed by MITRE to "Name Resolution Poisoning and SMB Relay";
+  mismatch, T1557.001) — as deployable Splunk saved searches, with matching Sentinel
+  KQL forms in `sentinel/` (see below). **These are covered detections that the
+  `navigator/COVERAGE.md` roll-up does not count** — that report is generated from the
+  Sigma tree only, so T1558.001/.002 and T1557.001 read as "0" there despite being
+  instrumented here. Read the coverage report as *Sigma* coverage, not total.
+  (T1557.001 was renamed by MITRE to "Name Resolution Poisoning and SMB Relay";
   T1558 has since gained a `.005` Ccache Files sub-technique, not yet instrumented.)
-- **`sentinel/*.yaml`** — Microsoft Sentinel scheduled-analytics-rule deploy forms
-  of the Entra cloud detections (illicit consent grant, SP credential backdoor,
-  device-code sign-in). The AWS/GCP cloud rules deploy in their native consoles
-  (CloudTrail/Athena, GCP Logging) or via Sentinel's AWS/GCP connectors.
+- **`sentinel/*.yaml`** — Microsoft Sentinel scheduled-analytics-rule deploy forms.
+  Two families: the Entra cloud detections (illicit consent grant, SP credential
+  backdoor, device-code sign-in), and the KQL twins of the three absence/join-based
+  Kerberos/relay searches above — **Golden Ticket** (`golden_ticket_4769.yaml`,
+  T1558.001), **Silver Ticket** (`silver_ticket_4624.yaml`, T1558.002), and **NTLM
+  relay** (`ntlm_relay_4624.yaml`, T1557.001) — so the absence coverage the Splunk
+  `correlation_searches.conf` provides has parity on Sentinel (KQL expresses `countif`
+  absence and the watchlist join natively). Like the Splunk forms these are hand-
+  authored (not emitted by `gen-siem.sh`) and not counted by `navigator/COVERAGE.md`.
+  The AWS/GCP cloud rules deploy in their native consoles (CloudTrail/Athena, GCP
+  Logging) or via Sentinel's AWS/GCP connectors.
 
 ### `navigator/` — ATT&CK coverage heatmap + report
 
@@ -379,10 +387,11 @@ placeholders.
 - **Golden Ticket** (4769-without-4768), **Silver Ticket** (Kerberos logon
   without a matching 4769), and **NTLM relay** (4624 workstation mismatch) are all
   *absence*/join-based — they detect the lack of an expected event or a field-to-
-  field comparison, which Sigma can't express cleanly. They now ship as **deployable
-  Splunk correlation searches** in `siem/splunk/correlation_searches.conf` (and as
-  SPL in Kali's `PURPLE-TEAM.md` via their htpx pairs). For Silver Ticket the
-  durable control remains PAC validation.
+  field comparison, which Sigma can't express cleanly. They ship as **deployable
+  Splunk correlation searches** in `siem/splunk/correlation_searches.conf` and as
+  **Microsoft Sentinel KQL** in `siem/sentinel/{golden_ticket_4769,silver_ticket_4624,
+  ntlm_relay_4624}.yaml` (and as SPL in Kali's `PURPLE-TEAM.md` via their htpx pairs).
+  For Silver Ticket the durable control remains PAC validation.
 - The **AWS/GCP** Sigma rules are broad event surfaces by design — the backdoor
   invariant (actor ≠ target) is a field-to-field comparison left to backend triage,
   same as the ADCS ESC1 and Entra-consent rules.
