@@ -11,7 +11,11 @@
 # against each other or against Core's tip, so a repo could silently sit on a stale
 # Core for weeks (exactly how dotfiles-MacBook's nvim lockfile drifted). This is that
 # missing check: it reads every marker and flags any repo behind (or ahead of) the
-# reference Core commit.
+# reference Core commit. Exception: dotfiles-Windows vendors only the nvim/ subtree and
+# tracks Core's main tip (nvim-sync, not a release tag), so it's judged against nvim/'s
+# last change reachable from the reference — not the reference itself. That treats both
+# "ahead on main between releases" and "a release that changed no nvim/ files" as current,
+# and still flags a genuinely stale nvim/ tree (see _classify_subtree).
 #
 # It is a REPORTER, not a mutator — it never writes to a repo. Run it locally against
 # your checked-out fleet, or in CI (.github/workflows/fleet-drift.yml) which shallow-
@@ -155,12 +159,40 @@ _classify() { # _classify <recorded-sha>
   echo "DIFFERS (sha not in local history)"
 }
 
+# Classify a repo that vendors only a SUBTREE of Core (dotfiles-Windows: nvim/) and tracks
+# main's TIP, not a release tag. Its nvim-sync bot re-stamps the marker ONLY when the subtree
+# actually changes — it reverts the marker's timestamp-only churn otherwise (nvim-sync.yml) —
+# so the recorded commit is the last Core commit to touch that subtree. That can be an
+# ANCESTOR of REF (a release that changed nothing under the subtree leaves the marker behind
+# while the vendored tree is byte-identical) or a DESCENDANT (an unreleased subtree commit
+# pulled from main between releases). In BOTH cases the vendored tree is current iff the
+# recorded commit already contains REF's latest change to that subtree — so compare against
+# that commit (`git rev-list -1 REF -- <path>`), not REF itself. Measuring against raw REF
+# reported a false BEHIND/AHEAD for exactly these two legitimate states.
+_classify_subtree() { # _classify_subtree <recorded-sha> <subtree-path>
+  local rec="$1" path="$2" subref
+  [[ -z "$rec" ]] && { echo "no provenance recorded"; return; }
+  subref="$(git -C "$HERE" rev-list -1 "$REF" -- "$path" 2>/dev/null)" || subref=""
+  # Can't resolve the subtree's history (shallow clone, or path absent) → don't guess; fall
+  # back to the commit-level verdict.
+  [[ -n "$subref" ]] || { _classify "$rec"; return; }
+  # rec carries REF's latest <path> change (or a newer one) ⇒ the vendored tree is current.
+  # --is-ancestor is reflexive (rec == subref counts). A non-zero exit — not an ancestor, or
+  # rec absent from local history — means the vendored subtree genuinely lags; report the
+  # real commit-level distance via _classify.
+  if git -C "$HERE" merge-base --is-ancestor "$subref" "$rec" 2>/dev/null; then
+    echo "current ($path up to date)"
+  else
+    _classify "$rec"
+  fi
+}
+
 hdr "Fleet drift vs Core ${REF:0:12} ($(git -C "$HERE" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?'))"
 printf '%-22s %-14s %s\n' "REPO" "RECORDED" "STATUS"
 printf '%-22s %-14s %s\n' "----" "--------" "------"
 
-_check_repo() { # _check_repo <repo-dir-name> <marker-relative-path> <sha-key> [tag-key]
-  local name="$1" marker="$2" key="$3" tagkey="${4:-core_tag}" dir="$ROOT/$1" file rec status tag shown
+_check_repo() { # _check_repo <repo-dir-name> <marker-relative-path> <sha-key> [tag-key] [subtree-path]
+  local name="$1" marker="$2" key="$3" tagkey="${4:-core_tag}" track_path="${5:-}" dir="$ROOT/$1" file rec status tag shown
   if [[ ! -d "$dir" ]]; then
     if ((STRICT)); then fail "$(printf '%-22s %-14s %s' "$name" "-" "NOT CHECKED OUT")"
     else skip "$(printf '%-22s %-14s %s' "$name" "-" "not checked out")"; fi
@@ -178,8 +210,15 @@ _check_repo() { # _check_repo <repo-dir-name> <marker-relative-path> <sha-key> [
   # _classify — the tag is display only.
   tag="$(_read_kv "$file" "$tagkey")"
   shown="${tag:-${rec:0:12}}"
-  status="$(_classify "$rec")"
-  if [[ "$status" == "current" ]]; then
+  # A subtree-tracking repo (track_path set: dotfiles-Windows vendors only nvim/) is judged
+  # against that subtree's last change reachable from REF, not REF itself — see
+  # _classify_subtree. Everything else is pinned to the release tag by `make sync`.
+  if [[ -n "$track_path" ]]; then
+    status="$(_classify_subtree "$rec" "$track_path")"
+  else
+    status="$(_classify "$rec")"
+  fi
+  if [[ "$status" == current* ]]; then
     pass "$(printf '%-22s %-14s %s' "$name" "$shown" "$status")"
   else
     fail "$(printf '%-22s %-14s %s' "$name" "$shown" "$status")"
@@ -192,8 +231,13 @@ for _r in "${OS_REPOS[@]}"; do
 done
 # Windows is the outlier: no core/ subtree, only nvim/ mirrored — its provenance
 # lives in nvim/.core-ref (sha under `commit`, release name under `tag`). Include it
-# so the dashboard covers the whole fleet, labelled by tag like the Unix repos.
-_check_repo "dotfiles-Windows" "nvim/.core-ref" "commit" "tag"
+# so the dashboard covers the whole fleet, labelled by tag like the Unix repos. Unlike the
+# Unix repos (pinned to a release tag by `make sync`), it vendors only the nvim/ subtree and
+# tracks main's tip via the nvim-sync bot, so pass the subtree path `nvim`: it's judged
+# against nvim/'s last change reachable from REF (see _classify_subtree), which treats both
+# "ahead on main" and "release didn't touch nvim/" as current, and still fails a genuinely
+# stale nvim/ tree.
+_check_repo "dotfiles-Windows" "nvim/.core-ref" "commit" "tag" "nvim"
 
 echo
 if ((DRIFT)); then
