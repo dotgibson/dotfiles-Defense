@@ -77,19 +77,48 @@ if _yaml_bool require_action_sha_pin; then
 fi
 
 # ── 4) container images must pin an @sha256: digest ──────────────────────────
-# Scope to the two places images appear (an `image:` value or a `docker run|build|pull`
-# command) so arbitrary `key:value` text in run-scripts isn't mistaken for an image.
+# A pinned reference ends in @sha256:<hex>; anything else — a bare `alpine` (implicit
+# `latest`), an `alpine:3.21` tag — is mutable and moves under you. Images reach CI four
+# ways, handled in two groups:
+#   (a) single-token surfaces — `image: <ref>`, the `container: <ref>` SHORTHAND (the
+#       block form's `image:` child is caught by the same `image:` rule), and a
+#       `uses: docker://<ref>` container action. Extract the one reference token and check
+#       it directly, so a bare `alpine`/`node:20` is caught (a name:tag-only regex misses
+#       it) and a digest-only `alpine@sha256:…` is accepted (that same regex would mis-read
+#       it as unpinned). The shorthand and docker:// forms also slip sha-pin rule (3) — not
+#       owner/repo form — so rule 4 is the only thing that can catch them.
+#   (b) `docker run|build|pull … <image>` commands — the image sits among flags/mounts/args
+#       (`-v "$PWD:/x"`, `-w /x`), so keep the tolerant name:tag[@sha256] scan: a mount path
+#       has no lowercase name:tag shape and won't be mistaken for an image.
+# No live unpinned uses in the fleet today; this keeps the pinning contract airtight before
+# an OS/role repo (which inherit the *-call.yml@v3 workflows) reaches for one.
 if _yaml_bool require_container_digest_pin; then
+  # (a) clean single-token surfaces
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    content="${line#*:*:}"                          # strip grep's file:linenum: prefix
+    case "$content" in
+    *docker://*) ref="${content##*docker://}" ;;    # uses: docker://<ref>
+    *) ref="${content#*:}" ;;                        # image:/container: → value after the key
+    esac
+    ref="${ref#"${ref%%[![:space:]]*}"}"            # ltrim
+    ref="${ref%%[[:space:]]*}"                       # first whitespace-delimited token only
+    ref="${ref#[\"\']}"; ref="${ref%[\"\']}"         # strip one wrapping quote
+    [ -n "$ref" ] || continue                        # value-less key (e.g. a workflow input) → skip
+    case "$ref" in *@sha256:*) continue ;; esac      # digest-pinned (name:tag@sha256 or name@sha256)
+    note "container image not digest-pinned ($ref): $line"
+  done < <(grep -HnE '(^[[:space:]]*image:[[:space:]]*[^[:space:]#]|^[[:space:]]*container:[[:space:]]*[^[:space:]#]|uses:[[:space:]]*docker://)' "${FILES[@]}" 2>/dev/null || true)
+  # (b) docker run|build|pull commands — tolerant scan for a name:tag[@sha256] token
   img_re='([a-z0-9]+([._-][a-z0-9]+)*/)*[a-z0-9]+([._-][a-z0-9]+)*:[a-z0-9][a-z0-9._-]*(@sha256:[0-9a-f]+)?'
   while IFS= read -r line; do
     [ -n "$line" ] || continue
-    content="${line#*:*:}"   # strip grep's file:linenum: prefix (it looks like path/name:tag)
+    content="${line#*:*:}"
     while IFS= read -r img; do
       [ -n "$img" ] || continue
-      case "$img" in *@sha256:*) continue ;; esac       # already digest-pinned
+      case "$img" in *@sha256:*) continue ;; esac    # already digest-pinned
       note "container image not digest-pinned ($img): $line"
     done < <(printf '%s\n' "$content" | grep -oE "$img_re" 2>/dev/null || true)
-  done < <(grep -HnE '(^[[:space:]]*image:[[:space:]]|docker[[:space:]]+(run|build|pull))' "${FILES[@]}" 2>/dev/null || true)
+  done < <(grep -HnE 'docker[[:space:]]+(run|build|pull)' "${FILES[@]}" 2>/dev/null || true)
 fi
 
 # ── 5) every workflow declares a top-level permissions: block ────────────────

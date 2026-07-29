@@ -58,8 +58,11 @@ banned_runners:
 require_action_sha_pin: true
 sha_pin_exempt_owner: dotgibson
 
-# 4) Every container image (`image:` value or a `docker run|build … <image>`) must pin
-#    an @sha256: digest — a tag like `alpine:3.21` or `archlinux:latest` moves under you.
+# 4) Every container image must pin an @sha256: digest — a tag like `alpine:3.21` or
+#    `archlinux:latest` moves under you. Covers all four surfaces an image reaches CI by:
+#    an `image:` value, the `container: <img>` shorthand, a `uses: docker://<img>` action,
+#    and a `docker run|build|pull <image>` command (the shorthand + docker:// forms slip
+#    rule 3's owner/repo sha-pin check, so rule 4 has to catch them).
 require_container_digest_pin: true
 
 # 5) Every WORKFLOW must declare a top-level `permissions:` block. Without one a job
