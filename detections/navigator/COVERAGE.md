@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**76 rules · 83 detection documents · 49 techniques · 10 tactics · 22 logsources.**
+**77 rules · 84 detection documents · 50 techniques · 10 tactics · 23 logsources.**
 
 ## By ATT&CK tactic
 
@@ -12,7 +12,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Persistence | TA0003 | 13 | 32 |
 | Privilege Escalation | TA0004 | 6 | 7 |
 | Defense Evasion | TA0005 | 7 | 11 |
-| Credential Access | TA0006 | 12 | 15 |
+| Credential Access | TA0006 | 13 | 16 |
 | Discovery | TA0007 | 3 | 2 |
 | Lateral Movement | TA0008 | 6 | 6 |
 | Collection | TA0009 | 1 | 1 |
@@ -60,6 +60,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1556.006 | 1 | `okta_mfa_factor_reset` |
 | T1558.003 | 1 | `kerberoasting_rc4_tgs` |
 | T1558.004 | 2 | `asrep_roast_4768`, `asrep_roast_probing_4771` |
+| T1558.005 | 1 | `ccache_theft_staging` |
 | T1562.001 | 6 | `cloudflare_waf_rule_disabled`, `github_branch_protection_tamper`, `gitlab_protected_branch_tamper`, `npm_publish_2fa_disabled`, `slack_2fa_enforcement_disabled`, `vault_audit_device_disabled` |
 | T1562.007 | 1 | `snowflake_network_policy_change` |
 | T1562.008 | 1 | `gcp_audit_log_sink_deleted` |
@@ -89,6 +90,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `jenkins` | `jenkins` | 3 |
 | `kubernetes` | `kubernetes` | 3 |
 | `lateral_movement` | `windows` | 4 |
+| `linux` | `linux` | 1 |
 | `npm` | `npm` | 3 |
 | `okta` | `okta` | 3 |
 | `persistence` | `windows` | 4 |

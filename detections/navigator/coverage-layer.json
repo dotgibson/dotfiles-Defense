@@ -231,6 +231,12 @@
       "comment": "2 rule(s): asrep_roast_4768, asrep_roast_probing_4771"
     },
     {
+      "techniqueID": "T1558.005",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): ccache_theft_staging"
+    },
+    {
       "techniqueID": "T1562.001",
       "score": 6,
       "enabled": true,

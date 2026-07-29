@@ -135,6 +135,9 @@ EventID == 7045 and (ImagePath contains "\\cmd.exe" or ImagePath contains "power
 // lateral_movement/wmiexec_wmiprvse_child_4688.yml — WMI remote exec - shell spawned by WmiPrvSE
 (ParentImage endswith "\\WmiPrvSE.exe" and (Image endswith "\\cmd.exe" or Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe")) and (CommandLine contains "/Q" and CommandLine contains "/c" and CommandLine contains "127.0.0.1\\ADMIN$")
 
+// linux/ccache_theft_staging.yml — Kerberos ccache file staged by a copy/transfer/interpreter process
+(CommandLine contains "/tmp/krb5cc_" or CommandLine contains ".ccache" or CommandLine contains "krb5.ccache") and (Image endswith "/cp" or Image endswith "/mv" or Image endswith "/dd" or Image endswith "/cat" or Image endswith "/tac" or Image endswith "/tar" or Image endswith "/gzip" or Image endswith "/bzip2" or Image endswith "/xz" or Image endswith "/zip" or Image endswith "/base64" or Image endswith "/xxd" or Image endswith "/scp" or Image endswith "/rsync" or Image endswith "/sftp" or Image endswith "/nc" or Image endswith "/ncat" or Image endswith "/socat" or Image endswith "/curl" or Image endswith "/wget" or Image endswith "/openssl" or Image endswith "/python" or Image endswith "/python3" or Image endswith "/perl" or Image endswith "/ruby")
+
 // npm/npm_maintainer_added.yml — npm maintainer or owner added (durable publish backdoor)
 action in~ ("package.owner_add", "team.user_add")
 
