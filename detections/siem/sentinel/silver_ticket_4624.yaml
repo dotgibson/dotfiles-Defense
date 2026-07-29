@@ -2,7 +2,8 @@ id: 1a1fb59a-c922-4d20-aa2e-f22188292817
 name: Silver Ticket - Kerberos service logon without a matching 4769 (T1558.002)
 description: |
   Microsoft Sentinel form of the Silver-Ticket absence detection that Sigma can't
-  express (the Splunk twin is siem/splunk/correlation_searches.conf "Silver Ticket").
+  express (the Splunk twin is the stanza "Silver Ticket - Kerberos service logon
+  without 4769 (T1558.002)" in siem/splunk/correlation_searches.conf).
   A silver ticket is a service ticket forged offline from a service account's key, so
   it never touches the DC - there is no 4769 - yet it produces a Kerberos network
   logon (4624 type 3, package Kerberos) on the service host. So the invariant is a
@@ -10,8 +11,14 @@ description: |
   Posture is SOFT: absence rules are environment-sensitive and a legitimate logon can
   reuse a service ticket issued in an earlier window, so this is level Medium, not
   High. The durable control is PAC validation, not this alert. Set queryPeriod to your
-  ticket-renewal cadence. htpx pair: silver-ticket / silver-ticket-4769. Cross-links
-  the red side in dotfiles-Kali/PURPLE-TEAM.md.
+  ticket-renewal cadence.
+  Scope note (parity with the Splunk twin's Account_Name!="*$"): the `!endswith "$"`
+  filter drops machine and gMSA accounts. Silver tickets forge the *client* principal,
+  usually a chosen user rather than a `$` account, so this keeps the signal on the
+  common case; the trade is a blind spot when the forged principal is itself a
+  machine/gMSA. Drop the filter (accepting more machine-to-machine Kerberos noise) if
+  that case is in your threat model. htpx pair: silver-ticket / silver-ticket-4769.
+  Cross-links the red side in dotfiles-Kali/PURPLE-TEAM.md.
 severity: Medium
 status: Available
 requiredDataConnectors:

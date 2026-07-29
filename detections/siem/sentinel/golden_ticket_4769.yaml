@@ -2,7 +2,8 @@ id: a06d0818-36d3-4103-ab0b-ba3481dfe8a0
 name: Golden Ticket - service tickets without a preceding TGT (T1558.001)
 description: |
   Microsoft Sentinel form of the Golden-Ticket absence detection that Sigma can't
-  express (the Splunk twin is siem/splunk/correlation_searches.conf "Golden Ticket").
+  express (the Splunk twin is the stanza "Golden Ticket - TGS without preceding TGT
+  (T1558.001)" in siem/splunk/correlation_searches.conf).
   A forged TGT is minted offline from the KRBTGT key, so the DC issues no 4768 for
   the account, yet the ticket is used to request service tickets - producing 4769
   (TGS) activity with zero preceding 4768 (TGT) per account+client. KQL expresses the

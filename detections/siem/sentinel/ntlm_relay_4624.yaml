@@ -2,7 +2,8 @@ id: e2550bdf-7472-4344-894b-3a2c031a96c9
 name: NTLM relay - 4624 workstation/source mismatch (T1557.001)
 description: |
   Microsoft Sentinel form of the NTLM-relay detection that Sigma can't express (the
-  Splunk twin is siem/splunk/correlation_searches.conf "NTLM relay"). A relayed logon
+  Splunk twin is the stanza "NTLM relay - 4624 workstation/source mismatch
+  (T1557.001)" in siem/splunk/correlation_searches.conf). A relayed logon
   carries the victim's WorkstationName but arrives from the relay's source address, so
   the invariant is a 4624 whose WorkstationName doesn't resolve to its source IP - a
   field-to-field comparison against a name->address map, which is why it lives here
