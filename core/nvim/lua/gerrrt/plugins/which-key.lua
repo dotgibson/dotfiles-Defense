@@ -31,6 +31,10 @@ return {
 			{ "<leader>n", group = "npm (package.json)" },
 			{ "<leader>q", group = "session" },
 			{ "<leader>s", group = "split / window" },
+			-- normal mode only, and only really populated on python buffers (buffer-local pytest maps
+			-- attached on FileType python — config/autocmds.lua). Declared globally so the prefix has a
+			-- name wherever it appears rather than rendering as a bare unnamed group.
+			{ "<leader>t", group = "test", mode = "n" },
 			{ "<leader>u", group = "ui / toggles" },
 			{ "<leader>w", group = "which-key" },
 			{ "<leader>x", group = "trouble / lists" },

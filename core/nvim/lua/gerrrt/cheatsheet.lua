@@ -141,6 +141,12 @@ M.sections = {
 		{ "<leader>dR", "Rust debuggables (start)" },
 	},
 	{
+		"Test (python)",
+		{ "<leader>tt", "pytest: whole suite (uv run)" },
+		{ "<leader>tf", "pytest: current file (uv run)" },
+		{ "<leader>dm", "Debug test method (dap)" },
+	},
+	{
 		"Trouble & Lists",
 		{ "<leader>xx", "Workspace diagnostics" },
 		{ "<leader>xX", "Buffer diagnostics" },

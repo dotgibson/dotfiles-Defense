@@ -15,6 +15,21 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **Python workflow ergonomics for the Astral stack (uv/ruff/ty).** Three small, additive changes
+  that make the already-wired Python setup easier to drive day-to-day:
+  - `zsh/20-aliases.zsh` adds `uvr` (`uv run`) and `uvs` (`uv sync`), guarded by a new `HAVE_UV`
+    flag in `zsh/00-tools.zsh` so a bare box simply doesn't get them. `uv run` resolves the
+    project's `.venv` itself, so these cover the daily loop without manual venv activation.
+  - `nvim/lua/gerrrt/config/autocmds.lua` adds buffer-local pytest runners on Python buffers —
+    `<leader>tt` (whole suite) and `<leader>tf` (current file) — running `uv run pytest` as an
+    argv-form terminal job rooted at the uv project (not Neovim's cwd). Gated on `uv` being present,
+    plugin-free (no neotest, matching the config's no-dap-ui/no-toggleterm stance), and complementing
+    the existing DAP "debug test method" (`<leader>dm`). `<leader>t` is registered as the `test`
+    group in `nvim/lua/gerrrt/plugins/which-key.lua` and documented in `cheatsheet.lua`; a headless
+    probe in `scripts/test-core.sh` asserts the maps register on a Python buffer.
+  - `mise/config.toml` documents the deliberate Python ownership split (mise supplies the global
+    mise-managed interpreter for global tools; uv owns per-project envs) so the two managers' roles
+    are explicit.
 - **`mise` now supplies the `zig`, `terraform`, and `foundry` toolchains.** `plugins/conform.lua`
   declares `zigfmt`, `terraform_fmt`, and `forge_fmt` fleet-wide, so `:checkhealth` (and
   `:checkhealth gerrrt`) reported them as "unavailable — command not found" on every box lacking the
