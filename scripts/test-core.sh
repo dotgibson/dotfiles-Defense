@@ -513,22 +513,32 @@ LUA
   evt_file="$SANDBOX/probe.txt"
   printf 'one\ntwo\nthree\n' >"$evt_file"
   evt_err="$SANDBOX/nvim-events.err"
-  # Fire each registered event once: yank + delete (TextYankPost — the regression
-  # above), a markdown FileType (the per-filetype view options), and a real file open
-  # (BufReadPost — cursor restore). Any callback that throws prints to stderr. The file
-  # path is passed via $CORE_EVT_FILE and opened through fnameescape() rather than
-  # interpolated into the Ex command, so a $SANDBOX/$TMPDIR containing spaces is safe.
-  CORE_NVIM_DIR="$HERE/nvim" CORE_EVT_FILE="$evt_file" nvim --headless -u "$evt_probe" -i NONE -n \
+  # Stub `uv` on PATH so the Python FileType callback (config/autocmds.lua) is not gated out — it
+  # registers its buffer-local pytest maps only when `executable("uv")`. The stub is never invoked
+  # here (we assert the maps REGISTER, not that pytest runs), so its body only needs to exist +x.
+  mkdir -p "$SANDBOX/bin"
+  printf '#!/bin/sh\nexit 0\n' >"$SANDBOX/bin/uv"
+  chmod +x "$SANDBOX/bin/uv"
+  # Fire each registered event once: yank + delete (TextYankPost — the regression above), a
+  # markdown FileType (per-filetype view options) and a python FileType (the pytest runner maps),
+  # and a real file open (BufReadPost — cursor restore). Any callback that throws prints to stderr.
+  # The python step also ASSERTS the buffer-local <leader>t{t,f} maps registered — matched by their
+  # "pytest" desc, so the check is independent of whatever <leader> resolves to. The file path is
+  # passed via $CORE_EVT_FILE and opened through fnameescape() rather than interpolated into the Ex
+  # command, so a $SANDBOX/$TMPDIR containing spaces is safe.
+  PATH="$SANDBOX/bin:$PATH" CORE_NVIM_DIR="$HERE/nvim" CORE_EVT_FILE="$evt_file" nvim --headless -u "$evt_probe" -i NONE -n \
     -c 'call setline(1, ["alpha","bravo","charlie"])' \
     -c 'normal! yy' -c 'normal! dd' \
     -c 'setfiletype markdown' \
+    -c 'enew | setlocal filetype=python' \
+    -c 'lua local ok=false; for _,k in ipairs(vim.api.nvim_buf_get_keymap(0,"n")) do if k.desc and k.desc:match("pytest") then ok=true end end; if not ok then io.stderr:write("FileType python did not register buffer-local pytest maps\n") end' \
     -c 'execute "edit" fnameescape($CORE_EVT_FILE)' \
     -c 'qa!' </dev/null >/dev/null 2>"$evt_err"
   if [[ -s "$evt_err" ]]; then
     fail "nvim autocmd callback errored when fired (e.g. the yank/delete highlight):"
     sed 's/^/    /' "$evt_err" >&2
   else
-    pass "nvim event callbacks fired clean (TextYankPost yank+delete, FileType, BufReadPost)"
+    pass "nvim event callbacks fired clean (TextYankPost yank+delete, FileType markdown+python w/ pytest maps, BufReadPost)"
   fi
 else
   skip "nvim event callbacks (nvim not installed — runs in CI)"

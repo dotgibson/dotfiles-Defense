@@ -99,6 +99,7 @@ _have btop && HAVE_BTOP=1
 _have dust && HAVE_DUST=1
 _have procs && HAVE_PROCS=1
 _have mise && HAVE_MISE=1
+_have uv && HAVE_UV=1              # Astral project-Python manager (20-aliases.zsh: uvr/uvs; os/*.zsh caches its completion)
 _have carapace && HAVE_CARAPACE=1 # completion engine — init in 45-plugins.zsh
 # 2026 additions (20-aliases.zsh guards each):
 _have xh && HAVE_XH=1

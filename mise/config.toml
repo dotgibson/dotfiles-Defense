@@ -13,6 +13,11 @@
 node   = "lts"
 pnpm   = "latest"     # faster than npm/yarn, less disk; npm/npx still ship with node
 python = "3.14"       # many pentest tools (impacket, bloodhound-python) want a real Python
+# Python ownership split (deliberate): the line above is the GLOBAL mise-managed interpreter —
+# a user-scoped runtime exposed through mise's shims/activation (NOT the OS /usr/bin/python), and
+# the one those global tools run on. uv owns PER-PROJECT envs (.venv) and tool running: inside a
+# project use `uv run` / `uv sync` (aliased uvr/uvs in zsh/20-aliases.zsh), which resolve the
+# project's venv with no manual activation. Project deps belong in that project's pyproject.toml.
 ruby   = "3.4"        # evil-winrm, some Metasploit modules, web tooling
 go     = "latest"     # lots of security tooling is `go install`-able; enables gopls
 rust   = "stable"     # see distro note below

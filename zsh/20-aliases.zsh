@@ -135,6 +135,16 @@ alias lg='lazygit'
   alias jjd='jj diff'
 }
 
+# ── uv (Astral) — project-Python workflow shorthands ─────────────────────────
+# uv owns per-project envs (.venv) and tool running; these two verbs cover the daily
+# loop. `uv run <cmd>` resolves the project env itself, so no manual venv activation.
+# Guarded by HAVE_UV (00-tools.zsh) so a bare box simply doesn't get them. `uvx` already
+# ships as a first-class uv command, so it's deliberately NOT aliased here.
+[[ -n ${HAVE_UV:-} ]] && {
+  alias uvr='uv run'   # uv run pytest · uv run python -m app · uv run ruff check .
+  alias uvs='uv sync'  # reconcile the project env with uv.lock
+}
+
 # ── upstream sync (gsync) ─────────────────────────────────────────────────────
 # `gsync` pushes an OS repo's vendored core/ subtree back upstream to dotfiles-core.
 # Resolve the runner relative to THIS file (survives the core/ subtree living

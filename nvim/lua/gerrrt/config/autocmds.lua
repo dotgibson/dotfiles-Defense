@@ -173,6 +173,58 @@ vim.api.nvim_create_autocmd("BufWritePre", {
   end,
 })
 
+-- Python: buffer-local pytest runners via uv. Plugin-free ON PURPOSE — this config avoids the
+-- heavy test-runner stack (no neotest, matching the no-dap-ui/no-toggleterm stance elsewhere); a
+-- split terminal running `uv run pytest` covers the daily "run this" loop and complements the DAP
+-- "debug test method" (<leader>dm, plugins/nvim-dap.lua). BUFFER-LOCAL (attached on FileType
+-- python) so the <leader>t prefix stays free for every other filetype.
+--
+-- GATED on `uv` being present — like the uvr/uvs zsh aliases (HAVE_UV). Without it the maps would
+-- only ever advertise a command that opens a failed terminal, so we simply don't create them.
+-- Re-probed per attach, so installing uv mid-session takes effect on the next Python buffer.
+local py_test_group = vim.api.nvim_create_augroup("PyTestRunner", { clear = true })
+vim.api.nvim_create_autocmd("FileType", {
+  group = py_test_group,
+  pattern = "python",
+  callback = function(args)
+    if vim.fn.executable("uv") ~= 1 then
+      return
+    end
+    local function pytest(target)
+      vim.cmd("update") -- write a modified buffer first (like vim-test) so pytest sees latest edits
+      -- Run in the uv PROJECT ROOT, not Neovim's cwd. autochdir is off (config/options.lua), so a
+      -- file opened from elsewhere would otherwise make uv resolve the wrong project. Same root
+      -- markers the lualine venv component uses (plugins/lualine-nvim.lua).
+      local root = vim.fs.root(args.buf, { { "uv.lock", "pyproject.toml" }, ".git" }) or vim.fn.getcwd()
+      -- argv FORM, never a shell string: a filename with spaces or shell metacharacters (`;`, `&`,
+      -- …) is passed as one literal argument and cannot be re-parsed or injected — which
+      -- fnameescape() (Ex-syntax only) would NOT have prevented through `:terminal`'s shell.
+      local argv = { "uv", "run", "pytest" }
+      if target then
+        argv[#argv + 1] = target
+      end
+      -- Fresh scratch buffer in a bottom split, then attach the terminal job to it.
+      vim.cmd("botright split | enew | resize 15")
+      local jid = vim.fn.jobstart(argv, { cwd = root, term = true })
+      if jid <= 0 then
+        vim.notify("Test: failed to start `uv run pytest`", vim.log.levels.ERROR, { title = "Test" })
+        return
+      end
+      vim.cmd("startinsert") -- so output scrolls live
+    end
+    local function map(lhs, fn, desc)
+      vim.keymap.set("n", lhs, fn, { buffer = args.buf, silent = true, desc = desc })
+    end
+    map("<leader>tt", function()
+      pytest(nil)
+    end, "Test: pytest (whole suite)")
+    map("<leader>tf", function()
+      -- Resolve the path NOW, before the split changes the current buffer.
+      pytest(vim.fn.expand("%:p"))
+    end, "Test: pytest (current file)")
+  end,
+})
+
 -- on attach function shortcuts
 local lsp_on_attach_group = vim.api.nvim_create_augroup("LspMappings", { clear = true })
 vim.api.nvim_create_autocmd("LspAttach", {
