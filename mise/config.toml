@@ -19,6 +19,19 @@ rust   = "stable"     # see distro note below
 java   = "temurin-21" # Burp Suite, BloodHound legacy — recent LTS
 lua    = "5.4"        # handy when hacking on the Neovim config
 
+# Toolchains that back Neovim's conform formatters (plugins/conform.lua declares these fleet-wide,
+# so :checkhealth flags them as "unavailable" on any box that lacks the binary). Declared here so
+# `mise install` supplies them everywhere Core lands, rather than as a per-OS package entry.
+zig       = "latest" # `zig fmt` (conform: zigfmt) + zls; also a real compiler
+terraform = "latest" # `terraform fmt` (conform: terraform_fmt) + terraform-ls
+foundry   = "latest" # provides forge/cast/anvil/chisel — `forge fmt` (conform: forge_fmt) for Solidity
+# Distro note: mise pulls foundry as a prebuilt (ubi:foundry-rs/foundry) that is glibc-linked, so it
+# won't run on Alpine's musl. Omitting it from a local config does NOT drop it — mise MERGES the
+# global + local [tools], so the inherited `foundry` still installs. Exclude it explicitly instead:
+# `disable_tools = ["foundry"]` under [settings] in a machine-local mise config, or export
+# MISE_DISABLE_TOOLS=foundry from local shell config (the ENV-var idiom already used for
+# MISE_TRUSTED_CONFIG_PATHS below). zig and terraform ship self-contained binaries and run everywhere.
+
 # Distro note: on boxes where bootstrap installs `cargo` via the package manager
 # (e.g. Fedora, for building yazi/dust), mise's `rust` here will take PATH
 # precedence — which is fine (mise's toolchain is newer). If you'd rather the

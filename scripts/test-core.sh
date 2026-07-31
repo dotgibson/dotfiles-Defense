@@ -293,6 +293,23 @@ do
     errs[#errs + 1] = "gerrrt.health → did not return a table with a check() function"
   end
 end
+-- buf-config filetype detection (config/autocmds.lua, required above). Every buf config basename
+-- must resolve to the `buf-config` filetype (so buf_ls attaches and `:checkhealth vim.lsp` stops
+-- flagging an unknown filetype), and `buf-config` must alias the yaml treesitter parser (so
+-- plugins/nvim-treesitter's get_lang-driven start lights these buffers). A dropped basename or a
+-- lost parser alias is luacheck-clean but silently regresses attach/highlighting — and fans out 9×.
+do
+  for _, fname in ipairs({ "buf.yaml", "buf.gen.yaml", "buf.work.yaml", "buf.policy.yaml", "buf.lock" }) do
+    local got = vim.filetype.match({ filename = fname })
+    if got ~= "buf-config" then
+      errs[#errs + 1] = ("buf-config ft: %s → %s (want buf-config)"):format(fname, tostring(got))
+    end
+  end
+  local alias = vim.treesitter.language.get_lang("buf-config")
+  if alias ~= "yaml" then
+    errs[#errs + 1] = "buf-config ft: treesitter lang alias → " .. tostring(alias) .. " (want yaml)"
+  end
+end
 -- every plugin spec must require cleanly and return a lazy spec table
 local pdir = vim.env.CORE_NVIM_DIR .. "/lua/gerrrt/plugins"
 for _, f in ipairs(vim.fn.readdir(pdir) or {}) do
