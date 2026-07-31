@@ -13,6 +13,29 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`mise` now supplies the `zig`, `terraform`, and `foundry` toolchains.** `plugins/conform.lua`
+  declares `zigfmt`, `terraform_fmt`, and `forge_fmt` fleet-wide, so `:checkhealth` (and
+  `:checkhealth gerrrt`) reported them as "unavailable — command not found" on every box lacking the
+  binary. Adding them to `mise/config.toml` means `mise install` provides `zig fmt`, `terraform fmt`,
+  and `forge fmt` (via foundry's `forge`) everywhere Core lands, with a note that foundry's
+  glibc-linked prebuilt must be excluded via `disable_tools` / `MISE_DISABLE_TOOLS` on Alpine (musl),
+  since mise merges global + local `[tools]` and omission alone doesn't drop an inherited tool.
+
+### Fixed
+
+- **`buf-config` is now a known filetype, silencing the `:checkhealth vim.lsp` "Unknown filetype"
+  warning.** `nvim/lua/gerrrt/servers/buf_ls.lua` advertises `buf-config` as one of buf_ls's
+  filetypes, but nothing mapped buf's config files to it — so the health check flagged it and buf_ls
+  never attached to `buf.yaml` / `buf.gen.yaml`. `nvim/lua/gerrrt/config/autocmds.lua` now registers
+  buf's full v2 config surface (`buf.yaml`, `buf.gen.yaml`, `buf.work.yaml`, `buf.policy.yaml`,
+  `buf.lock`) via `vim.filetype.add`, so the filetype is known (warning gone) and buf_ls serves them
+  with buf-aware completion/diagnostics. Highlighting is preserved by aliasing `buf-config` to the
+  yaml parser (`vim.treesitter.language.register`), which hands the buffers to nvim-treesitter's own
+  install/start lifecycle. Covered by a new assertion in `scripts/test-core.sh` (each buf basename
+  resolves to `buf-config`; the parser alias resolves to `yaml`).
+
 ## [v4.6.0] - 2026-07-30
 
 ### Added

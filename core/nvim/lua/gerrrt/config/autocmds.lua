@@ -180,6 +180,34 @@ vim.api.nvim_create_autocmd("LspAttach", {
   callback = on_attach,
 })
 
+-- Teach Neovim the `buf-config` filetype that buf_ls advertises (servers/buf_ls.lua lists
+-- `filetypes = { "proto", "buf-config" }`). Nothing in stock Neovim maps buf's own config files to
+-- that name, so two things were true at once: `:checkhealth vim.lsp` flagged `buf-config` as an
+-- "Unknown filetype" (its known-set comes from vim.filetype._get_known_filetypes(), which DOES read
+-- vim.filetype.add() registrations), AND buf_ls never attached to buf.yaml / buf.gen.yaml because
+-- they stayed `yaml`. Mapping the buf-specific filenames fixes both: the ft becomes known (the
+-- health warning is gone) and buf_ls now serves these files with buf-aware completion/diagnostics —
+-- the language server's intended job. The set is buf's full v2 config surface (buf.yaml,
+-- buf.gen.yaml, buf.work.yaml, buf.policy.yaml) plus the buf.lock dependency lock. They no longer
+-- load as `yaml`, so yamlls steps aside here (buf_ls is the better fit for buf config).
+vim.filetype.add({
+  filename = {
+    ["buf.yaml"] = "buf-config",
+    ["buf.gen.yaml"] = "buf-config",
+    ["buf.work.yaml"] = "buf-config",
+    ["buf.policy.yaml"] = "buf-config",
+    ["buf.lock"] = "buf-config",
+  },
+})
+-- Highlighting: these are all YAML, so alias the buf-config filetype to the yaml PARSER rather than
+-- starting treesitter ourselves. plugins/nvim-treesitter.lua (main branch) drives highlighting from
+-- its OWN FileType handler via `vim.treesitter.language.get_lang(ft)` → start-if-installed; with
+-- this register call get_lang resolves buf-config→yaml, so that existing install/start lifecycle
+-- lights these buffers up — including its already-loaded-buffer sweep and a yaml parser that only
+-- lands after a fresh-box ensure_installed pass. Starting the parser here on FileType instead would
+-- miss the not-yet-installed case (FileType fires before the parser arrives, and never retries).
+vim.treesitter.language.register("yaml", "buf-config")
+
 -- custom options for text/markdown files
 local markdown_options = vim.api.nvim_create_augroup("MarkdownOptions", { clear = true })
 vim.api.nvim_create_autocmd("FileType", {
