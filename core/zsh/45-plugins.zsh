@@ -48,7 +48,7 @@ typeset -gA ZPLUGIN_PINS=(
   zsh-users/zsh-syntax-highlighting           1d85c692615a25fe2293bdd44b34c217d5d2bf04
   Aloxaf/fzf-tab                              24105b15714bfec37989ed5c5b6e60f572253019
   MichaelAquilina/zsh-you-should-use          5f3d129864ee4505043d88c3486224f1d75b692e
-  olets/zsh-transient-prompt                 ba98fe847ffb31c5529441e14c5a228a74903a75
+  olets/zsh-transient-prompt                 bdd5917f38db4b4995134e8fb0251ce01cd9a068
 )
 
 # Show first-run install progress with Core's spinner WHEN 05-ui.zsh is loaded; fall
