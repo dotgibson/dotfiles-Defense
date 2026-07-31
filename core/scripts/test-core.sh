@@ -378,12 +378,81 @@ LUA
     -c 'checkhealth gerrrt' \
     -c 'execute "write!" fnameescape($CORE_CK_REP)' \
     -c 'qa!' >/dev/null 2>"$ckerr"
-  if grep -q "dotfiles-core" "$ckrep" 2>/dev/null; then
-    pass "checkhealth gerrrt ran (health report rendered)"
+  # Assert ALL FOUR sections rendered — each helper's h.start() runs before any early return, so a
+  # header proves that helper ran without throwing (a bad vim.health call in any of them would drop
+  # its header). The LSP/formatters/linters sections show their "not loaded — open a file" info here
+  # (hermetic: no plugins, no file opened), which is the correct side-effect-free behavior.
+  if grep -q "dotfiles-core: clipboard" "$ckrep" 2>/dev/null \
+     && grep -q "dotfiles-core: LSP servers" "$ckrep" 2>/dev/null \
+     && grep -q "dotfiles-core: formatters" "$ckrep" 2>/dev/null \
+     && grep -q "dotfiles-core: linters" "$ckrep" 2>/dev/null; then
+    pass "checkhealth gerrrt ran (clipboard + LSP + formatters + linters sections rendered)"
   else
-    fail "checkhealth gerrrt did not render its section (check() missing or threw):"
+    fail "checkhealth gerrrt did not render all sections (a check() helper missing or threw):"
     [[ -s "$ckrep" ]] && sed 's/^/    /' "$ckrep" >&2
     [[ -s "$ckerr" ]] && sed 's/^/    /' "$ckerr" >&2
+  fi
+
+  # Native-Windows clipboard branch (headless, has("win32") stubbed). The Neovim CI matrix is
+  # Ubuntu/macOS, so check_clipboard's has("win32") early return never runs under the gate — a
+  # regression in it (running the Unix clip/clip-paste probe on the host, or a bad vim.health
+  # call) would otherwise pass the full audit. This stubs vim.fn.has→win32 and CAPTURES the
+  # vim.health calls (rather than rendering a report), asserting the clipboard section reports OK
+  # (never warn/error) AND that the branch skips the executable()/system() probe entirely. The
+  # whole body is pcall-guarded so even a bad stub cquits (fails) instead of hanging on a prompt.
+  winprobe="$SANDBOX/nvim-health-win32.lua"
+  cat >"$winprobe" <<'LUA'
+local function run()
+  local calls = {}
+  vim.health = {
+    start = function(s) calls[#calls + 1] = { "start", s } end,
+    ok    = function(s) calls[#calls + 1] = { "ok", s } end,
+    warn  = function(s) calls[#calls + 1] = { "warn", s } end,
+    info  = function(s) calls[#calls + 1] = { "info", s } end,
+    error = function(s) calls[#calls + 1] = { "error", s } end,
+  }
+  -- Force the native-Windows branch; trip a flag if the Unix probe is ever run.
+  local probed = false
+  vim.fn.has = function(f) return (f == "win32") and 1 or 0 end
+  vim.fn.executable = function(_) probed = true; return 0 end
+  vim.fn.system = function(_) probed = true; return "" end
+  assert(vim.fn.has("win32") == 1, "stub failed: vim.fn.has('win32') did not return 1")
+
+  local M = dofile(vim.env.CORE_HEALTH_LUA)
+  assert(type(M) == "table" and type(M.check) == "function", "health.lua did not return a module with check()")
+  M.check()
+
+  -- The clipboard section's calls run from its start() up to the next start().
+  local in_clip, saw_start, saw_ok = false, false, false
+  for _, c in ipairs(calls) do
+    local kind, text = c[1], c[2] or ""
+    if kind == "start" then
+      in_clip = text:find("dotfiles%-core: clipboard", 1) ~= nil
+      if in_clip then saw_start = true end
+    elseif in_clip then
+      assert(kind ~= "warn" and kind ~= "error", "clipboard section emitted a " .. kind .. " on native Windows: " .. text)
+      if kind == "ok" then saw_ok = true end
+    end
+  end
+  assert(saw_start, "clipboard section did not run (no start)")
+  assert(saw_ok, "clipboard section did not report OK on native Windows")
+  assert(not probed, "native-Windows branch called executable()/system() — it must skip the Unix probe")
+end
+
+local ok, err = pcall(run)
+if not ok then
+  io.stderr:write(tostring(err) .. "\n")
+  vim.cmd("cquit 1")
+end
+vim.cmd("quitall!")
+LUA
+  win_err="$SANDBOX/nvim-health-win32.err"
+  if CORE_HEALTH_LUA="$HERE/nvim/lua/gerrrt/health.lua" \
+     nvim --headless -u "$winprobe" -i NONE -n +qa >/dev/null 2>"$win_err"; then
+    pass "checkhealth gerrrt: native-Windows clipboard branch skips the Unix probe (has('win32') stubbed)"
+  else
+    fail "checkhealth gerrrt native-Windows clipboard branch probe failed:"
+    [[ -s "$win_err" ]] && sed 's/^/    /' "$win_err" >&2
   fi
 else
   skip "nvim config load (nvim not installed — runs in CI)"
@@ -609,11 +678,30 @@ vim.lsp.enable = function(names)
   for _, n in ipairs(type(names) == "table" and names or { names }) do enabled[#enabled + 1] = n end
 end
 
-local ok, err = pcall(require, "gerrrt.servers")
+local ok, mod = pcall(require, "gerrrt.servers")
+
+-- Exercise the read-only status() export (feeds :checkhealth gerrrt) WHILE the stubs are still
+-- active, so the binary gate stays pinned and get_clients() is the real (empty, headless) surface.
+-- Asserts the states health.lua renders: a broken override reports registered=false (NOT masked by
+-- an upstream default); a good server reports registered+enabled+available; clients is a count.
+local st_ok, st_gopls_reg, st_luals_reg, st_luals_en, st_luals_av, st_luals_cl = false
+if ok and type(mod) == "table" and type(mod.status) == "function" then
+  local oks, rows = pcall(mod.status)
+  if oks and type(rows) == "table" then
+    st_ok = true
+    for _, s in ipairs(rows) do
+      if s.name == "gopls" then st_gopls_reg = s.registered end
+      if s.name == "lua_ls" then
+        st_luals_reg, st_luals_en, st_luals_av, st_luals_cl = s.registered, s.enabled, s.available, s.clients
+      end
+    end
+  end
+end
+
 vim.lsp.config, vim.lsp.enable = real_config, real_enable
 vim.fn.executable = real_executable
 if not ok then
-  io.stderr:write("require gerrrt.servers → " .. tostring(err) .. "\n")
+  io.stderr:write("require gerrrt.servers → " .. tostring(mod) .. "\n")
   vim.cmd("cquit 1")
 end
 
@@ -628,13 +716,20 @@ for name, cfg in pairs(registered) do
 end
 -- The broken module registered nothing, so its cmd resolves to nil and it bypasses the gate too.
 if registered["gopls"] == nil then n_nocmd = n_nocmd + 1 end
-io.stdout:write(("wildcard=%s caps=%s servers=%d broken_registered=%s enabled=%d nocmd=%d\n"):format(
+io.stdout:write(("wildcard=%s caps=%s servers=%d broken_registered=%s enabled=%d nocmd=%d"):format(
   tostring(registered["*"] ~= nil),
   tostring(registered["*"] and registered["*"].capabilities and registered["*"].capabilities.STUB_CAPS or false),
   n_servers,
   tostring(registered["gopls"] ~= nil),
   #enabled,
   n_nocmd))
+io.stdout:write((" status_ok=%s st_gopls_reg=%s st_luals_reg=%s st_luals_en=%s st_luals_av=%s st_luals_cl=%s\n"):format(
+  tostring(st_ok),
+  tostring(st_gopls_reg),
+  tostring(st_luals_reg),
+  tostring(st_luals_en),
+  tostring(st_luals_av),
+  tostring(st_luals_cl)))
 vim.cmd("qa!")
 LUA
   reg_err="$SANDBOX/nvim-registry.err"
@@ -654,6 +749,21 @@ LUA
   else
     fail "LSP registry contract broken — got '$reg_a' (expected caps+wildcard true, broken_registered false, enabled = servers+1)"
     [[ -s "$reg_err" ]] && sed 's/^/    /' "$reg_err" >&2
+  fi
+
+  # status() export (feeds :checkhealth gerrrt). The broken gopls override must report
+  # registered=false — the whole point of tracking it separately from vim.lsp.config[name], which
+  # would resolve an upstream default and hide the failure. A good server (lua_ls) must report
+  # registered + enabled + available, and clients must be a number (0 in this headless probe).
+  if [[ "$(_reg_field "$reg_a" status_ok)" == "true" \
+        && "$(_reg_field "$reg_a" st_gopls_reg)" == "false" \
+        && "$(_reg_field "$reg_a" st_luals_reg)" == "true" \
+        && "$(_reg_field "$reg_a" st_luals_en)" == "true" \
+        && "$(_reg_field "$reg_a" st_luals_av)" == "true" \
+        && "$(_reg_field "$reg_a" st_luals_cl)" == "0" ]]; then
+    pass "LSP registry: status() separates registered/enabled/available (broken override → registered=false)"
+  else
+    fail "LSP registry status() contract broken — got '$reg_a' (expected status_ok, gopls reg=false, lua_ls reg/en/av=true, clients=0)"
   fi
 
   # B. no binary present. Only configs that bypass the gate by design may remain — those with no

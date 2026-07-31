@@ -13,6 +13,66 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.6.0] - 2026-07-30
+
+### Added
+
+- **`:checkhealth gerrrt` now reports LSP / formatter / linter readiness.** The built-in
+  `:checkhealth vim.lsp` only lists clients _attached to the live session_, so run from the
+  dashboard it reads "No active clients" and says nothing about whether your configured tools
+  are installed. Three new sections in `nvim/lua/gerrrt/health.lua` report per-tool state:
+  - **LSP servers** — every wanted server (from `nvim/lua/gerrrt/servers/init.lua`) as
+    attached / enabled-idle / pending-enable / binary-missing / override-failed, via a new
+    read-only `M.status()` export that reuses the module's own wanted-list and
+    `binary_available()`. It tracks _registered_ (our override loaded) and _enabled_ (we called
+    `vim.lsp.enable`) as **distinct** facts — not inferred from `vim.lsp.config[name]`, which
+    also resolves upstream lspconfig defaults — so a failed override or an installed-but-not-yet-
+    enabled binary is reported accurately.
+  - **Formatters (conform)** — rendered from conform's own `list_all_formatters()` availability.
+  - **Linters (nvim-lint)** — from `linters_by_ft` + the SAST `semgrep`, checking each linter's
+    real builtin `cmd`.
+
+  All three are **side-effect-free**: they observe `package.loaded` and never `require()` a plugin
+  (which would force-load it and, for the LSP stack, register/enable servers before nvim-lspconfig's
+  defaults are on the runtimepath), so from the dashboard they say "open a file, then re-run" rather
+  than mutating the session. Missing binaries are info (not warnings) on `DOTFILES_OFFLINE` boxes.
+  Covered by new assertions in `scripts/test-core.sh` (the D4 registry probe exercises `status()`;
+  the checkhealth probe asserts all four sections render).
+  (`nvim/lua/gerrrt/health.lua`, `nvim/lua/gerrrt/servers/init.lua`, `scripts/test-core.sh`)
+
+### Changed
+
+- **Dev toolchain and plugin pins rolled forward.** Routine freshness sweep. The gate
+  toolchain was bumped in `scripts/tool-versions.env` (the single source — `ci.yml` and
+  `make setup` read it, and the audit's consistency gate enforces the `.pre-commit-config.yaml`
+  revs match it): **shellcheck** `0.10.0 → 0.11.0` (with its `SHELLCHECK_SHA256` recomputed
+  via `scripts/update-tool-checksums.sh`), **markdownlint-cli2** `0.22.1 → 0.23.2`, and
+  **pre-commit-hooks** `v5.0.0 → v6.0.0`. Plugin pins were rolled to upstream: the zsh
+  `zsh-transient-prompt` pin (`zsh/45-plugins.zsh`) and four Neovim plugins in
+  `nvim/lazy-lock.json` (`nvim-lspconfig`, `package-info.nvim`, `rainbow-delimiters.nvim`,
+  `schemastore.nvim`). (`scripts/tool-versions.env`, `.pre-commit-config.yaml`,
+  `zsh/45-plugins.zsh`, `nvim/lazy-lock.json`)
+
+### Fixed
+
+- **`:checkhealth gerrrt` clipboard false alarm on native Windows.** On the Windows host
+  (where `dotfiles-Windows` vendors only `nvim/` and never runs Core's bootstrap), the
+  clipboard section warned "Core's cross-OS clipboard scripts are not on PATH (clip: found,
+  clip-paste: missing)" — misleading, because `clip` only "found" as Windows' built-in
+  `clip.exe` and the Unix/WSL `clip`/`clip-paste` ladder simply does not apply there:
+  `config/clipboard.lua` wires an OS-appropriate provider instead (the `clip-windows`
+  provider — `clip.exe` copy + PowerShell paste — when `clip.exe` is present, else the OSC52
+  fallback). `nvim/lua/gerrrt/health.lua` now detects native Windows (`has("win32")`, false
+  under WSL), records that the Unix probe is inapplicable, and defers to `:checkhealth
+  vim.provider` for the live backend rather than running the ladder or re-deriving the
+  provider itself. (`nvim/lua/gerrrt/health.lua`)
+- **noice.nvim cmdline regex highlighting.** Added the `regex` Tree-sitter parser to
+  `ensure_installed` in `nvim/lua/gerrrt/plugins/nvim-treesitter.lua`. noice runs a
+  floating command line (`cmdline_popup`), which uses the `regex` parser to syntax-
+  highlight the pattern in `:s/…/` substitutions and searches; without it, `:checkhealth
+  noice` warned "`regex` parser is not installed. Highlighting of the cmdline for `regex`
+  might be broken." It installs on next launch via the existing `ensure_installed` diff.
+
 ## [v4.5.0] - 2026-07-28
 
 ### Added
