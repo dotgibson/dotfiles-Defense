@@ -15,6 +15,32 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **Claude Code IDE integration for Neovim (`coder/claudecode.nvim`).** `nvim/lua/gerrrt/plugins/claudecode-nvim.lua`
+  adds the first runtime Claude surface in the fleet — until now Claude Code existed only as pinned
+  CI automation (`scripts/tool-versions.env`, `.github/workflows/claude-routines.yml`). The plugin
+  speaks the same WebSocket/MCP protocol as the official VS Code and JetBrains extensions: Neovim
+  runs the server and writes `~/.claude/ide/<port>.lock`, and the `claude` CLI attaches to it. The
+  payoff over a bare terminal pane is that Claude's edits arrive as a native `:diffsplit` you accept
+  with `:w` (or `<leader>aa`) and can edit before accepting, visual selections send with their real
+  file and line range, and Claude reads the session's LSP diagnostics over MCP rather than
+  re-running a build. Keys live under a new `<leader>a` prefix (`ac` toggle, `as` send selection /
+  add file from an nvim-tree or oil buffer, `ab` add buffer, `aa`/`ad` accept/deny diff, `am` model,
+  `ar`/`aC` resume/continue, `aS` status), registered as the `ai / claude` group in
+  `plugins/which-key.lua` and documented in `cheatsheet.lua`.
+
+  Two deliberate departures from upstream's install spec, both fleet-driven:
+  - **No `folke/snacks.nvim` dependency.** Upstream defaults its terminal to snacks, which Core does
+    not ship and which would overlap fzf-lua, mini.notify and alpha. `terminal.provider = "native"`
+    uses a plain `:terminal` split instead, keeping faith with the no-dap-ui/no-toggleterm stance in
+    `config/autocmds.lua` and adding exactly one entry to `lazy-lock.json`. `provider = "none"`
+    remains a one-line switch for driving `claude` from a tmux pane and attaching with `/ide`.
+  - **The whole spec is `cond`-gated on the `claude` binary.** Core vendors into eight OS repos and
+    the CLI is in none of their package lists, so on almost every box the plugin must be inert —
+    the same reasoning as the existing `uv` gate for the pytest maps. `nvim/lua/gerrrt/health.lua`
+    gains a `:checkhealth gerrrt` section that reports the gate (and, once loaded, the IDE lock
+    file) so an absent `<leader>a` reads as intentional rather than broken.
+
+  Installing the CLI itself stays out of Core: it is an npm/brew install and therefore OS-native.
 - **Python workflow ergonomics for the Astral stack (uv/ruff/ty).** Three small, additive changes
   that make the already-wired Python setup easier to drive day-to-day:
   - `zsh/20-aliases.zsh` adds `uvr` (`uv run`) and `uvs` (`uv sync`), guarded by a new `HAVE_UV`

@@ -395,15 +395,16 @@ LUA
     -c 'checkhealth gerrrt' \
     -c 'execute "write!" fnameescape($CORE_CK_REP)' \
     -c 'qa!' >/dev/null 2>"$ckerr"
-  # Assert ALL FOUR sections rendered — each helper's h.start() runs before any early return, so a
+  # Assert ALL FIVE sections rendered — each helper's h.start() runs before any early return, so a
   # header proves that helper ran without throwing (a bad vim.health call in any of them would drop
   # its header). The LSP/formatters/linters sections show their "not loaded — open a file" info here
   # (hermetic: no plugins, no file opened), which is the correct side-effect-free behavior.
   if grep -q "dotfiles-core: clipboard" "$ckrep" 2>/dev/null \
      && grep -q "dotfiles-core: LSP servers" "$ckrep" 2>/dev/null \
      && grep -q "dotfiles-core: formatters" "$ckrep" 2>/dev/null \
-     && grep -q "dotfiles-core: linters" "$ckrep" 2>/dev/null; then
-    pass "checkhealth gerrrt ran (clipboard + LSP + formatters + linters sections rendered)"
+     && grep -q "dotfiles-core: linters" "$ckrep" 2>/dev/null \
+     && grep -q "dotfiles-core: Claude Code" "$ckrep" 2>/dev/null; then
+    pass "checkhealth gerrrt ran (clipboard + LSP + formatters + linters + Claude sections rendered)"
   else
     fail "checkhealth gerrrt did not render all sections (a check() helper missing or threw):"
     [[ -s "$ckrep" ]] && sed 's/^/    /' "$ckrep" >&2
@@ -429,10 +430,23 @@ local function run()
     error = function(s) calls[#calls + 1] = { "error", s } end,
   }
   -- Force the native-Windows branch; trip a flag if the Unix probe is ever run.
+  -- SCOPED TO THE CLIPBOARD SECTION. A run-wide flag would also fire on helpers that probe
+  -- legitimately on Windows — check_claude gates on the `claude` binary there exactly as it does
+  -- everywhere else — turning this into a "no helper may call executable()" rule, which is not the
+  -- invariant being guarded. The one being guarded is: check_clipboard's win32 early return must
+  -- fire BEFORE its clip/clip-paste ladder.
   local probed = false
+  local function in_clipboard()
+    for i = #calls, 1, -1 do
+      if calls[i][1] == "start" then
+        return (calls[i][2] or ""):find("dotfiles%-core: clipboard", 1) ~= nil
+      end
+    end
+    return false
+  end
   vim.fn.has = function(f) return (f == "win32") and 1 or 0 end
-  vim.fn.executable = function(_) probed = true; return 0 end
-  vim.fn.system = function(_) probed = true; return "" end
+  vim.fn.executable = function(_) probed = probed or in_clipboard(); return 0 end
+  vim.fn.system = function(_) probed = probed or in_clipboard(); return "" end
   assert(vim.fn.has("win32") == 1, "stub failed: vim.fn.has('win32') did not return 1")
 
   local M = dofile(vim.env.CORE_HEALTH_LUA)

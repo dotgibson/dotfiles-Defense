@@ -176,6 +176,21 @@ M.sections = {
 		{ "<leader>gy / gY", "Permalink: yank / open" },
 	},
 	{
+		-- claudecode.nvim (plugins/claudecode-nvim.lua). The whole spec is gated on the `claude`
+		-- binary, so on a box without the CLI these keys do not exist — this card documents the
+		-- surface you get once it does. `<leader>as` is deliberately overloaded: visual = send
+		-- selection, nvim-tree/oil buffer = add that file.
+		"AI (Claude Code)",
+		{ "<leader>ac", "Toggle Claude" },
+		{ "<leader>af", "Focus Claude" },
+		{ "<leader>ar / aC", "Resume / continue session" },
+		{ "<leader>ab", "Add buffer to context" },
+		{ "<leader>as", "Send selection (v) / add file" },
+		{ "<leader>aa / ad", "Accept / deny diff" },
+		{ "<leader>am", "Select model" },
+		{ "<leader>aS", "Server status" },
+	},
+	{
 		"Folds (ufo)",
 		{ "zR / zM", "Open / close all folds" },
 		{ "zK", "Peek fold / hover" },

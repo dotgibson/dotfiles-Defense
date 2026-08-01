@@ -22,6 +22,10 @@ return {
 			align = "left",
 		},
 		spec = {
+			-- Only present when the `claude` binary is — the plugin spec is `cond`-gated, so on a box
+			-- without the CLI this group renders empty. Declared anyway so the prefix has a name
+			-- wherever it does appear, same reasoning as <leader>t below.
+			{ "<leader>a", group = "ai / claude" },
 			{ "<leader>b", group = "buffer" },
 			{ "<leader>c", group = "code / LSP" },
 			{ "<leader>d", group = "debug (dap)" },
