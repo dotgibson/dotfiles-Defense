@@ -2256,6 +2256,123 @@ if [[ -z "$out" ]]; then
   pass "tmux-netinfo emits nothing when no tunnel/LAN (segment vanishes)"
 else fail "tmux-netinfo should be silent with no net, printed: $out"; fi
 
+# ── tmux-claude.sh session routing (hermetic) ─────────────────────────────────
+# Same reasoning as the block above, and the same technique: this script decides WHICH
+# conversation you get, and every branch of that decision is invisible to the static
+# gates (bash -n, lint). Getting it wrong is not a blank status bar but a lost thread —
+# attaching to another repo's Claude, or spraying tmux errors instead of opening one. The
+# `tmux` stub logs its argv and is programmable: TMUX_HAS_ON says from which has-session
+# call onward the session "exists" (0 = never), TMUX_NEW_FAILS makes new-session fail.
+# `cksum` is deliberately NOT stubbed — the duplicate-basename test is only meaningful if
+# it exercises the real hash.
+hdr "tmux-claude.sh session routing (hermetic)"
+CLAUDESH="$HERE/tmux/scripts/tmux-claude.sh"
+CBIN="$SANDBOX/claudebin"
+_claude_env() { # _claude_env <cwd> [extra env assignments...]
+  rm -f "$SANDBOX/tmux.log" "$SANDBOX/tmux.state"
+  mkdir -p "$CBIN"
+  cat >"$CBIN/tmux" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$*" >>"$TMUX_LOG"
+case "$1" in
+  has-session)
+    n=$(cat "$TMUX_STATE" 2>/dev/null || echo 0); n=$((n + 1)); printf '%s' "$n" >"$TMUX_STATE"
+    [ "${TMUX_HAS_ON:-0}" -ne 0 ] && [ "$n" -ge "${TMUX_HAS_ON:-0}" ] && exit 0
+    exit 1 ;;
+  new-session) [ -n "${TMUX_NEW_FAILS:-}" ] && exit 1; printf '%s\n' '$42' ;;
+  show-option) printf '%s\n' tmux-256color ;;
+esac
+exit 0
+STUB
+  cat >"$CBIN/git" <<'STUB'
+#!/bin/sh
+[ -n "${GIT_ROOT:-}" ] || exit 128
+printf '%s\n' "$GIT_ROOT"
+STUB
+  printf '#!/bin/sh\nexit 0\n' >"$CBIN/claude"
+  chmod +x "$CBIN/tmux" "$CBIN/git" "$CBIN/claude"
+}
+_claude_run() { # _claude_run <cwd> ; env comes from the caller
+  ( cd "$1" && PATH="$CBIN:$PATH" TERM=xterm \
+    TMUX_LOG="$SANDBOX/tmux.log" TMUX_STATE="$SANDBOX/tmux.state" \
+    bash "$CLAUDESH" >/dev/null 2>&1 )
+}
+
+# 1. No `claude` on PATH → the gate fires: a status-line message, and NO session created.
+#    PATH is the STUB DIR ALONE here, not stub-dir-first: deleting the stub is not enough when
+#    the box running the suite has a real `claude` installed (this very repo's CI does), and the
+#    gate is the first thing the script does, so it needs nothing else on PATH to reach it.
+_claude_env
+rm -f "$CBIN/claude"
+#    bash by ABSOLUTE path: a `PATH=… bash …` prefix sets PATH before the command is looked
+#    up too, so a bare `bash` would not be found in the stub dir and nothing would run.
+( cd /tmp && PATH="$CBIN" TERM=xterm GIT_ROOT=/tmp/repo-a TMUX_HAS_ON=0 \
+  TMUX_LOG="$SANDBOX/tmux.log" TMUX_STATE="$SANDBOX/tmux.state" \
+  "$(command -v bash)" "$CLAUDESH" >/dev/null 2>&1 )
+if grep -q '^display-message' "$SANDBOX/tmux.log" && ! grep -q '^new-session' "$SANDBOX/tmux.log"; then
+  pass "tmux-claude: absent \`claude\` gates out (message, no session)"
+else fail "tmux-claude: absent-binary gate wrong: $(tr '\n' '|' <"$SANDBOX/tmux.log")"; fi
+
+# 2. Inside a git repo → the session is named + rooted from the GIT ROOT, not the cwd.
+_claude_env
+GIT_ROOT=/tmp/repo-a TMUX_HAS_ON=0 _claude_run /tmp
+if grep -q 'new-session .*-s _popup_claude_repo-a_[0-9]* -c /tmp/repo-a' "$SANDBOX/tmux.log"; then
+  pass "tmux-claude: session is keyed and rooted on the git root"
+else fail "tmux-claude: git-root routing wrong: $(grep '^new-session' "$SANDBOX/tmux.log")"; fi
+
+# 3. Outside a repo (git fails) → fall back to the cwd rather than erroring out.
+_claude_env
+GIT_ROOT='' TMUX_HAS_ON=0 _claude_run /tmp
+if grep -q 'new-session .*-s _popup_claude_tmp_[0-9]* -c /tmp' "$SANDBOX/tmux.log"; then
+  pass "tmux-claude: falls back to cwd outside a git repo"
+else fail "tmux-claude: non-repo fallback wrong: $(grep '^new-session' "$SANDBOX/tmux.log")"; fi
+
+# 4. Session already exists → REUSE. A second new-session would fork the conversation.
+_claude_env
+GIT_ROOT=/tmp/repo-a TMUX_HAS_ON=1 _claude_run /tmp
+if ! grep -q '^new-session' "$SANDBOX/tmux.log" && grep -q '^attach' "$SANDBOX/tmux.log"; then
+  pass "tmux-claude: reuses an existing session instead of forking one"
+else fail "tmux-claude: reuse path wrong: $(tr '\n' '|' <"$SANDBOX/tmux.log")"; fi
+
+# 5. Two repos sharing a basename must NOT collide onto one conversation — the path hash is
+#    the only thing separating them, so this is the test that keeps `docs/` from being shared.
+_claude_env
+GIT_ROOT=/tmp/one/docs TMUX_HAS_ON=0 _claude_run /tmp
+n1="$(grep -o '_popup_claude_docs_[0-9]*' "$SANDBOX/tmux.log" | head -1)"
+_claude_env
+GIT_ROOT=/tmp/two/docs TMUX_HAS_ON=0 _claude_run /tmp
+n2="$(grep -o '_popup_claude_docs_[0-9]*' "$SANDBOX/tmux.log" | head -1)"
+if [[ -n "$n1" && -n "$n2" && "$n1" != "$n2" ]]; then
+  pass "tmux-claude: same-basename repos get distinct sessions ($n1 vs $n2)"
+else fail "tmux-claude: duplicate-basename collision ($n1 vs $n2)"; fi
+
+# 6. The created session is made inert to tmux, or keystrokes never reach Claude's TUI.
+_claude_env
+GIT_ROOT=/tmp/repo-a TMUX_HAS_ON=0 _claude_run /tmp
+missing=""
+for o in "key-table popup" "status off" "prefix None" "detach-on-destroy on"; do
+  grep -q "set-option .*$o" "$SANDBOX/tmux.log" || missing="$missing [$o]"
+done
+if [[ -z "$missing" ]]; then
+  pass "tmux-claude: sets key-table/status/prefix/detach-on-destroy on the session"
+else fail "tmux-claude: session options missing:$missing"; fi
+
+# 7. RACE: new-session loses to a sibling client, but the session now exists. The loser must
+#    attach to it, not carry an empty target into every command below (there is no `set -e`).
+_claude_env
+GIT_ROOT=/tmp/repo-a TMUX_HAS_ON=2 TMUX_NEW_FAILS=1 _claude_run /tmp
+if grep -q '^attach -t _popup_claude_repo-a_[0-9]*$' "$SANDBOX/tmux.log"; then
+  pass "tmux-claude: a lost create race still attaches to the winner's session"
+else fail "tmux-claude: race path did not attach by name: $(tr '\n' '|' <"$SANDBOX/tmux.log")"; fi
+
+# 8. Genuine creation failure (nothing exists afterwards) → report it, and do NOT attach to an
+#    empty target, which is what produces the confusing bare tmux error.
+_claude_env
+GIT_ROOT=/tmp/repo-a TMUX_HAS_ON=0 TMUX_NEW_FAILS=1 _claude_run /tmp
+if grep -q '^display-message could not start' "$SANDBOX/tmux.log" && ! grep -q '^attach' "$SANDBOX/tmux.log"; then
+  pass "tmux-claude: a real creation failure reports instead of attaching to nothing"
+else fail "tmux-claude: creation-failure path wrong: $(tr '\n' '|' <"$SANDBOX/tmux.log")"; fi
+
 # ── serve macOS IP discovery (_serve_advertise, hermetic) ─────────────────────
 # serve()'s tunnel/LAN URL discovery is split into _serve_advertise so this
 # platform-specific path is testable without the blocking http.server. macOS ships

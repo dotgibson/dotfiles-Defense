@@ -84,4 +84,34 @@ return {
 			keep_terminal_focus = false,
 		},
 	},
+	config = function(_, opts)
+		require("claudecode").setup(opts)
+
+		-- ── terminal-mode escape hatch ─────────────────────────────────────────────────────────
+		-- auto_insert drops you into terminal mode, where Claude swallows Core's <C-h/j/k/l> and the
+		-- split reads as a trap. utils/term.lua owns the rule and the reasoning (why <M-…> and not
+		-- the navigator's own keys); this just applies it to the buffer the plugin opened.
+		vim.api.nvim_create_autocmd("TermOpen", {
+			group = vim.api.nvim_create_augroup("gerrrt_claudecode_term", { clear = true }),
+			callback = function(ev)
+				-- Deferred on purpose: TermOpen fires DURING termopen(), before the provider records
+				-- the new buffer as its active one, so asking now returns the PREVIOUS terminal (or
+				-- nil). One tick later the assignment has landed.
+				vim.schedule(function()
+					if not vim.api.nvim_buf_is_valid(ev.buf) then
+						return
+					end
+					-- Ask the plugin which buffer is Claude's rather than pattern-matching the
+					-- `term://…` name: TermOpen also fires for the pytest split in config/autocmds.lua
+					-- and for any :terminal you open, and a name match on "claude" would also hit a
+					-- plain shell started in a directory that happens to contain that word.
+					local ok, terminal = pcall(require, "claudecode.terminal")
+					if not ok or terminal.get_active_terminal_bufnr() ~= ev.buf then
+						return
+					end
+					require("gerrrt.utils.term").map_navigation(ev.buf, "Claude")
+				end)
+			end,
+		})
+	end,
 }

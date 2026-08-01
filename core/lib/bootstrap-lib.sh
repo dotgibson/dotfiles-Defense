@@ -297,7 +297,9 @@ blib_link_core() {
   if blib_want tmux; then
     [[ -f "$dotfiles/core/tmux/tmux.conf" ]] && blib_link "$dotfiles/core/tmux/tmux.conf" "$config/tmux/tmux.conf"
     [[ -f "$dotfiles/core/tmux/tmux.reset.conf" ]] && blib_link "$dotfiles/core/tmux/tmux.reset.conf" "$config/tmux/tmux.reset.conf"
-    # tmux popup scripts (prefix w/T/f) — symlink the dir + ensure they're runnable.
+    # tmux popup + status scripts — symlink the DIR (not per-file) so a script added upstream
+    # wires itself on the next sync, and ensure they're runnable. Deliberately not enumerating
+    # the bindings here: this comment named "prefix w/T/f" and had already fallen behind `?`.
     if [[ -d "$dotfiles/core/tmux/scripts" ]]; then
       blib_link "$dotfiles/core/tmux/scripts" "$config/tmux/scripts"
       _blib_dry || chmod +x "$dotfiles"/core/tmux/scripts/*.sh 2>/dev/null || true
