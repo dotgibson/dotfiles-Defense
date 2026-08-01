@@ -15,6 +15,54 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`prefix + a` opens Claude Code in a tmux popup — `tmux/scripts/tmux-claude.sh` (new).** The
+  nvim integration gives you Claude _coupled to an editing session_ (buffers, selection,
+  diagnostics, diffs); this is the other half — Claude from a shell pane, mid-rebase, or in a
+  directory with no editor open. Same shape as the `prefix + g` lazygit popup, rooted at
+  `#{pane_current_path}`, and gated on the `claude` binary the way `tmux-sesh.sh` gates on `sesh`
+  (absent, it puts the reason on the status line rather than doing a silent nothing).
+
+  It is deliberately **not** `display-popup -E claude`, the way lazygit is bound. lazygit is
+  stateless, so killing its popup costs nothing — a conversation is not, and dismissing a raw
+  `-E claude` popup would take the thread with it. So this follows `tmux-scratch.sh` instead: a
+  persistent detached session the popup attaches to, making `prefix + a` toggle _visibility_
+  rather than lifetime. It inherits that script's three hard-won fixes — per-session
+  `detach-on-destroy on` (or quitting hops the popup client onto your main session at popup
+  dimensions and double-draws the real terminal), the `TERM` repair (`display-popup` launches with
+  `TERM` unset, so a nested `tmux attach` otherwise dies with "terminal does not support clear"),
+  and `status off` / `prefix None` / `key-table popup` so every keystroke reaches Claude's TUI.
+
+  Sessions are keyed on the **git root**, not the cwd: every pane inside a repo shares one
+  conversation, which is the granularity the work actually has, and a single global session would
+  hand you `dotfiles-Kali`'s thread while you sat in `dotfiles-core`. The name carries a `cksum`
+  hash of the full path so two repos sharing a basename cannot collide onto one conversation —
+  `cksum` rather than `md5sum`/`md5`, which diverge between Linux and macOS.
+- **`<C-y>` in fzf-lua sends the selection to Claude Code as @-mentions.** The tree-based
+  @-mention (`<leader>as` in nvim-tree/oil) adds one file, so putting six files in context meant six
+  navigations. fzf is already multi-select — `--multi` is on for the file pickers, `<Tab>` marks and
+  `<A-a>` toggles all — so `plugins/fzf-lua.lua` now turns "the files involved in this change" into
+  one gesture. From the grep pickers each entry carries a line number, so a hit is sent as its own
+  location rather than the whole file (fzf-lua reports 1-indexed lines; `send_at_mention` documents
+  its range as 0-indexed, so the action converts). Entries are parsed with `fzf-lua.path
+  .entry_to_file` rather than by hand, since they carry devicon prefixes and grep entries are
+  `file:line:col:text`. Covers `<leader>ff` / `fg` / `fb` / `fr` from one `actions.files` entry, and
+  is documented in `cheatsheet.lua` alongside the multi-select keys.
+
+  Three details worth recording. The action table carries a **leading `true`** — fzf-lua's
+  inheritance marker (`config.lua` switches the merge to `tbl_deep_extend("keep", yours, defaults)`
+  when `[1] == true`, then strips it). Without it a user action table _replaces_ fzf-lua's defaults
+  wholesale, silently dropping `enter`, `ctrl-s/v/t` and `alt-q/Q/i/h/f` — i.e. opening a file at
+  all. Line forwarding is **restricted to the grep family** (resume key containing `grep`), because
+  `entry_to_file` also reports a positive line for buffer entries — `providers/buffers.lua`
+  serializes each buffer's current cursor `lnum` — so forwarding it everywhere would make
+  `<leader>fb` send the one line you were parked on instead of the file. And unlike
+  `plugins/claudecode-nvim.lua` this is **not** `cond`-gated: fzf-lua is a core finder that must
+  load everywhere, so gating the spec would mean an `executable()` probe at startup on every box in
+  the fleet. The action fails soft instead, and since it only runs on a keypress it can afford to
+  probe properly and name which failure it hit — CLI absent, CLI installed after Neovim started (the
+  `cond` is evaluated once at startup, so a restart is needed), or the plugin genuinely failing to
+  load, in which case the real error is shown rather than swallowed.
+
 - **Claude Code IDE integration for Neovim (`coder/claudecode.nvim`).** `nvim/lua/gerrrt/plugins/claudecode-nvim.lua`
   adds the first runtime Claude surface in the fleet — until now Claude Code existed only as pinned
   CI automation (`scripts/tool-versions.env`, `.github/workflows/claude-routines.yml`). The plugin
@@ -41,6 +89,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
     file) so an absent `<leader>a` reads as intentional rather than broken.
 
   Installing the CLI itself stays out of Core: it is an npm/brew install and therefore OS-native.
+
+- **Terminal buffers are escapable and navigable — `nvim/lua/gerrrt/utils/term.lua` (new).** A
+  Neovim terminal buffer forwards every keystroke to the program inside it, and both of Core's
+  terminals call `startinsert`, so you land in terminal mode where Core's `<C-h/j/k/l>`
+  (vim-tmux-navigator, normal mode only) never reach Neovim. The split reads as a trap. Neovim's
+  reserved `<C-\><C-n>` was always the way out, but nothing in the config said so — Core shipped no
+  terminal-mode keymaps at all (`mode = "t"` appeared nowhere under `nvim/`). The defect was
+  discoverability, not behavior.
+
+  `utils/term.lua` now owns the rule, and both terminals opt in: Claude's split
+  (`plugins/claudecode-nvim.lua`) and the **pytest split** (`config/autocmds.lua`), which shared the
+  gap all along — it just never surfaced there, since that split is read-only output you glance at
+  rather than a prompt you sit inside. Note `:q` needs normal mode too, so even closing one starts
+  with `<C-\><C-n>`. Buffer-local `<M-h/j/k/l>` leave terminal mode and navigate in one keystroke;
+  `cheatsheet.lua` documents all of it as one **Terminal buffers** card rather than a copy per
+  terminal, since the panel shows every card at once.
+
+  The navigator's own `<C-h/j/k/l>` are deliberately **not** widened into terminal mode: `<C-h>` is
+  ASCII 8 (backspace) and `<C-j>` is ASCII 10 (newline), so claiming them would break editing at an
+  interactive prompt — `<C-w>` (delete-word) is out for the same reason. `<M-…>` is unclaimed by the
+  TUIs involved; mini.move owns `<A-h/j/k/l>` in normal/visual only, a different mode. The maps stay
+  buffer-local so a terminal Core did not open (`:terminal`, a plugin's own) keeps its keys
+  untouched — for Claude's, the buffer is identified by asking the plugin
+  (`claudecode.terminal.get_active_terminal_bufnr()`) rather than matching the `term://` name, which
+  would also hit a plain shell started in a directory containing the word "claude".
 - **Python workflow ergonomics for the Astral stack (uv/ruff/ty).** Three small, additive changes
   that make the already-wired Python setup easier to drive day-to-day:
   - `zsh/20-aliases.zsh` adds `uvr` (`uv run`) and `uvs` (`uv sync`), guarded by a new `HAVE_UV`

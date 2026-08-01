@@ -210,6 +210,12 @@ vim.api.nvim_create_autocmd("FileType", {
         vim.notify("Test: failed to start `uv run pytest`", vim.log.levels.ERROR, { title = "Test" })
         return
       end
+      -- The startinsert below leaves you in terminal mode, where this split swallows Core's
+      -- <C-h/j/k/l> exactly as Claude's does — and since `:q` needs normal mode, even CLOSING it
+      -- requires <C-\><C-n> first. Give it the same escape hatch; see utils/term.lua for why the
+      -- maps ride <M-…> rather than widening the navigator's own keys. jobstart(term=true) leaves
+      -- the terminal buffer current, so this is the buffer we just created.
+      require("gerrrt.utils.term").map_navigation(vim.api.nvim_get_current_buf(), "test output")
       vim.cmd("startinsert") -- so output scrolls live
     end
     local function map(lhs, fn, desc)

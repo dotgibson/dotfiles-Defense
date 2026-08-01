@@ -105,6 +105,7 @@ tmux/tmux.reset.conf      # the keybinding layer (prefix C-a lives here) — MUS
 # tmux-sessionizer.sh linger here once (see verify-core.sh). Keep alphabetical.
 tmux/scripts/tmux-battery.sh
 tmux/scripts/tmux-cheat.sh
+tmux/scripts/tmux-claude.sh
 tmux/scripts/tmux-menu.sh
 tmux/scripts/tmux-netinfo.sh
 tmux/scripts/tmux-scratch.sh
