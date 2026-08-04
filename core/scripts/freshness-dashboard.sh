@@ -18,6 +18,10 @@
 #                               board REFERENCES those judgment signals rather than recomputing them.
 # plus links to each repo's Renovate dependency dashboard and a note on the fleet App auth.
 #
+# A live signal that can't be fetched renders `?` — never a partial or garbage value: `gh
+# api` copies an HTTP error BODY to stdout, so the helpers below gate on its exit code (see
+# _gh_api). The search-backed signals are paced and retry a 403 once per run.
+#
 # It is a REPORTER, not a mutator, and never fails the build: each sub-check's output is
 # embedded and its exit code becomes a ✅/⚠️ row. The three live signals need `gh` + a token;
 # the workflow provides both, so they fill in CI — a local run without gh shows an
@@ -74,11 +78,78 @@ if command -v gh >/dev/null 2>&1 &&
   GH_OK=1
 fi
 
-# gh_q <jq> <api-path> — jq result on success, empty string on ANY failure (never aborts,
-# so a single unreachable/renamed/rate-limited repo can't sink the board). `// empty`
-# normalizes a missing/null field (e.g. `.[0].name` on a tagless repo) to empty output, so
-# callers' `?`/`—` fallbacks fire instead of a literal "null" leaking into the board.
-gh_q() { [ "$GH_OK" -eq 1 ] || return 0; gh api "$2" --jq "$1 // empty" 2>/dev/null || true; }
+# Seconds between SEARCH-API calls, and the backoff unit for a rate-limited retry. The
+# board fires ~24 search requests and GitHub's authenticated search ceiling is 30/minute,
+# so a 3s pace lands ~20/min — under the primary limit with room for the secondary (burst)
+# limiter that produced the 403 in the 2026-08-03 board. The plain REST calls in the
+# release-drift table are NOT paced: core REST's budget is orders of magnitude larger and
+# 36 sequential GETs never approach it. Both are overridable so the hermetic test in
+# scripts/test-core.sh can drive the retry ladder without sleeping through it.
+#
+# DASH_RETRY_BUDGET is the ceiling on TOTAL backoff sleep for the whole run (see _gh_api):
+# 60s leaves room for two full ladders — enough to ride out a normal ~60s secondary limit —
+# while keeping the worst case nowhere near the workflow's 15-minute timeout.
+: "${DASH_SEARCH_PACE:=3}"
+: "${DASH_RETRY_BASE:=5}"
+: "${DASH_RETRY_BUDGET:=60}"
+
+# _gh_api <gh-api-args...> — gh's stdout ONLY when the call actually SUCCEEDED; empty
+# output and a non-zero status otherwise.
+#
+# WHY this dance instead of `gh api … 2>/dev/null || true`: on an HTTP error gh SKIPS the
+# --jq filter entirely and copies the raw response body to STDOUT ({"message":"Not
+# Found",…,"status":"404"}), writing only its one-line summary (`gh: Not Found (HTTP 404)`)
+# to stderr. So `2>/dev/null` silences the wrong stream and `|| true` discards the one
+# reliable signal — the exit code — leaving the error JSON to masquerade as the value and
+# defeating every `// empty` and every downstream emptiness guard. gh's status IS
+# trustworthy (non-zero on any HTTP >= 400), so gate on it and drop stdout when it fails.
+#
+# 403/429 (the secondary rate limit) is the one answer worth waiting on — a 404 or 422 will
+# never change — so it gets a widening backoff. TWO separate brakes stop that from eating
+# the workflow's 15-minute budget, because they catch different failures:
+#
+#   • An EXHAUSTED ladder latches. Waiting demonstrably didn't help, and a secondary limit
+#     is a property of the token rather than of this endpoint, so the remaining ~50 calls
+#     give up immediately instead of re-laddering.
+#   • Cumulative sleep is CAPPED (DASH_RETRY_BUDGET). A ladder that RECOVERS must not latch
+#     — waiting worked, and a later limit deserves the same courtesy — but that alone is
+#     unbounded: 24 search calls each hitting a fresh transient limit and recovering on the
+#     last retry is 24 × (5+10+15) = 12 minutes of sleeping, with no ladder ever exhausted
+#     to trip the first brake. The budget bounds the whole run instead of each ladder.
+#
+# Latching on ladder START would collapse both into one and is wrong: it turns the first
+# recoverable blip into a permanent `?` for every later call.
+#
+# Both brakes are FILES, not variables: callers invoke this inside `$( )`, and a variable
+# set in that subshell never reaches the parent, so every later call would re-ladder.
+_gh_api() {
+  local out rc try=0 spent
+  while :; do
+    out="$(gh api "$@" 2>"$TMP/gh.err")"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then printf '%s\n' "$out"; return 0; fi
+    grep -qE 'HTTP (403|429)' "$TMP/gh.err" || return 1
+    [ -e "$TMP/rate-limited" ] && return 1
+    try=$((try + 1))
+    if [ "$try" -gt 3 ]; then : >"$TMP/rate-limited"; return 1; fi
+    spent=0
+    [ -f "$TMP/backoff-spent" ] && spent="$(cat "$TMP/backoff-spent")"
+    spent=$((spent + try * DASH_RETRY_BASE))
+    if [ "$spent" -gt "$DASH_RETRY_BUDGET" ]; then : >"$TMP/rate-limited"; return 1; fi
+    printf '%s\n' "$spent" >"$TMP/backoff-spent"
+    sleep $((try * DASH_RETRY_BASE))
+  done
+}
+
+# gh_q <jq> <api-path> — the jq result on success; EMPTY output AND a non-zero status on
+# any failure (never aborts, so a single unreachable/renamed/rate-limited repo can't sink
+# the board). `// empty` still normalizes a missing/null field on a SUCCESSFUL response
+# (e.g. `.[0].name` on a tagless repo) to empty output. The status is the other half of the
+# contract: it lets a caller tell "the API answered: none" (rc 0, empty) apart from "we
+# never got an answer" (rc non-zero, empty) — see the release-drift table below, whose
+# "— (no tags)" verdict was previously asserted on evidence it did not have.
+# GH_OK=0 keeps its degradation path: success, empty stdout, no call made.
+gh_q() { [ "$GH_OK" -eq 1 ] || return 0; _gh_api "$2" --jq "$1 // empty"; }
 
 run "$TMP/drift" ./scripts/fleet-drift.sh --root "$ROOT" --color never;    drift_st=$?
 run "$TMP/integ" ./scripts/core-integrity.sh --root "$ROOT" --color never; integ_st=$?
@@ -111,9 +182,17 @@ while IFS= read -r r; do [ -n "$r" ] && REPOS+=("$r"); done \
   < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' scripts/os-repos.txt)
 REPOS+=(htpx)
 
-# search_count <query...> — total_count for a repo search, or empty on failure. Search API
-# only (rate-limited), so callers gate on GH_OK and fall back to a plain link.
-search_count() { [ "$GH_OK" -eq 1 ] || return 0; gh api -X GET search/issues -f "q=$*" --jq '.total_count // empty' 2>/dev/null || true; }
+# search_count <query...> — total_count for a repo search; EMPTY output + a non-zero status
+# on failure, so a caller prints `?` rather than a number it never received. Search is the
+# most rate-limited API GitHub has and this board fires ~24 of these, so every call is paced
+# (DASH_SEARCH_PACE) and _gh_api's ladder absorbs a burst 403. The pace lives HERE rather
+# than in the two loops so there is one rule, instead of reasoning about which loop happens
+# to hold the 13th call. Callers still gate on GH_OK and fall back to a plain link.
+search_count() {
+  [ "$GH_OK" -eq 1 ] || return 0
+  sleep "$DASH_SEARCH_PACE"
+  _gh_api -X GET search/issues -f "q=$*" --jq '.total_count // empty'
+}
 
 # ── Own-tag release drift (live) ──────────────────────────────────────────────
 # Each repo's OWN unreleased work: commits merged since its last release tag. Distinct
@@ -123,16 +202,29 @@ printf '\n## Own-tag release drift\n\n'
 printf 'Commits each repo has merged since its last release tag — the repo'\''s own unreleased '
 printf 'work (distinct from the vendoring drift above, which tracks the Core tag). A high count '
 printf 'is a nudge to cut that repo'\''s next release.\n\n'
+printf "In the live tables below, \`?\` means the API call itself failed (a rate limit or a "
+printf 'transient error) — it is not a zero.\n\n'
 if [ "$GH_OK" -eq 1 ]; then
   printf '| Repo | Latest release | Unreleased commits (main) |\n| --- | --- | --- |\n'
   for r in "${REPOS[@]}"; do
+    # `releases/latest` 404s for a repo that has never published a release — that is the
+    # NORMAL answer, not an error — so fall back to the plain tag list before concluding
+    # anything. It is the FALLBACK's status that separates "this repo has no tags" from "we
+    # couldn't ask": before the gh_q fix both looked identical (empty), a 404 body leaked
+    # into `tag`, and the "— (no tags)" branch was unreachable for dotfiles-web.
     tag="$(gh_q '.tag_name' "repos/$OWNER/$r/releases/latest")"
-    [ -n "$tag" ] || tag="$(gh_q '.[0].name' "repos/$OWNER/$r/tags")"
+    probe=$?
+    if [ -z "$tag" ]; then
+      tag="$(gh_q '.[0].name' "repos/$OWNER/$r/tags")"
+      probe=$?
+    fi
     if [ -n "$tag" ]; then
       ahead="$(gh_q '.ahead_by' "repos/$OWNER/$r/compare/$tag...main")"
       printf "| %s | \`%s\` | %s |\n" "$r" "$tag" "${ahead:-?}"
-    else
+    elif [ "$probe" -eq 0 ]; then
       printf '| %s | — (no tags) | — |\n' "$r"
+    else
+      printf '| %s | ? | ? |\n' "$r"
     fi
   done
 else
@@ -148,8 +240,10 @@ printf '| Repo | Open dep PRs | Dashboard |\n| --- | --- | --- |\n'
 for r in "${REPOS[@]}"; do
   n='—'
   if [ "$GH_OK" -eq 1 ]; then
+    # Empty now means the call FAILED — a real zero comes back as the string "0" — so `?`
+    # is an honest cell rather than a guard a 403 body walks straight through.
     n="$(search_count "repo:$OWNER/$r is:pr is:open author:app/renovate")"
-    [ -n "$n" ] || n='?'
+    n="${n:-?}"
   fi
   printf '| %s | %s | [dashboard](https://github.com/%s/%s/issues?q=%s) |\n' "$r" "$n" "$OWNER" "$r" "$q"
 done
@@ -169,8 +263,11 @@ for r in "${REPOS[@]}"; do
   link="https://github.com/$OWNER/$r/issues?q=$ri"
   cell="[open]($link)"
   if [ "$GH_OK" -eq 1 ]; then
+    # This is the exact cell that rendered htpx's 403 body as markdown link text in the
+    # 2026-08-03 board. `${n:-?}` also replaces a `[ -n "$n" ] && …` whose status leaked as
+    # the if-block's status.
     n="$(search_count "repo:$OWNER/$r is:issue is:open author:app/github-actions")"
-    [ -n "$n" ] && cell="[$n]($link)"
+    cell="[${n:-?}]($link)"
   fi
   printf '| %s | %s |\n' "$r" "$cell"
 done

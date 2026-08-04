@@ -43,6 +43,18 @@ the list still resolve upstream*.
    list against its column *and* footnotes, and flag a tool the matrix says is packaged
    that isn't (or vice-versa), or a footnote gone stale — e.g. a "cargo³" note for a
    tool now first-class in the repos, or a rename the matrix hasn't recorded.
+
+   Two anchors, because both have produced false findings:
+
+   - **Count columns from the header row, not from the end of the line.** The five
+     package columns are in a fixed order — `Arch | openSUSE | Alpine | Gentoo |
+     Kali` — and the *last* cell on a row is **Kali**, not the distro you're
+     auditing. Before citing a cell as drifted, quote the **whole row** and name the
+     column header you're reading. If the value you're flagging sits in another
+     distro's column, that's a misread, not a finding.
+   - **Quote a footnote's current text before calling it stale.** Read the footnote
+     you intend to correct and paste what it says today. If it already carries the
+     wording you were about to propose, there is nothing to fix.
 3. **Respect the "intentionally excluded" convention.** Some tools are
    **deliberately absent** from `packages.txt` because they're not reliably packaged
    (bootstrap installs them: starship, atuin, yazi; lazygit via COPR on Fedora; …).
@@ -55,7 +67,10 @@ the list still resolve upstream*.
 ## How to report
 
 Group by severity, cite `file:line` on both sides, and give the exact one-line fix
-(old name → new name; add / remove; matrix footnote to correct):
+(old name → new name; add / remove; matrix footnote to correct). For any claim
+about `PORTING-MATRIX.md`, put the evidence in the report: quote the full matrix
+row (or the footnote's current text) alongside the `file:line`, so a reader can
+check the column without opening the file:
 
 - **Broken (fix needed)** — a name that no longer resolves as written.
 - **Drifted (likely)** — renamed / moved but still installable under an alias, or a
