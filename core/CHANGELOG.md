@@ -13,6 +13,50 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.7.1] - 2026-08-03
+
+### Fixed
+
+- **`/os-package-availability` no longer files column-shifted matrix findings.** The
+  Alpine run on 2026-08-02 reported four `PORTING-MATRIX.md` cells as stale
+  (`starship`/`yazi`/`tree-sitter-cli`/`viddy` still on `script³`/`cargo³`) and asked
+  for two footnote rewrites. All six were already correct: the routine had read the
+  **Kali (apt)** column — the last cell on each row — as if it were Alpine, and
+  re-proposed footnote wording the footnotes already carried. A report-first routine
+  that flags a correct table is worse than one that finds nothing, since it invites a
+  "fix" that introduces the drift it claimed to catch.
+
+  The prompt now anchors both reads: count columns from the header row (`Arch |
+  openSUSE | Alpine | Gentoo | Kali`, last cell is Kali), quote the whole row and name
+  the column header before citing a cell, and quote a footnote's current text before
+  calling it stale. Reporting rules require that evidence in the issue body, so a
+  misalignment is visible to a reader instead of shipping as a finding.
+
+- **The freshness dashboard no longer renders GitHub API error bodies as data.** The
+  2026-08-03 board (#324) printed `{"message":"Not Found",…,"status":"404"}` as
+  `dotfiles-web`'s release tag and a 403 secondary-rate-limit body as `htpx`'s open-issue
+  count. Cause: on an HTTP error `gh api` **skips the `--jq` filter and copies the raw
+  response body to stdout**, writing only its one-line summary to stderr — so the helpers'
+  `2>/dev/null || true` silenced the wrong stream and discarded the one reliable signal,
+  the exit code. The error JSON became "the value", and every `// empty` and emptiness
+  guard downstream waved it through; the `— (no tags)` branch was unreachable for any repo
+  whose 404 body carries a `message` key, and a third site (the Renovate tally) had the
+  same latent defect.
+
+  The helpers now capture stdout, test the exit code, and drop stdout on failure — and they
+  propagate that status, so the board can tell "the API answered: none" (`— (no tags)`)
+  from "we never got an answer" (`?`), a distinction it was previously asserting without
+  evidence. The ~24 search-API calls are paced under GitHub's 30/minute authenticated
+  ceiling (the workflow authenticates with the stock `GITHUB_TOKEN` and its lower shared
+  quota), and a 403/429 gets a widening backoff under two brakes: an **exhausted** ladder
+  latches, so the remaining calls stop re-waiting on a limit that demonstrably isn't
+  clearing, while total backoff sleep is capped for the whole run — a ladder that _recovers_
+  must not latch, but 24 calls each riding out a fresh transient limit would otherwise sleep
+  for 12 minutes against a 15-minute job timeout. Both brakes are files, not variables, since
+  the helpers run inside command substitution and a variable would not survive the subshell.
+  `scripts/test-core.sh` now drives all of it against a `gh` stub reproducing the real error
+  shape; the script had no behavioral coverage before.
+
 ## [v4.7.0] - 2026-08-01
 
 ### Added
