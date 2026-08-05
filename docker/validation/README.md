@@ -76,8 +76,17 @@ the engine(s) the selected rows actually use.
 ## Scope — what's covered, what isn't
 
 This is the **network plane** (PCAP replay — offline, deterministic, hermetic). Covered:
-Zeek DNS tunnel + DGA, ICMP tunnel, reverse-tunnel/egress; Suricata DNS-tunnel, ICMP
-oversized-echo, and all four DCERPC coercion vectors (MS-EFSRPC/RPRN/DFSNM/FSRVP).
+Zeek DNS tunnel + DGA, ICMP tunnel, reverse-tunnel/egress, cryptomining pool session;
+Suricata DNS-tunnel, ICMP oversized-echo, plaintext Stratum, and all four DCERPC coercion
+vectors (MS-EFSRPC/RPRN/DFSNM/FSRVP).
+
+`gen_cryptomine.py` feeds both engines from one PCAP, the way `gen_icmp_tunnel.py` does,
+and its sizing is the interesting part: 6.9 KB over 900 seconds (~463 B/min) is
+comfortably past `cryptomine-pool.zeek`'s duration and byte floors and comfortably under
+its rate ceiling. That headroom is deliberate — a fixture sized *just* past a threshold
+turns the gate red on a harmless tuning change instead of on a real regression. Note the
+Suricata row proves only the plaintext path; the documented attack it pairs with runs
+with `--tls`, where the Zeek row is the one that matters.
 
 **Coercion — synthesized after all (`suricata/coercion.rules`, all 4 interfaces).** An
 earlier bind-only attempt was deferred because Suricata parsed the interface but emitted no
