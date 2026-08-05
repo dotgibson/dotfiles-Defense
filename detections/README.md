@@ -89,7 +89,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 87 rules / 98 documents, organized by ATT&CK tactic
+### `sigma/` — 89 rules / 101 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -180,6 +180,29 @@ Two techniques carry a deliberate set of rules, covering different halves:
   as `potato_seimpersonate_*` — genuinely different field names (`ObjectName`/`ProcessName`
   vs `TargetFilename`/`Image`), so one rule naming both would null under either pipeline.
   Deploy whichever you collect; deploy both if you collect both.
+
+**`collection/`** (host-side collection — proc create 4688 / Sysmon 1, plus 4663 for the read sweep)
+
+| Rule | Event / source | ATT&CK | Validate with |
+| ---- | -------------- | ------ | ------------- |
+| `mass_file_read_4663` | 4663 read handles (`0x1`), distinct files per host+process (value_count correlation) | T1005 | collection/exfil · local-data-collection |
+| `archive_staging_utility` | proc create (rar/7z/tar/makecab under a password or into a staging path) | T1560.001 / T1074.001 | collection/exfil · archive-staging-rar |
+
+The two are the halves of one step, and they chain: `mass_file_read_4663` catches the
+**sweep** that fills a staging directory, `archive_staging_utility` catches the
+**archive** it gets packed into. Both on one host inside a window is collection in
+progress; if egress follows (the `network/` C2 and exfil detections), exfiltration
+already is.
+
+`mass_file_read_4663` is the read-side twin of `impact/mass_file_encryption_4663` —
+same event, same SACL, different `AccessMask`. The masks are what separate *someone is
+copying the file share* from *someone is encrypting it*, so if you turned on Object
+Access auditing for the impact rule, this one's data is already flowing. It is also
+**the noisiest rule in the corpus**, which is said in the rule itself rather than left
+to be discovered: reads are orders of magnitude more common than writes, so its
+threshold is higher (200 vs 100) *and* its base event ships a `filter_indexers`
+suppression list. Treat that list as mandatory — unfilled, the nightly backup trips it,
+the rule gets muted, and a muted rule is a blind spot.
 
 **`linux/`** (Linux host telemetry — `product: linux`, `category: process_creation`; auditd/Sysmon-for-Linux)
 
@@ -314,7 +337,7 @@ Two techniques carry a deliberate set of rules, covering different halves:
 `password_spray`, `asrep_roast_probing`, `sharphound_ldap_sweep`,
 `ldap_recon_explicit_creds_4648`, `host_recon_command_burst`,
 `passthehash_4624_fanout`, `machine_account_creation_burst_4741`,
-`service_stop_burst`, `mass_file_encryption_4663`,
+`service_stop_burst`, `mass_file_encryption_4663`, `mass_file_read_4663`,
 `mass_file_encryption_sysmon_11`, and `vault_bulk_secret_read` are Sigma
 **correlation** rules (a base event + a `value_count` over a window); the rest are
 single-event selections. The two process-creation correlations
@@ -352,6 +375,8 @@ comment isn't enforcement, so this is the discoverable checklist instead.)
 | `lateral_movement/unconstrained_delegation_4624` | `TargetUserName` → your DC computer accounts, **and** `filter_dc_destinations` → those DCs' hostnames | **inert** — the rule matches only the `DC1$`/`DC2$` examples, so a coerced logon from any other DC is missed entirely. This is the one placeholder that makes its rule a no-op rather than merely noisy; fill it first. |
 | `cloud/entra_illicit_consent_grant` | `filter_known_apps` → sanctioned app (client) IDs | verified LOB apps holding mail/file scopes alert (the high-risk-scope match still scopes it) |
 | `snowflake/snowflake_data_unload` | `filter_known_stages` → sanctioned named stages | a named *internal* stage (not `@%`/`@~`) alerts alongside external ones |
+| `collection/mass_file_read_4663` | `filter_indexers` → your backup / AV / indexing / sync agents | **the loudest unfilled placeholder in the repo.** Reads are constant, so an unfilled list means the nightly backup trips it, someone mutes the rule, and the mute is the blind spot. Fill before deploying, not after. |
+| `collection/archive_staging_utility` | `filter_backup_tooling` → your backup / packaging / build tooling | the staging-path half alerts on CI and installer builds that archive into `%TEMP%`; the password-protected half is unaffected and stays high-confidence |
 | `credential_access/lsass_handle_access` | `filter_av` → your endpoint-protection agent binaries | in a non-Defender shop the EDR reads LSASS continuously and this `high` rule fires steadily |
 | `persistence/rogue_account_creation_4720` | `filter_provisioning` → your IAM/JML and helpdesk provisioning principals | every routine onboarding alerts |
 | `cloudflare/cloudflare_worker_deployed` | `filter_ci` → the deploy pipeline's Cloudflare identity | every CI Worker deploy is a `high` alert |
@@ -519,6 +544,19 @@ placeholders.
   deliberately in **#110** (closed recorded-not-planned) rather than left to look like an
   oversight. Consequence to know when the rule lands: the detection is *weaker*, not
   absent — the companion's own position is that either signal alone is worth a look.
+- **Collection (TA0009) now has a host-side half, and it was the marginal one.** The
+  tactic used to be one cloud rule (`gws_external_mail_forwarding`, T1114.003), which the
+  coverage-gap report called "thin" while explicitly saying *note, don't necessarily
+  fill* — it is under-emphasized in `DEFENSE-METHODOLOGY.md` and ranked last of four.
+  It was filled anyway, on request, so the trade is worth recording rather than
+  implying this was free: `mass_file_read_4663` (T1005) and `archive_staging_utility`
+  (T1560.001/T1074.001) are **lower-fidelity than anything else in the corpus**. Reading
+  files and compressing them are what normal computers do all day, so unlike the AD
+  rules — where the invariant is an operation nothing benign performs — these rest on
+  volume and destination, which every environment baselines differently. Both ship a
+  `DEPLOY-REQUIRED` suppression list for exactly that reason, and both are worth
+  substantially less unfilled than the rules above are. The methodology now carries a
+  Collection row so the map matches the corpus.
 - **External Reconnaissance (TA0043), Initial Access (TA0001), and Resource
   Development (TA0042)** have no detection here and are not meant to: the first is
   pre-compromise and only nominally in `DEFENSE-METHODOLOGY.md`'s "Recon / Discovery"
