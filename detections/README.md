@@ -22,7 +22,7 @@ validation note. Real IOC values from cases stay in `~/cases/*/iocs`, never here
 ## CI gate — the rules are validated as code
 
 The Sigma rules are gated on every change by `.github/workflows/sigma.yml` (the
-repo's `lint.yml` only covers shell). Five hard checks, one advisory:
+repo's `lint.yml` only covers shell). Six hard checks, one advisory:
 
 1. **Structural lint** (hermetic) —
    `sigma check --fail-on-issues -c detections/sigma-validation-config.yml`.
@@ -45,7 +45,16 @@ repo's `lint.yml` only covers shell). Five hard checks, one advisory:
 5. **ATT&CK coverage report drift** — `detections/navigator/gen-coverage.sh --check`. The
    human-readable `COVERAGE.md` roll-up (by tactic / technique / logsource) is *generated*
    from the same tags; this proves the committed report still matches, so it can't drift.
-6. **ATT&CK-tag validity** — advisory (`continue-on-error`); checks each
+6. **Methodology claims** — `detections/check-methodology.sh`. `DEFENSE-METHODOLOGY.md`
+   is the one hand-written map of the detection layer, so it can't be drift-gated by
+   regenerating and diffing the way the artifacts above are — two of its table's columns
+   are editorial judgement no generator can emit. This checks the subset that *is*
+   machine-checkable: every repo path it references exists, and every ATT&CK technique it
+   names is either covered by a rule in `sigma/` or declared absent in the document's own
+   `methodology-check: known-absent` marker. The inverse direction is the useful one — a
+   technique the doc calls a gap quietly becoming covered makes the prose around it wrong,
+   and this fails the build at that moment.
+7. **ATT&CK-tag validity** — advisory (`continue-on-error`); checks each
    `attack.tXXXX` is a real published technique, but never breaks the build on a
    transient MITRE download failure.
 
@@ -60,6 +69,7 @@ detections/sigma/convert.sh splunk                                              
 detections/siem/gen-siem.sh --check                                                        # deploy-form drift (Splunk/Sentinel/Elastic)
 detections/navigator/gen-navigator.sh --check                                              # ATT&CK Navigator layer drift
 detections/navigator/gen-coverage.sh --check                                               # ATT&CK coverage report (COVERAGE.md) drift
+detections/check-methodology.sh                                                             # DEFENSE-METHODOLOGY.md claims still true
 ```
 
 `convert.sh` is the reproducible "Sigma → backend" *compile check*: it compiles each

@@ -46,6 +46,18 @@ the host (a Stratum connection to a mining pool), so it is the one Impact detect
 `detections/README.md` and in the issue tracker. Add `network` to this row when it
 lands, not before: the column says where detections *are*, not where they are planned.
 
+That last instruction is enforced, not just written down: `detections/check-methodology.sh`
+fails the build the moment a technique listed below stops being absent, so the paragraph
+above can't outlive the gap it describes.
+
+<!-- methodology-check: known-absent = T1496.001 -->
+<!-- Techniques this document names but the Sigma corpus does not cover. Every other
+     technique id in this file must be tagged by a rule in detections/sigma/. Adding an
+     id here is a deliberate act: it says "we cite this as a known gap". Removing one is
+     what you do when the detection lands. -->
+
+Every other ATT&CK id in this document is checked against the corpus on each change.
+
 ## The detection-engineering lifecycle
 
 1. **Hypothesis** — "an attacker doing X leaves Y" (from ATT&CK or a Kali fold).
