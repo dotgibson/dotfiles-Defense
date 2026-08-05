@@ -79,7 +79,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 77 rules / 84 documents, organized by ATT&CK tactic
+### `sigma/` — 82 rules / 91 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -112,6 +112,7 @@ purple-validatable out of the box.
 | `rdp_hijack_tscon_4688` | proc create (tscon /dest:) | T1563.002 | Lateral movement · rdp-hijack-tscon |
 | `service_creation_psexec_7045` | 7045 service install | T1569.002 | Lateral movement · pth-lateral-nxc |
 | `passthehash_4624_fanout` | 4624 type-3 (value_count correlation) | T1550.002 / T1021 | Lateral movement · pth-lateral-nxc |
+| `unconstrained_delegation_4624` | 4624 type-3 Kerberos, DC machine account → non-DC | T1187 / T1550.003 | Poisoning & relay · PURPLE-TEAM unconstrained-deleg-4624 |
 
 **`discovery/`**
 
@@ -119,6 +120,7 @@ purple-validatable out of the box.
 | ---- | -------------- | ------ | ------------- |
 | `sharphound_ldap_sweep_4662` | 4662 dir-access (value_count correlation) | T1087.002 / T1069.002 | AD enumeration · bloodhound-sharphound |
 | `ldap_recon_explicit_creds_4648` | 4648 explicit-cred fan-out (value_count correlation) | T1087.002 / T1046 | recon · PURPLE-TEAM 4648 row |
+| `host_recon_command_burst` | proc create, distinct discovery commands per host (value_count correlation) | T1033 / T1082 / T1018 / T1016 / T1049 / T1057 / T1007 / T1087.001 / T1135 | Situational awareness · `whoami`/`net`/`nltest` sweep |
 
 **`persistence/`**
 
@@ -134,6 +136,19 @@ purple-validatable out of the box.
 | Rule | Event / source | ATT&CK | Validate with |
 | ---- | -------------- | ------ | ------------- |
 | `dcshadow_rogue_dc_4742` | 4742 `GC/` SPN write (+5137/4662) | T1207 | AD attack paths · dcshadow |
+
+**`impact/`** (the ransomware chain, all on process creation — 4688 / Sysmon 1)
+
+| Rule | Event / source | ATT&CK | Validate with |
+| ---- | -------------- | ------ | ------------- |
+| `recovery_inhibition_process` | proc create (vssadmin/wbadmin/bcdedit) | T1490 | ransomware-precursor · inhibit-recovery-vssadmin |
+| `service_stop_burst` | proc create, distinct service stops per host (value_count correlation) | T1489 | ransomware-precursor · inhibit-recovery-vssadmin |
+| `data_destruction_wipe` | proc create (cipher `/w`, sdelete, fsutil setZeroData, diskpart clean) | T1485 | ransomware-precursor · destruction commands |
+| `bitlocker_abuse_encryption` | proc create (manage-bde `-on`/`-protectors -add`, `Enable-BitLocker`) | T1486 | ransomware-precursor · ShrinkLocker-style BitLocker abuse |
+
+The four are one chain, not four alerts: T1489 clears the locks, T1490 destroys the
+rollback, T1485/T1486 are the objective. Two of them on one host inside a window is
+the chain in progress — alert-chain them if your backend can.
 
 **`linux/`** (Linux host telemetry — `product: linux`, `category: process_creation`; auditd/Sysmon-for-Linux)
 
@@ -264,10 +279,18 @@ purple-validatable out of the box.
 | `slack_2fa_enforcement_disabled` | `pref.two_factor_auth_changed` `two_factor_required=false` | T1562.001 | Slack · slack-2fa-disable |
 
 `password_spray`, `asrep_roast_probing`, `sharphound_ldap_sweep`,
-`ldap_recon_explicit_creds_4648`, `passthehash_4624_fanout`,
-`machine_account_creation_burst_4741`, and `vault_bulk_secret_read` are Sigma
+`ldap_recon_explicit_creds_4648`, `host_recon_command_burst`,
+`passthehash_4624_fanout`, `machine_account_creation_burst_4741`,
+`service_stop_burst`, and `vault_bulk_secret_read` are Sigma
 **correlation** rules (a base event + a `value_count` over a window); the rest are
-single-event selections. The `linux/`, `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,
+single-event selections. The two process-creation correlations
+(`host_recon_command_burst`, `service_stop_burst`) group by `Computer` rather than by
+account on purpose — the actor field differs per channel (Security-4688
+`SubjectUserName` vs Sysmon-1 `User`) and naming either would null the rule under the
+other channel's pipeline, the same trap the `potato_seimpersonate_*` pair documents.
+Both bursts are a property of the host anyway.
+
+The `linux/`, `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,
 `gitlab/`, `vault/`, `terraform/`, `jenkins/`, `snowflake/`, `google_workspace/`,
 `cloudflare/`, `npm/`, `pypi/`, and `slack/`
 rules are the non-Windows logsources here
@@ -292,6 +315,7 @@ comment isn't enforcement, so this is the discoverable checklist instead.)
 | ---- | ---------- | ------------ |
 | `privilege_escalation/rbcd_allowedtoact_5136` | `filter_delegation_admins` → your delegation-admin accounts | can't tell admin from user; pair with `machine_account_creation_burst_4741` for fidelity that doesn't need it |
 | `defense_evasion/dcshadow_rogue_dc_4742` | `filter_real_dcs` → your real DC computer accounts | a `GC/` SPN write onto another real DC would alert (low risk — rare regardless) |
+| `lateral_movement/unconstrained_delegation_4624` | `TargetUserName` → your DC computer accounts, **and** `filter_dc_destinations` → those DCs' hostnames | **inert** — the rule matches only the `DC1$`/`DC2$` examples, so a coerced logon from any other DC is missed entirely. This is the one placeholder that makes its rule a no-op rather than merely noisy; fill it first. |
 | `cloud/entra_illicit_consent_grant` | `filter_known_apps` → sanctioned app (client) IDs | verified LOB apps holding mail/file scopes alert (the high-risk-scope match still scopes it) |
 | `snowflake/snowflake_data_unload` | `filter_known_stages` → sanctioned named stages | a named *internal* stage (not `@%`/`@~`) alerts alongside external ones |
 
@@ -399,6 +423,24 @@ placeholders.
   **Microsoft Sentinel KQL** in `siem/sentinel/{golden_ticket_4769,silver_ticket_4624,
   ntlm_relay_4624}.yaml` (and as SPL in Kali's `PURPLE-TEAM.md` via their htpx pairs).
   For Silver Ticket the durable control remains PAC validation.
+- **T1486 Data Encrypted for Impact is covered only on the BitLocker-abuse path**
+  (`impact/bitlocker_abuse_encryption`). The general case — a dropped encryptor
+  rewriting files — has one honest invariant, mass file modification, and that needs
+  Sysmon `FileCreate`/11 or EDR file telemetry. `sysmon/sysmonconfig-detection-lab.xml`
+  deliberately does **not** enable 11, so per "no data source, no detection" this ships
+  as the slice process creation can actually see, not a rule pretending to more.
+  Enabling Sysmon 11 is the ingestion ticket that would close the rest.
+- **External Reconnaissance (TA0043), Initial Access (TA0001), and Resource
+  Development (TA0042)** have no detection here and are not meant to: the first is
+  pre-compromise and only nominally in `DEFENSE-METHODOLOGY.md`'s "Recon / Discovery"
+  row (which is really *internal* Discovery — covered), and the other two are not named
+  in the methodology at all. A Zeek portscan detector under `network/` is the one
+  defensible addition to TA0043 if the scope ever widens.
+- **`COVERAGE.md` counts Sigma only**, so it understates the corpus by a whole tactic:
+  `network/` (Zeek + Suricata) covers Command and Control (TA0011) end to end and
+  `siem/` covers the absence/join Kerberos and relay detections, and neither is in the
+  roll-up. Read it as *Sigma* coverage, not total — the same caveat the Golden/Silver
+  Ticket note above makes for `siem/`.
 - The **AWS/GCP** Sigma rules are broad event surfaces by design — the backdoor
   invariant (actor ≠ target) is a field-to-field comparison left to backend triage,
   same as the ADCS ESC1 and Entra-consent rules.

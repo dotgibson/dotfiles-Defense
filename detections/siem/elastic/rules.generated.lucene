@@ -69,6 +69,9 @@ EventID:5145 AND ShareName:*IPC$* AND (RelativeTargetName:(*spoolss* OR *efsrpc*
 // defense_evasion/dcshadow_rogue_dc_4742.yml — DCShadow - rogue DC registration (GC SPN added to a non-DC)
 (EventID:4742 AND ServicePrincipalNames:*GC\/*) AND (NOT (TargetUserName:(DC1$ OR DC2$)))
 
+// discovery/host_recon_command_burst.yml — Host discovery command base - built-in recon utility execution
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
 // discovery/ldap_recon_explicit_creds_4648.yml — Explicit-credential logon base - 4648 with a named target
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
@@ -102,8 +105,17 @@ eventName:email_forwarding_out_of_domain
 // google_workspace/gws_illicit_oauth_grant.yml — Google Workspace illicit OAuth grant (consent phish)
 eventName:authorize AND (scope:(*mail.google.com* OR *auth\/gmail* OR *auth\/drive* OR *auth\/spreadsheets* OR *auth\/documents* OR *auth\/contacts*)) AND (NOT client_id:000000000000\-example.apps.googleusercontent.com)
 
+// impact/bitlocker_abuse_encryption.yml — Data encrypted for impact - BitLocker driven from the command line
+(Image:*\\manage\-bde.exe AND (CommandLine:(*\-on* OR *\-protectors\ \-add* OR *\-forcerecovery*))) OR (CommandLine:(*Enable\-BitLocker* OR *Add\-BitLockerKeyProtector*))
+
+// impact/data_destruction_wipe.yml — Data destruction - free-space wipe / secure delete / volume clean
+(Image:*\\cipher.exe AND CommandLine:*\/w*) OR (Image:(*\\sdelete.exe OR *\\sdelete64.exe)) OR (Image:*\\fsutil.exe AND CommandLine:*setzerodata*) OR (Image:*\\diskpart.exe AND CommandLine:*clean*)
+
 // impact/recovery_inhibition_process.yml — Inhibit system recovery - shadow copy / backup / boot-recovery deletion
 ((Image:(*\\vssadmin.exe OR *\\wmic.exe)) AND (CommandLine:*shadow* AND CommandLine:*delete*)) OR (Image:*\\wbadmin.exe AND (CommandLine:*delete* AND CommandLine:*catalog*)) OR (Image:*\\bcdedit.exe AND (CommandLine:(*recoveryenabled\ no* OR *bootstatuspolicy\ ignoreallfailures*)))
+
+// impact/service_stop_burst.yml — Service/process stop command base - service control by command line
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // jenkins/jenkins_api_token_created.yml — Jenkins user API token created (durable-access backdoor)
 uri:*ApiTokenProperty\/generateNewToken*
@@ -131,6 +143,9 @@ CommandLine:*\/dest\:rdp\-tcp#*
 
 // lateral_movement/service_creation_psexec_7045.yml — Suspicious service installed (psexec-style remote exec)
 EventID:7045 AND (ImagePath:(*\\cmd.exe* OR *powershell* OR *%COMSPEC%* OR *\\ADMIN$\\* OR *\\Temp\\* OR *\\Users\\*))
+
+// lateral_movement/unconstrained_delegation_4624.yml — Unconstrained delegation abuse - DC machine account authenticating to a non-DC (4624)
+(EventID:4624 AND LogonType:3 AND AuthenticationPackageName:Kerberos AND (TargetUserName:(DC1$ OR DC2$))) AND (NOT (Computer:(DC1* OR DC2*)))
 
 // lateral_movement/wmiexec_wmiprvse_child_4688.yml — WMI remote exec - shell spawned by WmiPrvSE
 (ParentImage:*\\WmiPrvSE.exe AND (Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe))) AND (CommandLine:*\/Q* AND CommandLine:*\/c* AND CommandLine:*127.0.0.1\\ADMIN$*)

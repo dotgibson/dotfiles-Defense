@@ -1,0 +1,152 @@
+title: Host discovery command base - built-in recon utility execution
+id: 6a1f4c0e-8b53-4d17-9a2e-5f0c7b3d84e1
+status: experimental
+description: |
+  Base event for the host-recon burst correlation below: execution of one of the
+  built-in Windows discovery utilities. Not actionable alone - every command here is
+  something an admin, a login script, or an inventory agent runs legitimately, and a
+  single `whoami` is noise. The operator shape is BREADTH: many DIFFERENT discovery
+  commands on one host inside a few minutes, expressed by the correlation rule.
+  Dual-use binaries (net, sc, wmic) are scoped by their recon verbs so ordinary
+  service-control and process work doesn't feed the count.
+  Channel: this is deliberately a generic `category: process_creation` rule so it
+  matches BOTH native Security-4688 and Sysmon-1 - it names only Image and
+  CommandLine, which both channels carry (see the potato_seimpersonate_* pair for
+  what happens when a rule names a per-channel account field instead).
+references:
+  - https://attack.mitre.org/techniques/T1033/
+  - https://attack.mitre.org/techniques/T1082/
+  - https://attack.mitre.org/techniques/T1018/
+  - https://attack.mitre.org/techniques/T1016/
+  - https://attack.mitre.org/techniques/T1049/
+  - https://attack.mitre.org/techniques/T1057/
+  - https://attack.mitre.org/techniques/T1007/
+author: dotfiles-Defense
+date: 2026-08-05
+name: host_recon_command
+tags:
+  - attack.discovery
+  - attack.t1007
+  - attack.t1016
+  - attack.t1018
+  - attack.t1033
+  - attack.t1049
+  - attack.t1057
+  - attack.t1082
+  - attack.t1087.001
+  - attack.t1135
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection_owner:
+    # T1033 System Owner/User Discovery - who am I, who else is on this box
+    Image|endswith:
+      - '\whoami.exe'
+      - '\quser.exe'
+      - '\qwinsta.exe'
+  selection_sysinfo:
+    # T1082 System Information Discovery
+    Image|endswith:
+      - '\systeminfo.exe'
+      - '\hostname.exe'
+  selection_process:
+    # T1057 Process Discovery
+    Image|endswith: '\tasklist.exe'
+  selection_network:
+    # T1016 System Network Configuration / T1049 Network Connections / T1018 Remote System
+    Image|endswith:
+      - '\ipconfig.exe'
+      - '\netstat.exe'
+      - '\arp.exe'
+      - '\route.exe'
+      - '\nbtstat.exe'
+  selection_domain:
+    # T1018 Remote System Discovery - DC and trust enumeration
+    Image|endswith:
+      - '\nltest.exe'
+      - '\dsquery.exe'
+  selection_net_verbs:
+    # net/net1 scoped to its recon verbs: accounts+user+group (T1087.001),
+    # share+view (T1135/T1018), session (T1049), config (T1016), start (T1007)
+    Image|endswith:
+      - '\net.exe'
+      - '\net1.exe'
+    CommandLine|contains:
+      - ' user'
+      - ' group'
+      - ' localgroup'
+      - ' accounts'
+      - ' share'
+      - ' view'
+      - ' session'
+      - ' config'
+      - ' start'
+  selection_sc_query:
+    # T1007 System Service Discovery - sc.exe scoped to query, not create/start/stop
+    Image|endswith: '\sc.exe'
+    CommandLine|contains:
+      - 'query'
+      - 'qc '
+  selection_wmic_recon:
+    # wmic aliases used for host recon (the vssadmin/shadow abuse is a different rule)
+    Image|endswith: '\wmic.exe'
+    CommandLine|contains:
+      - 'os get'
+      - 'computersystem'
+      - 'process get'
+      - 'service '
+      - 'qfe'
+      - 'startup'
+  condition: 1 of selection_*
+falsepositives:
+  - Logon scripts, inventory/monitoring agents, and help-desk troubleshooting run these
+    constantly - which is exactly why the base is informational and the distinct-command
+    count below carries the signal.
+level: informational
+---
+title: Host discovery burst - many distinct recon commands on one host
+id: c04b9a72-1e6d-4f38-8b91-2d7a5e0c63f4
+status: experimental
+description: |
+  Detects one host running many DISTINCT built-in discovery commands in a short
+  window - the situational-awareness burst an operator runs on arrival, and the
+  invariant precursor to lateral movement. This is the cheapest high-value detection
+  in the corpus: the data source (4688 / Sysmon 1) is already collected for the
+  potato, wmiexec, and ransomware-precursor rules, and no post-exploitation workflow
+  skips this step - a hands-on-keyboard attacker who has just landed does not know
+  where they are.
+  Counting DISTINCT command lines (not a raw execution rate) is the point: a login
+  script firing the same `net use` a hundred times stays at one, while an operator
+  walking `whoami /all` -> `net group "domain admins" /domain` -> `nltest /dclist:` ->
+  `systeminfo` -> `netstat -ano` trips it in under a minute. Grouping by Computer
+  rather than by account is deliberate - the actor field differs per channel
+  (Security-4688 SubjectUserName vs Sysmon-1 User) and naming either would null the
+  rule under the other channel's pipeline; the burst is a property of the host
+  anyway. Tune the threshold to your build: imaging, patch, and inventory windows are
+  the baseline that shifts it.
+  Validate (purple): run the discovery fold from dotfiles-Kali (hacktheplanet
+  "Situational awareness" / post-exploitation recon; the seatbelt/winPEAS and manual
+  `whoami`/`net`/`nltest` sweeps). Requires the Process Creation audit subcategory
+  (4688) or Sysmon EventID 1.
+references:
+  - https://attack.mitre.org/techniques/T1033/
+  - https://attack.mitre.org/techniques/T1082/
+  - https://attack.mitre.org/techniques/T1018/
+  - https://attack.mitre.org/techniques/T1057/
+correlation:
+  type: value_count
+  rules:
+    - host_recon_command
+  group-by:
+    - Computer
+  timespan: 10m
+  condition:
+    gte: 5
+    field: CommandLine
+falsepositives:
+  - Imaging / provisioning / patch runs and inventory agents that sweep the same
+    utilities on a schedule (allowlist the host or the parent process, or raise the
+    threshold for build servers).
+  - Help-desk troubleshooting sessions - triage on the account and the time of day.
+level: high
