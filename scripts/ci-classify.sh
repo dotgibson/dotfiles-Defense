@@ -19,8 +19,8 @@
 #                .pre-commit-config.yaml .shellcheckrc Makefile — cross-cutting, force
 #                the FULL run
 #   • nvim       nvim/**                         → nvim
-#   • shell      zsh/ bin/ maint/ tmux/ sesh/ starship/ mise/ git/ **/*.sh → shell
-#   • inert      *.md + repo-meta dotfiles       → no gate
+#   • shell      zsh/ bin/ maint/ tmux/ sesh/ starship/ mise/ atuin/ git/ **/*.sh → shell
+#   • inert      *.md + repo-meta dotfiles + examples/ (nothing links it) → no gate
 #   • anything else → FAIL CLOSED: force the full run and log it. Getting the inert
 #     list wrong only costs a wasted full run (safe); the old code's failure mode was
 #     a SKIPPED gate (unsafe) — this inverts that, matching ci.yml's "safe default".
@@ -43,8 +43,11 @@ while IFS= read -r f; do
   case "$f" in
   scripts/* | .github/* | .claude/* | core.manifest | core.version | .pre-commit-config.yaml | .shellcheckrc | Makefile) full ;;
   nvim/*) nvim=true ;;
-  zsh/* | bin/* | maint/* | tmux/* | sesh/* | starship/* | mise/* | git/* | *.sh) shell=true ;;
-  *.md | LICENSE | CODEOWNERS | .gitignore | .gitattributes | .editorconfig | .markdownlint.jsonc | .prettierrc.json) ;;
+  zsh/* | bin/* | maint/* | tmux/* | sesh/* | starship/* | mise/* | atuin/* | git/* | *.sh) shell=true ;;
+  # examples/ is repo-meta: bootstrap links NOTHING from it (see examples/README.md), so a
+  # change there gates nothing — it would otherwise hit the fail-closed arm and force a full
+  # run with an "unrecognised path" line, which reads like a bug rather than a showcase edit.
+  *.md | examples/* | LICENSE | CODEOWNERS | .gitignore | .gitattributes | .editorconfig | .markdownlint.jsonc | .prettierrc.json) ;;
   *)
     printf "ci-classify: unrecognised path '%s' → forcing full run (add it to a bucket)\n" "$f" >&2
     full

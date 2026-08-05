@@ -92,6 +92,12 @@ lib/bootstrap-lib.sh
 #    Additive — never replaces git. Inert without the jj binary; zsh aliases are HAVE_JJ-gated.
 #    Not a .zsh module, so bootstrap links it explicitly (like starship/lazygit above). ──
 jujutsu/config.toml
+# ── atuin — shell-history engine; symlinked to ~/.config/atuin/config.toml (the
+#    DEFAULT path, so no ATUIN_CONFIG_DIR). 00-tools.zsh already INITS atuin; this
+#    is the config that init never had. Carries the OPT-IN [daemon] block (ships
+#    OFF — a machine flips it with ATUIN_DAEMON__ENABLED=true from its OS/host
+#    layer, which also owns the launcher). Inert without the atuin binary. ───────
+atuin/config.toml
 # ── mise — polyglot runtime manager; global tool versions (portable) ──────────
 mise/config.toml
 # ── sesh — portable session-manager config (SEEDED to ~/.config/sesh/sesh.toml;

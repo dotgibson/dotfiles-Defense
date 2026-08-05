@@ -446,7 +446,8 @@ hdr "Core⇄OS boundary (no OS paths in portable Core files)"
 if ((SCOPE_SHELL)); then
   bnd_fail=0
   # Scan BOTH the portable shell modules AND the SYMLINKED config files (mise, git,
-  # tmux, starship). The latter were previously ungated — yet they are vendored and
+  # tmux, starship, atuin, jujutsu, lazygit — i.e. ALL of them; the list had quietly
+  # fallen behind the manifest twice). The latter were previously ungated — yet they are vendored and
   # symlinked verbatim into every OS repo just like the zsh modules, so a hard-coded
   # /opt/homebrew in starship.toml or an /Library/ path in gitconfig fans out N-way
   # exactly the same way. A real drift of this shape was found downstream (an OS path
@@ -459,7 +460,8 @@ if ((SCOPE_SHELL)); then
       fail "OS-specific path in a portable Core file ($f) — it belongs in the OS layer, not Core"
     fi
   done < <(git ls-files 'zsh/*.zsh' \
-    'mise/config.toml' 'git/gitconfig' \
+    'mise/config.toml' 'git/gitconfig' 'atuin/config.toml' \
+    'jujutsu/config.toml' 'lazygit/config.yml' \
     'tmux/tmux.conf' 'tmux/tmux.reset.conf' 'starship/starship.toml' 2>/dev/null)
   ((bnd_fail)) || pass "portable Core files (shell modules + symlinked configs) carry no OS-absolute paths"
 else

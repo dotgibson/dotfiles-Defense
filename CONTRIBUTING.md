@@ -100,6 +100,13 @@ same commit.
 2. Drop it into the matching path.
 3. Strip out anything OS-specific.
 4. Add the path to `core.manifest`.
-5. Wire the symlink into each OS repo's `bootstrap.sh` if it needs one.
-6. `./scripts/audit-core.sh` — green before you push.
-7. `./scripts/sync-core.sh` to vendor it into every OS repo.
+5. Wire the symlink into each OS repo's `bootstrap.sh` if it needs one — for a
+   symlinked **config** (not a `zsh/` module) that means the matching group in
+   `blib_link_core` (`lib/bootstrap-lib.sh`), which every bootstrap sources.
+6. Give the new file's top-level directory a home in the two path lists that fan
+   out from it: the Core⇄OS boundary scan in `scripts/audit-core.sh` (§5c — a
+   vendored config gets no OS-absolute paths either) and a bucket in
+   `scripts/ci-classify.sh` (an unrecognised path fails closed to a full CI run),
+   with a matching `_classify_is` line in `scripts/test-core.sh`.
+7. `./scripts/audit-core.sh` — green before you push.
+8. `./scripts/sync-core.sh` to vendor it into every OS repo.
