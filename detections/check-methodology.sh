@@ -81,9 +81,16 @@ for tok in sorted(set(re.findall(r'`([^`\s]+)`', text))):
         )
 
 # ── 2. techniques ─────────────────────────────────────────────────────────────
+# The marker is stripped BEFORE counting citations, or it satisfies itself: an id
+# written only inside the marker would count as "cited by the document", so padding the
+# marker with ids the prose never mentions would pass silently and the stale-entry check
+# below could never fire.
+marker_re = r'<!--\s*methodology-check:\s*known-absent\s*=\s*([^>]*?)\s*-->'
+prose = re.sub(marker_re, '', text, flags=re.S)
+
 # \bT#### with an optional .### sub-technique. TA0043-style tactic ids don't match
 # (no digit directly after the T), which is what we want — this checks techniques.
-cited = set(re.findall(r'\bT\d{4}(?:\.\d{3})?\b', text))
+cited = set(re.findall(r'\bT\d{4}(?:\.\d{3})?\b', prose))
 
 covered = set()
 for path in glob.glob(os.path.join(sigma, "*", "*.yml")):
@@ -91,12 +98,12 @@ for path in glob.glob(os.path.join(sigma, "*", "*.yml")):
     for m in re.finditer(r'attack\.(t\d+(?:\.\d+)?)', body, re.IGNORECASE):
         covered.add("T" + m.group(1)[1:].upper())
 
-marker = re.search(
-    r'<!--\s*methodology-check:\s*known-absent\s*=\s*([^>]*?)\s*-->', text
-)
+marker = re.search(marker_re, text)
 declared = set()
 if marker:
-    declared = {t for t in re.split(r'[,\s]+', marker.group(1)) if t}
+    # Upper-cased so a marker written `t1496.001` compares equal to the `T1496.001` the
+    # citation regex finds, instead of reading as an unrelated (and therefore stale) id.
+    declared = {t.upper() for t in re.split(r'[,\s]+', marker.group(1)) if t}
 elif cited - covered:
     failures.append(
         "DEFENSE-METHODOLOGY.md cites technique(s) no Sigma rule covers ({}) and has no "
