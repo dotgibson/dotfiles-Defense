@@ -67,6 +67,11 @@ correlation:
   rules:
     - file_write_handle_4663
   group-by:
+    # Per HOST and per process, not per process alone: ProcessName is a path, and the same
+    # path exists on every host in the fleet. Grouping on it alone would pool the file
+    # counts of every server running the same backup/indexing agent into one bucket and
+    # trip the threshold on aggregate activity no single host performed.
+    - Computer
     - ProcessName
   timespan: 5m
   condition:
