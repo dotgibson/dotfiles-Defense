@@ -208,4 +208,75 @@ fi
 # salt the cache on it — flipping ATUIN_NOBIND now busts the cache instead of serving stale.
 [[ -n ${HAVE_ATUIN:-} ]] && _cache_eval --salt "${ATUIN_NOBIND:-}" atuin atuin init zsh
 
+# ── atuin daemon (OPT-IN) — degrade to direct writes when it isn't reachable ───
+# atuin's daemon owns the SQLite writes and shells talk to it over a unix socket, which
+# removes the DB-lock contention every shell and every tmux pane otherwise pays. Core
+# ships the [daemon] block OFF (core/atuin/config.toml); a machine opts IN from its OS
+# layer (os/<os>.zsh) or host layer (99-local) with atuin's own env overrides —
+# ATUIN_DAEMON__ENABLED=true, plus ATUIN_DAEMON__AUTOSTART=true where nothing else
+# supervises the daemon (Alpine/macOS). The LAUNCHER is OS-native and lives there too.
+#
+# What this guards, precisely — the distinction matters, so no overclaiming: with the
+# daemon enabled and its socket ABSENT or STALE (the file survived a crashed daemon,
+# nothing listening), every atuin call pays a failed connect and an error, on every
+# command. So probe once and, when nothing is listening, force the daemon off for THIS
+# shell; atuin then writes SQLite directly. Silent by design: a missing daemon must cost
+# latency, never noise on every prompt.
+#
+# What it does NOT guard: an ACCEPT-BUT-SILENT socket — something is listening (systemd
+# socket activation holding the socket while the daemon behind it is dead or wedged) and
+# the connect succeeds, so no cheap shell-side probe can tell it from a healthy daemon.
+# That is the shape of upstream atuinsh/atuin#3382's indefinite freeze, and it is why
+# core/atuin/config.toml recommends the plain always-running unit over the .socket
+# variant, and `autostart = true` (atuin health-checks its own daemon) where there is no
+# service manager. Proving liveness would mean a bounded application-level request on the
+# startup path — a fork and a timeout per shell, which this file exists to avoid.
+#
+# It is a startup probe, NOT a watchdog: a daemon that dies later still costs that shell.
+# Re-probing every precmd would put a connect(2) in the prompt path, which is the trade
+# this repo's startup-cost discipline says no to.
+#
+# NOT gated: `atuin init zsh` above. That script is daemon-agnostic — the daemon is used
+# at COMMAND time by the hooks it registers — so gating it would only cost the Ctrl+E TUI.
+# Runs at the FIRST precmd, not at source time: the OS (80) and host (99) fragments load
+# AFTER this file, so the opt-in env isn't set yet while 00-tools.zsh is being sourced.
+# A named function (not an inline hook body) so scripts/test-core.sh can drive it directly.
+# precmd_functions is edited DIRECTLY (the same idiom as the _cmd_block_precmd reorder
+# above) rather than via add-zsh-hook: on a box with atuin but no starship, autoloading
+# add-zsh-hook for this one registration is a measurable ~1ms of shell startup — the exact
+# cost this file exists to avoid — and APPEND is all we need. Appending also keeps the
+# `$?`-sensitive hooks (_cmd_block_precmd, starship_precmd) first, where they must be.
+_core_atuin_daemon_guard() {
+  emulate -L zsh
+  precmd_functions=(${precmd_functions:#_core_atuin_daemon_guard}) # one-shot: never runs twice
+  # The truthy set is config-rs's (the crate atuin parses this env with), not just "true":
+  # someone who writes ATUIN_DAEMON__ENABLED=1 has opted in as far as atuin is concerned,
+  # so the guard must agree or it silently sits out exactly when it is needed.
+  [[ ${ATUIN_DAEMON__ENABLED:l} == (1|t|true|y|yes|on) ]] || return 0   # not opted in
+  [[ ${ATUIN_DAEMON__AUTOSTART:l} == (1|t|true|y|yes|on) ]] && return 0 # atuin supervises it itself
+  # Same default atuin resolves: $XDG_RUNTIME_DIR/atuin.sock, falling back to the data dir
+  # where XDG_RUNTIME_DIR is unset (macOS).
+  local sock="${ATUIN_DAEMON__SOCKET_PATH:-${XDG_RUNTIME_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/atuin}/atuin.sock}"
+  # A real connect, because a stale socket FILE passes a plain -S test — which is exactly
+  # the case that hangs. zsocket returns non-zero immediately when nothing is listening;
+  # on success it hands back an open fd in $REPLY that we close right away. REPLY is
+  # LOCAL: zsocket writes it, and clobbering the caller's REPLY from a precmd hook would
+  # be a nasty little cross-talk bug. `--` because the path comes from the environment.
+  #
+  # The daemon stays on ONLY when a connect actually succeeded. If zsh/net/socket is
+  # missing (it ships with zsh everywhere the fleet runs, so this is near-dead code), we
+  # fall through to the disable path rather than settling for `[[ -S $sock ]]` — trusting
+  # the existence test would leave the daemon enabled on exactly the stale socket this
+  # guard exists to catch. Cost of being wrong that way is the lock relief, and
+  # core-doctor says so; cost of the other way is the failure mode itself.
+  local REPLY
+  if zmodload -F zsh/net/socket +b:zsocket 2>/dev/null; then
+    zsocket -- "$sock" 2>/dev/null && { exec {REPLY}>&-; return 0 }
+  fi
+  export ATUIN_DAEMON__ENABLED=false                           # degrade to direct SQLite writes
+  typeset -g _CORE_ATUIN_DAEMON_DEGRADED=1                     # core-doctor reports it; the shell stays quiet
+}
+[[ -n ${HAVE_ATUIN:-} ]] &&
+  precmd_functions=(${precmd_functions:#_core_atuin_daemon_guard} _core_atuin_daemon_guard)
+
 unfunction _have 2>/dev/null

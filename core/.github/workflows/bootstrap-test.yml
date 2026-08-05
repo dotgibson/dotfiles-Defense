@@ -119,6 +119,14 @@ jobs:
             # sesh is SEEDED (copied, not symlinked) — assert the real file landed. Re-added now
             # that the lazygit/vim/sesh wiring is vendored fleet-wide (every adopter core.lock is
             # at a Core that includes it), so this @main test can assert it without false reds.
+            # atuin config — asserted CONDITIONALLY, on whether this repo has vendored the
+            # Core that carries it. An OS repo still on an older core/ has no such file, and
+            # its bootstrap correctly skips the link, so an unconditional check would red a
+            # repo doing nothing wrong (the false-red the sesh note below records). The
+            # check arms itself the moment that repo syncs Core.
+            if [ -f core/atuin/config.toml ] && [ ! -L "$HOME/.config/atuin/config.toml" ]; then
+              echo "MISSING symlink: $HOME/.config/atuin/config.toml" >&2; exit 1
+            fi
             if [ ! -f "$HOME/.config/sesh/sesh.toml" ]; then echo "sesh.toml not seeded" >&2; exit 1; fi
             if [ -L "$HOME/.config/sesh/sesh.toml" ]; then echo "sesh.toml should be a copy, not a symlink" >&2; exit 1; fi
             # NOTE: keep this block apostrophe-free — it lives inside the single-quoted sh -euc script.

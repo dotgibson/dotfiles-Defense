@@ -46,8 +46,16 @@ belong on the same cheat sheet.
 | ------- | ------------ |
 | `vim` | `nvim` |
 | `lg` | `lazygit` |
+| `web` | `$BROWSER_BIN` — the terminal web browser (see below) |
 | `notes` | `cd "$NOTES_DIR" && nvim .` |
 | `cheat` | `core-help` (built-in help index) |
+
+`web <url>` resolves to the first text browser on the box — `w3m` (the one Core packages
+fleet-wide), else `lynx`, `links2`, `links`, `elinks`. With none installed the alias is
+never defined. On a **headless** box (no `$DISPLAY`/`$WAYLAND_DISPLAY`, not macOS) Core
+also exports `$BROWSER` to the same binary, so tools that shell out to "open a URL" stay in
+the terminal; on a desktop it deliberately leaves `$BROWSER` alone rather than hijacking
+your GUI browser.
 
 ## Navigation & Safety
 
@@ -87,6 +95,18 @@ automatically. No manual config required; install `jj` and these aliases appear.
 | `jjs` | `jj status` |
 | `jjl` | `jj log` |
 | `jjd` | `jj diff` |
+
+## uv (Python)
+
+Active when `uv` is installed — `00-tools.zsh` detects the binary and sets `HAVE_UV`
+automatically. `uv run` resolves the project's `.venv` itself, so neither of these needs a
+manual activation step. `uvx` already ships as a first-class uv command, so it is
+deliberately **not** aliased.
+
+| Alias | Expands To |
+| ------- | ------------ |
+| `uvr` | `uv run` |
+| `uvs` | `uv sync` (reconcile the project env with `uv.lock`) |
 
 ## Shell Functions
 
