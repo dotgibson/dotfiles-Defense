@@ -25,6 +25,8 @@ on:
       - "detections/siem/**"
       - "detections/navigator/**"
       - "detections/sigma-validation-config.yml"
+      - "detections/check-methodology.sh"
+      - "DEFENSE-METHODOLOGY.md"
       - ".github/workflows/sigma.yml"
   pull_request:
     paths:
@@ -32,6 +34,8 @@ on:
       - "detections/siem/**"
       - "detections/navigator/**"
       - "detections/sigma-validation-config.yml"
+      - "detections/check-methodology.sh"
+      - "DEFENSE-METHODOLOGY.md"
       - ".github/workflows/sigma.yml"
 
 concurrency:
@@ -82,6 +86,16 @@ jobs:
         # GENERATED from the same Sigma tags; this proves the committed
         # detections/navigator/COVERAGE.md still matches, so the report can't drift.
         run: ./detections/navigator/gen-coverage.sh --check
+
+      - name: Methodology claims gate (hard gate)
+        # DEFENSE-METHODOLOGY.md is the one hand-written map of the detection layer, so
+        # unlike the generated artifacts above it can't be drift-gated by regenerating and
+        # diffing — two of its table's columns are editorial judgement. This asserts the
+        # subset that IS checkable: referenced paths exist, and every ATT&CK technique it
+        # names is either covered by a rule or declared absent in its own marker. The
+        # inverse case is the valuable one — a declared gap that quietly gets filled makes
+        # the prose describing it wrong, and this catches that.
+        run: ./detections/check-methodology.sh
 
       - name: ATT&CK tag validity (advisory — needs live MITRE data)
         continue-on-error: true
