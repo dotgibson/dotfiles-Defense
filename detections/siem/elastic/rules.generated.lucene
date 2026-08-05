@@ -9,8 +9,14 @@
 // cloud/aws_iam_access_key_created.yml — AWS IAM access key created (backdoor triage)
 eventSource:iam.amazonaws.com AND eventName:CreateAccessKey
 
+// cloud/aws_iam_privesc_policy.yml — AWS IAM privilege escalation via policy attach/put (CloudTrail)
+(eventSource:iam.amazonaws.com AND (eventName:(AttachUserPolicy OR AttachRolePolicy OR AttachGroupPolicy OR PutUserPolicy OR PutRolePolicy OR PutGroupPolicy OR CreatePolicyVersion OR SetDefaultPolicyVersion OR AddUserToGroup))) AND (NOT userIdentity.arn:arn\:aws\:sts\:\:111122223333\:assumed\-role\/terraform\-apply\/*)
+
 // cloud/aws_login_profile_created.yml — AWS IAM login profile created or updated (console takeover)
 eventSource:iam.amazonaws.com AND (eventName:(CreateLoginProfile OR UpdateLoginProfile))
+
+// cloud/entra_directory_role_grant.yml — Entra directory role assigned (tenant privilege escalation)
+OperationName:(Add\ member\ to\ role OR Add\ eligible\ member\ to\ role OR Add\ member\ to\ role\ in\ PIM\ requested\ \(permanent\) OR Add\ member\ to\ role\ completed\ \(PIM\ activation\) OR Add\ member\ to\ role\ requested\ \(PIM\ activation\))
 
 // cloud/entra_illicit_consent_grant.yml — Entra consent grant to a third-party app (illicit-consent triage)
 (OperationName:(Consent\ to\ application OR Add\ delegated\ permission\ grant OR Add\ OAuth2PermissionGrant)) AND (TargetResources:(*Mail.Read* OR *Mail.ReadWrite* OR *Mail.Send* OR *offline_access* OR *Files.Read.All* OR *Files.ReadWrite.All* OR *Sites.Read.All* OR *Directory.Read.All* OR *full_access_as_user*)) AND (NOT TargetResources:*00000000\-0000\-0000\-0000\-000000000000*)
@@ -34,7 +40,7 @@ resource.type:api_token AND action.type:create
 (resource.type:(firewall_rule OR ruleset)) AND (action.type:(delete OR update))
 
 // cloudflare/cloudflare_worker_deployed.yml — Cloudflare Worker deployed (serverless edge code execution)
-(resource.type:(worker OR workers_script)) AND (action.type:(create OR update))
+((resource.type:(worker OR workers_script)) AND (action.type:(create OR update))) AND (NOT actor.email:ci\-deploy@example.com)
 
 // credential_access/asrep_roast_4768.yml — AS-REP roast - TGT issued without pre-authentication (4768 type 0)
 (EventID:4768 AND PreAuthType:0) AND (NOT TargetUserName:*$)
@@ -58,13 +64,16 @@ EventID:5145 AND ShareName:*IPC$* AND (RelativeTargetName:(*spoolss* OR *efsrpc*
 (EventID:4769 AND TicketEncryptionType:0x17) AND (NOT (ServiceName:(*$ OR krbtgt)))
 
 // credential_access/lsass_handle_access.yml — LSASS process access with dump-shaped rights
-(TargetImage:*\\lsass.exe AND (GrantedAccess:(0x1010 OR 0x1410 OR 0x1438 OR 0x143a OR 0x1fffff))) AND (NOT (SourceImage:(*\\MsMpEng.exe* OR *\\MsSense.exe* OR *\\wininit.exe* OR *\\csrss.exe*)))
+(TargetImage:*\\lsass.exe AND (GrantedAccess:(0x1010 OR 0x1410 OR 0x1438 OR 0x143a OR 0x1fffff))) AND (NOT (SourceImage:(*\\MsMpEng.exe* OR *\\MsSense.exe* OR *\\wininit.exe* OR *\\csrss.exe* OR *\\CSFalconService.exe* OR *\\SentinelAgent.exe* OR *\\RepMgr.exe*)))
 
 // credential_access/ntds_dump_ntdsutil_vss_4688.yml — NTDS.dit theft via ntdsutil / VSS on a domain controller
 (Image:*\\ntdsutil.exe AND (CommandLine:(*ifm* OR *create\ full*))) OR ((CommandLine:(*vssadmin\ create\ shadow* OR *wbadmin\ start\ backup*)) AND (Image:(*\\vssadmin.exe OR *\\wbadmin.exe))) OR Image:*\\diskshadow.exe
 
 // credential_access/password_spray_4625.yml — Password spray base - failed network logon (4625)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
+// credential_access/unconstrained_delegation_dc_logon_4624.yml — Unconstrained delegation TGT capture - DC account authenticating to a non-DC (4624)
+(EventID:4624 AND LogonType:3 AND AuthenticationPackageName:Kerberos) AND (TargetUserName:(DC01$ OR DC02$)) AND (NOT (Computer:(DC01* OR DC02*)))
 
 // defense_evasion/dcshadow_rogue_dc_4742.yml — DCShadow - rogue DC registration (GC SPN added to a non-DC)
 (EventID:4742 AND ServicePrincipalNames:*GC\/*) AND (NOT (TargetUserName:(DC1$ OR DC2$)))
@@ -102,8 +111,14 @@ eventName:email_forwarding_out_of_domain
 // google_workspace/gws_illicit_oauth_grant.yml — Google Workspace illicit OAuth grant (consent phish)
 eventName:authorize AND (scope:(*mail.google.com* OR *auth\/gmail* OR *auth\/drive* OR *auth\/spreadsheets* OR *auth\/documents* OR *auth\/contacts*)) AND (NOT client_id:000000000000\-example.apps.googleusercontent.com)
 
+// impact/mass_file_encryption_4663.yml — File write/delete handle base (4663)
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
 // impact/recovery_inhibition_process.yml — Inhibit system recovery - shadow copy / backup / boot-recovery deletion
-((Image:(*\\vssadmin.exe OR *\\wmic.exe)) AND (CommandLine:*shadow* AND CommandLine:*delete*)) OR (Image:*\\wbadmin.exe AND (CommandLine:*delete* AND CommandLine:*catalog*)) OR (Image:*\\bcdedit.exe AND (CommandLine:(*recoveryenabled\ no* OR *bootstatuspolicy\ ignoreallfailures*)))
+((Image:(*\\vssadmin.exe OR *\\wmic.exe)) AND (CommandLine:*shadow* AND CommandLine:*delete*)) OR (Image:*\\wbadmin.exe AND (CommandLine:*delete* AND CommandLine:*catalog*)) OR (Image:*\\bcdedit.exe AND (CommandLine:*recoveryenabled* AND CommandLine:*no*)) OR (Image:*\\bcdedit.exe AND (CommandLine:*bootstatuspolicy* AND CommandLine:*ignoreallfailures*))
+
+// impact/service_stop_preransom_process.yml — Pre-ransom service teardown - backup / AV / database services stopped
+(((Image:(*\\net.exe OR *\\net1.exe OR *\\sc.exe)) AND (CommandLine:(*\ stop\ * OR *start\=\ disabled* OR *start\=disabled*))) OR (CommandLine:(*Stop\-Service* OR *Set\-Service*))) AND (CommandLine:(*sql* OR *msexchange* OR *veeam* OR *backup* OR *acronis* OR *memtas* OR *mepocs* OR *sophos* OR *sentinel* OR *defend* OR *vss* OR *sqlwriter* OR *postgres* OR *oracle*))
 
 // jenkins/jenkins_api_token_created.yml — Jenkins user API token created (durable-access backdoor)
 uri:*ApiTokenProperty\/generateNewToken*
@@ -130,7 +145,7 @@ uri:(*\/scriptText* OR *\/script*)
 CommandLine:*\/dest\:rdp\-tcp#*
 
 // lateral_movement/service_creation_psexec_7045.yml — Suspicious service installed (psexec-style remote exec)
-EventID:7045 AND (ImagePath:(*\\cmd.exe* OR *powershell* OR *%COMSPEC%* OR *\\ADMIN$\\* OR *\\Temp\\* OR *\\Users\\*))
+EventID:7045 AND (ImagePath:(*\\ADMIN$\\* OR *%COMSPEC%* OR *\\cmd.exe* OR *powershell.exe* OR *powershell\ \-* OR *pwsh.exe* OR *cscript* OR *wscript* OR *rundll32* OR *mshta*))
 
 // lateral_movement/wmiexec_wmiprvse_child_4688.yml — WMI remote exec - shell spawned by WmiPrvSE
 (ParentImage:*\\WmiPrvSE.exe AND (Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe))) AND (CommandLine:*\/Q* AND CommandLine:*\/c* AND CommandLine:*127.0.0.1\\ADMIN$*)
@@ -160,7 +175,7 @@ eventType:(user.mfa.factor.reset_all OR user.mfa.factor.deactivate OR system.mfa
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // persistence/rogue_account_creation_4720.yml — Rogue account creation (4720)
-EventID:4720
+EventID:4720 AND (NOT SubjectUserName:svc_iam_provisioning)
 
 // persistence/scheduled_task_suspicious_4698.yml — Scheduled task created with a suspicious action
 EventID:4698 AND (TaskContent:(*\-enc* OR *\-EncodedCommand* OR *\-w\ hidden* OR *\-WindowStyle\ Hidden* OR *FromBase64String* OR *\\Users\\* OR *\\Temp\\* OR *\\mshta.exe* OR *\\regsvr32.exe* OR *\\rundll32.exe* OR *DownloadString* OR *IEX*))

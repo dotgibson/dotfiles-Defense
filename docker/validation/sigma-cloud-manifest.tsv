@@ -13,6 +13,7 @@
 # fails just as loudly as one that fires on nothing. Fixtures are committed JSONL under
 # sigma-fixtures/cloud/, in the rule's normalized field schema (the shape a product
 # pipeline presents to the engine).
+cloud_aws_iam_privesc_policy	detections/sigma/cloud/aws_iam_privesc_policy.yml	docker/validation/sigma-fixtures/cloud/aws_iam_privesc_policy_tp.jsonl	docker/validation/sigma-fixtures/cloud/aws_iam_privesc_policy_tn.jsonl	8419ba47-7317-4eee-8928-110c2e8850df
 cloud_gcp_service_account_key_created	detections/sigma/cloud/gcp_service_account_key_created.yml	docker/validation/sigma-fixtures/cloud/gcp_service_account_key_created_tp.jsonl	docker/validation/sigma-fixtures/cloud/gcp_service_account_key_created_tn.jsonl	fa087bf0-f2fb-4e40-a676-c448718da9f7
 cloud_gcp_audit_log_sink_deleted	detections/sigma/cloud/gcp_audit_log_sink_deleted.yml	docker/validation/sigma-fixtures/cloud/gcp_audit_log_sink_deleted_tp.jsonl	docker/validation/sigma-fixtures/cloud/gcp_audit_log_sink_deleted_tn.jsonl	97e47b48-c02a-4937-857d-6275e7f634e0
 cloud_gcp_iam_policy_backdoor	detections/sigma/cloud/gcp_iam_policy_backdoor.yml	docker/validation/sigma-fixtures/cloud/gcp_iam_policy_backdoor_tp.jsonl	docker/validation/sigma-fixtures/cloud/gcp_iam_policy_backdoor_tn.jsonl	1c2ad5ef-c5fb-4e62-9e56-58ff553e6b7b

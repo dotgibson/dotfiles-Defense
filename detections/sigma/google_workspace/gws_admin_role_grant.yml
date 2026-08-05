@@ -1,6 +1,6 @@
 title: Google Workspace admin/super-admin role granted (tenant persistence)
 id: a5dfde3d-3def-41ee-9be9-87e011bf8172
-status: experimental
+status: test
 description: |
   Detects an admin-role grant in the Google Workspace admin audit:
   GRANT_DELEGATED_ADMIN_PRIVILEGES (a user made super admin) or ASSIGN_ROLE (a privileged

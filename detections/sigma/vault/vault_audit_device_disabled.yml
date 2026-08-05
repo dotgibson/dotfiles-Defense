@@ -1,6 +1,6 @@
 title: HashiCorp Vault audit device disabled (blind the SIEM)
 id: cc8fd99d-d2b5-4656-a801-634db4b51b03
-status: experimental
+status: test
 description: |
   Detects an audit device being disabled in the Vault audit log (request.operation=delete
   on a sys/audit/ path). Disabling an audit device stops subsequent requests from being

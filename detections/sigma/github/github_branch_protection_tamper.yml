@@ -1,6 +1,6 @@
 title: GitHub branch-protection tampered (unreviewed merge)
 id: 329fba40-2880-470c-ab65-41368c66ebec
-status: experimental
+status: test
 description: |
   Detects branch-protection tampering in the GitHub Enterprise audit log:
   protected_branch.destroy (the rule was deleted, opening the branch) or

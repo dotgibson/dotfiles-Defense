@@ -79,7 +79,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 77 rules / 84 documents, organized by ATT&CK tactic
+### `sigma/` — 82 rules / 90 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -94,6 +94,15 @@ purple-validatable out of the box.
 | `dpapi_backupkey_5145` | 5145 IPC$ `protected_storage` | T1555 | Credential access · dpapi-backupkey |
 | `ntds_dump_ntdsutil_vss_4688` | proc create (ntdsutil/VSS) | T1003.003 | DCSync/NTDS · ntds-ntdsutil |
 | `lsass_handle_access` | Sysmon 10 (LSASS) | T1003.001 | Lateral movement · lsass-dump-lsassy |
+| `unconstrained_delegation_dc_logon_4624` | 4624 type-3 Kerberos by a DC computer account | T1187 / T1558 | AD attack paths · unconstrained-deleg-tgt |
+
+**`impact/`** (the ransomware fold — precursor, teardown, payload)
+
+| Rule | Event / source | ATT&CK | Validate with |
+| ---- | -------------- | ------ | ------------- |
+| `recovery_inhibition_process` | proc create (vssadmin/wbadmin/bcdedit) | T1490 | Impact · inhibit-recovery-vssadmin |
+| `service_stop_preransom_process` | proc create (net/sc stop, Stop-Service) | T1489 | Impact · service-stop-preransom |
+| `mass_file_encryption_4663` | 4663 write/delete handles (value_count correlation) | T1486 | Impact · ransomware-encrypt-files |
 
 **`privilege_escalation/`**
 
@@ -147,8 +156,10 @@ purple-validatable out of the box.
 | ---- | -------------- | ------ | ------------- |
 | `entra_illicit_consent_grant` | Entra AuditLogs "Consent to application" | T1528 | M365/Entra · consent-grant |
 | `entra_sp_credential_backdoor` | Entra AuditLogs "Add SP credentials" | T1098.001 | M365/Entra · sp-cred-backdoor |
+| `entra_directory_role_grant` | Entra AuditLogs "Add member to role" | T1098.003 | M365/Entra · entra-directory-role |
 | `aws_iam_access_key_created` | CloudTrail `CreateAccessKey` | T1098.001 | AWS IAM · aws-iam-backdoor-key |
 | `aws_login_profile_created` | CloudTrail Create/UpdateLoginProfile | T1098 | AWS IAM · aws-console-login-profile |
+| `aws_iam_privesc_policy` | CloudTrail policy attach/put/version + group add | T1098.003 | AWS IAM · aws-iam-privesc-policy |
 | `gcp_service_account_key_created` | GCP audit `CreateServiceAccountKey` | T1098.001 | GCP IAM · gcp-sa-key |
 
 **`kubernetes/`** (kube-apiserver audit — `product: kubernetes`)
@@ -265,7 +276,8 @@ purple-validatable out of the box.
 
 `password_spray`, `asrep_roast_probing`, `sharphound_ldap_sweep`,
 `ldap_recon_explicit_creds_4648`, `passthehash_4624_fanout`,
-`machine_account_creation_burst_4741`, and `vault_bulk_secret_read` are Sigma
+`machine_account_creation_burst_4741`, `mass_file_encryption_4663`, and
+`vault_bulk_secret_read` are Sigma
 **correlation** rules (a base event + a `value_count` over a window); the rest are
 single-event selections. The `linux/`, `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,
 `gitlab/`, `vault/`, `terraform/`, `jenkins/`, `snowflake/`, `google_workspace/`,
@@ -294,6 +306,28 @@ comment isn't enforcement, so this is the discoverable checklist instead.)
 | `defense_evasion/dcshadow_rogue_dc_4742` | `filter_real_dcs` → your real DC computer accounts | a `GC/` SPN write onto another real DC would alert (low risk — rare regardless) |
 | `cloud/entra_illicit_consent_grant` | `filter_known_apps` → sanctioned app (client) IDs | verified LOB apps holding mail/file scopes alert (the high-risk-scope match still scopes it) |
 | `snowflake/snowflake_data_unload` | `filter_known_stages` → sanctioned named stages | a named *internal* stage (not `@%`/`@~`) alerts alongside external ones |
+| `credential_access/unconstrained_delegation_dc_logon_4624` | `dc_computer_accounts` → your DC computer accounts (an **inclusion** list) and `filter_dc_hosts` → your DC hostnames | the rule fails **closed**: it matches only the example `DC01$`/`DC02$`, so it detects nothing until filled |
+| `credential_access/lsass_handle_access` | `filter_av` → your endpoint-protection agent binaries | in a non-Defender shop the EDR reads LSASS continuously and this `high` rule fires steadily |
+| `persistence/rogue_account_creation_4720` | `filter_provisioning` → your IAM/JML and helpdesk provisioning principals | every routine onboarding alerts |
+| `cloudflare/cloudflare_worker_deployed` | `filter_ci` → the deploy pipeline's Cloudflare identity | every CI Worker deploy is a `high` alert |
+| `cloud/aws_iam_privesc_policy` | `filter_iac` → your IaC / access-management automation principal(s) | Terraform's routine policy attachments alert alongside operator-driven ones |
+
+#### What `status:` means here
+
+`status` is a triage signal, not decoration, so it is not uniform across the corpus:
+
+- **`test`** — an invariant on a rare event, with **no** unpopulated `DEPLOY-REQUIRED`
+  placeholder and a committed validation fixture proving it fires
+  (`dcsync_replication_4662`, `recovery_inhibition_process`, `vault_audit_device_disabled`,
+  `okta_idp_created`, and the rest of that shape). Deploy these first; they are the
+  near-zero-FP tripwires.
+- **`experimental`** — everything else, and deliberately so: rules whose filter stub is
+  still a placeholder, the threshold-tuned `value_count` correlations (the threshold is a
+  property of *your* environment, not of the rule), and the broad token-mint / creation
+  rules whose own `falsepositives` say routine activity produces them. These are worth
+  deploying, but tune before you page on them.
+
+Nothing is `stable` yet — that would claim production-tuning history this repo doesn't have.
 
 ### `sysmon/` — `sysmonconfig-detection-lab.xml`
 

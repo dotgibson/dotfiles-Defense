@@ -97,12 +97,14 @@ oversized-query-name / echo-reply variants.
 
 ## Host / Sigma plane — coverage & findings
 
-Covered (25 rules, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
+Covered (30 rows, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
 every shape — Kerberoast, AS-REP, DCSync, GPP cpassword, coercion, DPAPI, LSASS access,
-NTDS dump, rogue-account / machine-account / scheduled-task / WMI-subscription persistence,
-DCShadow, RBCD, shadow-credentials, ADCS ESC1, RDP-hijack, PsExec, WMIexec, the potato
-SeImpersonate pair, and the correlation rules (password-spray, pass-the-hash, LDAP-recon,
-SharpHound). Each was verified firing against the real engine locally.
+NTDS dump, unconstrained-delegation TGT capture, rogue-account / machine-account /
+scheduled-task / WMI-subscription persistence, DCShadow, RBCD, shadow-credentials, ADCS
+ESC1, RDP-hijack, PsExec, WMIexec, the potato SeImpersonate pair, the ransomware fold
+(recovery inhibition, pre-ransom service stop, mass encryption), and the correlation rules
+(password-spray, pass-the-hash, LDAP-recon, SharpHound, mass-encryption). Each was verified
+firing against the real engine locally.
 
 **Resolved — the potato SeImpersonate rule now fires (split into a per-channel pair).**
 The original `potato_seimpersonate_4688.yml` was dual-channel by design: one
@@ -118,13 +120,13 @@ the cloud-plane PR. It's now split into a per-channel pair — `potato_seimperso
 preserved on the 4688 half so the htpx cross-link holds. Both are wired into the manifest and
 verified firing locally; deploy both and whichever channel a host forwards will match.
 
-**Cloud / SaaS** (`pipeline=none`): 21 rules covered — AWS (IAM key, login profile), Entra
-(consent, SP credential), GitHub (branch-protection, credential, runner), Google Workspace
+**Cloud / SaaS** (`pipeline=none`): 22 rules covered — AWS (IAM key, login profile), Entra
+(consent, SP credential, directory-role grant), GitHub (branch-protection, credential, runner), Google Workspace
 (admin role, mail-forward, OAuth), Jenkins (×3), Okta (×3), npm (×2), PyPI collaborator,
 Slack (app-installed, external-share). These have no EventID and match on raw field names,
 so they run without a pysigma pipeline.
 
-**Nested-field cloud plane — the 26 zircolite can't reach, now covered.** zircolite is
+**Nested-field cloud plane — the 30 zircolite can't reach, now covered.** zircolite is
 EVTX-oriented: its flattener collapses a nested/dotted event path to the **last key with
 underscores stripped** (verified with `--keepflat`: `gcp.audit.method_name` → `methodname`,
 `resource.type` → `type`, with collisions; and it strips `_` from flat keys too, so
@@ -132,7 +134,8 @@ underscores stripped** (verified with `--keepflat`: `gcp.audit.method_name` → 
 dotted paths *or* underscored keys can't be exercised through zircolite — the column never
 carries the name the rule expects. This hit every rule for **GCP, Cloudflare, GitLab,
 Kubernetes, Harbor, Snowflake, Terraform, Vault**, plus a few others (npm-malicious-publish,
-PyPI token/trusted-publisher, Slack-2FA): 26 rules.
+PyPI token/trusted-publisher, Slack-2FA, AWS IAM privesc-policy — which filters on the
+dotted `userIdentity.arn`): 30 rules.
 
 These are now validated by a small dedicated matcher, [`sigma_eval.py`](sigma_eval.py),
 rather than zircolite. It matches a rule against natural cloud-event JSON by walking
@@ -149,7 +152,7 @@ correlation rule (`vault_bulk_secret_read`, `value_count gte 20`) is validated a
 per-event detection; the count/timespan aggregation is out of scope for a single-event
 matcher (noted, not silently claimed).
 
-The 21 flat-field cloud rules (AWS, Entra, GitHub, Google Workspace, Jenkins, Okta, npm,
+The 22 flat-field cloud rules (AWS, Entra, GitHub, Google Workspace, Jenkins, Okta, npm,
 PyPI-collaborator, Slack app/share) stay on zircolite — keeping an independent third-party
 engine in the loop wherever one can actually run the rule; the evaluator is introduced only
 where no available engine preserves the field names.

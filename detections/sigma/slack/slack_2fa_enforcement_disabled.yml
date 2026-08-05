@@ -1,6 +1,6 @@
 title: Slack 2FA enforcement disabled (workspace auth weakened)
 id: d5b947fd-ac5c-4d25-8d7e-5241c555aaf5
-status: experimental
+status: test
 description: |
   Detects the workspace require-two-factor setting being turned off in the Slack audit log
   (action=pref.two_factor_auth_changed, two_factor_required=false). Enforced 2FA is what keeps

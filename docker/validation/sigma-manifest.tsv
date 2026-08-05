@@ -35,6 +35,9 @@ ldap-recon-4648	windows-audit	docker/validation/sigma-fixtures/ldap_recon_4648.j
 sharphound-4662	windows-audit	docker/validation/sigma-fixtures/sharphound_4662.jsonl	detections/sigma/discovery/sharphound_ldap_sweep_4662.yml	9c4e7d21-3a5b-42f0-8e6d-1b0a4f7c9e33
 machine-account-4741	windows-audit	docker/validation/sigma-fixtures/machine_account_4741.jsonl	detections/sigma/persistence/machine_account_creation_burst_4741.yml	ae5a0814-7222-4c3d-9710-258b0c4045ba
 recovery-inhibition-4688	sysmon	docker/validation/sigma-fixtures/recovery_inhibition_4688.jsonl	detections/sigma/impact/recovery_inhibition_process.yml	7dbc97d7-0d27-4a77-8dfd-daf203087726
+mass-encrypt-4663	windows-audit	docker/validation/sigma-fixtures/mass_encrypt_4663.jsonl	detections/sigma/impact/mass_file_encryption_4663.yml	5f7afed7-23a5-4731-a3aa-855371ebf920
+service-stop-preransom	sysmon	docker/validation/sigma-fixtures/service_stop_preransom.jsonl	detections/sigma/impact/service_stop_preransom_process.yml	b28f3d5e-701d-4b00-bb34-8a241a99f018
+unconstrained-deleg-4624	windows-audit	docker/validation/sigma-fixtures/unconstrained_deleg_4624.jsonl	detections/sigma/credential_access/unconstrained_delegation_dc_logon_4624.yml	7bf3b47e-2ab0-4bb1-adf6-b72aa1f953c4
 # Cloud/SaaS rules (pipeline=none: no EventID, match raw field names). Only the 20
 # flat-field cloud rules run here. Products with dotted/nested field names (GCP, Cloudflare,
 # GitLab, Kubernetes, Harbor, Snowflake, Terraform, Vault, …) — plus any otherwise-flat rule
@@ -46,6 +49,7 @@ cloud_aws_iam_access_key_created	none	docker/validation/sigma-fixtures/cloud_aws
 cloud_aws_login_profile_created	none	docker/validation/sigma-fixtures/cloud_aws_login_profile_created.jsonl	detections/sigma/cloud/aws_login_profile_created.yml	47f3ada3-a78d-423a-881e-6a5352ce892b
 cloud_entra_illicit_consent_grant	none	docker/validation/sigma-fixtures/cloud_entra_illicit_consent_grant.jsonl	detections/sigma/cloud/entra_illicit_consent_grant.yml	06d00b40-680e-4f4b-a675-889c2a2dd0ed
 cloud_entra_sp_credential_backdoor	none	docker/validation/sigma-fixtures/cloud_entra_sp_credential_backdoor.jsonl	detections/sigma/cloud/entra_sp_credential_backdoor.yml	73a70b60-05ed-4f99-a380-175d62df0b24
+cloud_entra_directory_role_grant	none	docker/validation/sigma-fixtures/cloud_entra_directory_role_grant.jsonl	detections/sigma/cloud/entra_directory_role_grant.yml	ee566e1d-9fe8-476c-b05e-0dcff942b970
 cloud_github_branch_protection_tamper	none	docker/validation/sigma-fixtures/cloud_github_branch_protection_tamper.jsonl	detections/sigma/github/github_branch_protection_tamper.yml	329fba40-2880-470c-ab65-41368c66ebec
 cloud_github_credential_backdoor	none	docker/validation/sigma-fixtures/cloud_github_credential_backdoor.jsonl	detections/sigma/github/github_credential_backdoor.yml	42f34b55-a66d-494c-8e97-723f8c81947c
 cloud_github_self_hosted_runner_registered	none	docker/validation/sigma-fixtures/cloud_github_self_hosted_runner_registered.jsonl	detections/sigma/github/github_self_hosted_runner_registered.yml	d0d00bd8-b122-4909-96e2-49d2775598fb

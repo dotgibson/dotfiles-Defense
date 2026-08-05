@@ -94,9 +94,9 @@
     },
     {
       "techniqueID": "T1098.003",
-      "score": 1,
+      "score": 3,
       "enabled": true,
-      "comment": "1 rule(s): gws_admin_role_grant"
+      "comment": "3 rule(s): aws_iam_privesc_policy, entra_directory_role_grant, gws_admin_role_grant"
     },
     {
       "techniqueID": "T1110.003",
@@ -136,9 +136,9 @@
     },
     {
       "techniqueID": "T1187",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): coercion_named_pipes_5145"
+      "comment": "2 rule(s): coercion_named_pipes_5145, unconstrained_delegation_dc_logon_4624"
     },
     {
       "techniqueID": "T1195.002",
@@ -157,6 +157,18 @@
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): okta_idp_created"
+    },
+    {
+      "techniqueID": "T1486",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): mass_file_encryption_4663"
+    },
+    {
+      "techniqueID": "T1489",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): service_stop_preransom_process"
     },
     {
       "techniqueID": "T1490",
@@ -217,6 +229,12 @@
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): okta_mfa_factor_reset"
+    },
+    {
+      "techniqueID": "T1558",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): unconstrained_delegation_dc_logon_4624"
     },
     {
       "techniqueID": "T1558.003",

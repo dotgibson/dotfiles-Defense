@@ -30,8 +30,17 @@ logsource:
 detection:
   selection:
     EventID: 4720
-  condition: selection
+  filter_provisioning:
+    # DEPLOY-REQUIRED: replace with the accounts your IAM / joiner-mover-leaver automation
+    # and helpdesk provisioning create users as. Account creation is continuous in any
+    # organization with a JML process, so without this the rule alerts on routine
+    # onboarding; what's left after it is operator-driven creation. Until filled this
+    # excludes only the example. Run detections/sigma/deploy-required.sh to find this.
+    SubjectUserName:
+      - 'svc_iam_provisioning'   # example — replace with your provisioning principals
+  condition: selection and not filter_provisioning
 falsepositives:
   - IAM / joiner-mover-leaver automation and helpdesk provisioning create accounts
-    routinely - allowlist the provisioning principals/hosts and alert on the rest.
+    routinely - allowlist the provisioning principals in filter_provisioning and alert
+    on the rest.
 level: medium

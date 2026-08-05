@@ -1,6 +1,6 @@
 title: Okta identity provider created or activated (federation backdoor)
 id: 5ee9b695-f1a5-4449-9796-6135d2502461
-status: experimental
+status: test
 description: |
   Detects a new inbound identity provider being added/activated in Okta
   (system.idp.lifecycle.create / .activate). Adding an attacker-controlled IdP lets

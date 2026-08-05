@@ -1,0 +1,68 @@
+title: Unconstrained delegation TGT capture - DC account authenticating to a non-DC (4624)
+id: 7bf3b47e-2ab0-4bb1-adf6-b72aa1f953c4
+status: experimental
+description: |
+  Detects the landing leg of the unconstrained-delegation attack: a domain controller's
+  own computer account performing a Kerberos network logon (4624, Logon Type 3) to a host
+  that is not a domain controller. On a host trusted for unconstrained delegation, any
+  Kerberos authentication TO it hands over a forwardable TGT, which is cached in LSASS and
+  can be extracted (Rubeus monitor / mimikatz). So the attacker sets unconstrained
+  delegation on a machine they control, coerces the DC to authenticate to it, and walks
+  away with a DC TGT - i.e. the domain. The DC's machine account showing up as the logging-
+  on identity somewhere it has no business authenticating is the invariant; the attacker
+  cannot capture the ticket without it.
+  This completes the AD delegation set here: RBCD is covered by rbcd_allowedtoact_5136,
+  the coercion that drives this is covered by coercion_named_pipes_5145 (5145) and the
+  Suricata DCERPC-bind rules, and this is the leg that shows the coercion SUCCEEDED. Pair
+  them - a 5145 coercion pipe bind followed within seconds by this 4624 is the full chain,
+  and far stronger than either alone. The durable control is upstream of all of it: audit
+  for and remove unconstrained delegation (userAccountControl TRUSTED_FOR_DELEGATION), and
+  put the DC computer accounts in Protected Users / mark them sensitive-and-cannot-be-
+  delegated.
+  Tagged for both halves deliberately: T1187 for the forced authentication that produces
+  the logon, T1558 for the Kerberos ticket the attacker walks away with. There is no
+  single ATT&CK ID for unconstrained-delegation abuse and forcing it into one would
+  misrepresent the coverage.
+  Validate (purple): coerce a DC to a delegation-trusted host from dotfiles-Kali (htpx
+  pair unconstrained-deleg-tgt).
+references:
+  - https://attack.mitre.org/techniques/T1187/
+  - https://attack.mitre.org/techniques/T1558/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/unconstrained-deleg-4624.md
+author: dotfiles-Defense
+date: 2026-08-05
+tags:
+  - attack.credential_access
+  - attack.t1187
+  - attack.t1558
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4624
+    LogonType: 3
+    AuthenticationPackageName: 'Kerberos'
+  dc_computer_accounts:
+    # DEPLOY-REQUIRED: replace with YOUR domain-controller computer accounts. This one is
+    # an INCLUSION list, not an exclusion - the rule is "a DC account logged on here", so
+    # until you fill this in it matches only the example accounts and is effectively off.
+    # It fails closed on purpose: the alternative (alert on every machine-account logon)
+    # is unusable. Run detections/sigma/deploy-required.sh to find this.
+    TargetUserName:
+      - 'DC01$'       # example — replace with your real domain-controller computer accounts
+      - 'DC02$'
+  filter_dc_hosts:
+    # DEPLOY-REQUIRED: replace with your domain-controller hostnames. A DC account
+    # authenticating TO a DC is normal replication traffic; this drops it so what's left
+    # is a DC account landing on a member host. Run detections/sigma/deploy-required.sh.
+    Computer|startswith:
+      - 'DC01'        # example — replace with your real domain-controller hostnames
+      - 'DC02'
+  condition: selection and dc_computer_accounts and not filter_dc_hosts
+falsepositives:
+  - A DC legitimately reaching a member server over Kerberos - backup agents, monitoring,
+    and DFS/print paths do exist; baseline which member hosts your DCs authenticate to and
+    suppress those pairs, then treat the rest as the delegation chain.
+  - A newly promoted DC not yet in filter_dc_hosts (add it during the promotion change).
+level: medium
