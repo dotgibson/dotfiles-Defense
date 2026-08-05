@@ -43,7 +43,7 @@ sync: ## Subtree-pull Core into every OS repo (THE maintain button) — writes t
 sync-dry: ## Show what `sync` would do, touching nothing
 	@./scripts/sync-core.sh --dry-run
 
-fleet-drift: ## Report which OS repos (+ Windows) lag Core's tip — the vendoring-drift dashboard
+fleet-drift: ## Report which OS repos (+ Windows) lag the latest RELEASED Core tag — the vendoring-drift dashboard
 	@./scripts/fleet-drift.sh
 
 core-integrity: ## Verify every OS repo's vendored core/ is pristine (not hand-edited) vs its core.lock

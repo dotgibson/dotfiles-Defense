@@ -20,8 +20,10 @@ repos are siblings of `dotfiles-core` on disk (same parent dir, as
 Work from evidence, not memory. For every claim a doc makes, find the source of
 truth and compare:
 
-- **Docs ↔ manifest ↔ filesystem.** `README.md` layout tree, `core.manifest`, and
-  `git ls-files` must agree on what Core ships and where.
+- **Manifest ↔ filesystem ↔ bootstrap wiring.** `core.manifest`, `git ls-files`, and
+  `blib_link_core` (`lib/bootstrap-lib.sh`) must agree on what Core ships, where it
+  lands, and that something actually links it. The README documents behaviour rather
+  than inventory — it has no layout tree, so do not audit against one.
 - **`aliases.md` ↔ its alias sources, in every repo that ships one.** Core's
   `aliases.md` ↔ `zsh/20-aliases.zsh` + `zsh/25-git.zsh`; each role repo's `aliases.md`
   ↔ its own source (`dotfiles-Kali/aliases.md` ↔ `offensive/offensive.zsh`,

@@ -231,11 +231,17 @@ pick the unit or pick autostart, not both. Adoption order is Fedora first (the t
 Linux repos are stamped from), Alpine second (it is the design's real constraint, so proving
 it early is worth more than doing it last), then the rest.
 
-Whatever the launcher, `zsh/00-tools.zsh` probes the socket once before the first prompt and
-forces the daemon **off for that shell** when nothing is listening: an absent — or stale,
+Under the **systemd-unit** launcher, `zsh/00-tools.zsh` probes the socket once before the first
+prompt and forces the daemon **off for that shell** when nothing is listening: an absent — or stale,
 i.e. left behind by a crashed daemon — socket otherwise costs atuin a failed connect on every
 command. So a dead daemon costs the lock relief, not every prompt. `core-doctor` shows the
 degraded state; nothing else says a word.
+
+**Under `autostart` the probe deliberately does not run** — and that is the Alpine and macOS
+rows above, so on two of the eight machines this safety net is not the thing keeping you out
+of trouble. It stands down because an absent socket is then the client's _cue to start one_,
+not a fault; disabling the daemon there would permanently defeat the only launcher those
+machines have. atuin's own health-checking is what covers them.
 
 The probe's limit, because it decides which unit you should install: it cannot tell an
 **accept-but-silent** socket from a healthy one. systemd **socket activation** produces

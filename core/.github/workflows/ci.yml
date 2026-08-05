@@ -1,6 +1,6 @@
 name: ci
 
-# Core is authored once here, then vendored into all 9 OS repos via git subtree.
+# Core is authored once here, then vendored into all eight OS repos via git subtree.
 # A defect that lands here fans out N-way — so gate every push/PR with the same
 # audit the maintainer runs locally. CI installs the linters that a bare box may
 # lack (shellcheck/shfmt/luacheck/zsh) and then hands off entirely to
@@ -359,7 +359,7 @@ jobs:
   # Startup-perf REGRESSION GATE. Core invests in startup speed (cached tool-init in
   # 00-tools.zsh, deferred plugins in 45-plugins.zsh); a gross regression — re-introducing a
   # per-shell subprocess, un-deferring heavy work, an uncached eval — would fan out to
-  # all 9 repos silently. This job now ENFORCES a budget instead of only reporting:
+  # all eight repos silently. This job now ENFORCES a budget instead of only reporting:
   # bench-core.sh fails the build when the canonical-chain MEAN exceeds
   # CORE_BENCH_BUDGET_MS. The budget is deliberately GENEROUS (the hermetic chain runs
   # ~25 ms; 120 ms is ~5x headroom) and the mean is taken over 50 warmed runs, so

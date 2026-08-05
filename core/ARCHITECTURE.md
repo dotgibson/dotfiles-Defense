@@ -39,7 +39,10 @@ The boundary rule, stated as a test:
 
 Core is not "the Neovim config" or "the shell config" — it is the entire
 machine-independent surface: the zsh module chain, the tmux base, Neovim, git,
-starship, and mise, taken together.
+starship, and mise, plus the smaller configs that are equally identical everywhere
+(atuin, lazygit, jujutsu, the seeded sesh starter, the stock-vim fallback, and the
+shared bash libs), taken together. `core.manifest` is the exhaustive list; this
+sentence is the shape, not the inventory.
 
 ## The fleet
 

@@ -91,7 +91,7 @@ fi
 #       (`-v "$PWD:/x"`, `-w /x`), so keep the tolerant name:tag[@sha256] scan: a mount path
 #       has no lowercase name:tag shape and won't be mistaken for an image.
 # No live unpinned uses in the fleet today; this keeps the pinning contract airtight before
-# an OS/role repo (which inherit the *-call.yml@v3 workflows) reaches for one.
+# an OS/role repo (which inherit the *-call.yml@v4 workflows) reaches for one.
 if _yaml_bool require_container_digest_pin; then
   # (a) clean single-token surfaces
   while IFS= read -r line; do

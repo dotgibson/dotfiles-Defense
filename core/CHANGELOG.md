@@ -13,6 +13,142 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.9.0] - 2026-08-05
+
+### Removed
+
+- **The per-repo `core-freshness` watcher is retired** — `core-freshness-call.yml` is deleted
+  here, and the seven callers plus their seven copies of `test/check-core-freshness.sh` are
+  removed in the OS repos. It answered a question that is now answered twice over, better:
+
+  - **`fleet-drift.yml`** already runs the same comparison centrally, Mondays 06:00 UTC — an
+    hour _before_ the per-repo watchers ran — against the latest **released** Core tag, failing
+    red with a summary when any repo lags. One job, whole fleet, including `dotfiles-Defense`,
+    which never had a watcher at all and so was silently unwatched by the old design.
+  - **`sync-fanout.yml`** opens a `core.lock`-bump PR in every OS repo the moment a release
+    publishes, so a weekly "you are behind" nudge restates what the bot already did and left
+    a PR for.
+
+  **It was also wrong for most of its life, which is what surfaced all this.** It compared each
+  repo's `core.lock` against `refs/heads/main` by strict equality, so any commit landing on Core
+  between releases reported the whole fleet behind while every repo sat on the newest release
+  with nothing to pull. Not drift — a false alarm, weekly: MacBook and Fedora failed the
+  identical scheduled runs on 2026-06-29, 07-06, 07-20, 07-27 and 08-03, green only on 07-13,
+  where a sync happened to land near main's tip. Five months of red is how a nudge stops being
+  read. A first pass repointed it at `refs/tags/v4`; this supersedes that, so the fix ships as
+  a deletion rather than as a corrected job no consumer would ever run.
+
+  `fleet-drift.sh` never had either bug, which is the strongest argument for keeping only it:
+  it has defaulted to the latest released tag from the start (its header records that measuring
+  against tip reported a false "BEHIND by N" for every unreleased commit — the same lesson,
+  learned earlier), and it resolves refs with `rev-parse "${r}^{commit}"`, so it is immune to the
+  annotated-vs-lightweight tag trap that the per-repo SHA comparison walked into.
+
+  The duplication left behind — seven hand-maintained copies of `check-core-freshness.sh`,
+  MacBook's already drifted from the six that agreed — was filed as #341 and is closed by this
+  removal rather than by consolidating copies of something redundant.
+
+  **One operational note worth keeping**, since the retired job's summary was the only place it
+  was written down: do not hand-run `git subtree pull` to update a vendored `core/`. It updates
+  the tree but not `core.lock`, which makes `core-integrity.sh` report the freshly-synced tree
+  as `TAMPERED` (it compares the tree against the commit the lock pins), and the documented
+  repair is not portable — `dotfiles-Alpine` has no root `Makefile`, so `make core-lock` does
+  not exist there. `sync-core.sh` commits both together; merge the sync PR the fan-out opened,
+  or re-dispatch `sync-fanout` for the one repo.
+
+  Ordering matters and is worth recording: the **callers go first**. They pin
+  `uses: …/core-freshness-call.yml@v4`, so deleting the definition while a caller still
+  references it turns a retired job into a failing one. This deletion only reaches the fleet
+  when the `v4` alias next moves, by which time the callers are gone.
+
+  `core-integrity.yml` is untouched in every repo — the vendored `core/` is still verified
+  against the commit its `core.lock` pins.
+
+### Fixed
+
+- **`examples/atuin-daemon.service` could not start atuin on the repos most likely to use it.**
+  The unit listed `%h/.local/bin:/usr/local/bin:/usr/bin` on the assumption that a
+  binary-distributed atuin lands beside starship and mise. It does not: atuin's own installer
+  hard-codes `$HOME/.atuin/bin` (`install.sh`, `ATUIN_BIN="$HOME/.atuin/bin/atuin"`), and
+  `dotfiles-Fedora`'s bootstrap installs it exactly that way — `curl -fsSL https://setup.atuin.sh
+  | sh` — because atuin is not reliably packaged on Fedora. A user unit inherits none of your
+  shell PATH, so `ExecStart=/bin/sh -c 'exec atuin daemon'` would have failed **`status=127`**
+  on the first box to copy it: systemd starts `/bin/sh` fine, and the shell exits 127 when
+  `exec` cannot resolve `atuin`. (The neighbouring `203/EXEC` is the _other_ failure — what
+  systemd reports when it cannot execute `ExecStart` itself, i.e. the hard-coded absolute path
+  this unit deliberately avoids.) `%h/.atuin/bin` now leads the unit's PATH, and the comment
+  names all three real locations rather than two. Found by `/doc-audit`.
+
+  **A related gap this does _not_ close**, because it needs checking on live hardware first:
+  `zsh/00-tools.zsh` adds only `~/.local/bin` to PATH, and `dotfiles-Fedora`'s `os/fedora.zsh`
+  adds `~/.local/bin` + `~/.cargo/bin` — neither adds `~/.atuin/bin`. On a box where atuin came
+  from its own installer, `_have atuin` may therefore fail, leaving `HAVE_ATUIN` unset and the
+  whole atuin integration silently absent. The unit is fixed either way; the shell-side PATH is
+  a separate question to answer on a real Fedora box.
+
+- **`PORTING-MATRIX.md` promised the atuin socket guard "whatever the launcher" — it stands
+  down on two of the eight machines.** The footnote's own table sends **Alpine and macOS** down
+  the `autostart` path, and `zsh/00-tools.zsh` deliberately returns early there: under
+  `autostart` an absent socket is the client's _cue to start one_, so disabling the daemon
+  would permanently defeat the only launcher those machines have. The guard's scope was stated
+  correctly in `atuin/config.toml`, in the code comment, and in the v4.8.0 changelog entry —
+  the matrix was the one place that overclaimed, and it is the sentence an operator reads while
+  deciding how to run the daemon. It now scopes the paragraph to the systemd-unit launcher and
+  says plainly what covers the other two. `scripts/test-core.sh` already pinned the stand-down,
+  so the code was never in doubt.
+
+- **Three surfaces said `fleet-drift` measures against Core's tip; it measures against the
+  latest released tag.** `Makefile`'s `fleet-drift` help, `RELEASE-STRATEGY.md`'s Monday-sweep
+  bullet, and `scripts/core-integrity.sh`'s "INTEGRITY companion" note all said "tip".
+  `scripts/fleet-drift.sh` has defaulted to the newest `vX.Y.Z` since it was written, and its
+  header records why: measuring against tip "reported a false 'BEHIND by N' for every
+  unreleased commit on main". This matters more than a word choice now — the entry above
+  retires the per-repo watcher _because_ `fleet-drift` compares against the released tag, so a
+  doc saying "tip" undercut the stated rationale.
+
+  Both found by `/doc-audit`.
+
+- **The rest of that `/doc-audit` sweep — nine more places where prose had drifted from the
+  code.** Grouped by what was wrong, not by file:
+
+  **Counts and pins that were simply stale.** "9 OS repos" survived in **32 comments across 11
+  files** (`ci.yml`, `audit-core.sh`, `test-core.sh`, `45-plugins.zsh`, `CODEOWNERS`, …) after
+  an earlier audit corrected only the prose; the fleet is **eight** (`scripts/os-repos.txt`).
+  Every caller-stub example and "current major" note said `@v3`; the fleet actually pins
+  **`@v4`** — verified against `core-integrity.yml`, `lint.yml` and `bootstrap.yml` in three
+  repos, so the `@v3`→`@v4` bump _was_ performed and only the docs lagged.
+  `RELEASE-RUNBOOK.md`'s major-bump walkthrough now uses `v4`→`v5` as its example, and
+  `RELEASE-STRATEGY.md` no longer hard-codes a `core.version` (it said `3.6.0`).
+
+  **`PARITY.md` listed a divergence as alignment.** It claimed `grep`→rg was aligned across
+  shells. It is not, and the reason matters: pwsh defines `grep`→rg
+  (`dotfiles-Windows/powershell/core/00-aliases.ps1`), while Core deliberately leaves `grep`
+  POSIX because shadowing it on a Unix box changes what every script in `$PATH` gets. That is
+  a `deliberate` divergence — the status PARITY.md already has for exactly this — so it is now
+  recorded as one rather than quietly listed as the same. Its source pointer also still named
+  the pre-v4 unnumbered fragments (`zsh/{aliases,git,…}.zsh`).
+
+  **Invariants that stopped being true.** `20-aliases.zsh` and `core.manifest` both asserted
+  that the aliases module "intentionally carries no git aliases" — nine lines above a
+  `HAVE_DIFFT`-gated `gdft`; both now name the two tool-detection exceptions (`lg`, `gdft`),
+  and `aliases.md` stops filing `gdft` under a heading that says it comes from `25-git.zsh`.
+  `10-options.zsh` and `15-history.zsh` claimed to load "SECOND" and "THIRD"; `05-ui.zsh`
+  displaced both, so they now cite the `NN` prefix as the contract instead of a hand-counted
+  position — which is what `core.manifest` already says.
+
+  **A self-invalidating instruction.** `/doc-audit`'s own check #1 told auditors to compare a
+  README "Layout" tree that no longer exists, so it could neither pass nor fail. It now points
+  at the real three-way inventory: `core.manifest` ↔ `git ls-files` ↔ `blib_link_core`.
+
+  **Guidance that contradicted the entry above.** `RELEASE-STRATEGY.md`'s two `git subtree
+  pull` recipes carried the stale-`core.lock` trap this changelog had just documented; both now
+  carry the caveat, and the rollback one notes that pulling an older tag merges backwards
+  rather than un-merging. Also: `aliases.md` promised the user-facing `30-functions.zsh` verbs
+  but omitted `core`, `core-doctor` and `core-version`; `ARCHITECTURE.md`'s definition of Core
+  read as a closed list that omitted six manifest entries; `CLAUDE.md`'s load chain dropped the
+  role band; `RELEASE-STRATEGY.md` named 2 of the 7 reusable workflows; and `sync-core.sh` had
+  one surviving reference to the retired freshness watcher.
+
 ## [v4.8.0] - 2026-08-05
 
 ### Added

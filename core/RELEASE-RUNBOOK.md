@@ -93,26 +93,27 @@ git push origin vX.Y.Z ; git push -f origin vN   # ';' not '&&' — independent 
 
 #### Step 4, by bump type — the moving `@vN` major alias
 
-Every reusable workflow in the fleet pins its caller to `@vN` (currently `@v3`), and step 4
+Every reusable workflow in the fleet pins its caller to `@vN` (currently `@v4` — verified
+against the callers, not just documented here), and step 4
 is where that alias moves. What you do with it depends on the bump you chose in §1.0
 (policy: `RELEASE-STRATEGY.md` §"Pinning reusable workflows"):
 
 - **PATCH or MINOR** — the major number is unchanged, so `vN` stays the **same** alias
-  (e.g. `v3`). Step 4 as written force-advances it to the new tip, and every caller pinned
-  `@v3` picks the change up automatically on its next run. **No caller edits.** This
+  (`v4` today). Step 4 as written force-advances it to the new tip, and every caller pinned
+  `@v4` picks the change up automatically on its next run. **No caller edits.** This
   auto-fan-out of guard/bootstrap fixes is the whole reason the alias moves.
-- **MAJOR** — you are minting a **new** major. In step 4, `vN` is the **new** alias (e.g.
-  `v4`), created fresh at the merged tip (`git tag -f v4 origin/main && git push -f origin v4`).
-  **Leave the previous alias frozen:** do *not* run the `vN` line against `v3` — advancing it
-  would push the breaking change onto every caller still pinned `@v3`. Then bump the callers
-  that should adopt the new major from `@v3` to `@v4` **by hand** — that fleet-wide `uses:`
+- **MAJOR** — you are minting a **new** major. In step 4, `vN` is the **new** alias (from
+  `v4` today, that is `v5`), created fresh at the merged tip (`git tag -f v5 origin/main &&
+  git push -f origin v5`). **Leave the previous alias frozen:** do *not* run the `vN` line
+  against `v4` — advancing it would push the breaking change onto every caller still pinned
+  `@v4`. Then bump the callers that should adopt the new major from `@v4` to `@v5` **by hand** — that fleet-wide `uses:`
   edit is the single intentional, reviewed change a MAJOR is meant to be, and it's tracked as
   part of rollout (§2), not this step.
 
 > The `make tag` shortcut path handles the alias itself, safely for either case:
 > `tag-release.sh` derives the alias from the version (`MAJOR="v${VERSION%%.*}"`), so a
-> `v4.0.0` cut force-moves **`v4`** (creating it) and never touches `v3`. It does **not**,
-> however, bump the fleet's callers from `@v3` to `@v4` — that hand edit is still yours on a
+> `v5.0.0` cut force-moves **`v5`** (creating it) and never touches `v4`. It does **not**,
+> however, bump the fleet's callers from `@v4` to `@v5` — that hand edit is still yours on a
 > MAJOR.
 
 ### What happens automatically after the tag
@@ -144,10 +145,10 @@ never all at once (per `RELEASE-STRATEGY.md`).
 
 **If this was a MAJOR release,** the fan-out `core.lock` PRs are not the whole rollout: any
 repo whose CI pins a reusable workflow at the old `@vN` also needs its `uses:` ref bumped to
-the new major (`@v3` → `@v4`) — the deliberate caller edit from §1.1 step 4. `make fleet-drift`
+the new major (`@v4` → `@v5`) — the deliberate caller edit from §1.1 step 4. `make fleet-drift`
 won't surface this: it compares each repo's recorded `core.lock` / `nvim/.core-ref` provenance
 against Core, not its workflow `uses:` pins — so finding the stragglers is a manual sweep
-(e.g. `grep -rl 'uses:.*@v3' .github/workflows` across the repos in `scripts/os-repos.txt`).
+(e.g. `grep -rl 'uses:.*@v4' .github/workflows` across the repos in `scripts/os-repos.txt`).
 PATCH/MINOR releases skip this entirely: the moving alias already carried them.
 
 If an OS-repo PR's `links-only` job fails on a **mirror timeout** (e.g. openSUSE's OSS
@@ -189,7 +190,7 @@ git add nvim/ starship/ ; git commit -m "sync nvim/starship from Core vX.Y.Z"
 ```
 
 After the push, `auto-tag.yml` sees the new `nvim/`/`starship/` content and PATCH-bumps
-Windows' own tag + Release (delegating to Core's reusable `auto-tag-call.yml@v3`). It is
+Windows' own tag + Release (delegating to Core's reusable `auto-tag-call.yml@v4`). It is
 idempotent (a no-op if HEAD is already tagged) and deliberately **skips** a
 `.core-ref`-marker-only change, so a timestamp-only re-sync never cuts a spurious tag.
 

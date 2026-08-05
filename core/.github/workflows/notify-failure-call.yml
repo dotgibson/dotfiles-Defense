@@ -21,7 +21,7 @@
 # SELF-CONTAINED ON PURPOSE: the dedup logic is inlined (same behaviour as
 # file-routine-issue.sh — match an OPEN issue by exact title, comment if present
 # else create) rather than shelling out to that script, so any repo in the fleet can
-# call this via `dotgibson/dotfiles-core/.github/workflows/notify-failure-call.yml@v3`
+# call this via `dotgibson/dotfiles-core/.github/workflows/notify-failure-call.yml@v4`
 # without needing the helper checked out. It files into the CALLER's repo (gh uses the
 # caller's github.token), which is exactly where the failing run lives.
 #
