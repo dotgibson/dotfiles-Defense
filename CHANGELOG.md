@@ -13,6 +13,51 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.9.2] - 2026-08-05
+
+### Changed
+
+- **`RELEASE-RUNBOOK.md` §1.1 now branches _before_ staging, so a cut never touches `main`.**
+  The old order ran `make release` / `make tag` from `main` and only created
+  `release/vX.Y.Z` at the push in step 3 — but `tag-release.sh` commits to whatever branch
+  you are standing on, so the release commit landed on the operator's local `main`, one
+  ahead of origin, on a protected branch it must never be pushed to. Every cut then needed a
+  `git reset --hard origin/main` afterwards that the runbook never mentioned; cutting v4.9.1
+  tripped it twice. Branching first (new step 1) makes the cleanup unnecessary rather than
+  undocumented — verified by running both orders end-to-end in a throwaway clone: the new
+  one leaves `main` **0 ahead**, the old one **1 ahead**. Steps renumbered 0–5, and the four
+  cross-references to "§1.1 step 4" (including the `@vN` bump-type callout heading) moved
+  with them.
+
+- **The local `vN` alias move is now stated where it happens.** `make tag` force-moves `vN`
+  onto the not-yet-merged release commit (`scripts/tag-release.sh`), so between step 3 and
+  step 5 a local read of `v4` reports a commit origin does not have. Nothing was wrong with
+  the behaviour — it is what keeps the alias from drifting — but it was undocumented, and an
+  unexplained local/remote disagreement on the ref every reusable-workflow caller pins to is
+  worth one sentence. Both the runbook and the script's own printed recipe now say it.
+
+- **New "Abandoning a cut" section**, for a release staged and then reconsidered (a bump
+  reclassified, a wrong version) — which is exactly what happened between v4.10.0 and
+  v4.9.1. It restages rather than patching the branch in place, since the branch name
+  encodes the version, and it undoes both local-only artefacts. The `git tag -d vX.Y.Z vN`
+  line deletes the alias **explicitly** rather than leaving it to the fetch: `--tags
+  --force` only _updates_ tags origin already has, so on a MAJOR — where the alias is newly
+  minted and origin has never seen it — a fetch leaves a bogus local `v5` pointing at a
+  deleted commit. Found by running the recipe against both cases in a throwaway clone, not
+  by reading it.
+
+  There is now **one** cleanup recipe, not two. The troubleshooting table carried its own,
+  written for the old flow — delete `vX.Y.Z`, `git reset --hard HEAD~1` — which under
+  branch-first leaves the release branch standing and `vN` still on the abandoned commit. It
+  now points at the section instead of competing with it. The same `vN` omission was in
+  `tag-release.sh`'s printed guidance, which claimed to undo "both local artefacts" while
+  naming only one; both found in review by Copilot. The genuinely distinct cases the table
+  covered are kept: staging without committing is still a plain
+  `git checkout -- core.version CHANGELOG.md`, and abandoning **after the tag reached
+  origin** — the `PUSH=1` path, where a Release is published and the fan-out has already
+  fired — is now written out in the section, with the advice to cut the intended version
+  forward rather than unwind a published one.
+
 ## [v4.9.1] - 2026-08-05
 
 ### Fixed
