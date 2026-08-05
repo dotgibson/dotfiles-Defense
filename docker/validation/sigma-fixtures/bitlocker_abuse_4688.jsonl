@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 1, "Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WKS07"}, "EventData": {"Image": "C:\\Windows\\System32\\manage-bde.exe", "CommandLine": "manage-bde.exe -on C: -RecoveryPassword -skiphardwaretest", "ParentImage": "C:\\Windows\\System32\\cmd.exe", "User": "CORP\\victim"}}}
