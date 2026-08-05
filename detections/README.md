@@ -470,19 +470,20 @@ placeholders.
   subcategory it needs). Enabling Sysmon 11 would still be the broader, configuration-free
   answer — the ingestion ticket is downgraded, not closed.
 - **T1496.001 Compute Hijacking (cryptojacking) has no detection here yet, and one half
-  of it never will.** Kali documents the pair — red `resource-hijack-xmrig`, blue
-  `cryptomine-pool-detect` (`offensive/companion/entries/`) — so this is a broken purple
-  loop rather than an unscoped technique; authoring the network half is tracked in
-  **#109**. The blue companion asks for **two** converging tells: a Stratum connection to
-  a mining pool, and a process pegged near 100% CPU for a sustained period. The first is
-  reachable from Zeek `conn.log` and is what #109 will ship. The second is not reachable
-  at all: Sysmon has **no** resource/utilisation event at any config level — this is not a
-  "turn on event N" gap like the T1486 one above — and the lab stack ships no metrics
-  collector. Closing it would mean owning a new class of data source for a single
-  corroborating signal, wanted by exactly one of Kali's 90 blue entries, so it was
-  declined deliberately in **#110** (closed recorded-not-planned) rather than left to look
-  like an oversight. Consequence to know when the rule lands: the detection is *weaker*,
-  not absent — the companion's own position is that either signal alone is worth a look.
+  of it never will.** The pair is documented in **`dotfiles-Kali`**, under that repo's
+  `offensive/companion/entries/` — red `resource-hijack-xmrig`, blue
+  `cryptomine-pool-detect` — so this is a broken purple loop rather than an unscoped
+  technique; authoring the network half is tracked in **#109**. The blue companion asks
+  for **two** converging tells: a Stratum connection to a mining pool, and a process
+  pegged near 100% CPU for a sustained period. The first is reachable from Zeek
+  `conn.log` and is what #109 will ship. The second is not reachable at all: Sysmon has
+  **no** resource/utilisation event at any config level — this is not a "turn on event N"
+  gap like the T1486 one above — and the lab stack ships no metrics collector. Closing it
+  would mean owning a new class of data source for a single corroborating signal, and no
+  other blue companion entry asks for process-resource telemetry, so it was declined
+  deliberately in **#110** (closed recorded-not-planned) rather than left to look like an
+  oversight. Consequence to know when the rule lands: the detection is *weaker*, not
+  absent — the companion's own position is that either signal alone is worth a look.
 - **External Reconnaissance (TA0043), Initial Access (TA0001), and Resource
   Development (TA0042)** have no detection here and are not meant to: the first is
   pre-compromise and only nominally in `DEFENSE-METHODOLOGY.md`'s "Recon / Discovery"
