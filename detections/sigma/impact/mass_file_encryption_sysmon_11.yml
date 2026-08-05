@@ -1,0 +1,102 @@
+title: File create/overwrite base (Sysmon 11)
+id: 0a6c58e3-1b47-4d92-8fe0-3c7b91d4a562
+status: experimental
+description: |
+  Base event for the ACL-independent mass-encryption correlation below: a Sysmon
+  FileCreate (EventID 11), which fires on both a new file and an overwrite of an
+  existing one - the two shapes ransomware writes in (encrypt-to-new-name, and
+  encrypt-in-place). Not actionable alone: every save, download, build artifact, and
+  temp file is one of these. The payload shape is one process writing a large, diverse
+  set of files in minutes, expressed by the correlation rule.
+  Channel: this is the Sysmon half of a per-source pair. Its Security-4663 twin is
+  mass_file_encryption_4663.yml (id 5f7afed7-23a5-4731-a3aa-855371ebf920), which reads
+  ObjectName/ProcessName from object-access auditing. The two are split because they are
+  genuinely different data sources with different field names - not one rule naming
+  both, which would null under either pipeline (the trap potato_seimpersonate_* documents).
+  Deploy whichever you collect; deploy both if you collect both.
+  The high-churn write paths are filtered here rather than in the correlation so the
+  distinct-file count reflects the operator's sweep and not the machine's own noise.
+  Requires FileCreate to be enabled in the Sysmon config - see
+  detections/sysmon/sysmonconfig-detection-lab.xml, whose file-create-noise block
+  excludes the same shape of path at collection time.
+references:
+  - https://attack.mitre.org/techniques/T1486/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/mass-encrypt-4663.md
+author: dotfiles-Defense
+date: 2026-08-05
+name: file_create_sysmon_11
+tags:
+  - attack.impact
+  - attack.t1486
+logsource:
+  category: file_event
+  product: windows
+detection:
+  selection:
+    TargetFilename|contains: '\'
+  filter_cache_paths:
+    TargetFilename|contains:
+      - '\AppData\Local\Microsoft\Windows\INetCache\'
+      - '\AppData\Local\Microsoft\Windows\WebCache\'
+      - '\AppData\Local\Google\Chrome\User Data\Default\Cache\'
+      - '\AppData\Local\Mozilla\Firefox\Profiles\'
+  filter_os_churn:
+    TargetFilename|startswith:
+      - 'C:\Windows\Prefetch\'
+      - 'C:\Windows\SoftwareDistribution\'
+      - 'C:\Windows\WinSxS\'
+      - 'C:\Windows\Logs\'
+  filter_trace_files:
+    TargetFilename|endswith: '.etl'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - Any normal file write (defeated by the distinct-file count below).
+level: informational
+---
+title: Mass file encryption - one process rewriting many files (Sysmon 11)
+id: 3f21b98d-7c05-46ae-9b83-e60a4d17c2f9
+status: experimental
+description: |
+  Detects the ransomware payload itself (T1486) without depending on ACL configuration:
+  a single process creating or overwriting many distinct files in a short window.
+  Why this exists alongside mass_file_encryption_4663, which finds the same invariant:
+  4663 is only emitted where a SACL is configured, so that rule's reach is exactly your
+  SACL's scope - a share nobody put a SACL on is invisible to it. Sysmon 11 fires on
+  every write regardless of ACLs, so this covers the directories the SACL never reached.
+  It is the broader instrument; the 4663 twin is the one that works without touching
+  Sysmon. Collect both if you can.
+  Detection posture: the threshold is NOT the discriminator, and treating it as one is
+  the way to tune this rule into uselessness. Compilers, installers, backup and sync
+  agents, and AV scan-and-quarantine all legitimately write hundreds of files a minute,
+  and an encryptor writes thousands - so raising the threshold until the build server
+  goes quiet will eventually hide the payload too. Identify the sweepers in YOUR data and
+  suppress them by Image; keep the threshold where a human never reaches it.
+  Grouped per host AND per image, not per image alone: Image is a path, and the same path
+  exists on every machine in the fleet - grouping on it alone would pool one agent's file
+  counts across the estate and trip on aggregate activity no single host performed. (Same
+  reasoning as the 4663 twin's Computer+ProcessName grouping.)
+  Pair with T1490 recovery inhibition (recovery_inhibition_process), the two T1489
+  service-stop rules, and T1485 data destruction: those inside one window are a ransomware
+  event, not a busy host.
+  Validate (purple): run the file-encryption simulation from dotfiles-Kali (htpx pair
+  ransomware-encrypt-files). Requires FileCreate (EventID 11) in the Sysmon config.
+references:
+  - https://attack.mitre.org/techniques/T1486/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/mass-encrypt-4663.md
+correlation:
+  type: value_count
+  rules:
+    - file_create_sysmon_11
+  group-by:
+    - Computer
+    - Image
+  timespan: 5m
+  condition:
+    gte: 200
+    field: TargetFilename
+falsepositives:
+  - Build agents, installers, backup/sync clients, and AV scan-and-quarantine sweeping a
+    tree (suppress the specific Image - raising the threshold instead just hides the payload).
+  - Bulk migrations and mass deletions run by an administrator (expected, and in a
+    change window).
+level: high

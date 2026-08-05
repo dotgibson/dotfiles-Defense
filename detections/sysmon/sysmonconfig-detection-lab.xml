@@ -45,6 +45,43 @@
       </ProcessAccess>
     </RuleGroup>
 
+    <!-- Event 11: FileCreate — feeds mass_file_encryption_sysmon_11 (the ransomware
+         encryption sweep) and corroborates the ransom-note drop.
+         Why this block exists: mass_file_encryption_4663 already gets the same invariant
+         from Security 4663, but only where a SACL is configured, so its reach is exactly
+         the SACL's scope. Sysmon 11 sees every create/overwrite regardless of ACLs —
+         that is the whole point of collecting it, and why the T1486 ingestion ticket
+         asked for it.
+         EXCLUDE, not include, on purpose: an encryptor writing somewhere unexpected must
+         still be logged, so the default is "capture" and only the highest-rate benign
+         writers are dropped. The exclusions below are by TARGET PATH wherever possible —
+         excluding a whole Image (svchost, explorer) would hand an operator a place to
+         write from, which is why only two purpose-built, high-churn processes are named.
+         Volume warning: this is the loudest block in the file and will dominate lab event
+         rate. That is the deliberate cost of ACL-independent coverage, and this is the
+         first block to tighten (or scope to your document shares with an include group)
+         if the lab drowns. -->
+    <RuleGroup name="file-create-noise" groupRelation="or">
+      <FileCreate onmatch="exclude">
+        <!-- Browser + OS caches: highest write rate on any endpoint, no detection value. -->
+        <TargetFilename condition="contains">\AppData\Local\Microsoft\Windows\INetCache\</TargetFilename>
+        <TargetFilename condition="contains">\AppData\Local\Microsoft\Windows\WebCache\</TargetFilename>
+        <TargetFilename condition="contains">\AppData\Local\Google\Chrome\User Data\Default\Cache\</TargetFilename>
+        <TargetFilename condition="contains">\AppData\Local\Mozilla\Firefox\Profiles\</TargetFilename>
+        <!-- OS servicing / telemetry churn. -->
+        <TargetFilename condition="begin with">C:\Windows\Prefetch\</TargetFilename>
+        <TargetFilename condition="begin with">C:\Windows\SoftwareDistribution\</TargetFilename>
+        <TargetFilename condition="begin with">C:\Windows\WinSxS\</TargetFilename>
+        <TargetFilename condition="begin with">C:\Windows\Logs\</TargetFilename>
+        <TargetFilename condition="end with">.etl</TargetFilename>
+        <!-- The two purpose-built indexers/scanners whose entire job is bulk file I/O.
+             SearchIndexer is already excluded from ProcessCreate above for the same
+             reason; MsMpEng writes definition and quarantine files continuously. -->
+        <Image condition="is">C:\Windows\System32\SearchIndexer.exe</Image>
+        <Image condition="image">MsMpEng.exe</Image>
+      </FileCreate>
+    </RuleGroup>
+
     <!-- Events 12/13: RegistryEvent — baseline coverage for autorun/WDigest
          persistence variants (Run keys, UseLogonCredential). Scoped to the
          high-signal keys so the lab is not flooded. -->

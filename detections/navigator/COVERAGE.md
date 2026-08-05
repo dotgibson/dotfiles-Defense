@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**86 rules · 96 detection documents · 64 techniques · 10 tactics · 23 logsources.**
+**87 rules · 98 detection documents · 64 techniques · 10 tactics · 23 logsources.**
 
 ## By ATT&CK tactic
 
@@ -17,7 +17,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Lateral Movement | TA0008 | 9 | 7 |
 | Collection | TA0009 | 1 | 1 |
 | Exfiltration | TA0010 | 2 | 2 |
-| Impact | TA0040 | 4 | 6 |
+| Impact | TA0040 | 4 | 7 |
 
 ## By technique
 
@@ -58,7 +58,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1207 | 1 | `dcshadow_rogue_dc_4742` |
 | T1484.002 | 1 | `okta_idp_created` |
 | T1485 | 1 | `data_destruction_wipe` |
-| T1486 | 2 | `bitlocker_abuse_encryption`, `mass_file_encryption_4663` |
+| T1486 | 3 | `bitlocker_abuse_encryption`, `mass_file_encryption_4663`, `mass_file_encryption_sysmon_11` |
 | T1489 | 2 | `service_stop_burst`, `service_stop_protected_services` |
 | T1490 | 1 | `recovery_inhibition_process` |
 | T1525 | 1 | `harbor_image_pushed_trusted_tag` |
@@ -100,7 +100,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `github` | `github` | 3 |
 | `gitlab` | `gitlab` | 3 |
 | `google_workspace` | `google_workspace` | 3 |
-| `impact` | `windows` | 6 |
+| `impact` | `windows` | 7 |
 | `jenkins` | `jenkins` | 3 |
 | `kubernetes` | `kubernetes` | 3 |
 | `lateral_movement` | `windows` | 5 |

@@ -220,9 +220,9 @@
     },
     {
       "techniqueID": "T1486",
-      "score": 2,
+      "score": 3,
       "enabled": true,
-      "comment": "2 rule(s): bitlocker_abuse_encryption, mass_file_encryption_4663"
+      "comment": "3 rule(s): bitlocker_abuse_encryption, mass_file_encryption_4663, mass_file_encryption_sysmon_11"
     },
     {
       "techniqueID": "T1489",

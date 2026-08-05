@@ -120,6 +120,9 @@ eventName:authorize AND (scope:(*mail.google.com* OR *auth\/gmail* OR *auth\/dri
 // impact/mass_file_encryption_4663.yml — File write/delete handle base (4663)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
+// impact/mass_file_encryption_sysmon_11.yml — File create/overwrite base (Sysmon 11)
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
 // impact/recovery_inhibition_process.yml — Inhibit system recovery - shadow copy / backup / boot-recovery deletion
 ((Image:(*\\vssadmin.exe OR *\\wmic.exe)) AND (CommandLine:*shadow* AND CommandLine:*delete*)) OR (Image:*\\wbadmin.exe AND (CommandLine:*delete* AND CommandLine:*catalog*)) OR (Image:*\\bcdedit.exe AND (CommandLine:*recoveryenabled* AND CommandLine:*no*)) OR (Image:*\\bcdedit.exe AND (CommandLine:*bootstatuspolicy* AND CommandLine:*ignoreallfailures*))
 
