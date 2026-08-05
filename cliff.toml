@@ -16,9 +16,17 @@
 [changelog]
 header = ""
 # Tera template: one section per commit type, scannable bullets with the short SHA.
+#
+# `striptags` is load-bearing, not decoration: Tera's `group_by` sorts groups by their KEY
+# string, so without help git-cliff emits sections alphabetically — "Bug Fixes" before
+# "Features", which buries what a release actually added under what it repaired. The
+# `<N>` prefixes on each `group` below exist purely to impose commit_parsers order on that
+# sort; `striptags` then removes them from the rendered heading (Tera reads `<0>` as a tag),
+# so the reader sees "### Features", not "### <0> Features". This is git-cliff's own
+# documented idiom for ordered groups.
 body = """
 {% for group, commits in commits | group_by(attribute="group") %}
-### {{ group | upper_first }}
+### {{ group | striptags | trim | upper_first }}
 {% for commit in commits %}
 - {{ commit.message | upper_first }} ({{ commit.id | truncate(length=7, end="") }})
 {%- endfor %}
@@ -34,16 +42,25 @@ protect_breaking_commits = true
 filter_commits = false
 topo_order = false
 sort_commits = "oldest"
+# The `<N>` prefix is a SORT KEY, stripped from the heading by the template's `striptags`
+# (see [changelog].body). It pins the rendered section order to the order of this list —
+# most-interesting first — instead of Tera's default alphabetical group_by. Keep the digits
+# contiguous and in list order when editing, and note the ceiling: a single digit sorts
+# correctly only up to ten groups, because "<10>" would sort between "<1>" and "<2>". At ten
+# groups this list is exactly full; an eleventh needs two-digit keys throughout ("<00>", …).
+# scripts/gen-release-notes.sh — the no-git-cliff twin — hardcodes this same order in its
+# ORDER array, and scripts/test-core.sh asserts the two agree, so a change here without the
+# matching change there fails the audit rather than drifting silently.
 commit_parsers = [
-  { message = "^feat", group = "Features" },
-  { message = "^fix", group = "Bug Fixes" },
-  { message = "^perf", group = "Performance" },
-  { message = "^refactor", group = "Refactoring" },
-  { message = "^docs", group = "Documentation" },
-  { message = "^test", group = "Tests" },
-  { message = "^(ci|build)", group = "CI / Build" },
+  { message = "^feat", group = "<0> Features" },
+  { message = "^fix", group = "<1> Bug Fixes" },
+  { message = "^perf", group = "<2> Performance" },
+  { message = "^refactor", group = "<3> Refactoring" },
+  { message = "^docs", group = "<4> Documentation" },
+  { message = "^test", group = "<5> Tests" },
+  { message = "^(ci|build)", group = "<6> CI / Build" },
   { message = "^chore\\(release\\)", skip = true },
-  { message = "^chore\\(deps\\)", group = "Dependencies" },
-  { message = "^chore", group = "Chores" },
-  { message = "^style", group = "Styling" },
+  { message = "^chore\\(deps\\)", group = "<7> Dependencies" },
+  { message = "^chore", group = "<8> Chores" },
+  { message = "^style", group = "<9> Styling" },
 ]

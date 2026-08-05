@@ -13,6 +13,18 @@
 #   from-ref empty → all history up to <to-ref> (a repo's first release)
 # Prints the markdown body to stdout. Exit 0 WITH output on success; exit 0 with NO output
 # when the range holds no conventional commits (the caller then falls back). 2 = usage.
+#
+# WHERE THE TWIN STOPS BEING A TWIN — one axis, and it is outside both callers' contract.
+# Given a range that CROSSES AN INTERMEDIATE TAG, git-cliff segments its output per release:
+# `v4.7.0..v4.9.0` renders three blocks (one each for v4.7.1, v4.8.0, v4.9.0), so headings
+# repeat and "### Bug Fixes" can appear three times. This script has no notion of a release
+# boundary and flattens the whole range into ONE set of groups. Neither caller ever asks for
+# such a range — `make release-notes` passes the commits since the last `release vX` commit,
+# and auto-tag.sh passes <last-tag>..<new-tag> — so on every range either tool is actually
+# given, the two agree exactly (verified against git-cliff 2.13.1: identical structure,
+# group order and bullets over v4.8.0..v4.9.0 and a synthetic all-groups repo). Documented
+# rather than implemented: teaching awk to segment by tag would add real complexity for a
+# shape no caller produces. If a multi-tag range is ever wanted, use git-cliff itself.
 # ──────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
@@ -57,7 +69,29 @@ notes="$(
       g = group(msg)
       if (g == "") next
       sha = substr($1, 1, 7)                                 # cliff: commit.id | truncate(7) — always 7
+      # Strip the Conventional-Commit prefix before rendering. cliff.toml sets
+      # conventional_commits = true, which makes git-cliff parse each subject and expose
+      # `commit.message` as the DESCRIPTION alone — type, scope and the breaking `!` are
+      # parsed off into commit.scope/commit.breaking. So `{{ commit.message | upper_first }}`
+      # renders "Point core-freshness at the released tag", never "Fix(ci): point …".
+      # Keeping the prefix here both repeated the group heading ("Bug Fixes" → "Fix(ci):")
+      # and upper-cased the type into a non-Conventional "Fix(ci):". group() has already
+      # proven the subject starts with a known type + delimiter, so this strip cannot eat
+      # ordinary prose. A subject that is nothing BUT a prefix ("refactor:") is DROPPED, not
+      # rendered as an empty bullet: git-conventional requires a description, so git-cliff
+      # fails to parse it and filter_unconventional discards it — verified against the real
+      # binary (2.13.1), which emits no Refactoring group at all for that input.
+      breaking = (msg ~ /^[a-z]+(\([^)]*\))?!:/)
+      sub(/^[a-z]+(\([^)]*\))?!?:[ \t]*/, "", msg)
+      if (msg == "") next
       msg = toupper(substr(msg, 1, 1)) substr(msg, 2)        # cliff: message | upper_first
+      # DELIBERATE DIVERGENCE from cliff.toml, and the only one: git-cliff would render a
+      # breaking commit identically to a normal one, because this template interpolates only
+      # `commit.message` and never `commit.breaking`. Dropping the prefix is what would make
+      # that invisible here too — `feat!: …` and `feat: …` collapse to the same bullet — and a
+      # release-notes draft is the one document where a breaking change must not be silent
+      # (it is what drives the SemVer major bump). Mark it instead of losing it.
+      if (breaking) msg = "**BREAKING** " msg
       bucket[g] = bucket[g] "- " msg " (" sha ")\n"
       seen[g] = 1
     }

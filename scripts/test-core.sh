@@ -1062,9 +1062,16 @@ fi
 # gen-release-notes.sh turns an OS repo's Conventional Commits in a range into the grouped
 # markdown body auto-tag.sh feeds `gh release create --notes-file` (G5 — a real changelog,
 # not a bare tag). Assert hermetically: the right groups appear in cliff.toml order, the
-# subject is upper-firsted with a 7-char SHA, a chore(release) commit is skipped and an
+# subject is rendered as cliff renders it, a chore(release) commit is skipped and an
 # unconventional subject is dropped, and a range with no conventional commits prints
 # NOTHING (exit 0 → the caller falls back to gh --generate-notes). Pure bash + git.
+#
+# "as cliff renders it" is load-bearing and was the one thing this block got wrong: it used
+# to assert `Feat(x): add a thing`, pinning the prefix-retaining bug rather than the twin's
+# contract. cliff.toml sets conventional_commits = true, so git-cliff's `commit.message` is
+# the DESCRIPTION alone — the type/scope/`!` are parsed off — and the bullet reads
+# "Add a thing" under a heading that already says Features. Both directions are asserted now
+# (description present AND prefix absent), so the bug cannot come back green.
 if have git; then
   hdr "release-notes drafting (scripts/gen-release-notes.sh)"
   GRN="$HERE/scripts/gen-release-notes.sh"
@@ -1077,18 +1084,40 @@ if have git; then
   git -C "$GRNR" tag v1.0.0
   git -C "$GRNR" commit -q --allow-empty -m "fix: correct a bug"          # Bug Fixes
   git -C "$GRNR" commit -q --allow-empty -m "feat(x): add a thing"        # Features (later, but must sort first)
+  git -C "$GRNR" commit -q --allow-empty -m "feat(y)!: upend a contract"  # breaking → must stay visible
   git -C "$GRNR" commit -q --allow-empty -m "chore(release): v1.1.0"      # must be skipped
   git -C "$GRNR" commit -q --allow-empty -m "totally unconventional line" # must be dropped
   git -C "$GRNR" commit -q --allow-empty -m "fixing a flaky test"         # prose, no delimiter → dropped
+  git -C "$GRNR" commit -q --allow-empty -m "refactor:"                   # no description → dropped
   _grn_out="$("$GRN" "$GRNR" v1.0.0 HEAD 2>/dev/null)"
 
   if grep -q '^### Features$' <<<"$_grn_out" && grep -q '^### Bug Fixes$' <<<"$_grn_out"; then
     pass "gen-notes: groups feat + fix under cliff.toml headings"
   else fail "gen-notes: expected Features + Bug Fixes headings"; fi
 
-  if grep -q 'Feat(x): add a thing' <<<"$_grn_out" && grep -qE '\([0-9a-f]{7}\)' <<<"$_grn_out"; then
-    pass "gen-notes: upper-firsts the subject and appends a 7-char SHA"
+  if grep -q 'Add a thing' <<<"$_grn_out" && grep -qE '\([0-9a-f]{7}\)' <<<"$_grn_out"; then
+    pass "gen-notes: upper-firsts the description and appends a 7-char SHA"
   else fail "gen-notes: subject/sha format wrong"; fi
+
+  # The regression this block used to enshrine: cliff strips type/scope, so no bullet may
+  # carry a Conventional prefix. Asserted over the whole body, not just the one subject.
+  if ! grep -qiE '^- (\*\*BREAKING\*\* )?(feat|fix|docs|chore|perf|refactor|test|ci|build|style)(\([^)]*\))?!?:' <<<"$_grn_out"; then
+    pass "gen-notes: strips the Conventional prefix (cliff conventional_commits=true)"
+  else fail "gen-notes: a bullet kept its type(scope): prefix"; fi
+
+  # Deliberate divergence from cliff (which renders breaking commits indistinguishably,
+  # since the template interpolates commit.message and never commit.breaking): a `!` must
+  # survive into the draft, because it is what drives the SemVer major bump.
+  if grep -q '^- \*\*BREAKING\*\* Upend a contract' <<<"$_grn_out"; then
+    pass "gen-notes: marks a breaking (!) commit instead of flattening it"
+  else fail "gen-notes: breaking marker lost"; fi
+
+  # A type with no description ("refactor:") is unparseable to git-conventional, so cliff's
+  # filter_unconventional drops it — verified against git-cliff 2.13.1, which emits no
+  # Refactoring group for that input. It must not surface as a bare or empty bullet.
+  if ! grep -q '^### Refactoring$' <<<"$_grn_out" && ! grep -qE '^- (Refactor:)?$' <<<"$_grn_out"; then
+    pass "gen-notes: a prefix-only subject (no description) is dropped, not an empty bullet"
+  else fail "gen-notes: a description-less commit leaked into the notes"; fi
 
   if ! grep -qi 'release' <<<"$_grn_out" && ! grep -qi 'unconventional' <<<"$_grn_out"; then
     pass "gen-notes: skips chore(release) and drops unconventional commits"
@@ -1110,6 +1139,45 @@ if have git; then
   if _grn_empty="$("$GRN" "$GRNR" v1.1.0 HEAD)"; [[ -z "$_grn_empty" ]]; then
     pass "gen-notes: a no-conventional-commit range prints nothing (caller falls back)"
   else fail "gen-notes: expected empty output for a non-conventional range"; fi
+
+  # The section order now lives in TWO places: cliff.toml's `<N>` sort keys (which the
+  # template strips back out) and this script's ORDER array. They must not drift — that is
+  # the whole point of the `<N>` keys, which exist only to make git-cliff emit the twin's
+  # order instead of Tera's alphabetical group_by.
+  #
+  # SORT, don't read in file order. What git-cliff renders is the LEXICAL order of the full
+  # group strings — Tera's group_by sorts by the attribute value — so the position of a line
+  # in commit_parsers is not what decides anything. Reading the file top-to-bottom would pass
+  # happily while `<0>` and `<1>` were swapped in place, i.e. while cliff emitted Bug Fixes
+  # ahead of Features again. So: extract each group WITH its key, sort exactly as Tera does
+  # (LC_ALL=C for a byte-order sort that does not drift with the runner's locale), and only
+  # then strip the keys. The result is the effective output order, which is the thing that
+  # has to match ORDER. (chore(release) is skip=true and contributes no group.)
+  #
+  # `sed -E`, not BRE `\+`: BSD sed has no `\+`, so the BRE form silently matched nothing on
+  # macOS and this guard reported a phantom drift against an empty string. -E is understood
+  # by both GNU and BSD sed.
+  if [[ -f "$HERE/cliff.toml" ]]; then
+    _cliff_order="$(sed -n -E 's/.*group = "(<[0-9]+> [^"]*)".*/\1/p' "$HERE/cliff.toml" |
+      LC_ALL=C sort | sed -E 's/^<[0-9]+> //' | paste -sd'|' -)"
+    _twin_order="$(sed -n -E 's/.*split\("([^"]*)", ORDER.*/\1/p' "$GRN")"
+    if [[ -n "$_cliff_order" && "$_cliff_order" == "$_twin_order" ]]; then
+      pass "gen-notes: group order matches cliff.toml's <N> sort keys"
+    else
+      fail "gen-notes: group order drifted — cliff.toml '$_cliff_order' vs twin '$_twin_order'"
+    fi
+
+    # The `<N>` keys are single-digit, so they sort correctly only up to ten groups:
+    # "<10>" would land between "<1>" and "<2>" and silently reorder the notes.
+    _cliff_groups="$(grep -cE 'group = "<[0-9]+>' "$HERE/cliff.toml")"
+    if ((_cliff_groups <= 10)) && ! grep -q 'group = "<[0-9][0-9]' "$HERE/cliff.toml"; then
+      pass "gen-notes: cliff.toml stays within the single-digit <N> sort ceiling ($_cliff_groups/10)"
+    else
+      fail "gen-notes: cliff.toml has >10 groups or a two-digit <N> — the sort key needs widening"
+    fi
+  else
+    skip "gen-notes: cliff.toml order cross-check (no cliff.toml)"
+  fi
 else
   skip "release-notes drafting (git unavailable)"
 fi
