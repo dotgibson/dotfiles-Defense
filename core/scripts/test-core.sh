@@ -850,6 +850,8 @@ _classify_is "infra (.shellcheckrc) change → full run" '.shellcheckrc' true tr
 _classify_is "__ALL__ sentinel → full run" '__ALL__' true true
 _classify_is "unrecognised path → FAIL CLOSED to full run" 'newdir/thing.xyz' true true
 _classify_is "mixed shell+nvim set → union of both" $'zsh/05-ui.zsh\nnvim/init.lua' true true
+_classify_is "atuin/ config change → shell gate only" 'atuin/config.toml' true false
+_classify_is "examples/ change → no gate (repo-meta, nothing links it)" 'examples/atuin-daemon.service' false false
 
 # ── F. core/ pre-commit guard (lib/bootstrap-lib.sh blib_install_core_guard) ───
 # The guard hook (installed by sync-core.sh on every fan-out, and by a bootstrap on a
@@ -2087,6 +2089,73 @@ ucheck "browser: a GUI \$DISPLAY keeps web but leaves \$BROWSER unset" \
 ucheck "browser: macOS (OSTYPE=darwin) leaves \$BROWSER unset even with no DISPLAY" \
   "DISPLAY=''; WAYLAND_DISPLAY=''; OSTYPE=darwin24; source '$TOOLS_FILE'; source '$ALIASES_FILE'; (( \$+aliases[web] )) && [[ -z \${BROWSER:-} ]]" \
   PATH="$BRBIN"
+
+# ── atuin: ATUIN_NOBIND + the OPT-IN daemon guard (00-tools.zsh) ──────────────
+# Two things were ungated here. (1) ATUIN_NOBIND=true is what keeps atuin from grabbing
+# the keys 40-bindings.zsh/35-fzf.zsh own (Ctrl+E is OURS, Ctrl+R stays on the fzf widget),
+# and it doubles as the _cache_eval salt — yet nothing asserted it. (2) The daemon guard:
+# with the daemon enabled and its socket absent or STALE, every atuin call pays a failed
+# connect, so Core probes the socket once before the first prompt and forces the daemon off
+# for that shell. Case (d) below pins the OTHER half of that contract — the accept-but-silent
+# state it deliberately does not claim to catch. Both are hermetic — no atuin
+# binary needed: the guard is defined unconditionally (only its precmd registration is
+# HAVE_ATUIN-gated), and a real listener comes from zsh's own zsocket.
+ATBIN="$SANDBOX/atbin"
+ATCACHE="$SANDBOX/atcache"
+rm -rf "$ATBIN" "$ATCACHE"
+mkdir -p "$ATBIN" "$ATCACHE/zsh" "$SANDBOX/atempty" # atempty = an EMPTY PATH: no atuin at all
+printf '#!/bin/sh\n:\n' >"$ATBIN/atuin"
+chmod +x "$ATBIN/atuin"
+# EXPORTED, not merely set: an unexported ATUIN_NOBIND never reaches the atuin binary, so
+# atuin would go back to grabbing the up-arrow and Ctrl+R behind Core's back.
+ucheck "atuin: ATUIN_NOBIND is EXPORTED true (Core owns Ctrl+E / Ctrl+R, not atuin)" \
+  "source '$TOOLS_FILE'; [[ \$ATUIN_NOBIND == true && \${(t)ATUIN_NOBIND} == *export* ]]"
+# The other half of that contract: the init cache is SALTED on ATUIN_NOBIND, so flipping it
+# selects a different cache instead of serving a stale init. A regression that dropped
+# --salt would write the unsalted name and quietly reintroduce the stale-cache bug.
+ucheck "atuin: the init cache is salted on ATUIN_NOBIND (atuin.true.zsh, not atuin.zsh)" \
+  "source '$TOOLS_FILE'; [[ -f \$XDG_CACHE_HOME/zsh/atuin.true.zsh && ! -e \$XDG_CACHE_HOME/zsh/atuin.zsh ]]" \
+  PATH="$ATBIN:$PATH" XDG_CACHE_HOME="$ATCACHE"
+# The guard is REGISTERED only where atuin exists (the function itself is defined either way,
+# so the tests below can drive it) — a bare box must not carry a precmd hook for a tool it
+# does not have.
+ucheck "atuin daemon: the guard is hooked onto precmd when atuin is present" \
+  "source '$TOOLS_FILE'; [[ -n \${precmd_functions[(r)_core_atuin_daemon_guard]} ]]" \
+  PATH="$ATBIN:$PATH" XDG_CACHE_HOME="$ATCACHE"
+ucheck "atuin daemon: no precmd hook on a box without atuin (fully inert)" \
+  "source '$TOOLS_FILE'; [[ -z \${precmd_functions[(r)_core_atuin_daemon_guard]} ]]" \
+  PATH="$SANDBOX/atempty" XDG_CACHE_HOME="$ATCACHE"
+# (a) NOT opted in — the guard must leave the env exactly as it found it (no daemon, no
+#     socket probe, no surprise export on the eight machines that never asked for it).
+ucheck "atuin daemon: guard is a no-op when the daemon was never opted into" \
+  "source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ -z \${ATUIN_DAEMON__ENABLED:-} && -z \${_CORE_ATUIN_DAEMON_DEGRADED:-} ]]"
+# (b) OPTED IN, socket unreachable — degrade to direct SQLite writes instead of hanging.
+ucheck "atuin daemon: an unreachable socket degrades the daemon off (no failed connect per command)" \
+  "source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == false && -n \$_CORE_ATUIN_DAEMON_DEGRADED ]]" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
+# (c) A STALE socket FILE (bound then closed — no listener) is the case a plain -S test
+#     passes and the one that actually hangs. The connect probe must still degrade.
+ucheck "atuin daemon: a stale socket file (no listener) degrades too, not just an absent one" \
+  "rm -f '$SANDBOX/stale-atuin.sock'; zmodload zsh/net/socket; zsocket -l '$SANDBOX/stale-atuin.sock'; exec {REPLY}>&-; source '$TOOLS_FILE'; [[ -S '$SANDBOX/stale-atuin.sock' ]] && { _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == false ]] }" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/stale-atuin.sock"
+# (d) A LISTENING socket must be left alone — the guard exists to catch a dead daemon, not
+#     to second-guess a working one. zsocket -l gives a real listener with no atuin involved.
+#     Note what this listener also IS: accept-but-silent, i.e. the exact blind spot named in
+#     00-tools.zsh (a socket-activated socket in front of a dead daemon looks like this). The
+#     assertion therefore pins the guard's DOCUMENTED scope in both directions — it must not
+#     claim to catch a state a connect cannot distinguish.
+ucheck "atuin daemon: a listening socket keeps the daemon enabled (accept-but-silent is out of scope)" \
+  "rm -f '$SANDBOX/live-atuin.sock'; zmodload zsh/net/socket; zsocket -l '$SANDBOX/live-atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -z \${_CORE_ATUIN_DAEMON_DEGRADED:-} ]]" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/live-atuin.sock"
+# (e) AUTOSTART — atuin supervises its own daemon there (the no-systemd answer for
+#     Alpine/macOS), so an absent socket is EXPECTED, not a fault. Don't disable it.
+ucheck "atuin daemon: autostart owns the lifecycle, so the guard stands down" \
+  "source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true ]]" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__AUTOSTART=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
+# (f) ONE-SHOT — the guard must unhook itself, or every prompt pays the probe.
+ucheck "atuin daemon: guard removes itself from precmd after one run" \
+  "source '$TOOLS_FILE'; [[ -n \${precmd_functions[(r)_core_atuin_daemon_guard]} ]] && { _core_atuin_daemon_guard; [[ -z \${precmd_functions[(r)_core_atuin_daemon_guard]} ]] }" \
+  PATH="$ATBIN:$PATH" XDG_CACHE_HOME="$ATCACHE"
 
 # maint.zsh: _maint_scheduler must always resolve to a REAL scheduler token, never empty
 # or garbage. With systemctl absent (isolated PATH) and crontab present as the fallback,

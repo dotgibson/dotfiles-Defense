@@ -32,10 +32,19 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Kali's
 | Priv Esc / Persistence   | Sysmon 1/13, 4720/7045  | sysmon, sigma         | LOLBAS / persistence folds  |
 | Coercion / Relay / AD CS | 5145 pipes, 4886 SAN    | siem                  | coercion → relay → DC fold  |
 | Exfil / C2               | Suricata, Zeek conn/dns | network               | reverse-shell / pivot folds |
-| Impact                   | 4688 vssadmin/wbadmin/bcdedit, 4688 net/sc stop, 4663 file writes | sigma | ransomware fold (precursor → teardown → payload) |
+| Impact                   | 4688 destructive + service-stop cmds, 4663 file writes | sigma | ransomware chain (teardown → recovery → payload) |
 
 The right-hand column is the point: every row has a Kali fold that proves the
 detection works.
+
+One row is knowingly incomplete. **Impact** reads `sigma` because that is where its
+detections live *today* — the T1489 teardown, T1490 recovery inhibition, and
+T1485/T1486 payload rules under `detections/sigma/impact/`. The tactic's other
+documented technique, T1496.001 Compute Hijacking, belongs on the **wire** rather than
+the host (a Stratum connection to a mining pool), so it is the one Impact detection the
+`sigma` column will never cover. It is not written yet — tracked as a coverage gap in
+`detections/README.md` and in the issue tracker. Add `network` to this row when it
+lands, not before: the column says where detections *are*, not where they are planned.
 
 ## The detection-engineering lifecycle
 

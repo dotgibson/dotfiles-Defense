@@ -149,7 +149,7 @@ blib_read_pkgs() {
 #   tmux   — tmux.conf/reset/scripts + tpm, os/<os>.conf
 #   git    — core gitconfig, os/<os>.gitconfig, the once-seeded local identity
 #   prompt — starship.toml
-#   tools  — lazygit, mise, bin/clip*, ssh client config, the seeded sesh config
+#   tools  — lazygit, mise, jujutsu, atuin, bin/clip*, ssh client config, the seeded sesh config
 # Default (neither BLIB_ONLY nor BLIB_SKIP set) wires EVERYTHING, so every existing
 # caller is byte-for-byte unaffected. A bootstrap's arg loop routes its --only/--skip
 # to blib_select; the helpers consult blib_want. bash 3.2-safe (no arrays needed).
@@ -270,8 +270,8 @@ blib_migrate_v4() {
 # ── symlink the vendored Core surface ─────────────────────────────────────────
 # blib_link_core <dotfiles> <config> — link everything Core ships, identically on
 # every OS: the zsh modules, tmux base + reset + popup scripts, starship, nvim, mise,
-# git config (+ a once-seeded local identity), the cross-OS bin/clip* helpers, the
-# ssh client config, and a one-time tpm clone. OS-specific overlays (os/<os>.*) are
+# atuin, git config (+ a once-seeded local identity), the cross-OS bin/clip* helpers,
+# the ssh client config, and a one-time tpm clone. OS-specific overlays (os/<os>.*) are
 # NOT here — call blib_link_os_layer for those.
 blib_link_core() {
   local dotfiles="$1" config="$2" f s
@@ -344,6 +344,12 @@ blib_link_core() {
     # jujutsu (jj) — OPT-IN colocated git companion. Linked unconditionally (like lazygit
     # above); the config is inert without the jj binary, and the zsh aliases are HAVE_JJ-gated.
     [[ -f "$dotfiles/core/jujutsu/config.toml" ]] && blib_link "$dotfiles/core/jujutsu/config.toml" "$config/jj/config.toml"
+    # atuin — the config 00-tools.zsh's `atuin init zsh` never had. DEFAULT path (no
+    # ATUIN_CONFIG_DIR needed), linked unconditionally like the two above; inert without
+    # the binary. NOTE: a hand-written ~/.config/atuin/config.toml is BACKED UP by
+    # blib_link (…pre-dotfiles.<epoch>) — re-apply anything local via ATUIN_* env in the
+    # OS/host layer, which is also how a machine turns the daemon on.
+    [[ -f "$dotfiles/core/atuin/config.toml" ]] && blib_link "$dotfiles/core/atuin/config.toml" "$config/atuin/config.toml"
     # portable sesh config, seeded ONCE (edited locally, never tracked back).
     blib_seed "$dotfiles/core/sesh/sesh.toml.example" "$config/sesh/sesh.toml" \
       "edit freely; not tracked from here"

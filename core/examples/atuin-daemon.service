@@ -1,0 +1,45 @@
+# examples/atuin-daemon.service — systemd USER unit for atuin's history daemon.
+#
+# Copy, do not symlink (this file is a reference, not Core-managed wiring):
+#     mkdir -p ~/.config/systemd/user
+#     cp core/examples/atuin-daemon.service ~/.config/systemd/user/
+#     systemctl --user daemon-reload
+#     systemctl --user enable --now atuin-daemon
+#     loginctl enable-linger "$USER"      # optional: keep it alive outside a login session
+#
+# Then tell atuin to USE it, from the OS layer (os/<os>.zsh — never from Core's
+# atuin/config.toml, which is identical on every machine):
+#     export ATUIN_DAEMON__ENABLED=true
+#
+# This is the systemd half of the story only. On Alpine and macOS there is no unit at all:
+# export ATUIN_DAEMON__ENABLED=true together with ATUIN_DAEMON__AUTOSTART=true and let atuin
+# start and health-check the daemon itself. See footnote 20 in PORTING-MATRIX.md.
+#
+# Socket-activation variant: add an atuin-daemon.socket with ListenStream=%t/atuin.sock,
+# enable THAT instead of this service, and set systemd_socket = true. It buys on-demand
+# start, but it is also the one shape Core's shell-side guard cannot protect: the socket
+# keeps ACCEPTING while the daemon behind it is dead, which is the indefinite-freeze state
+# in atuinsh/atuin#3382. It is mutually exclusive with autostart. Prefer this plain
+# always-running service.
+
+[Unit]
+Description=atuin shell-history daemon
+Documentation=https://docs.atuin.sh/reference/daemon/
+
+[Service]
+# `atuin daemon` runs in the foreground and is its own supervisor target. The binary lives
+# in a DIFFERENT place depending on the box — %h/.local/bin where the bootstrap installed it
+# (the same place starship/mise/carapace land), /usr/bin where the distro packages it
+# (Arch, openSUSE, Gentoo, Fedora) — and a user unit inherits none of your shell PATH, so a
+# hard-coded absolute path makes this file copy-paste-broken on half the fleet (203/EXEC).
+# Hence the explicit PATH plus a one-line `sh -c`: sh EXECs atuin, so nothing lingers and
+# the daemon still owns the main PID. Replace both lines with a literal path if you prefer.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/sh -c 'exec atuin daemon'
+Restart=on-failure
+RestartSec=3
+# The daemon exists to remove SQLite lock contention, not to add it back: one instance.
+KillMode=mixed
+
+[Install]
+WantedBy=default.target

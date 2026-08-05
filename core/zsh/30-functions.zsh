@@ -245,7 +245,14 @@ _core_doctor_render() {
   local w wline=""
   for w in $wirable; do
     _core_have "$w" || continue
-    if _core_wired "$w"; then wline+="  ${g}✓${r} ${w}"
+    if _core_wired "$w"; then
+      wline+="  ${g}✓${r} ${w}"
+      # atuin's daemon is OPT-IN and degrades SILENTLY: 00-tools.zsh's
+      # _core_atuin_daemon_guard turns it off for this shell when the socket isn't
+      # reachable, so history still records — just without the daemon's lock relief.
+      # Silent is right at the prompt, invisible is not, so the doctor says it.
+      [[ $w == atuin && -n ${_CORE_ATUIN_DAEMON_DEGRADED:-} ]] &&
+        wline+=" ${d}(daemon socket unreachable → direct writes)${r}"
     else wline+="  ${d}○ ${w} (idle)${r}"; fi
   done
   if [[ -n "$wline" ]]; then

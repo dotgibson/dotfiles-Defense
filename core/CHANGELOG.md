@@ -13,6 +13,133 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.8.0] - 2026-08-05
+
+### Added
+
+- **atuin gets a Core config, and its daemon becomes an OPT-IN capability (#335).** Core has
+  initialised atuin since v3 (`zsh/00-tools.zsh`) while shipping **no atuin config at all** —
+  every setting was whatever atuin defaulted to that release. New `atuin/config.toml`
+  (symlinked to `~/.config/atuin/config.toml`, the default path, in `core.manifest`) closes
+  that, and carries the `[daemon]` block the adoption is about.
+
+  **The daemon ships OFF.** atuin's daemon owns the SQLite writes so shells stop contending
+  for the DB lock — the tail latency a busy multi-pane box pays — but a shell that starts a
+  background daemon as a side effect of being opened is a behaviour change on eight machines.
+  A machine opts in from its own OS layer with atuin's native env overrides
+  (`ATUIN_DAEMON__ENABLED=true`, plus `ATUIN_DAEMON__AUTOSTART=true` where nothing else
+  supervises it), never by editing the vendored Core file. The **launcher is OS-native** and
+  stays in the OS repos: `PORTING-MATRIX.md` footnote 20 gives the per-machine table
+  (systemd user unit · Alpine/macOS via atuin's own autostart · Windows out of scope) and
+  `examples/atuin-daemon.service` is the ready-to-copy unit. Fedora first, Alpine second.
+
+  **`00-tools.zsh` gains `_core_atuin_daemon_guard`** — a one-shot precmd hook that probes the
+  daemon socket and forces the daemon off for that shell when nothing is listening, so an
+  absent or **stale** socket (the file survives a crashed daemon) costs the lock relief
+  instead of a failed connect and an error on every command. It connects rather than
+  stat-ing, because a stale socket file passes `[[ -S … ]]`; equally, when `zsh/net/socket`
+  is unavailable it degrades rather than fall back to that same existence test — the daemon
+  stays on only where a connect actually succeeded. It runs at the first prompt (the OS/host
+  fragments load after `00-tools`), stands down under `autostart` (atuin health-checks its
+  own daemon there), unhooks itself after one run, and says nothing; `core-doctor` reports
+  the degraded state. Scope, stated plainly: it cannot detect an **accept-but-silent** socket
+  — systemd socket activation holding the socket while the daemon behind it is dead — which
+  is the shape of the indefinite freeze in `atuinsh/atuin#3382`; no cheap shell-side probe
+  can, which is why the shipped guidance prefers the plain always-running unit over the
+  `.socket` variant. The `atuin init zsh` call is deliberately **not** gated — that script is
+  daemon-agnostic, so gating it would only cost the Ctrl+E TUI.
+
+  Other settings in the new config are explicit versions of what Core already asserts
+  elsewhere: `enter_accept = false` (the TUI hands the command back for review — the same
+  contract as `HIST_VERIFY` in `15-history.zsh`), `keymap_mode = "auto"` (the fleet runs
+  zsh-vi-mode), `secrets_filter` + a `history_filter` mirroring `HISTORY_IGNORE` — which
+  `15-history.zsh` has promised atuin does since it was written, with nowhere to put it — and
+  `update_check = false` (Core owns update nudges; no second network call on the hot path).
+  Account/sync settings are deliberately absent. `scripts/test-core.sh` gains **ten** atuin
+  assertions (six for the guard, two for its registration/inertness, and the `ATUIN_NOBIND`
+  export + `_cache_eval --salt` contract that were never pinned) plus two `ci-classify` rows,
+  all hermetic — the live and stale sockets come from zsh's own `zsocket`, so no atuin binary
+  is needed.
+
+  **On upgrade — read this one.** atuin writes its own `~/.config/atuin/config.toml` on first
+  run, so unlike jujutsu/lazygit this is the Core link that will routinely find a **real file**
+  on a box that has already used atuin. Bootstrap moves it to `…config.toml.pre-dotfiles.<epoch>`
+  before linking (a pre-existing **symlink** is replaced without a backup — that is `blib_link`'s
+  long-standing behaviour, not new here). atuin has no `include` directive, so port anything you
+  had customised — `sync_address`, `auto_sync`, `filter_mode` — to `ATUIN_*` env overrides in your
+  OS or `99-local` layer rather than editing the vendored file.
+
+### Changed
+
+- **Audited every pin in `scripts/tool-versions.env` and bumped five.** This is the class
+  neither bot touches — `/freshness-triage` covers zsh/nvim plugin locks and dependabot PRs,
+  Renovate covers manifests, and the CLI gate pins sit in the gap between them, which is how
+  `pre-commit` drifted six minors and the Claude Code CLI thirty-seven patches behind. Audited
+  all ten against upstream:
+
+  | Pin | Was | Now | |
+  | --- | --- | --- | --- |
+  | `NVIM_VERSION` | 0.12.3 | **0.12.4** | one patch |
+  | `ACTIONLINT_VERSION` | 1.7.8 | **1.7.12** | four patches |
+  | `PRECOMMIT_VERSION` | 4.0.1 | **4.6.1** | six minors |
+  | `CLAUDE_CODE_VERSION` | 2.1.185 | **2.1.222** | the routine bots' own CLI |
+  | `SHFMT_VERSION` | 3.8.0 | **3.13.1** | five minors — see below |
+  | shellcheck · luacheck · markdownlint-cli2 · gitleaks · pre-commit-hooks | | | already current |
+
+  `NVIM_SHA256` and `ACTIONLINT_SHA256` recomputed with `make update-tool-checksums`, then
+  **cross-checked against upstream independently** rather than trusted from our own download —
+  these hashes are the supply-chain trust anchor for the whole gate toolchain, so a
+  self-computed hash proves only that the download was self-consistent. actionlint matches its
+  published `actionlint_1.7.12_checksums.txt`; neovim matches the `digest` GitHub reports for
+  the release asset. The three unbumped hashes re-derived byte-identical, which is its own
+  integrity signal. No `.pre-commit-config.yaml` change was needed — all four hook `rev:`s
+  (pre-commit-hooks, shellcheck, markdownlint-cli2, gitleaks) were already current, so the
+  audit's version-consistency section stays green.
+
+  **`shfmt` 3.8.0 → 3.13.1 was verified by hand, because Core's own CI genuinely can't check
+  it.** Core does not gate shfmt (`CONTRIBUTING.md` says so — the compact one-liner style here
+  is exactly what shfmt would expand), so this pin exists _only_ to give `setup-core-tools` one
+  verified shfmt for its OS-repo consumers, and a green tick on a Core PR proves nothing about
+  it. Two things make the bump safe, both checked rather than assumed:
+
+  1. **The consumer step is advisory.** `lint-call.yml`'s shfmt step wraps the run in an
+     `if/else` that swallows the drift exit and emits `::warning::` instead — deliberately
+     non-blocking without `continue-on-error`, so a genuine _install_ failure still reds. A
+     formatter behaviour change therefore cannot turn an OS repo red; only a bad SHA or a
+     missing release asset could.
+  2. **3.13.1 formats identically to 3.8.0 here.** Both binaries were run with the exact flags
+     the consumer uses (`-i 2`) over all 33 shell scripts in this repo. Both flag the same 10
+     files, and formatting each corpus with `-w` produced **byte-identical** trees. The only
+     difference between the two versions' `-d` output is presentational: 3.13.1 adds a
+     `diff a b` header line and splits hunks more finely.
+
+  `SHFMT_SHA256` refreshed and cross-checked against the `digest` GitHub publishes for
+  `shfmt_v3.13.1_linux_amd64` (`fb096c5d…`).
+
+### Documentation
+
+- **`aliases.md` now documents the three aliases it had been silently missing.** `web`
+  (→ `$BROWSER_BIN`, `zsh/20-aliases.zsh:65`), `uvr` (→ `uv run`) and `uvs` (→ `uv sync`)
+  (:144-145) have all shipped for a while, tool-gated like every other modern-CLI swap, but
+  none appeared in the alias reference — so the doc undersold what a box actually gets. `web`
+  joins _Editors & Launchers_ with a note on the `w3m → lynx → links2 → links → elinks`
+  resolution order and on why `$BROWSER` is exported only on a headless box; `uvr`/`uvs` get
+  their own **uv (Python)** section mirroring how the `jj` aliases are documented.
+- **`PORTING-MATRIX.md` now has a `gping` row, so the `ping` alias has an install path.**
+  `zsh/00-tools.zsh` has set `HAVE_GPING` and `zsh/20-aliases.zsh` has aliased `ping`→`gping`
+  since v3, and both `aliases.md` and `PARITY.md` advertise it — but the matrix listed no
+  package for any distro, making it the one aliased tool with no documented way to get it.
+  New footnote ¹⁹ records what the audit turned up: gping is in **no** repo's
+  `install/packages.txt` and no `bootstrap.sh`, so like `jnv`¹⁷ it is **detect-only** — the row
+  is the path for when you install it yourself. Packaging verified per-distro rather than
+  assumed: Arch `extra`, Alpine `community` (native musl), Debian/Kali apt (source
+  `rust-gping`, **binary** `gping`), Homebrew, nixpkgs; Gentoo is GURU-only
+  (`net-analyzer/gping`, added to footnote ¹²); openSUSE Leap 15.6 ships 1.16.1 in `main/oss`
+  while Tumbleweed builds from Factory, so that cell says verify-then-fall-back rather than
+  claiming a binary this fleet has not confirmed.
+
+  Reported by the 2026-08-04 `/doc-audit` sweep (S1, S2) — see #328.
+
 ## [v4.7.1] - 2026-08-03
 
 ### Fixed
