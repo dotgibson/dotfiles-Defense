@@ -1,0 +1,99 @@
+# core/atuin/config.toml
+# ──────────────────────────────────────────────────────────────────────────────
+# atuin — the shell-history engine. Core-owned and symlinked to the DEFAULT path
+# (~/.config/atuin/config.toml), exactly like starship/lazygit/jujutsu, so no
+# ATUIN_CONFIG_DIR is needed. `atuin init zsh` is run (cached) from zsh/00-tools.zsh;
+# ATUIN_NOBIND=true is exported there so atuin binds NOTHING itself — zsh/40-bindings.zsh
+# owns Ctrl+E (the atuin TUI) and Ctrl+R stays on the fzf history widget (zsh/35-fzf.zsh).
+# The whole file is inert on a box without the atuin binary.
+#
+# PER-MACHINE SETTINGS DO NOT BELONG HERE. Core is authored once and vendored into
+# every OS repo, so this file must be identical everywhere. atuin reads env overrides
+# with the prefix `ATUIN_` and `__` as the nesting separator, which is the supported
+# way for an OS layer (os/<os>.zsh — fragment 80) or a host layer (99-local) to differ:
+#
+#     export ATUIN_DAEMON__ENABLED=true    # [daemon] enabled = true, this box only
+#     export ATUIN_SEARCH_MODE=prefix      # top-level search_mode
+#
+# Account/sync settings ([sync], sync_address, auto_sync) are deliberately ABSENT:
+# they are per-account state, not fleet config, and atuin's defaults already no-op
+# on a box that never ran `atuin login`.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── search + TUI ──────────────────────────────────────────────────────────────
+# Values match what Core already asserts for the flat zsh history, so the two
+# history surfaces behave the same way rather than drifting apart.
+search_mode = "fuzzy"  # upstream default; the fzf-shaped matching the rest of the stack uses
+filter_mode = "global" # search everything by default (Ctrl+R inside the TUI cycles scopes)
+style = "compact"      # inline, not full-screen — the TUI is a lookup, not a destination
+inline_height = 25     # rows the compact TUI may take (upstream default: 40)
+show_preview = true    # full command text for the highlighted row (long pipelines get truncated)
+
+# enter_accept = false is a SAFETY choice, not a cosmetic one: Enter returns the
+# selected command to the prompt for review instead of executing it — the same
+# contract as HIST_VERIFY in zsh/15-history.zsh, which expands `!!` for review
+# rather than running it blind. (Upstream default is also false; set explicitly so
+# a future upstream flip can't silently start running commands on eight machines.)
+enter_accept = false
+
+# The fleet runs zsh-vi-mode (zsh/45-plugins.zsh + the zvm_after_init bindings in
+# zsh/40-bindings.zsh), so let the TUI follow the shell's active keymap instead of
+# pinning atuin to emacs (its default) and fighting muscle memory.
+keymap_mode = "auto"
+
+# ── history hygiene ───────────────────────────────────────────────────────────
+# secrets_filter is atuin's own "don't record obvious credentials" pass. It is on by
+# default upstream; pinned here because it is a security property, not a preference.
+secrets_filter = true
+
+# The atuin-side mirror of HISTORY_IGNORE in zsh/15-history.zsh — that file's comment
+# already promises "atuin has its own richer filtering (history_filter in config.toml)",
+# and until now that promise had nowhere to live. These are Rust regexes (not zsh globs)
+# matched against the command line, and they mirror that pattern ENTRY FOR ENTRY, including
+# its case sensitivity: the last group is bare (an `API_KEY` or `SECRET` anywhere in the
+# line is enough), while PASSWORD/TOKEN/ACCESS_KEY are the assignment forms only — a
+# case-insensitive bare `secret` would swallow ordinary work like `kubectl get secret`.
+# If you change one list, change the other. Operator habit still beats both: prefix
+# anything spicy with a space (HIST_IGNORE_SPACE) and it lands in neither history.
+history_filter = [
+  "^pass (show|read|insert) ",
+  "^op read",
+  "--(password|token|api-key)[ =]",
+  "(PASSWORD|TOKEN|ACCESS_KEY)=",
+  "(API_KEY|APIKEY|SECRET)",
+]
+
+# Core owns update nudges (`up` + the once/day check in zsh/60-update.zsh), and this
+# one costs a network call on the shell's hot path. One updater, not two.
+update_check = false
+
+# ── daemon (OPT-IN — ships OFF) ───────────────────────────────────────────────
+# atuin's daemon owns the SQLite writes; shells talk to it over a unix socket instead
+# of every shell and every tmux pane contending for the DB lock. That is the tail
+# latency this adopts away — but a shell that starts a background daemon as a side
+# effect of being opened is a behaviour change, so it is off here and stays off until
+# a machine asks for it.
+#
+# HOW A MACHINE OPTS IN (the launcher is OS-native, so it lives in the OS repo, not here):
+#   systemd distros — install the user unit (examples/atuin-daemon.service),
+#                     `systemctl --user enable --now atuin-daemon`, then export
+#                     ATUIN_DAEMON__ENABLED=true from os/<os>.zsh.
+#   Alpine / macOS  — no systemd: export ATUIN_DAEMON__ENABLED=true together with
+#                     ATUIN_DAEMON__AUTOSTART=true and let atuin supervise its own
+#                     daemon (autostart is NOT compatible with systemd_socket).
+#   Windows         — out of scope; dotfiles-Windows vendors no core/.
+#
+# Safety net: zsh/00-tools.zsh probes the socket once, before the first prompt, and forces
+# the daemon OFF for that shell when nothing is listening — an absent or stale socket
+# otherwise costs a failed connect on every command. It cannot detect an ACCEPT-BUT-SILENT
+# socket, which is the shape of the indefinite freeze in atuinsh/atuin#3382 — so prefer the
+# plain always-running unit over systemd SOCKET ACTIVATION: activation keeps the socket
+# accepting while the daemon behind it is dead, which is precisely the undetectable state.
+[daemon]
+enabled = false   # flip per machine with ATUIN_DAEMON__ENABLED=true, never by editing this file
+autostart = false # let atuin start/health-check the daemon itself (the no-systemd answer)
+# sync_frequency = 300  # seconds between daemon-driven syncs (upstream default)
+# systemd_socket = false  # take the socket from systemd socket activation instead of socket_path
+# socket_path = "…/atuin.sock"  # LEFT UNSET on purpose: the default is $XDG_RUNTIME_DIR/atuin.sock
+                                # (falling back to the data dir where that is unset, e.g. macOS), and
+                                # an absolute path here would be an OS-specific value in a Core file.

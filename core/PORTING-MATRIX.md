@@ -47,7 +47,7 @@ _Repo status_ at the bottom).
 | zsh              | `zsh`                  | `zsh`        | `zsh`²            | `app-shells/zsh`           | `zsh`           |
 | tmux             | `tmux`                 | `tmux`       | `tmux`            | `app-misc/tmux`            | `tmux`          |
 | starship         | `starship`             | `starship`¹⁸ | `starship`        | `app-shells/starship`      | script³         |
-| atuin            | `atuin`                | `atuin`¹⁸    | `atuin`           | `app-shells/atuin`         | `atuin`³        |
+| atuin²⁰          | `atuin`                | `atuin`¹⁸    | `atuin`           | `app-shells/atuin`         | `atuin`³        |
 | yazi             | `yazi`                 | `yazi`¹⁸     | `yazi`            | `app-misc/yazi`¹²          | cargo³          |
 | tree-sitter-cli⁵ | `tree-sitter-cli`      | cargo³       | `tree-sitter-cli` | cargo³                     | `mise`/`cargo`³ |
 | jq               | `jq`                   | `jq`         | `jq`              | `app-misc/jq`              | `jq`            |
@@ -63,6 +63,7 @@ _Repo status_ at the bottom).
 | gum              | `gum`                  | `gum`        | `gum`             | `app-misc/gum`¹²           | `gum`¹⁵         |
 | xh               | `xh`                   | `xh`         | `xh`              | `net-misc/xh`¹²            | `xh`            |
 | doggo            | `doggo`                | `doggo`¹⁸    | `doggo`           | `net-dns/doggo`            | go³             |
+| gping¹⁹          | `gping`                | `gping`¹⁹    | `gping`           | GURU¹²·¹⁹                  | `gping`¹⁹       |
 | carapace         | AUR³                   | go³          | `carapace`        | `app-shells/carapace`¹²    | go³             |
 | op (1Password)¹³ | AUR                    | vendor rpm   | vendor apk        | GURU¹²                     | vendor apt      |
 | hyperfine        | `hyperfine`            | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`     |
@@ -137,7 +138,7 @@ so it shadows nothing; prefer the `ast-grep` binary name over `sg` (which can co
 (`community` — a musl build, so the outlier is covered) and Homebrew; elsewhere via
 `cargo install ast-grep` / `mise` / `npm` / `pip`. Inert without the binary — nothing depends on it.
 ¹² Gentoo **GURU overlay** (`sd`, `glow`, `gum`, `xh`, `carapace`, `1password-cli`, `tealdeer`,
-`yazi`, `lazygit`, `direnv`): not in the main `::gentoo` tree. Enable once with `eselect
+`yazi`, `lazygit`, `direnv`, `gping`): not in the main `::gentoo` tree. Enable once with `eselect
 repository enable guru && emaint sync -r guru`, then `emerge` the atom. bootstrap.sh does this
 best-effort, per-atom (one masked atom doesn't block the rest), in its `guru_install` pass —
 which runs AFTER the main-tree emerge, so these must not sit in the main `packages.txt` blocks
@@ -195,6 +196,53 @@ promised a fallback that never existed and the package name above is their only 
 path. Moving any of these into `install/packages.txt` is a separate judgment call — it
 trades upstream-latest for the distro build — and is deliberately **not** done here; for
 `ouch`/`ast-grep` it is the _only_ way to get them installed without doing it by hand.
+
+¹⁹ gping: the `ping` replacement — Core aliases `ping`→`gping` (`HAVE_GPING`-guarded in
+`zsh/20-aliases.zsh`), so a box without the binary just keeps classic `ping`. **Detect-only,
+like `jnv`¹⁷: gping is in NO repo's `install/packages.txt` and no `bootstrap.sh` installs it**,
+so the alias only lights up once you install it yourself — this row exists so there is a
+documented path when you do. (`aliases.md` and `PARITY.md` have advertised the alias since
+v3; the matrix row is what was missing.) A **Rust** CLI → `cargo install gping` anywhere
+unpackaged. Packaged: Arch `extra`, Alpine `community` (a native musl build, so the outlier is
+covered), Homebrew (`gping`), nixpkgs, and Debian/Kali apt — where the **source** package is
+`rust-gping` but the **binary** you install is plain `gping` (Debian trixie 1.19.0, sid/Kali
+rolling 1.20.4). openSUSE: **Leap 15.6** carries it first-class in `main/oss` but well behind
+(1.16.1); **Tumbleweed** builds it from Factory, so verify with `zypper se gping` and fall back
+to cargo if your snapshot lacks it. Gentoo is **GURU-only** (`net-analyzer/gping`, see ¹²) —
+there is no main-tree atom. Inert without the binary; nothing depends on it.
+
+²⁰ atuin **daemon mode** — the one part of the atuin story that is NOT Core's to decide.
+Core ships `atuin/config.toml` (symlinked to `~/.config/atuin/config.toml`) with the
+`[daemon]` block **off**; the daemon owns the SQLite writes so shells stop contending for
+the DB lock, which is where atuin's tail latency comes from on a busy multi-pane box. What
+differs per machine is how the daemon gets **launched**, so that half lives in the OS repo:
+
+| Machine | How the daemon runs | What the OS layer exports |
+| --- | --- | --- |
+| Fedora · Arch · openSUSE · Gentoo (systemd) · Kali · Defense | `systemd --user` unit — copy `examples/atuin-daemon.service` into `~/.config/systemd/user/`, then `systemctl --user enable --now atuin-daemon` (and `loginctl enable-linger $USER` if you want it alive outside a login session) | `ATUIN_DAEMON__ENABLED=true` |
+| Alpine (musl, no systemd) | atuin supervises its own daemon — no unit, no service manager, nothing to install | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
+| macOS | same as Alpine: `autostart` beats hand-writing a launchd plist, and `XDG_RUNTIME_DIR` is unset there so the socket lands in the data dir — which atuin resolves itself | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
+| Windows | out of scope — `dotfiles-Windows` vendors no `core/` and replicates its host config in PowerShell | — |
+
+The exports belong in that repo's `os/<os>.zsh` (loader fragment 80), **never** in the Core
+config: Core is vendored identically to every repo, so a per-machine value there would be
+wrong on the other seven. `autostart` is mutually exclusive with `systemd_socket = true` —
+pick the unit or pick autostart, not both. Adoption order is Fedora first (the template the
+Linux repos are stamped from), Alpine second (it is the design's real constraint, so proving
+it early is worth more than doing it last), then the rest.
+
+Whatever the launcher, `zsh/00-tools.zsh` probes the socket once before the first prompt and
+forces the daemon **off for that shell** when nothing is listening: an absent — or stale,
+i.e. left behind by a crashed daemon — socket otherwise costs atuin a failed connect on every
+command. So a dead daemon costs the lock relief, not every prompt. `core-doctor` shows the
+degraded state; nothing else says a word.
+
+The probe's limit, because it decides which unit you should install: it cannot tell an
+**accept-but-silent** socket from a healthy one. systemd **socket activation** produces
+exactly that state when the daemon behind the socket is dead — the socket keeps accepting,
+the client waits, and that is the indefinite freeze in `atuinsh/atuin#3382`. Prefer the plain
+always-running service above; if you do use a `.socket` unit with `systemd_socket = true`,
+you are outside what Core can protect.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

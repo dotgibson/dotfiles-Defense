@@ -114,6 +114,7 @@ It won't be everyone's ideal — dotfiles are personal — but the pieces here a
 * [![Mise][mise-shield]][mise-url]
 * [![LazyGit][lazygit-shield]][lazygit-url]
 * [![jujutsu][jujutsu-shield]][jujutsu-url]
+* [![atuin][atuin-shield]][atuin-url]
 * [![sesh][sesh-shield]][sesh-url]
 * [![fzf][fzf-shield]][fzf-url]
 
@@ -360,6 +361,8 @@ Here are some of my favorite dotfile configurations.
 [lazygit-url]: https://github.com/jesseduffield/lazygit
 [jujutsu-shield]: https://img.shields.io/github/v/release/jj-vcs/jj?style=flat-square&logo=gnometerminal&logoColor=24283B&label=jujutsu&labelColor=BB9AF7&color=3D59A1
 [jujutsu-url]: https://github.com/jj-vcs/jj
+[atuin-shield]: https://img.shields.io/github/v/release/atuinsh/atuin?style=flat-square&logo=gnometerminal&logoColor=24283B&label=atuin&labelColor=BB9AF7&color=3D59A1
+[atuin-url]: https://github.com/atuinsh/atuin
 [sesh-shield]: https://img.shields.io/github/v/release/joshmedeski/sesh?style=flat-square&logo=gnometerminal&logoColor=24283B&label=sesh&labelColor=BB9AF7&color=3D59A1
 [sesh-url]: https://github.com/joshmedeski/sesh
 [fzf-shield]: https://img.shields.io/github/v/release/junegunn/fzf?style=flat-square&logo=gnometerminal&logoColor=24283B&label=fzf&labelColor=BB9AF7&color=3D59A1

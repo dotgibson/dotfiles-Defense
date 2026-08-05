@@ -30,7 +30,8 @@ setopt HIST_NO_STORE # don't store the `history`/`fc` calls themselves
 setopt HIST_SAVE_NO_DUPS
 
 # Never record obviously sensitive one-liners to the plaintext HISTFILE. atuin
-# has its own richer filtering (history_filter in config.toml) — this is the
+# has its own richer filtering — Core now ships it, as `history_filter` in
+# core/atuin/config.toml, mirroring the patterns below — and this is the
 # belt-and-suspenders for the flat file. Operator habit: prefix anything spicy
 # with a space (HIST_IGNORE_SPACE) and it never lands anywhere.
 HISTORY_IGNORE='(pass show *|pass read *|pass insert *|op read*|*--password[ =]*|*--token[ =]*|*--api-key[ =]*|*PASSWORD=*|*TOKEN=*|*API_KEY*|*APIKEY*|*SECRET*|*ACCESS_KEY=*)'
