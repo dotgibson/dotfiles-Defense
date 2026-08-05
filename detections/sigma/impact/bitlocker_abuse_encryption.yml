@@ -41,6 +41,13 @@ detection:
       - '-protectors -add'
       - '-forcerecovery'
   selection_powershell_bitlocker:
+    # Image-scoped: the cmdlet name only appears in a command line for an INLINE
+    # invocation (-Command/-c), and those run under powershell.exe/pwsh.exe by
+    # definition — so constraining Image costs no coverage and drops unrelated
+    # processes that merely carry the string as an argument.
+    Image|endswith:
+      - '\powershell.exe'
+      - '\pwsh.exe'
     CommandLine|contains:
       - 'Enable-BitLocker'
       - 'Add-BitLockerKeyProtector'

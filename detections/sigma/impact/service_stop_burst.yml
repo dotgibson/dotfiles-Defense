@@ -36,8 +36,14 @@ detection:
       - 'start=disabled'
   selection_taskkill:
     Image|endswith: '\taskkill.exe'
-    CommandLine|contains: '/f'
+    # Trailing space is deliberate: a bare '/f' also matches '/fi', the FILTER flag, which
+    # pulls ordinary non-forced taskkill usage into the count. The teardown form is
+    # `taskkill /f /im <proc>`, where /f is followed by the next argument.
+    CommandLine|contains: '/f '
   selection_powershell_stop:
+    Image|endswith:
+      - '\powershell.exe'
+      - '\pwsh.exe'
     CommandLine|contains:
       - 'Stop-Service'
       - 'Stop-Process'

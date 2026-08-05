@@ -21,6 +21,8 @@ references:
   - https://attack.mitre.org/techniques/T1049/
   - https://attack.mitre.org/techniques/T1057/
   - https://attack.mitre.org/techniques/T1007/
+  - https://attack.mitre.org/techniques/T1087/001/
+  - https://attack.mitre.org/techniques/T1135/
 author: dotfiles-Defense
 date: 2026-08-05
 name: host_recon_command

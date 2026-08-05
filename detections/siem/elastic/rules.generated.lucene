@@ -106,7 +106,7 @@ eventName:email_forwarding_out_of_domain
 eventName:authorize AND (scope:(*mail.google.com* OR *auth\/gmail* OR *auth\/drive* OR *auth\/spreadsheets* OR *auth\/documents* OR *auth\/contacts*)) AND (NOT client_id:000000000000\-example.apps.googleusercontent.com)
 
 // impact/bitlocker_abuse_encryption.yml — Data encrypted for impact - BitLocker driven from the command line
-(Image:*\\manage\-bde.exe AND (CommandLine:(*\-on* OR *\-protectors\ \-add* OR *\-forcerecovery*))) OR (CommandLine:(*Enable\-BitLocker* OR *Add\-BitLockerKeyProtector*))
+(Image:*\\manage\-bde.exe AND (CommandLine:(*\-on* OR *\-protectors\ \-add* OR *\-forcerecovery*))) OR ((Image:(*\\powershell.exe OR *\\pwsh.exe)) AND (CommandLine:(*Enable\-BitLocker* OR *Add\-BitLockerKeyProtector*)))
 
 // impact/data_destruction_wipe.yml — Data destruction - free-space wipe / secure delete / volume clean
 (Image:*\\cipher.exe AND CommandLine:*\/w*) OR (Image:(*\\sdelete.exe OR *\\sdelete64.exe)) OR (Image:*\\fsutil.exe AND CommandLine:*setzerodata*) OR (Image:*\\diskpart.exe AND CommandLine:*clean*)
