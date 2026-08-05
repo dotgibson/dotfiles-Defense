@@ -9,12 +9,15 @@ manual Kali box. Two planes:
 - **Host / Sigma** — a JSON-lines event log through the real Sigma rule with
   [zircolite](https://github.com/wagga40/Zircolite) (`run-sigma-validation.sh`), asserting
   the rule id lands in the detections. Manifest: [`sigma-manifest.tsv`](sigma-manifest.tsv)
-  (`name / pipeline / fixture / rule / expected-id`); fixtures are committed JSONL under
-  `sigma-fixtures/`. Covers single-selection, filtered, and `value_count`-correlation rules
-  across the `windows-audit` and `sysmon` pipelines. Run it:
+  (`name / pipeline / tp-fixture / rule / expected-id / tn-fixture`); fixtures are committed
+  JSONL under `sigma-fixtures/`. Covers single-selection, filtered, and
+  `value_count`-correlation rules across the `windows-audit` and `sysmon` pipelines, and —
+  where a row names a true-negative — asserts the rule stays **silent** on a benign
+  near-miss too (`-` for none). Run it:
   `ZIRCOLITE=/path/to/zircolite.py docker/validation/run-sigma-validation.sh` (CI clones a
   pinned zircolite — see `.github/workflows/sigma-validation.yml`). Gated the same way the
-  network plane is: a rule that stops firing turns it red.
+  network plane is: a rule that stops firing turns it red, and so does a filter that stops
+  filtering.
 - **Cloud / SaaS (nested-field)** — the cloud rules zircolite's EVTX flattener can't reach
   (dotted paths + underscored keys, see the finding below), driven through
   [`sigma_eval.py`](sigma_eval.py) (`run-cloud-validation.sh`). Manifest:
@@ -107,16 +110,40 @@ unconstrained-delegation abuse, and the correlation rules (password-spray, pass-
 LDAP-recon, SharpHound, host-recon burst, mass-encryption on both 4663 and Sysmon 11).
 Each was verified firing against the real engine locally.
 
-**Limit of this plane: it is true-positive only.** `sigma-manifest.tsv` has no
-true-negative column (the cloud plane's `sigma-cloud-manifest.tsv` does), so a row proves
-a rule *fires* and can never prove a rule *doesn't* — an exclusion that silently stopped
-working would keep the gate green. That matters for
-`mass_file_encryption_sysmon_11`, whose base event filters browser-cache and OS-servicing
-paths so the distinct-file count reflects the operator's sweep and not the machine's own
-churn. It was checked by hand both ways: 500 writes across excluded cache/servicing paths
-produce **no** detection, and the identical 500 events on an ordinary path **do** fire —
-so the empty result is the filter holding, not a parse failure. Re-run that check by hand
-if those filters change; a TP row alone will not catch it.
+### True negatives — how a filter is proven
+
+This plane used to be true-positive only, which meant a row could prove a rule *fires* but
+never that it *doesn't*: an exclusion that silently stopped matching would keep the gate
+green while the rule quietly went noisy. `sigma-manifest.tsv` now carries a sixth column,
+the TN fixture (`-` for none), and **all 16 rules with a `filter_*` block have one**. The
+runner reports the count (`57/57 passed (16 with a true-negative)`), and rules that grow a
+filter but no TN are named in an advisory at the end of the run — the same
+discoverable-checklist idea as [`deploy-required.sh`](../../detections/sigma/deploy-required.sh).
+
+A TN is only worth anything if it would really have fired. Three things enforce that, and
+each exists because the obvious version of this gate fails silently:
+
+1. **Engine errors are not silence.** zircolite producing no detections because it *failed*
+   looks identical to a filter doing its job. A TN passes only on a three-way contract: the
+   engine exited 0, it **wrote** its output file, and the id is absent. Same reasoning
+   `run-cloud-validation.sh` documents for its evaluator's 0/1/2 exit codes.
+2. **The fixture must be a structural near-miss of its TP** — same EventID set, same
+   `EventData` key set, one *value* changed so exactly one `filter_*` block catches it.
+   This is checked before the engine runs. It was added after a garbage TN fixture (a file
+   of non-JSON) *passed*: zircolite ingested 0 events, exited 0, and wrote an empty
+   result — a vacuous pass. The key-set half catches the subtler version, a typo'd field
+   name that makes the base selection miss, so the rule goes silent for a reason that has
+   nothing to do with the filter under test.
+3. **Correlation TNs are sized past the threshold** — 101 objects against SharpHound's
+   `gte: 100`, 205 files against the Sysmon-11 `gte: 200`, 12 failures against the spray
+   rule's `gte: 10`. A TN that merely falls short of the threshold would pass no matter what
+   the filter did.
+
+The gate itself was checked by breaking things on purpose: neutering a rule's `filter_*`
+block turns its row red (`TN: rule fired on the benign near-miss`), and a missing,
+unparseable, or wrong-shaped TN fixture fails with the reason named rather than passing.
+Re-run that exercise if you change the TN machinery — a green suite is not evidence that
+the negative half works.
 
 The `unconstrained-deleg-4624` row is the one whose fixture is bound to a
 `DEPLOY-REQUIRED` placeholder: the rule ships matching only the `DC1$`/`DC2$` examples,

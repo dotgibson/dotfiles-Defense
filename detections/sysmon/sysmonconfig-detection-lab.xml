@@ -69,11 +69,11 @@
         <TargetFilename condition="contains">\AppData\Local\Google\Chrome\User Data\Default\Cache\</TargetFilename>
         <TargetFilename condition="contains">\AppData\Local\Mozilla\Firefox\Profiles\</TargetFilename>
         <!-- OS servicing / telemetry churn. -->
-        <TargetFilename condition="begin">C:\Windows\Prefetch\</TargetFilename>
-        <TargetFilename condition="begin">C:\Windows\SoftwareDistribution\</TargetFilename>
-        <TargetFilename condition="begin">C:\Windows\WinSxS\</TargetFilename>
-        <TargetFilename condition="begin">C:\Windows\Logs\</TargetFilename>
-        <TargetFilename condition="end">.etl</TargetFilename>
+        <TargetFilename condition="begin with">C:\Windows\Prefetch\</TargetFilename>
+        <TargetFilename condition="begin with">C:\Windows\SoftwareDistribution\</TargetFilename>
+        <TargetFilename condition="begin with">C:\Windows\WinSxS\</TargetFilename>
+        <TargetFilename condition="begin with">C:\Windows\Logs\</TargetFilename>
+        <TargetFilename condition="end with">.etl</TargetFilename>
         <!-- The two purpose-built indexers/scanners whose entire job is bulk file I/O.
              SearchIndexer is already excluded from ProcessCreate above for the same
              reason; MsMpEng writes definition and quarantine files continuously. -->
