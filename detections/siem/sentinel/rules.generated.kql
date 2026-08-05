@@ -69,6 +69,9 @@ EventID == 5145 and ShareName contains "IPC$" and (RelativeTargetName contains "
 // defense_evasion/dcshadow_rogue_dc_4742.yml — DCShadow - rogue DC registration (GC SPN added to a non-DC)
 (EventID == 4742 and ServicePrincipalNames contains "GC/") and (not((TargetUserName in~ ("DC1$", "DC2$"))))
 
+// discovery/host_recon_command_burst.yml — Host discovery command base - built-in recon utility execution
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
 // discovery/ldap_recon_explicit_creds_4648.yml — Explicit-credential logon base - 4648 with a named target
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
@@ -102,8 +105,17 @@ eventName =~ "email_forwarding_out_of_domain"
 // google_workspace/gws_illicit_oauth_grant.yml — Google Workspace illicit OAuth grant (consent phish)
 eventName =~ "authorize" and (scope contains "mail.google.com" or scope contains "auth/gmail" or scope contains "auth/drive" or scope contains "auth/spreadsheets" or scope contains "auth/documents" or scope contains "auth/contacts") and (not(client_id =~ "000000000000-example.apps.googleusercontent.com"))
 
+// impact/bitlocker_abuse_encryption.yml — Data encrypted for impact - BitLocker driven from the command line
+(Image endswith "\\manage-bde.exe" and (CommandLine contains "-on" or CommandLine contains "-protectors -add" or CommandLine contains "-forcerecovery")) or ((Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and (CommandLine contains "Enable-BitLocker" or CommandLine contains "Add-BitLockerKeyProtector"))
+
+// impact/data_destruction_wipe.yml — Data destruction - free-space wipe / secure delete / volume clean
+(Image endswith "\\cipher.exe" and CommandLine contains "/w") or (Image endswith "\\sdelete.exe" or Image endswith "\\sdelete64.exe") or (Image endswith "\\fsutil.exe" and CommandLine contains "setzerodata") or (Image endswith "\\diskpart.exe" and CommandLine contains "clean")
+
 // impact/recovery_inhibition_process.yml — Inhibit system recovery - shadow copy / backup / boot-recovery deletion
 ((Image endswith "\\vssadmin.exe" or Image endswith "\\wmic.exe") and (CommandLine contains "shadow" and CommandLine contains "delete")) or (Image endswith "\\wbadmin.exe" and (CommandLine contains "delete" and CommandLine contains "catalog")) or (Image endswith "\\bcdedit.exe" and (CommandLine contains "recoveryenabled no" or CommandLine contains "bootstatuspolicy ignoreallfailures"))
+
+// impact/service_stop_burst.yml — Service/process stop command base - service control by command line
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // jenkins/jenkins_api_token_created.yml — Jenkins user API token created (durable-access backdoor)
 uri contains "ApiTokenProperty/generateNewToken"
@@ -131,6 +143,9 @@ CommandLine contains "/dest:rdp-tcp#"
 
 // lateral_movement/service_creation_psexec_7045.yml — Suspicious service installed (psexec-style remote exec)
 EventID == 7045 and (ImagePath contains "\\cmd.exe" or ImagePath contains "powershell" or ImagePath contains "%COMSPEC%" or ImagePath contains "\\ADMIN$\\" or ImagePath contains "\\Temp\\" or ImagePath contains "\\Users\\")
+
+// lateral_movement/unconstrained_delegation_4624.yml — Unconstrained delegation abuse - DC machine account authenticating to a non-DC (4624)
+(EventID == 4624 and LogonType == 3 and AuthenticationPackageName =~ "Kerberos" and (TargetUserName in~ ("DC1$", "DC2$"))) and (not((Computer startswith "DC1" or Computer startswith "DC2")))
 
 // lateral_movement/wmiexec_wmiprvse_child_4688.yml — WMI remote exec - shell spawned by WmiPrvSE
 (ParentImage endswith "\\WmiPrvSE.exe" and (Image endswith "\\cmd.exe" or Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe")) and (CommandLine contains "/Q" and CommandLine contains "/c" and CommandLine contains "127.0.0.1\\ADMIN$")

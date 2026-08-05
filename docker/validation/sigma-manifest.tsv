@@ -35,6 +35,11 @@ ldap-recon-4648	windows-audit	docker/validation/sigma-fixtures/ldap_recon_4648.j
 sharphound-4662	windows-audit	docker/validation/sigma-fixtures/sharphound_4662.jsonl	detections/sigma/discovery/sharphound_ldap_sweep_4662.yml	9c4e7d21-3a5b-42f0-8e6d-1b0a4f7c9e33
 machine-account-4741	windows-audit	docker/validation/sigma-fixtures/machine_account_4741.jsonl	detections/sigma/persistence/machine_account_creation_burst_4741.yml	ae5a0814-7222-4c3d-9710-258b0c4045ba
 recovery-inhibition-4688	sysmon	docker/validation/sigma-fixtures/recovery_inhibition_4688.jsonl	detections/sigma/impact/recovery_inhibition_process.yml	7dbc97d7-0d27-4a77-8dfd-daf203087726
+host-recon-burst-4688	sysmon	docker/validation/sigma-fixtures/host_recon_burst_4688.jsonl	detections/sigma/discovery/host_recon_command_burst.yml	c04b9a72-1e6d-4f38-8b91-2d7a5e0c63f4
+service-stop-burst-4688	sysmon	docker/validation/sigma-fixtures/service_stop_burst_4688.jsonl	detections/sigma/impact/service_stop_burst.yml	8f2c6d51-7a30-4b9e-a1c4-3e05b7d29f68
+data-destruction-4688	sysmon	docker/validation/sigma-fixtures/data_destruction_4688.jsonl	detections/sigma/impact/data_destruction_wipe.yml	4b90e2fa-6c17-4d53-a8e9-70c1b5348d2f
+bitlocker-abuse-4688	sysmon	docker/validation/sigma-fixtures/bitlocker_abuse_4688.jsonl	detections/sigma/impact/bitlocker_abuse_encryption.yml	5e83c1d7-2f46-49ba-b0c3-9a71e4d6058c
+unconstrained-deleg-4624	windows-audit	docker/validation/sigma-fixtures/unconstrained_deleg_4624.jsonl	detections/sigma/lateral_movement/unconstrained_delegation_4624.yml	b7f0439c-5d82-4e61-9c07-1a3e58d2b0f4
 # Cloud/SaaS rules (pipeline=none: no EventID, match raw field names). Only the 20
 # flat-field cloud rules run here. Products with dotted/nested field names (GCP, Cloudflare,
 # GitLab, Kubernetes, Harbor, Snowflake, Terraform, Vault, …) — plus any otherwise-flat rule
