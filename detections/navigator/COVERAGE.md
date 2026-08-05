@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**87 rules · 98 detection documents · 64 techniques · 10 tactics · 23 logsources.**
+**89 rules · 101 detection documents · 67 techniques · 10 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
@@ -15,7 +15,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Credential Access | TA0006 | 15 | 17 |
 | Discovery | TA0007 | 12 | 3 |
 | Lateral Movement | TA0008 | 9 | 7 |
-| Collection | TA0009 | 1 | 1 |
+| Collection | TA0009 | 4 | 3 |
 | Exfiltration | TA0010 | 2 | 2 |
 | Impact | TA0040 | 4 | 7 |
 
@@ -26,6 +26,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1003.001 | 1 | `lsass_handle_access` |
 | T1003.003 | 1 | `ntds_dump_ntdsutil_vss_4688` |
 | T1003.006 | 1 | `dcsync_replication_4662` |
+| T1005 | 1 | `mass_file_read_4663` |
 | T1007 | 1 | `host_recon_command_burst` |
 | T1016 | 1 | `host_recon_command_burst` |
 | T1018 | 1 | `host_recon_command_burst` |
@@ -40,6 +41,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1069.002 | 1 | `sharphound_ldap_sweep_4662` |
 | T1070 | 1 | `harbor_artifact_deleted` |
 | T1072 | 2 | `jenkins_job_backdoor`, `tfc_variable_injection` |
+| T1074.001 | 1 | `archive_staging_utility` |
 | T1082 | 1 | `host_recon_command_burst` |
 | T1087.001 | 1 | `host_recon_command_burst` |
 | T1087.002 | 2 | `ldap_recon_explicit_creds_4648`, `sharphound_ldap_sweep_4662` |
@@ -75,6 +77,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1558.003 | 1 | `kerberoasting_rc4_tgs` |
 | T1558.004 | 2 | `asrep_roast_4768`, `asrep_roast_probing_4771` |
 | T1558.005 | 1 | `ccache_theft_staging` |
+| T1560.001 | 1 | `archive_staging_utility` |
 | T1562.001 | 6 | `cloudflare_waf_rule_disabled`, `github_branch_protection_tamper`, `gitlab_protected_branch_tamper`, `npm_publish_2fa_disabled`, `slack_2fa_enforcement_disabled`, `vault_audit_device_disabled` |
 | T1562.007 | 1 | `snowflake_network_policy_change` |
 | T1562.008 | 1 | `gcp_audit_log_sink_deleted` |
@@ -94,6 +97,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | --------- | ------- | ----: |
 | `cloud` | `aws`, `azure`, `gcp` | 9 |
 | `cloudflare` | `cloudflare` | 3 |
+| `collection` | `windows` | 2 |
 | `credential_access` | `windows` | 10 |
 | `defense_evasion` | `windows` | 1 |
 | `discovery` | `windows` | 3 |

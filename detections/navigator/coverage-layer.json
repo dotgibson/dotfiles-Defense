@@ -27,6 +27,12 @@
       "comment": "1 rule(s): dcsync_replication_4662"
     },
     {
+      "techniqueID": "T1005",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): mass_file_read_4663"
+    },
+    {
       "techniqueID": "T1007",
       "score": 1,
       "enabled": true,
@@ -109,6 +115,12 @@
       "score": 2,
       "enabled": true,
       "comment": "2 rule(s): jenkins_job_backdoor, tfc_variable_injection"
+    },
+    {
+      "techniqueID": "T1074.001",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): archive_staging_utility"
     },
     {
       "techniqueID": "T1082",
@@ -319,6 +331,12 @@
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): ccache_theft_staging"
+    },
+    {
+      "techniqueID": "T1560.001",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): archive_staging_utility"
     },
     {
       "techniqueID": "T1562.001",

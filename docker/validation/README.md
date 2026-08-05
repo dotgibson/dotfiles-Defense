@@ -100,14 +100,15 @@ oversized-query-name / echo-reply variants.
 
 ## Host / Sigma plane — coverage & findings
 
-Covered (34 rows, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
+Covered (36 rows, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
 every shape — Kerberoast, AS-REP, DCSync, GPP cpassword, coercion, DPAPI, LSASS access,
 NTDS dump, rogue-account / machine-account / scheduled-task / WMI-subscription persistence,
 DCShadow, RBCD, shadow-credentials, ADCS ESC1, RDP-hijack, PsExec, WMIexec, the potato
 SeImpersonate pair, the full ransomware chain (recovery-inhibition, service-stop burst,
 protected-service stop, data destruction, BitLocker abuse, mass encryption),
-unconstrained-delegation abuse, and the correlation rules (password-spray, pass-the-hash,
-LDAP-recon, SharpHound, host-recon burst, mass-encryption on both 4663 and Sysmon 11).
+unconstrained-delegation abuse, host-side collection (the 4663 read sweep and the archive
+staging step), and the correlation rules (password-spray, pass-the-hash, LDAP-recon,
+SharpHound, host-recon burst, mass-encryption on both 4663 and Sysmon 11, mass-read).
 Each was verified firing against the real engine locally.
 
 ### True negatives — how a filter is proven
@@ -115,8 +116,8 @@ Each was verified firing against the real engine locally.
 This plane used to be true-positive only, which meant a row could prove a rule *fires* but
 never that it *doesn't*: an exclusion that silently stopped matching would keep the gate
 green while the rule quietly went noisy. `sigma-manifest.tsv` now carries a sixth column,
-the TN fixture (`-` for none), and **all 16 rules with a `filter_*` block have one**. The
-runner reports the count (`57/57 passed (16 with a true-negative)`), and rules that grow a
+the TN fixture (`-` for none), and **all 18 rules with a `filter_*` block have one**. The
+runner reports the count (`59/59 passed (18 with a true-negative)`), and rules that grow a
 filter but no TN are named in an advisory at the end of the run — the same
 discoverable-checklist idea as [`deploy-required.sh`](../../detections/sigma/deploy-required.sh).
 

@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 1, "Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WKS07"}, "EventData": {"Image": "C:\\Users\\victim\\AppData\\Local\\Temp\\rar.exe", "CommandLine": "rar.exe a -hpS3cret C:\\Users\\Public\\loot.rar C:\\Shares\\finance", "ParentImage": "C:\\Program Files\\Acme\\backup-agent.exe", "User": "CORP\\victim"}}}
