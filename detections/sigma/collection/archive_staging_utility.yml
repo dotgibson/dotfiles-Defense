@@ -42,7 +42,7 @@ logsource:
   category: process_creation
   product: windows
 detection:
-  selection_archiver_password:
+  selection_password:
     Image|endswith:
       - '\rar.exe'
       - '\winrar.exe'
@@ -53,7 +53,7 @@ detection:
       - ' -hp' # rar: encrypt data AND header (hides the file list)
       - ' -p' # 7z/rar: encrypt data
       - ' -mhe' # 7z: encrypt header
-  selection_archiver_staging:
+  selection_staging_archiver:
     Image|endswith:
       - '\rar.exe'
       - '\winrar.exe'
@@ -67,7 +67,7 @@ detection:
       - '\Windows\Temp\'
       - '\Users\Public\'
       - '\ProgramData\'
-  selection_powershell_staging:
+  selection_staging_powershell:
     # Compress-Archive is common admin scripting, so it counts only when the
     # destination is a staging directory - the same test as the archiver half.
     Image|endswith:
@@ -85,7 +85,13 @@ detection:
     # the password half. Run detections/sigma/deploy-required.sh to find this.
     ParentImage|endswith:
       - '\backup-agent.exe' # example — replace with your backup/packaging tooling
-  condition: 1 of selection_* and not filter_backup_tooling
+  # The filter gates ONLY the staging half. Scoping matters: filter_backup_tooling is a
+  # PARENT-process list, and a parent is a weak thing to trust - anything that can be
+  # spawned by the backup agent would inherit its suppression. The staging-path branch is
+  # noisy enough to need that trade; the password branch is not, and silencing an
+  # encrypted archive because of who launched it would throw away the high-confidence
+  # signal to quiet the low-confidence one. Both validated: see the two manifest rows.
+  condition: selection_password or (1 of selection_staging_* and not filter_backup_tooling)
 falsepositives:
   - Software packaging, installer builds, and CI jobs that archive into %TEMP% (suppress
     via filter_backup_tooling; the password-protected half is unaffected).

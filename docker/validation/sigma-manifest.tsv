@@ -58,6 +58,7 @@ unconstrained-deleg-4624	windows-audit	docker/validation/sigma-fixtures/unconstr
 mass-encrypt-4663	windows-audit	docker/validation/sigma-fixtures/mass_encrypt_4663.jsonl	detections/sigma/impact/mass_file_encryption_4663.yml	5f7afed7-23a5-4731-a3aa-855371ebf920	-
 mass-encrypt-sysmon-11	sysmon	docker/validation/sigma-fixtures/mass_encrypt_sysmon11.jsonl	detections/sigma/impact/mass_file_encryption_sysmon_11.yml	3f21b98d-7c05-46ae-9b83-e60a4d17c2f9	docker/validation/sigma-fixtures/mass_encrypt_sysmon11_tn.jsonl
 archive-staging	sysmon	docker/validation/sigma-fixtures/archive_staging_tp.jsonl	detections/sigma/collection/archive_staging_utility.yml	9c0f5a83-4e21-4b7d-8a16-2f7e03c9b415	docker/validation/sigma-fixtures/archive_staging_tn.jsonl
+archive-staging-password-survives-filter	sysmon	docker/validation/sigma-fixtures/archive_staging_password_filtered_parent_tp.jsonl	detections/sigma/collection/archive_staging_utility.yml	9c0f5a83-4e21-4b7d-8a16-2f7e03c9b415	docker/validation/sigma-fixtures/archive_staging_tn.jsonl
 mass-read-4663	windows-audit	docker/validation/sigma-fixtures/mass_read_4663_tp.jsonl	detections/sigma/collection/mass_file_read_4663.yml	2a58c0be-71d4-4f39-b6e5-90c31af782d0	docker/validation/sigma-fixtures/mass_read_4663_tn.jsonl
 service-stop-protected-services	sysmon	docker/validation/sigma-fixtures/service_stop_protected_services.jsonl	detections/sigma/impact/service_stop_protected_services.yml	b28f3d5e-701d-4b00-bb34-8a241a99f018	-
 # Cloud/SaaS rules (pipeline=none: no EventID, match raw field names). Only the 20

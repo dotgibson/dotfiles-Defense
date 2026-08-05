@@ -43,7 +43,7 @@ resource.type:api_token AND action.type:create
 ((resource.type:(worker OR workers_script)) AND (action.type:(create OR update))) AND (NOT actor.email:ci\-deploy@example.com)
 
 // collection/archive_staging_utility.yml — Collected data staged into an archive (T1560.001)
-(((Image:(*\\rar.exe OR *\\winrar.exe OR *\\7z.exe OR *\\7za.exe OR *\\7zg.exe)) AND (CommandLine:(*\ \-hp* OR *\ \-p* OR *\ \-mhe*))) OR ((Image:(*\\rar.exe OR *\\winrar.exe OR *\\7z.exe OR *\\7za.exe OR *\\7zg.exe OR *\\tar.exe OR *\\makecab.exe)) AND (CommandLine:(*\\AppData\\Local\\Temp\\* OR *\\Windows\\Temp\\* OR *\\Users\\Public\\* OR *\\ProgramData\\*))) OR ((Image:(*\\powershell.exe OR *\\pwsh.exe)) AND (CommandLine:*Compress\-Archive* AND CommandLine:*\\Temp\\*))) AND (NOT ParentImage:*\\backup\-agent.exe)
+((Image:(*\\rar.exe OR *\\winrar.exe OR *\\7z.exe OR *\\7za.exe OR *\\7zg.exe)) AND (CommandLine:(*\ \-hp* OR *\ \-p* OR *\ \-mhe*))) OR ((((Image:(*\\rar.exe OR *\\winrar.exe OR *\\7z.exe OR *\\7za.exe OR *\\7zg.exe OR *\\tar.exe OR *\\makecab.exe)) AND (CommandLine:(*\\AppData\\Local\\Temp\\* OR *\\Windows\\Temp\\* OR *\\Users\\Public\\* OR *\\ProgramData\\*))) OR ((Image:(*\\powershell.exe OR *\\pwsh.exe)) AND (CommandLine:*Compress\-Archive* AND CommandLine:*\\Temp\\*))) AND (NOT ParentImage:*\\backup\-agent.exe))
 
 // collection/mass_file_read_4663.yml — File read handle base (4663)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
