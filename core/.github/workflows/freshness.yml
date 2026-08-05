@@ -2,7 +2,7 @@ name: freshness
 
 # Supply-chain freshness bot for Core's RUNTIME pins. The zsh-plugin SHAs
 # (zsh/45-plugins.zsh) and the Neovim lockfile (nvim/lazy-lock.json) are pinned so nothing
-# floats silently into the 9 OS repos — but a pin, once set, also rots: a
+# floats silently into the eight OS repos — but a pin, once set, also rots: a
 # pinned-and-forgotten plugin can sit on a known-vuln commit indefinitely across every
 # machine. dependabot only watches the github-actions ecosystem (see dependabot.yml), so
 # these were unmonitored. Weekly (and on demand) this rolls the pins forward and OPENS A

@@ -5,7 +5,7 @@
 # reach. audit-core.sh proves the modules PARSE (zsh -n) and that the manifest and
 # exec-bits are consistent; this proves the modules actually LOAD TOGETHER in the
 # canonical order and that the pure shell functions DO what they claim. A defect
-# here passes every per-file `zsh -n` cleanly and still fans out to 9 OS repos —
+# here passes every per-file `zsh -n` cleanly and still fans out to eight OS repos —
 # which is exactly the gap this file closes.
 #
 # Two sections, both zsh-gated and degrading gracefully (mirrors audit-core.sh):
@@ -260,7 +260,7 @@ _clip_fails "clip-paste exits non-zero with no backend" "$CLIPPASTE"
 # nvim/ is the largest body of code in Core yet was validated only by luacheck
 # (static). Lua that is luacheck-clean can still be a BROKEN config — a bad vim API
 # call, a malformed lazy spec — that surfaces only when nvim actually starts, and it
-# fans out to 9 repos. This loads the AUTHORED Lua headlessly: the pure config layer
+# fans out to eight repos. This loads the AUTHORED Lua headlessly: the pure config layer
 # (globals/options/keymaps/autocmds/clipboard/providers) AND every plugin SPEC file
 # (require evaluates the spec TABLE; lazy's deferred config/keys callbacks do NOT run,
 # so no plugin needs to be installed — every plugin `require` in this tree is inside
@@ -496,7 +496,7 @@ fi
 # breaks only when you actually edit. That blind spot shipped a real bug: the
 # TextYankPost highlight called a non-existent `vim.hl.hl_op`, throwing on every yank
 # AND delete (TextYankPost fires on both) while the edit still ran — a red error with
-# no failing gate, fanned out to 9 repos. This closes it: load the autocmds, then
+# no failing gate, fanned out to eight repos. This closes it: load the autocmds, then
 # FIRE the events and assert the callbacks ran clean.
 #
 # Events are triggered via post-startup `-c` commands (NOT inside the `-u` init): an
@@ -565,7 +565,7 @@ fi
 # autocmds load and don't throw — it would still pass if FilePost never fired at all
 # (every deferred plugin silently dead: no LSP, no linting, no git signs) or fired
 # repeatedly (every later buffer re-emitting it). Neither shows up as an error, which
-# is exactly the kind of silent breakage that fans out to 9 repos.
+# is exactly the kind of silent breakage that fans out to eight repos.
 #
 # So assert the CONTRACT, not just the absence of errors — fires EXACTLY ONCE, in both
 # startup shapes:
@@ -678,7 +678,7 @@ fi
 # untested: the "*" wildcard capability registration, the per-server vim.lsp.config calls,
 # the failed-module isolation, and which names actually get enabled could all regress while
 # the leaf probe stayed green. It is the file that decides whether you have LSP at all, and
-# it fans out to 9 repos.
+# it fans out to eight repos.
 #
 # Close it by stubbing the two things that made it untestable — blink.cmp (via package.preload)
 # and the vim.lsp surface — then require the real module and assert what it registered. No
@@ -1591,7 +1591,7 @@ UI="$HERE/zsh/05-ui.zsh"
 # Run an assertion under zsh; $1 = label, $2 = zsh body that must exit 0.
 # On FAILURE we capture the child's combined stdout+stderr and print it INDENTED
 # (mirroring the nvim/smoke sections above) — a red unit test must say WHY, not just
-# its label, or a CI failure that fans out to 9 repos forces a local re-reproduction.
+# its label, or a CI failure that fans out to eight repos forces a local re-reproduction.
 # On PASS the output is discarded, so the expected _core_err/usage noise stays silent.
 check() { # check <label> <zsh-body>
   local out
@@ -1684,7 +1684,7 @@ check "pullall on a repo-less dir prints the summary and returns 0" \
 # throwaway $GIT_AUTHOR_* identity and git init in mktemp), advance the remote, then run
 # pullall and assert it fast-forwarded the clone (tally "updated: 1", a real new file on
 # disk, zero failures). This exercises trunk auto-detection, the --ff-only pull, and the
-# ✅ tally — the per-repo path that fans out to all 9 OS repos.
+# ✅ tally — the per-repo path that fans out to all eight OS repos.
 check_dep "pullall fast-forwards a behind repo and tallies it (hermetic bare remote)" git \
   'export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@e GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@e
    w=$(mktemp -d)
@@ -1844,7 +1844,7 @@ check_dep "extract guards the gz output at the archive's path, not \$PWD" gzip \
 # Sections A/B and audit-core.sh's static pass leave the highest-LOGIC, highest
 # fan-out helpers unproven: the package-manager and scheduler detection LADDERS
 # (which differ per distro and silently mis-fire) and ui.zsh's defensive no-TTY
-# confirm. A regression in any of these ships to all 9 OS repos — exactly what a
+# confirm. A regression in any of these ships to all eight OS repos — exactly what a
 # behavioral gate must catch. Each is driven HERMETICALLY against a stubbed PATH
 # (the same technique the clip ladder in section C uses), so the result is
 # deterministic on every CI userland (glibc / BSD / musl) regardless of what's
@@ -2175,7 +2175,7 @@ ucheck "maint: maint-log rejects a non-numeric N in Core's voice" \
 # ── maint scheduler artifacts (systemd unit / launchd plist / cron line) ──────
 # maint-install GENERATES a systemd unit+timer, a launchd plist (XML), and a cron line —
 # fan-out artifacts that, until now, had NO gate: a malformed OnCalendar, a broken plist,
-# or a bad cron field only fails on the user's box, then fans out to 9 repos. Every OTHER
+# or a bad cron field only fails on the user's box, then fans out to eight repos. Every OTHER
 # fan-out artifact class is gated (toml/yaml/json §6, workflows actionlint §8); this closes
 # the maint hole the same way. Hermetic: override _maint_scheduler to pick the branch,
 # stub systemctl/launchctl/crontab to no-ops (so nothing touches the real system), sandbox
@@ -2229,7 +2229,7 @@ ucheck "update: welcome stays silent (no greet, no sentinel) without a tty" \
 
 # completions (U3 / DERIVED regression gate): every first-party PUBLIC verb must have a
 # #compdef that compinit resolves off the vendored fpath dir — a missing/typo'd tag
-# means no tab-completion for that command across all 9 repos, with nothing else to
+# means no tab-completion for that command across all eight repos, with nothing else to
 # catch it. The verb set is DERIVED from the source (top-level functions whose names
 # don't start with `_`, Core's private-helper convention) minus an explicit allowlist
 # of public-but-non-completable functions: the zsh-vi-mode init HOOK, the git-alias
@@ -2252,7 +2252,7 @@ ucheck "completions: every first-party verb has a compinit-resolved completion (
 
 # core-help coverage (B2): the cheat sheet is a HAND-MAINTAINED rows=() array — so a new
 # verb is trivially forgotten and the one discoverability surface silently drifts from
-# reality, with nothing to catch it across 9 repos. Derive the public-verb set from the
+# reality, with nothing to catch it across eight repos. Derive the public-verb set from the
 # source (same technique as the completion gate above), then assert each appears in the
 # RENDERED core-help output (rows OR the footer line, where the op/health/front-door verbs
 # live). `cheat` is the alias and `core` is the dispatcher whose own help IS the sheet —
@@ -2272,7 +2272,7 @@ ucheck "core-help lists every first-party verb (derived B2 coverage gate)" \
 # this proves its FLAGS still match the verb. Every long flag a flag-bearing completion
 # advertises must still be mentioned in the verb's zsh source — so removing `--dry-run`
 # from `up` (or renaming `--local`) without updating its #compdef now FAILS here instead
-# of silently shipping a completion that offers a flag the verb rejects to all 9 repos.
+# of silently shipping a completion that offers a flag the verb rejects to all eight repos.
 # Pure sed+grep (busybox-safe); comment lines in the completion are stripped first.
 hdr "completion ↔ source flag drift (serve, up)"
 _flag_drift() { # _flag_drift <verb> <completion-file> <source-file>
@@ -2292,7 +2292,7 @@ _flag_drift up "$HERE/zsh/completions/_up" "$HERE/zsh/60-update.zsh"
 # ── git helper unit tests (git.zsh) (B2) ──────────────────────────────────────
 # git.zsh's trunk/branch resolution (git_main_branch's 6-way ref search, git_current_branch's
 # detached-HEAD fallback) is real logic that branch-aware aliases (gcom/grbm/gpu) ride on and
-# that fans out to 9 repos — yet it was the ONE shell module with no behavioral coverage (only
+# that fans out to eight repos — yet it was the ONE shell module with no behavioral coverage (only
 # `zsh -n`). Drive each helper against throwaway repos, hermetic: HOME → sandbox and git config
 # pinned to /dev/null so the host's init.defaultBranch can't skew the result. Skips without git.
 hdr "git helper unit tests (git.zsh)"
@@ -2374,7 +2374,7 @@ ucheck "update: _pkgup_list parses pacman package names" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
 
 # ── op.zsh 1Password helpers (B7) ─────────────────────────────────────────────
-# op.zsh fans out to 9 repos and handles SECRETS, yet had zero behavioral coverage. The
+# op.zsh fans out to eight repos and handles SECRETS, yet had zero behavioral coverage. The
 # module short-circuits (returns) unless `op` is on PATH, so we stub a fake `op` (echoes
 # its args) + a fake `clip` (captures stdin) on an isolated PATH — the same hermetic
 # technique as the clip ladder — and assert the verbs' input-guards, the op:// path
@@ -2438,7 +2438,7 @@ else
 fi
 
 # ── tmux status/popup scripts (U11) ───────────────────────────────────────────
-# The tmux helper scripts fan out to 9 repos and were covered only by bash -n + shellcheck
+# The tmux helper scripts fan out to eight repos and were covered only by bash -n + shellcheck
 # (static). Their PORTABILITY CONTRACT — "emit a styled pill when there's something to show,
 # emit NOTHING (segment vanishes) otherwise" — is pure logic that a bad edit could break
 # silently (a status helper that errors blanks the whole bar). Drive the two data-driven

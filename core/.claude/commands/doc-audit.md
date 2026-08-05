@@ -20,10 +20,13 @@ its report. Then, only if asked, open a PR with the fixes.
 
 Run these cross-checks (skip any out of the requested scope):
 
-1. **README layout ↔ `core.manifest` ↔ filesystem.** The "Layout" tree in
-   `README.md` should describe the same files the manifest lists and that exist on
-   disk. Flag files present but undocumented, documented but absent, or in the
-   wrong layer.
+1. **`core.manifest` ↔ `git ls-files` ↔ `blib_link_core`.** The real three-way
+   inventory: every manifest path exists and is tracked, every tracked Core file is
+   listed (or allowlisted), and every symlinked config is actually wired by
+   `lib/bootstrap-lib.sh`. Flag files present but unwired, wired but unlisted, or in
+   the wrong layer. (The README carries no file tree — it documents behaviour, not
+   inventory — so do not look for a "Layout" section; `audit-core.sh` covers the
+   manifest↔filesystem halves mechanically, leaving the bootstrap-wiring half here.)
 2. **`aliases.md` ↔ its alias sources, in every repo that ships one.** Core's
    `aliases.md` against `zsh/20-aliases.zsh` + `zsh/25-git.zsh`; **and each role repo's
    `aliases.md` against its own role source** — `dotfiles-Kali/aliases.md` ↔

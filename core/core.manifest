@@ -19,8 +19,9 @@ core.version
 # fragments >=70 always load. Order matters: tools inits atuin (defines its widget) and
 # fzf defines its zle widgets BEFORE plugins loads zsh-vi-mode, which fires the binding
 # hook; options runs compinit BEFORE plugins (fzf-tab + carapace need it). git loads AFTER
-# aliases so its comprehensive git set is the single source of truth (aliases.zsh
-# intentionally carries no git aliases — see the note in that file).
+# aliases so its comprehensive git set is the single source of truth (20-aliases.zsh
+# carries no git-WORKFLOW aliases; the two tool-detection-gated exceptions, `lg` and
+# `gdft`, are noted in that file).
 # loader.zsh is the shared fragment-loader an OS .zshrc sources (B12); it is NOT itself a
 # numbered fragment (no NN- prefix) — it DRIVES the glob, so it is never sourced by it.
 zsh/loader.zsh         # canonical glob+sort+profile+byte-compile+source loop, vendored so OS .zshrc files stop duplicating it

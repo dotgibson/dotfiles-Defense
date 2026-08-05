@@ -127,6 +127,9 @@ same one-liners those surfaces print.
 | `genpw [length]` | random alphanumeric password (default 16) via openssl, `/dev/urandom` fallback |
 | `please` | re-run the last command with sudo (previews + confirms first) |
 | `pullall [dir]` | pull every git repo under a dir in parallel (prunes, stashes, fast-forwards trunk) |
+| `core [verb]` | the front door: `core help` / `doctor` / `version` / `update` |
+| `core-doctor` | health report: which tools are present, which integrations are actually wired |
+| `core-version` | which Core version this machine carries (reads `core.version`) |
 
 Note `cdup`, not `up` — `up` is the package-updater in `zsh/60-update.zsh`.
 
@@ -151,6 +154,8 @@ A function (not an alias), so it works from inside any OS repo's vendored
 
 Sourced from `zsh/25-git.zsh` (OMZ-compatible). Three interactive fuzzy helpers
 (`gaf`, `grf`, `grsf`) are functions, not aliases — see `zsh/25-git.zsh` for details.
+One row below, `gdft`, is defined in `zsh/20-aliases.zsh` instead: it is gated on
+`HAVE_DIFFT` tool detection rather than being part of the git workflow set.
 
 ### Core
 

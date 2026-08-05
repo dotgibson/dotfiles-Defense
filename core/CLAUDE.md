@@ -36,7 +36,8 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
 - **Never edit vendored `core/` in an OS repo.** That tree is a copy of this repo
   and is overwritten on the next sync. Fix it **here**, then fan out.
 - **Load order is load-bearing.** `tools → ui → options → history → aliases → git
-  → functions → fzf → bindings → plugins → op → maint → update → os → local`
+  → functions → fzf → bindings → plugins → op → maint → update → os → role → local`
+  (bands: Core 00-69, OS-native 70-84, Role 85-94 on Kali/Defense, host-local 95-99)
   (the canonical order in `core.manifest`). Don't reorder casually.
 - **Exec bits are asserted.** `bin/`, `scripts/`, `tmux/scripts/`, `maint/` runners
   are `+x`; the sourced `zsh/*.zsh` modules must stay non-executable.
@@ -90,7 +91,7 @@ On-demand routines that automate the judgment-heavy chores `audit-core.sh` can't
 - `/os-package-availability` — audit an OS repo's package list for renamed/dropped/moved
   packages vs upstream + `PORTING-MATRIX.md`. Shipped as the reusable
   `.github/workflows/claude-routines-call.yml`, which each OS repo consumes as a 3–5 line
-  `@v3` caller (the `lint-call.yml` idiom) instead of a per-repo copy.
+  `@v4` caller (the `lint-call.yml` idiom) instead of a per-repo copy.
 
 Each routine **reports first** and only proposes changes; nothing is vendored out
 without a green `make audit`.

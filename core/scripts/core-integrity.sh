@@ -18,7 +18,7 @@
 # tree hash diverges. One rev-parse each side, O(1), no file walk.
 #
 # This is the INTEGRITY companion to fleet-drift.sh (which checks STALENESS — recorded
-# sha vs Core's tip). They are orthogonal: a repo can be perfectly current AND tampered,
+# sha vs the latest RELEASED Core tag). They are orthogonal: a repo can be perfectly current AND tampered,
 # or pristine BUT behind. Run both.
 #
 # REPORTER, not mutator — never writes to a repo. Run locally against your checked-out

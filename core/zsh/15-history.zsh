@@ -6,7 +6,8 @@
 # in-memory history list — both need HISTFILE/SAVEHIST set sanely. Previously this
 # lived (if at all) in each OS .zshrc; centralizing it here removes that drift.
 #
-# LOAD ORDER: source THIRD, after 10-options.zsh, before 20-aliases.zsh.
+# LOAD ORDER: after 10-options.zsh, before 20-aliases.zsh — the NN prefix is the
+# contract (core.manifest), not a hand-counted position.
 # ──────────────────────────────────────────────────────────────────────────────
 
 [[ $- == *i* ]] || return 0

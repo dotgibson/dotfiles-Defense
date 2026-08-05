@@ -26,7 +26,7 @@ rule that is already in force:
 - `scripts/check-modern.sh` — how each rule is enforced (so a proposal that needs a
   new *check dimension*, not just a new list entry, is costed honestly).
 - The fleet's actual workflows — `git ls-files '.github/workflows/*.yml'` here, and
-  note the OS repos inherit the reusable `*-call.yml@v3` workflows, so a floor bump
+  note the OS repos inherit the reusable `*-call.yml@v4` workflows, so a floor bump
   fans out N-way just like Core.
 
 Run `./scripts/check-modern.sh` to see the fleet's *current* standing against the

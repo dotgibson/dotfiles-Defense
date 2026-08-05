@@ -5,7 +5,8 @@
 # .zshrc loader (i.e. up to seven copies of the same portable config — exactly the
 # drift this whole Core layer exists to kill).
 #
-# LOAD ORDER: source this SECOND, right after 00-tools.zsh. compinit must run here so
+# LOAD ORDER: after 05-ui.zsh, before 15-history.zsh — the NN prefix is the contract
+# (core.manifest), not a hand-counted position. compinit must run here so
 # it's done before fzf-tab and carapace (both in 45-plugins.zsh) and before any
 # `compdef` calls (e.g. the eza completion reuse in 20-aliases.zsh).
 #

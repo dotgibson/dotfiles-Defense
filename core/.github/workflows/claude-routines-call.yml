@@ -7,12 +7,12 @@ name: claude-routines (reusable)
 #
 #   jobs:
 #     claude-routines:
-#       uses: dotgibson/dotfiles-core/.github/workflows/claude-routines-call.yml@v3
+#       uses: dotgibson/dotfiles-core/.github/workflows/claude-routines-call.yml@v4
 #       permissions: { contents: read, issues: write }
 #       secrets: inherit
 #       with: { distro: fedora }
 #
-# INVERTED CHECKOUT (same design as lint-call.yml): dotfiles-core@v3 is checked out
+# INVERTED CHECKOUT (same design as lint-call.yml): dotfiles-core@v4 is checked out
 # at ROOT — it provides the routine command (.claude/commands/), PORTING-MATRIX.md,
 # scripts/tool-versions.env (the pinned CLI), and file-routine-issue.sh: the SINGLE
 # source, with no dependency on the caller's vendored core/. The CALLER OS repo is
@@ -78,8 +78,8 @@ jobs:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       ISSUE_TITLE: "os-package-availability: ${{ inputs.distro }} package-list drift"
     steps:
-      # 1) Core@v3 at ROOT — the routine command + PORTING-MATRIX.md + pinned CLI +
-      #    file-routine-issue.sh. (v3 = the current major, matching the @v3 callers.)
+      # 1) Core@v4 at ROOT — the routine command + PORTING-MATRIX.md + pinned CLI +
+      #    file-routine-issue.sh. (v4 = the current major, matching the @v4 callers.)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

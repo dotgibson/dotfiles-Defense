@@ -5,7 +5,7 @@
 # steps / Alpine + bench legs run. That logic used to be inline bash INSIDE the
 # workflow YAML: untested, unlinted, and drift-prone — a NEW top-level path not
 # added to its glob lists would silently skip a gate, and a skipped gate fans out
-# to all 9 OS repos undetected. Pulling it here makes it shellcheck-clean, unit-
+# to all eight OS repos undetected. Pulling it here makes it shellcheck-clean, unit-
 # tested (scripts/test-core.sh asserts the mapping), and FAIL-CLOSED.
 #
 # Reads changed paths on stdin, one per line (or the single token `__ALL__` when the
