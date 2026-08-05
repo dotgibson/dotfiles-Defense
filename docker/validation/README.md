@@ -97,15 +97,26 @@ oversized-query-name / echo-reply variants.
 
 ## Host / Sigma plane — coverage & findings
 
-Covered (33 rows, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
+Covered (34 rows, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
 every shape — Kerberoast, AS-REP, DCSync, GPP cpassword, coercion, DPAPI, LSASS access,
 NTDS dump, rogue-account / machine-account / scheduled-task / WMI-subscription persistence,
 DCShadow, RBCD, shadow-credentials, ADCS ESC1, RDP-hijack, PsExec, WMIexec, the potato
 SeImpersonate pair, the full ransomware chain (recovery-inhibition, service-stop burst,
 protected-service stop, data destruction, BitLocker abuse, mass encryption),
 unconstrained-delegation abuse, and the correlation rules (password-spray, pass-the-hash,
-LDAP-recon, SharpHound, host-recon burst, mass-encryption). Each was verified firing
-against the real engine locally.
+LDAP-recon, SharpHound, host-recon burst, mass-encryption on both 4663 and Sysmon 11).
+Each was verified firing against the real engine locally.
+
+**Limit of this plane: it is true-positive only.** `sigma-manifest.tsv` has no
+true-negative column (the cloud plane's `sigma-cloud-manifest.tsv` does), so a row proves
+a rule *fires* and can never prove a rule *doesn't* — an exclusion that silently stopped
+working would keep the gate green. That matters for
+`mass_file_encryption_sysmon_11`, whose base event filters browser-cache and OS-servicing
+paths so the distinct-file count reflects the operator's sweep and not the machine's own
+churn. It was checked by hand both ways: 500 writes across excluded cache/servicing paths
+produce **no** detection, and the identical 500 events on an ordinary path **do** fire —
+so the empty result is the filter holding, not a parse failure. Re-run that check by hand
+if those filters change; a TP row alone will not catch it.
 
 The `unconstrained-deleg-4624` row is the one whose fixture is bound to a
 `DEPLOY-REQUIRED` placeholder: the rule ships matching only the `DC1$`/`DC2$` examples,

@@ -41,6 +41,7 @@ data-destruction-4688	sysmon	docker/validation/sigma-fixtures/data_destruction_4
 bitlocker-abuse-4688	sysmon	docker/validation/sigma-fixtures/bitlocker_abuse_4688.jsonl	detections/sigma/impact/bitlocker_abuse_encryption.yml	5e83c1d7-2f46-49ba-b0c3-9a71e4d6058c
 unconstrained-deleg-4624	windows-audit	docker/validation/sigma-fixtures/unconstrained_deleg_4624.jsonl	detections/sigma/lateral_movement/unconstrained_delegation_4624.yml	b7f0439c-5d82-4e61-9c07-1a3e58d2b0f4
 mass-encrypt-4663	windows-audit	docker/validation/sigma-fixtures/mass_encrypt_4663.jsonl	detections/sigma/impact/mass_file_encryption_4663.yml	5f7afed7-23a5-4731-a3aa-855371ebf920
+mass-encrypt-sysmon-11	sysmon	docker/validation/sigma-fixtures/mass_encrypt_sysmon11.jsonl	detections/sigma/impact/mass_file_encryption_sysmon_11.yml	3f21b98d-7c05-46ae-9b83-e60a4d17c2f9
 service-stop-protected-services	sysmon	docker/validation/sigma-fixtures/service_stop_protected_services.jsonl	detections/sigma/impact/service_stop_protected_services.yml	b28f3d5e-701d-4b00-bb34-8a241a99f018
 # Cloud/SaaS rules (pipeline=none: no EventID, match raw field names). Only the 20
 # flat-field cloud rules run here. Products with dotted/nested field names (GCP, Cloudflare,

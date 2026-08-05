@@ -79,7 +79,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 86 rules / 96 documents, organized by ATT&CK tactic
+### `sigma/` — 87 rules / 98 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -137,7 +137,7 @@ purple-validatable out of the box.
 | ---- | -------------- | ------ | ------------- |
 | `dcshadow_rogue_dc_4742` | 4742 `GC/` SPN write (+5137/4662) | T1207 | AD attack paths · dcshadow |
 
-**`impact/`** (the ransomware chain — process creation 4688 / Sysmon 1, plus 4663 for the encryption sweep)
+**`impact/`** (the ransomware chain — process creation 4688 / Sysmon 1, plus 4663 and Sysmon 11 for the encryption sweep)
 
 | Rule | Event / source | ATT&CK | Validate with |
 | ---- | -------------- | ------ | ------------- |
@@ -147,20 +147,29 @@ purple-validatable out of the box.
 | `bitlocker_abuse_encryption` | proc create (manage-bde `-on`/`-protectors -add`, `Enable-BitLocker`) | T1486 | ransomware-precursor · ShrinkLocker-style BitLocker abuse |
 | `service_stop_protected_services` | proc create, ONE stop of a named backup/AV/DB service | T1489 | ransomware-precursor · service-stop-preransom |
 | `mass_file_encryption_4663` | 4663 write/delete handles, distinct files per host+process (value_count correlation) | T1486 | ransomware-precursor · ransomware-encrypt-files |
+| `mass_file_encryption_sysmon_11` | Sysmon 11 FileCreate, distinct files per host+image (value_count correlation) | T1486 | ransomware-precursor · ransomware-encrypt-files |
 
-They are one chain, not six alerts: T1489 clears the locks, T1490 destroys the
+They are one chain, not seven alerts: T1489 clears the locks, T1490 destroys the
 rollback, T1485/T1486 are the objective. Two of them on one host inside a window is
 the chain in progress — alert-chain them if your backend can.
 
-Two techniques carry a deliberate pair of rules, covering different halves:
+Two techniques carry a deliberate set of rules, covering different halves:
 
 - **T1489** — `service_stop_burst` counts volume and variety (five distinct stop commands
   on one host in five minutes) and knows nothing about service names;
   `service_stop_protected_services` knows the names that matter and fires on a single one.
   The burst misses the surgical stop, the named rule misses the no-name walk.
-- **T1486** — `bitlocker_abuse_encryption` covers the slice process creation can see;
-  `mass_file_encryption_4663` covers the general case from 4663 + a SACL. The latter is
-  the answer to the Sysmon-11 ingestion ticket noted below, from a source you already have.
+- **T1486** — three rules, one per data source, because each sees a different slice.
+  `bitlocker_abuse_encryption` covers what process creation can see (BitLocker driven from
+  a command line). The other two find the same invariant — one process rewriting many
+  distinct files in minutes — from different telemetry: `mass_file_encryption_4663` reads
+  Security 4663, which needs no Sysmon change but only fires **where a SACL exists**, so
+  its reach is exactly your SACL's scope; `mass_file_encryption_sysmon_11` reads Sysmon
+  FileCreate, which is **ACL-independent** and therefore covers the shares nobody put a
+  SACL on, at the cost of enabling event 11. They are a per-source pair in the same sense
+  as `potato_seimpersonate_*` — genuinely different field names (`ObjectName`/`ProcessName`
+  vs `TargetFilename`/`Image`), so one rule naming both would null under either pipeline.
+  Deploy whichever you collect; deploy both if you collect both.
 
 **`linux/`** (Linux host telemetry — `product: linux`, `category: process_creation`; auditd/Sysmon-for-Linux)
 
@@ -295,7 +304,8 @@ Two techniques carry a deliberate pair of rules, covering different halves:
 `password_spray`, `asrep_roast_probing`, `sharphound_ldap_sweep`,
 `ldap_recon_explicit_creds_4648`, `host_recon_command_burst`,
 `passthehash_4624_fanout`, `machine_account_creation_burst_4741`,
-`service_stop_burst`, `mass_file_encryption_4663`, and `vault_bulk_secret_read` are Sigma
+`service_stop_burst`, `mass_file_encryption_4663`,
+`mass_file_encryption_sysmon_11`, and `vault_bulk_secret_read` are Sigma
 **correlation** rules (a base event + a `value_count` over a window); the rest are
 single-event selections. The two process-creation correlations
 (`host_recon_command_burst`, `service_stop_burst`) group by `Computer` rather than by
@@ -357,9 +367,21 @@ Nothing is `stable` yet — that would claim production-tuning history this repo
 ### `sysmon/` — `sysmonconfig-detection-lab.xml`
 
 A deliberately minimal Sysmon baseline that turns on **exactly** the telemetry
-the rules above need (ProcessCreate 1, ProcessAccess 10 on LSASS, Registry 12/13
-for autorun/WDigest, PipeEvent 17/18 for coercion pipes, WmiEvent 19/20/21). It
-is a lab baseline, not production — graduate to `sysmon-modular` and tune.
+the rules above need (ProcessCreate 1, ProcessAccess 10 on LSASS, FileCreate 11
+for the encryption sweep, Registry 12/13 for autorun/WDigest, PipeEvent 17/18 for
+coercion pipes, WmiEvent 19/20/21). It is a lab baseline, not production —
+graduate to `sysmon-modular` and tune.
+
+**FileCreate 11 is the one block that costs real volume**, and it is enabled on
+purpose: it is what makes `mass_file_encryption_sysmon_11` ACL-independent, where the
+4663 twin sees only what a SACL covers. It is `onmatch="exclude"` rather than an
+allowlist so an encryptor writing somewhere unexpected is still logged, and the
+exclusions are by *target path* wherever possible — dropping a whole `Image` (svchost,
+explorer) would hand an operator a place to write from, so only two purpose-built,
+high-churn processes are named. If the lab drowns, this is the first block to tighten:
+scope it to your document shares with an `include` group and accept the narrower reach.
+The Sigma rule filters the same shape of path again in its base event, so it still
+behaves on a host whose Sysmon config is broader than this one.
 
 ### `network/` — wire-side mirrors
 
@@ -458,17 +480,19 @@ placeholders.
   **Microsoft Sentinel KQL** in `siem/sentinel/{golden_ticket_4769,silver_ticket_4624,
   ntlm_relay_4624}.yaml` (and as SPL in Kali's `PURPLE-TEAM.md` via their htpx pairs).
   For Silver Ticket the durable control remains PAC validation.
-- **T1486 Data Encrypted for Impact — the general case now ships, on a different data
-  source than the one the ticket asked for.** The honest invariant is mass file
-  modification, and the note here previously said that needed Sysmon `FileCreate`/11 or
-  EDR file telemetry, which `sysmon/sysmonconfig-detection-lab.xml` deliberately does not
-  enable. `impact/mass_file_encryption_4663` gets the same invariant from **Security 4663
-  plus a SACL** — no Sysmon change required — alongside
-  `impact/bitlocker_abuse_encryption` for the slice process creation can see.
-  What's still open: 4663 is only emitted where a SACL exists, so this detection's reach
-  is exactly your SACL's scope (the rule says so, and the base event documents the audit
-  subcategory it needs). Enabling Sysmon 11 would still be the broader, configuration-free
-  answer — the ingestion ticket is downgraded, not closed.
+- **T1486 Data Encrypted for Impact — closed, on both data sources.** The honest invariant
+  is mass file modification. This shipped first as `impact/mass_file_encryption_4663`
+  (Security 4663 + a SACL, no Sysmon change required), which left the ingestion ticket
+  *downgraded, not closed*: 4663 is only emitted where a SACL exists, so that rule's reach
+  is exactly your SACL's scope, and a share nobody put a SACL on stayed invisible.
+  `sysmon/sysmonconfig-detection-lab.xml` now enables **FileCreate (event 11)** and
+  `impact/mass_file_encryption_sysmon_11` reads it, which is ACL-independent and closes
+  that gap. Both are validated in `docker/validation` — and the Sysmon-11 rule's path
+  exclusions were verified negatively as well as positively: 500 writes to excluded cache
+  and servicing paths produce no detection, while the same 500 events on an ordinary path
+  fire. `impact/bitlocker_abuse_encryption` still covers the slice process creation can
+  see. What remains is a deployment trade, not a coverage hole: event 11 is the loudest
+  block in the Sysmon config, and narrowing it narrows this rule's reach with it.
 - **External Reconnaissance (TA0043), Initial Access (TA0001), and Resource
   Development (TA0042)** have no detection here and are not meant to: the first is
   pre-compromise and only nominally in `DEFENSE-METHODOLOGY.md`'s "Recon / Discovery"
