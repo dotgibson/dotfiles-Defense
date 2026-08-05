@@ -27,10 +27,34 @@
       "comment": "1 rule(s): dcsync_replication_4662"
     },
     {
+      "techniqueID": "T1007",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): host_recon_command_burst"
+    },
+    {
+      "techniqueID": "T1016",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): host_recon_command_burst"
+    },
+    {
+      "techniqueID": "T1018",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): host_recon_command_burst"
+    },
+    {
       "techniqueID": "T1021",
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): passthehash_4624_fanout"
+    },
+    {
+      "techniqueID": "T1033",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): host_recon_command_burst"
     },
     {
       "techniqueID": "T1046",
@@ -45,10 +69,22 @@
       "comment": "1 rule(s): wmiexec_wmiprvse_child_4688"
     },
     {
+      "techniqueID": "T1049",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): host_recon_command_burst"
+    },
+    {
       "techniqueID": "T1053.005",
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): scheduled_task_suspicious_4698"
+    },
+    {
+      "techniqueID": "T1057",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): host_recon_command_burst"
     },
     {
       "techniqueID": "T1059",
@@ -73,6 +109,18 @@
       "score": 2,
       "enabled": true,
       "comment": "2 rule(s): jenkins_job_backdoor, tfc_variable_injection"
+    },
+    {
+      "techniqueID": "T1082",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): host_recon_command_burst"
+    },
+    {
+      "techniqueID": "T1087.001",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): host_recon_command_burst"
     },
     {
       "techniqueID": "T1087.002",
@@ -117,6 +165,12 @@
       "comment": "2 rule(s): potato_seimpersonate_4688, potato_seimpersonate_sysmon_1"
     },
     {
+      "techniqueID": "T1135",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): host_recon_command_burst"
+    },
+    {
       "techniqueID": "T1136.001",
       "score": 1,
       "enabled": true,
@@ -138,7 +192,7 @@
       "techniqueID": "T1187",
       "score": 2,
       "enabled": true,
-      "comment": "2 rule(s): coercion_named_pipes_5145, unconstrained_delegation_dc_logon_4624"
+      "comment": "2 rule(s): coercion_named_pipes_5145, unconstrained_delegation_4624"
     },
     {
       "techniqueID": "T1195.002",
@@ -159,16 +213,22 @@
       "comment": "1 rule(s): okta_idp_created"
     },
     {
-      "techniqueID": "T1486",
+      "techniqueID": "T1485",
       "score": 1,
       "enabled": true,
-      "comment": "1 rule(s): mass_file_encryption_4663"
+      "comment": "1 rule(s): data_destruction_wipe"
+    },
+    {
+      "techniqueID": "T1486",
+      "score": 2,
+      "enabled": true,
+      "comment": "2 rule(s): bitlocker_abuse_encryption, mass_file_encryption_4663"
     },
     {
       "techniqueID": "T1489",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): service_stop_preransom_process"
+      "comment": "2 rule(s): service_stop_burst, service_stop_protected_services"
     },
     {
       "techniqueID": "T1490",
@@ -207,6 +267,12 @@
       "comment": "1 rule(s): passthehash_4624_fanout"
     },
     {
+      "techniqueID": "T1550.003",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): unconstrained_delegation_4624"
+    },
+    {
       "techniqueID": "T1552.006",
       "score": 1,
       "enabled": true,
@@ -234,7 +300,7 @@
       "techniqueID": "T1558",
       "score": 1,
       "enabled": true,
-      "comment": "1 rule(s): unconstrained_delegation_dc_logon_4624"
+      "comment": "1 rule(s): unconstrained_delegation_4624"
     },
     {
       "techniqueID": "T1558.003",

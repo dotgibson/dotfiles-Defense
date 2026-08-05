@@ -1,0 +1,94 @@
+title: Service/process stop command base - service control by command line
+id: 1d7e3b48-95c2-4a06-8f31-6b0d29ac57e2
+status: experimental
+description: |
+  Base event for the pre-encryption service-stop burst below: a command-line stop of
+  a Windows service or a forced process kill. Not actionable alone - stopping one
+  service is routine maintenance, patching, and troubleshooting. The ransomware shape
+  is VOLUME AND VARIETY: many distinct services torn down on one host in minutes, so
+  the files the encryptor wants (databases, mail stores, backup catalogs, the
+  security agent watching it) are unlocked and unwatched first. That shape is
+  expressed by the correlation rule.
+  Generic `category: process_creation` so it matches both Security-4688 and Sysmon-1;
+  it names only Image and CommandLine, which both channels carry.
+references:
+  - https://attack.mitre.org/techniques/T1489/
+author: dotfiles-Defense
+date: 2026-08-05
+name: service_stop_command
+tags:
+  - attack.impact
+  - attack.t1489
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection_net_stop:
+    Image|endswith:
+      - '\net.exe'
+      - '\net1.exe'
+    CommandLine|contains: ' stop'
+  selection_sc_stop:
+    Image|endswith: '\sc.exe'
+    CommandLine|contains:
+      - ' stop'
+      - 'start= disabled' # the durable half of the same action
+      - 'start=disabled'
+  selection_taskkill:
+    Image|endswith: '\taskkill.exe'
+    # Trailing space is deliberate: a bare '/f' also matches '/fi', the FILTER flag, which
+    # pulls ordinary non-forced taskkill usage into the count. The teardown form is
+    # `taskkill /f /im <proc>`, where /f is followed by the next argument.
+    CommandLine|contains: '/f '
+  selection_powershell_stop:
+    Image|endswith:
+      - '\powershell.exe'
+      - '\pwsh.exe'
+    CommandLine|contains:
+      - 'Stop-Service'
+      - 'Stop-Process'
+  condition: 1 of selection_*
+falsepositives:
+  - Patching, application restarts, and troubleshooting stop services one at a time -
+    which is why the base is informational and the burst count below carries the signal.
+level: informational
+---
+title: Mass service stop - the ransomware pre-encryption teardown (T1489)
+id: 8f2c6d51-7a30-4b9e-a1c4-3e05b7d29f68
+status: experimental
+description: |
+  Detects one host stopping many distinct services in a short window - the teardown
+  that precedes encryption. Ransomware cannot encrypt a file another process holds
+  open, so before the encryptor runs it kills database engines, mail stores, backup
+  agents, and the security tooling that would stop it. That produces a dense burst of
+  stop commands from one host, which no maintenance workflow matches: patching stops
+  a service, waits, restarts it - it does not tear down twenty in four minutes.
+  This is the sibling of recovery_inhibition_process (T1490, shadow copy / backup
+  catalog / boot recovery deletion): T1490 destroys the rollback, T1489 clears the
+  way for the encryption itself. Seeing both on one host inside the same window is
+  the ransomware kill chain in progress, not two maintenance tasks - alert-chain them
+  if your backend supports it.
+  Counting DISTINCT command lines makes a retry loop against one stubborn service
+  count once, while a walk through many services trips it. Tune to your build: patch
+  windows and application-deployment hosts are the baseline that shifts it.
+  Validate (purple): run the ransomware-precursor fold from dotfiles-Kali alongside
+  the recovery-inhibition commands (htpx pair inhibit-recovery-vssadmin). Requires the
+  Process Creation audit subcategory (4688) or Sysmon EventID 1.
+references:
+  - https://attack.mitre.org/techniques/T1489/
+  - https://attack.mitre.org/techniques/T1490/
+correlation:
+  type: value_count
+  rules:
+    - service_stop_command
+  group-by:
+    - Computer
+  timespan: 5m
+  condition:
+    gte: 5
+    field: CommandLine
+falsepositives:
+  - Scripted maintenance / deployment that cycles an application's whole service set
+    (allowlist the host or the parent process, or raise the threshold there).
+  - Uninstall routines for suites that register many services.
+level: high

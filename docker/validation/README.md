@@ -97,14 +97,22 @@ oversized-query-name / echo-reply variants.
 
 ## Host / Sigma plane — coverage & findings
 
-Covered (30 rows, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
+Covered (33 rows, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
 every shape — Kerberoast, AS-REP, DCSync, GPP cpassword, coercion, DPAPI, LSASS access,
-NTDS dump, unconstrained-delegation TGT capture, rogue-account / machine-account /
-scheduled-task / WMI-subscription persistence, DCShadow, RBCD, shadow-credentials, ADCS
-ESC1, RDP-hijack, PsExec, WMIexec, the potato SeImpersonate pair, the ransomware fold
-(recovery inhibition, pre-ransom service stop, mass encryption), and the correlation rules
-(password-spray, pass-the-hash, LDAP-recon, SharpHound, mass-encryption). Each was verified
-firing against the real engine locally.
+NTDS dump, rogue-account / machine-account / scheduled-task / WMI-subscription persistence,
+DCShadow, RBCD, shadow-credentials, ADCS ESC1, RDP-hijack, PsExec, WMIexec, the potato
+SeImpersonate pair, the full ransomware chain (recovery-inhibition, service-stop burst,
+protected-service stop, data destruction, BitLocker abuse, mass encryption),
+unconstrained-delegation abuse, and the correlation rules (password-spray, pass-the-hash,
+LDAP-recon, SharpHound, host-recon burst, mass-encryption). Each was verified firing
+against the real engine locally.
+
+The `unconstrained-deleg-4624` row is the one whose fixture is bound to a
+`DEPLOY-REQUIRED` placeholder: the rule ships matching only the `DC1$`/`DC2$` examples,
+so the fixture names `DC1$` as the coerced DC. It proves the *shape* fires, not that the
+rule is deployable — substituting the real DC inventory is still on the operator (see the
+`DEPLOY-REQUIRED` table in `detections/README.md`). The `dcshadow-4742` row has the same
+property.
 
 **Resolved — the potato SeImpersonate rule now fires (split into a per-channel pair).**
 The original `potato_seimpersonate_4688.yml` was dual-channel by design: one

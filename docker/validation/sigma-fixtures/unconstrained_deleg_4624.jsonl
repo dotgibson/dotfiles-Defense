@@ -1,1 +1,1 @@
-{"Event": {"System": {"EventID": 4624, "Channel": "Security", "Computer": "FILESRV01"}, "EventData": {"TargetUserName": "DC01$", "TargetDomainName": "CORP", "LogonType": "3", "AuthenticationPackageName": "Kerberos", "IpAddress": "10.0.0.10", "WorkstationName": "DC01"}}}
+{"Event": {"System": {"EventID": 4624, "Channel": "Security", "Computer": "FILE01"}, "EventData": {"LogonType": 3, "AuthenticationPackageName": "Kerberos", "TargetUserName": "DC1$", "IpAddress": "10.9.9.50"}}}

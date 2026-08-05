@@ -54,9 +54,13 @@ description: |
   share and one on every user profile have very different normal rates, and backup,
   indexing, AV-scan-and-quarantine, and sync agents are the processes that legitimately
   sweep files - identify them from your own data and suppress them by ProcessName rather
-  than raising the threshold until the payload fits under it. Pair with T1490 recovery
-  inhibition and T1489 service stop: those three inside one window is a ransomware
-  event, not a noisy host.
+  than raising the threshold until the payload fits under it.
+  This is the general T1486 case, on a data source that exists today: 4663 with a SACL,
+  rather than the Sysmon 11 FileCreate the repo does not yet collect. It sits alongside
+  bitlocker_abuse_encryption, which covers the narrower slice process creation can see
+  (BitLocker driven from the command line). Pair both with T1490 recovery inhibition
+  (recovery_inhibition_process) and the two T1489 service-stop rules: those inside one
+  window are a ransomware event, not a noisy host.
   Validate (purple): run the file-encryption simulation from dotfiles-Kali (htpx pair
   ransomware-encrypt-files) against a SACL'd share.
 references:
