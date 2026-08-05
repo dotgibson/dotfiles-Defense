@@ -1,0 +1,1 @@
+{"eventSource": "iam.amazonaws.com", "eventName": "AttachUserPolicy", "userIdentity": {"type": "IAMUser", "arn": "arn:aws:iam::111122223333:user/compromised-dev"}, "requestParameters": {"userName": "compromised-dev", "policyArn": "arn:aws:iam::aws:policy/AdministratorAccess"}}

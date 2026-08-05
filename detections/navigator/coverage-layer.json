@@ -142,9 +142,9 @@
     },
     {
       "techniqueID": "T1098.003",
-      "score": 1,
+      "score": 3,
       "enabled": true,
-      "comment": "1 rule(s): gws_admin_role_grant"
+      "comment": "3 rule(s): aws_iam_privesc_policy, entra_directory_role_grant, gws_admin_role_grant"
     },
     {
       "techniqueID": "T1110.003",
@@ -220,15 +220,15 @@
     },
     {
       "techniqueID": "T1486",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): bitlocker_abuse_encryption"
+      "comment": "2 rule(s): bitlocker_abuse_encryption, mass_file_encryption_4663"
     },
     {
       "techniqueID": "T1489",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): service_stop_burst"
+      "comment": "2 rule(s): service_stop_burst, service_stop_protected_services"
     },
     {
       "techniqueID": "T1490",
@@ -295,6 +295,12 @@
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): okta_mfa_factor_reset"
+    },
+    {
+      "techniqueID": "T1558",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): unconstrained_delegation_4624"
     },
     {
       "techniqueID": "T1558.003",

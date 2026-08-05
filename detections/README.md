@@ -79,7 +79,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 82 rules / 91 documents, organized by ATT&CK tactic
+### `sigma/` — 86 rules / 96 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -137,7 +137,7 @@ purple-validatable out of the box.
 | ---- | -------------- | ------ | ------------- |
 | `dcshadow_rogue_dc_4742` | 4742 `GC/` SPN write (+5137/4662) | T1207 | AD attack paths · dcshadow |
 
-**`impact/`** (the ransomware chain, all on process creation — 4688 / Sysmon 1)
+**`impact/`** (the ransomware chain — process creation 4688 / Sysmon 1, plus 4663 for the encryption sweep)
 
 | Rule | Event / source | ATT&CK | Validate with |
 | ---- | -------------- | ------ | ------------- |
@@ -145,10 +145,22 @@ purple-validatable out of the box.
 | `service_stop_burst` | proc create, distinct service stops per host (value_count correlation) | T1489 | ransomware-precursor · inhibit-recovery-vssadmin |
 | `data_destruction_wipe` | proc create (cipher `/w`, sdelete, fsutil setZeroData, diskpart clean) | T1485 | ransomware-precursor · destruction commands |
 | `bitlocker_abuse_encryption` | proc create (manage-bde `-on`/`-protectors -add`, `Enable-BitLocker`) | T1486 | ransomware-precursor · ShrinkLocker-style BitLocker abuse |
+| `service_stop_protected_services` | proc create, ONE stop of a named backup/AV/DB service | T1489 | ransomware-precursor · service-stop-preransom |
+| `mass_file_encryption_4663` | 4663 write/delete handles, distinct files per host+process (value_count correlation) | T1486 | ransomware-precursor · ransomware-encrypt-files |
 
-The four are one chain, not four alerts: T1489 clears the locks, T1490 destroys the
+They are one chain, not six alerts: T1489 clears the locks, T1490 destroys the
 rollback, T1485/T1486 are the objective. Two of them on one host inside a window is
 the chain in progress — alert-chain them if your backend can.
+
+Two techniques carry a deliberate pair of rules, covering different halves:
+
+- **T1489** — `service_stop_burst` counts volume and variety (five distinct stop commands
+  on one host in five minutes) and knows nothing about service names;
+  `service_stop_protected_services` knows the names that matter and fires on a single one.
+  The burst misses the surgical stop, the named rule misses the no-name walk.
+- **T1486** — `bitlocker_abuse_encryption` covers the slice process creation can see;
+  `mass_file_encryption_4663` covers the general case from 4663 + a SACL. The latter is
+  the answer to the Sysmon-11 ingestion ticket noted below, from a source you already have.
 
 **`linux/`** (Linux host telemetry — `product: linux`, `category: process_creation`; auditd/Sysmon-for-Linux)
 
@@ -162,8 +174,10 @@ the chain in progress — alert-chain them if your backend can.
 | ---- | -------------- | ------ | ------------- |
 | `entra_illicit_consent_grant` | Entra AuditLogs "Consent to application" | T1528 | M365/Entra · consent-grant |
 | `entra_sp_credential_backdoor` | Entra AuditLogs "Add SP credentials" | T1098.001 | M365/Entra · sp-cred-backdoor |
+| `entra_directory_role_grant` | Entra AuditLogs "Add member to role" | T1098.003 | M365/Entra · entra-directory-role |
 | `aws_iam_access_key_created` | CloudTrail `CreateAccessKey` | T1098.001 | AWS IAM · aws-iam-backdoor-key |
 | `aws_login_profile_created` | CloudTrail Create/UpdateLoginProfile | T1098 | AWS IAM · aws-console-login-profile |
+| `aws_iam_privesc_policy` | CloudTrail policy attach/put/version + group add | T1098.003 | AWS IAM · aws-iam-privesc-policy |
 | `gcp_service_account_key_created` | GCP audit `CreateServiceAccountKey` | T1098.001 | GCP IAM · gcp-sa-key |
 
 **`kubernetes/`** (kube-apiserver audit — `product: kubernetes`)
@@ -281,7 +295,7 @@ the chain in progress — alert-chain them if your backend can.
 `password_spray`, `asrep_roast_probing`, `sharphound_ldap_sweep`,
 `ldap_recon_explicit_creds_4648`, `host_recon_command_burst`,
 `passthehash_4624_fanout`, `machine_account_creation_burst_4741`,
-`service_stop_burst`, and `vault_bulk_secret_read` are Sigma
+`service_stop_burst`, `mass_file_encryption_4663`, and `vault_bulk_secret_read` are Sigma
 **correlation** rules (a base event + a `value_count` over a window); the rest are
 single-event selections. The two process-creation correlations
 (`host_recon_command_burst`, `service_stop_burst`) group by `Computer` rather than by
@@ -318,6 +332,27 @@ comment isn't enforcement, so this is the discoverable checklist instead.)
 | `lateral_movement/unconstrained_delegation_4624` | `TargetUserName` → your DC computer accounts, **and** `filter_dc_destinations` → those DCs' hostnames | **inert** — the rule matches only the `DC1$`/`DC2$` examples, so a coerced logon from any other DC is missed entirely. This is the one placeholder that makes its rule a no-op rather than merely noisy; fill it first. |
 | `cloud/entra_illicit_consent_grant` | `filter_known_apps` → sanctioned app (client) IDs | verified LOB apps holding mail/file scopes alert (the high-risk-scope match still scopes it) |
 | `snowflake/snowflake_data_unload` | `filter_known_stages` → sanctioned named stages | a named *internal* stage (not `@%`/`@~`) alerts alongside external ones |
+| `credential_access/lsass_handle_access` | `filter_av` → your endpoint-protection agent binaries | in a non-Defender shop the EDR reads LSASS continuously and this `high` rule fires steadily |
+| `persistence/rogue_account_creation_4720` | `filter_provisioning` → your IAM/JML and helpdesk provisioning principals | every routine onboarding alerts |
+| `cloudflare/cloudflare_worker_deployed` | `filter_ci` → the deploy pipeline's Cloudflare identity | every CI Worker deploy is a `high` alert |
+| `cloud/aws_iam_privesc_policy` | `filter_iac` → your IaC / access-management automation principal(s) | Terraform's routine policy attachments alert alongside operator-driven ones |
+
+#### What `status:` means here
+
+`status` is a triage signal, not decoration, so it is not uniform across the corpus:
+
+- **`test`** — an invariant on a rare event, with **no** unpopulated `DEPLOY-REQUIRED`
+  placeholder and a committed validation fixture proving it fires
+  (`dcsync_replication_4662`, `recovery_inhibition_process`, `vault_audit_device_disabled`,
+  `okta_idp_created`, and the rest of that shape). Deploy these first; they are the
+  near-zero-FP tripwires.
+- **`experimental`** — everything else, and deliberately so: rules whose filter stub is
+  still a placeholder, the threshold-tuned `value_count` correlations (the threshold is a
+  property of *your* environment, not of the rule), and the broad token-mint / creation
+  rules whose own `falsepositives` say routine activity produces them. These are worth
+  deploying, but tune before you page on them.
+
+Nothing is `stable` yet — that would claim production-tuning history this repo doesn't have.
 
 ### `sysmon/` — `sysmonconfig-detection-lab.xml`
 
@@ -423,13 +458,17 @@ placeholders.
   **Microsoft Sentinel KQL** in `siem/sentinel/{golden_ticket_4769,silver_ticket_4624,
   ntlm_relay_4624}.yaml` (and as SPL in Kali's `PURPLE-TEAM.md` via their htpx pairs).
   For Silver Ticket the durable control remains PAC validation.
-- **T1486 Data Encrypted for Impact is covered only on the BitLocker-abuse path**
-  (`impact/bitlocker_abuse_encryption`). The general case — a dropped encryptor
-  rewriting files — has one honest invariant, mass file modification, and that needs
-  Sysmon `FileCreate`/11 or EDR file telemetry. `sysmon/sysmonconfig-detection-lab.xml`
-  deliberately does **not** enable 11, so per "no data source, no detection" this ships
-  as the slice process creation can actually see, not a rule pretending to more.
-  Enabling Sysmon 11 is the ingestion ticket that would close the rest.
+- **T1486 Data Encrypted for Impact — the general case now ships, on a different data
+  source than the one the ticket asked for.** The honest invariant is mass file
+  modification, and the note here previously said that needed Sysmon `FileCreate`/11 or
+  EDR file telemetry, which `sysmon/sysmonconfig-detection-lab.xml` deliberately does not
+  enable. `impact/mass_file_encryption_4663` gets the same invariant from **Security 4663
+  plus a SACL** — no Sysmon change required — alongside
+  `impact/bitlocker_abuse_encryption` for the slice process creation can see.
+  What's still open: 4663 is only emitted where a SACL exists, so this detection's reach
+  is exactly your SACL's scope (the rule says so, and the base event documents the audit
+  subcategory it needs). Enabling Sysmon 11 would still be the broader, configuration-free
+  answer — the ingestion ticket is downgraded, not closed.
 - **External Reconnaissance (TA0043), Initial Access (TA0001), and Resource
   Development (TA0042)** have no detection here and are not meant to: the first is
   pre-compromise and only nominally in `DEFENSE-METHODOLOGY.md`'s "Recon / Discovery"

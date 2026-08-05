@@ -1,6 +1,6 @@
 title: DCSync - directory replication right requested by a non-DC
 id: bc81c0e5-f587-4b57-bee4-e29d1848dbfa
-status: experimental
+status: test
 description: |
   Detects DCSync: a 4662 directory-access event requesting the
   DS-Replication-Get-Changes-All extended right. Legitimate replication comes from

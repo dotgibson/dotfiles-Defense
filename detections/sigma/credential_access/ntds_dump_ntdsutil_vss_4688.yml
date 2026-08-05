@@ -1,6 +1,6 @@
 title: NTDS.dit theft via ntdsutil / VSS on a domain controller
 id: 3e5d07b8-2e1b-4145-9f6a-ee29d7cd470f
-status: experimental
+status: test
 description: |
   Detects local NTDS.dit extraction on a DC, which sidesteps the DCSync 4662
   replication detection entirely: ntdsutil with an ifm/create-full argument, or

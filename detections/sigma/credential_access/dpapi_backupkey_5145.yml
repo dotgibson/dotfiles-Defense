@@ -1,6 +1,6 @@
 title: DPAPI domain backup-key theft - protected_storage pipe (5145)
 id: d2280db3-54ba-4329-8cc7-de905fac62ac
-status: experimental
+status: test
 description: |
   Detects retrieval of the DPAPI domain backup key: a 5145 detailed file-share
   access whose relative target is the protected_storage named pipe over IPC$ on a

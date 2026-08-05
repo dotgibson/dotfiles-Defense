@@ -1,6 +1,6 @@
 title: Inhibit system recovery - shadow copy / backup / boot-recovery deletion
 id: 7dbc97d7-0d27-4a77-8dfd-daf203087726
-status: experimental
+status: test
 description: |
   Detects the ransomware kill-chain precursor Inhibit System Recovery (T1490): an
   operator destroying the means to roll back before or during encryption - vssadmin /
@@ -9,6 +9,13 @@ description: |
   from almost nothing legitimate on endpoints and are near-zero-FP and high-fidelity;
   they are the natural inverse of ntds_dump_ntdsutil_vss_4688 (which keys on vssadmin
   *create* shadow). One of these on a workstation is an incident, not a maintenance task.
+  First leg of the ransomware fold here. The rest: service_stop_burst and
+  service_stop_protected_services clear the way (T1489 - the broad teardown and the
+  named-protected-service stop respectively), mass_file_encryption_4663 and
+  bitlocker_abuse_encryption are the payload (T1486 - the general 4663 case and the
+  BitLocker-from-the-command-line case), and data_destruction_wipe is the no-ransom
+  variant (T1485). Any two of those on one host inside a window is a ransomware event in
+  progress, not two maintenance tasks.
   Validate (purple): run the recovery-inhibition commands from dotfiles-Kali (htpx pair
   inhibit-recovery-vssadmin).
 references:
@@ -35,11 +42,16 @@ detection:
     CommandLine|contains|all:
       - 'delete'
       - 'catalog'
-  selection_bcdedit:
+  selection_bcdedit_recovery:
     Image|endswith: '\bcdedit.exe'
-    CommandLine|contains:
-      - 'recoveryenabled no'
-      - 'bootstatuspolicy ignoreallfailures'
+    CommandLine|contains|all:
+      - 'recoveryenabled'
+      - 'no'
+  selection_bcdedit_bootstatus:
+    Image|endswith: '\bcdedit.exe'
+    CommandLine|contains|all:
+      - 'bootstatuspolicy'
+      - 'ignoreallfailures'
   condition: 1 of selection_*
 falsepositives:
   - Sanctioned backup/imaging software or an administrator intentionally clearing shadow

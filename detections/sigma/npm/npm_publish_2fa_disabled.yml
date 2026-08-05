@@ -1,6 +1,6 @@
 title: npm publish-2FA requirement disabled (open the publish path)
 id: 0df91273-3e6e-459c-b865-468bd1f1c686
-status: experimental
+status: test
 description: |
   Detects the package require-two-factor-to-publish control being turned off in the npm audit
   log (action=package.edit, mfa=none). That setting is what stops a bare stolen token from

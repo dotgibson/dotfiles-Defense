@@ -1,0 +1,89 @@
+title: File write/delete handle base (4663)
+id: 2b9efc7b-9987-45a8-a4ac-9200ce82f82c
+status: experimental
+description: |
+  Base event for the mass-encryption correlation below: a 4663 object-access event
+  where a process actually used write, append, or delete access on a file. Not
+  actionable alone - every save, every log line, every temp file is one of these. The
+  ransomware shape is one process touching a large, diverse set of files in minutes,
+  expressed by the correlation rule.
+  The AccessMask values are the single-bit write/append/delete forms (0x2 WriteData,
+  0x4 AppendData, 0x6 both, 0x10000 DELETE); if your SACL emits combined masks, widen
+  this list rather than the correlation threshold.
+  Requires the Object Access > File System audit subcategory + a SACL on the directories
+  you care about (document shares, user profiles); without it 4663 is not emitted at all,
+  and the SACL's scope - not the rule - sets this detection's noise floor.
+references:
+  - https://attack.mitre.org/techniques/T1486/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/mass-encrypt-4663.md
+author: dotfiles-Defense
+date: 2026-08-05
+name: file_write_handle_4663
+tags:
+  - attack.impact
+  - attack.t1486
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4663
+    ObjectType: 'File'
+    AccessMask:
+      - '0x2'
+      - '0x4'
+      - '0x6'
+      - '0x10000'
+  condition: selection
+falsepositives:
+  - Any normal file write (defeated by the distinct-file count below).
+level: informational
+---
+title: Mass file encryption - one process rewriting many files (4663)
+id: 5f7afed7-23a5-4731-a3aa-855371ebf920
+status: experimental
+description: |
+  Detects the ransomware payload itself (T1486): a single process opening write/delete
+  handles against many distinct files in a short window. This is the other half of the
+  ransomware pair - recovery_inhibition_process catches the operator destroying the
+  rollback path (T1490, the precursor), this catches the encryption that follows. Counting
+  DISTINCT ObjectName per process beats a raw 4663-rate threshold because the payload's
+  fingerprint is breadth (a sweep across directories) rather than repeated writes to one
+  file, which is what a database or log writer looks like.
+  Tune the threshold to your SACL scope and your baseline: a SACL on a single document
+  share and one on every user profile have very different normal rates, and backup,
+  indexing, AV-scan-and-quarantine, and sync agents are the processes that legitimately
+  sweep files - identify them from your own data and suppress them by ProcessName rather
+  than raising the threshold until the payload fits under it.
+  This is the general T1486 case, on a data source that exists today: 4663 with a SACL,
+  rather than the Sysmon 11 FileCreate the repo does not yet collect. It sits alongside
+  bitlocker_abuse_encryption, which covers the narrower slice process creation can see
+  (BitLocker driven from the command line). Pair both with T1490 recovery inhibition
+  (recovery_inhibition_process) and the two T1489 service-stop rules: those inside one
+  window are a ransomware event, not a noisy host.
+  Validate (purple): run the file-encryption simulation from dotfiles-Kali (htpx pair
+  ransomware-encrypt-files) against a SACL'd share.
+references:
+  - https://attack.mitre.org/techniques/T1486/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/mass-encrypt-4663.md
+correlation:
+  type: value_count
+  rules:
+    - file_write_handle_4663
+  group-by:
+    # Per HOST and per process, not per process alone: ProcessName is a path, and the same
+    # path exists on every host in the fleet. Grouping on it alone would pool the file
+    # counts of every server running the same backup/indexing agent into one bucket and
+    # trip the threshold on aggregate activity no single host performed.
+    - Computer
+    - ProcessName
+  timespan: 5m
+  condition:
+    gte: 100
+    field: ObjectName
+falsepositives:
+  - Backup, indexing, sync, and AV-scan agents sweeping a SACL'd tree (suppress the
+    specific ProcessName; raising the threshold instead just hides the payload).
+  - Bulk migrations and mass deletions run by an administrator (expected, and in a
+    change window).
+level: high

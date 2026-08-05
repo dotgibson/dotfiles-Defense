@@ -1,6 +1,6 @@
 title: Snowflake network policy changed (IP allowlist tamper)
 id: 9fded018-1de7-4f8a-b257-84ae8c3e418e
-status: experimental
+status: test
 description: |
   Detects Snowflake network-policy changes in ACCOUNT_USAGE.QUERY_HISTORY (query text
   containing NETWORK POLICY - a CREATE/ALTER/DROP network policy or ALTER ACCOUNT/USER SET

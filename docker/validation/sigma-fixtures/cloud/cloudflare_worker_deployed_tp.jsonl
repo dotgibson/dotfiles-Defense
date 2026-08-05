@@ -1,1 +1,1 @@
-{"resource": {"type": "workers_script"}, "action": {"type": "update"}}
+{"resource": {"type": "workers_script"}, "action": {"type": "update"}, "actor": {"type": "user", "email": "dev.oncall@example.com"}}

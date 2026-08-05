@@ -9,8 +9,14 @@
 // cloud/aws_iam_access_key_created.yml — AWS IAM access key created (backdoor triage)
 eventSource =~ "iam.amazonaws.com" and eventName =~ "CreateAccessKey"
 
+// cloud/aws_iam_privesc_policy.yml — AWS IAM privilege escalation via policy attach/put (CloudTrail)
+(eventSource =~ "iam.amazonaws.com" and (eventName in~ ("AttachUserPolicy", "AttachRolePolicy", "AttachGroupPolicy", "PutUserPolicy", "PutRolePolicy", "PutGroupPolicy", "CreatePolicyVersion", "SetDefaultPolicyVersion", "AddUserToGroup"))) and (not(['userIdentity.arn'] startswith "arn:aws:sts::111122223333:assumed-role/terraform-apply/"))
+
 // cloud/aws_login_profile_created.yml — AWS IAM login profile created or updated (console takeover)
 eventSource =~ "iam.amazonaws.com" and (eventName in~ ("CreateLoginProfile", "UpdateLoginProfile"))
+
+// cloud/entra_directory_role_grant.yml — Entra directory role assigned (tenant privilege escalation)
+OperationName in~ ("Add member to role", "Add eligible member to role", "Add member to role in PIM requested (permanent)", "Add member to role completed (PIM activation)", "Add member to role requested (PIM activation)")
 
 // cloud/entra_illicit_consent_grant.yml — Entra consent grant to a third-party app (illicit-consent triage)
 (OperationName in~ ("Consent to application", "Add delegated permission grant", "Add OAuth2PermissionGrant")) and (TargetResources contains "Mail.Read" or TargetResources contains "Mail.ReadWrite" or TargetResources contains "Mail.Send" or TargetResources contains "offline_access" or TargetResources contains "Files.Read.All" or TargetResources contains "Files.ReadWrite.All" or TargetResources contains "Sites.Read.All" or TargetResources contains "Directory.Read.All" or TargetResources contains "full_access_as_user") and (not(TargetResources contains "00000000-0000-0000-0000-000000000000"))
@@ -34,7 +40,7 @@ OperationName in~ ("Add service principal credentials", "Add application credent
 (['resource.type'] in~ ("firewall_rule", "ruleset")) and (['action.type'] in~ ("delete", "update"))
 
 // cloudflare/cloudflare_worker_deployed.yml — Cloudflare Worker deployed (serverless edge code execution)
-(['resource.type'] in~ ("worker", "workers_script")) and (['action.type'] in~ ("create", "update"))
+((['resource.type'] in~ ("worker", "workers_script")) and (['action.type'] in~ ("create", "update"))) and (not(['actor.email'] =~ "ci-deploy@example.com"))
 
 // credential_access/asrep_roast_4768.yml — AS-REP roast - TGT issued without pre-authentication (4768 type 0)
 (EventID == 4768 and PreAuthType == 0) and (not(TargetUserName endswith "$"))
@@ -58,7 +64,7 @@ EventID == 5145 and ShareName contains "IPC$" and (RelativeTargetName contains "
 (EventID == 4769 and TicketEncryptionType =~ "0x17") and (not((ServiceName in~ ("krbtgt") or ServiceName endswith "$")))
 
 // credential_access/lsass_handle_access.yml — LSASS process access with dump-shaped rights
-(TargetImage endswith "\\lsass.exe" and (GrantedAccess in~ ("0x1010", "0x1410", "0x1438", "0x143a", "0x1fffff"))) and (not((SourceImage contains "\\MsMpEng.exe" or SourceImage contains "\\MsSense.exe" or SourceImage contains "\\wininit.exe" or SourceImage contains "\\csrss.exe")))
+(TargetImage endswith "\\lsass.exe" and (GrantedAccess in~ ("0x1010", "0x1410", "0x1438", "0x143a", "0x1fffff"))) and (not((SourceImage contains "\\MsMpEng.exe" or SourceImage contains "\\MsSense.exe" or SourceImage contains "\\wininit.exe" or SourceImage contains "\\csrss.exe" or SourceImage contains "\\CSFalconService.exe" or SourceImage contains "\\SentinelAgent.exe" or SourceImage contains "\\RepMgr.exe")))
 
 // credential_access/ntds_dump_ntdsutil_vss_4688.yml — NTDS.dit theft via ntdsutil / VSS on a domain controller
 (Image endswith "\\ntdsutil.exe" and (CommandLine contains "ifm" or CommandLine contains "create full")) or ((CommandLine contains "vssadmin create shadow" or CommandLine contains "wbadmin start backup") and (Image endswith "\\vssadmin.exe" or Image endswith "\\wbadmin.exe")) or Image endswith "\\diskshadow.exe"
@@ -111,11 +117,17 @@ eventName =~ "authorize" and (scope contains "mail.google.com" or scope contains
 // impact/data_destruction_wipe.yml — Data destruction - free-space wipe / secure delete / volume clean
 (Image endswith "\\cipher.exe" and CommandLine contains "/w") or (Image endswith "\\sdelete.exe" or Image endswith "\\sdelete64.exe") or (Image endswith "\\fsutil.exe" and CommandLine contains "setzerodata") or (Image endswith "\\diskpart.exe" and CommandLine contains "clean")
 
+// impact/mass_file_encryption_4663.yml — File write/delete handle base (4663)
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
 // impact/recovery_inhibition_process.yml — Inhibit system recovery - shadow copy / backup / boot-recovery deletion
-((Image endswith "\\vssadmin.exe" or Image endswith "\\wmic.exe") and (CommandLine contains "shadow" and CommandLine contains "delete")) or (Image endswith "\\wbadmin.exe" and (CommandLine contains "delete" and CommandLine contains "catalog")) or (Image endswith "\\bcdedit.exe" and (CommandLine contains "recoveryenabled no" or CommandLine contains "bootstatuspolicy ignoreallfailures"))
+((Image endswith "\\vssadmin.exe" or Image endswith "\\wmic.exe") and (CommandLine contains "shadow" and CommandLine contains "delete")) or (Image endswith "\\wbadmin.exe" and (CommandLine contains "delete" and CommandLine contains "catalog")) or (Image endswith "\\bcdedit.exe" and (CommandLine contains "recoveryenabled" and CommandLine contains "no")) or (Image endswith "\\bcdedit.exe" and (CommandLine contains "bootstatuspolicy" and CommandLine contains "ignoreallfailures"))
 
 // impact/service_stop_burst.yml — Service/process stop command base - service control by command line
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
+// impact/service_stop_protected_services.yml — Protected service stopped - backup / AV / database teardown (T1489)
+(((Image endswith "\\net.exe" or Image endswith "\\net1.exe" or Image endswith "\\sc.exe") and (CommandLine contains " stop " or CommandLine contains "start= disabled" or CommandLine contains "start=disabled")) or ((Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and (CommandLine contains "Stop-Service" or CommandLine contains "Set-Service"))) and (CommandLine contains "sql" or CommandLine contains "msexchange" or CommandLine contains "veeam" or CommandLine contains "backup" or CommandLine contains "acronis" or CommandLine contains "memtas" or CommandLine contains "mepocs" or CommandLine contains "sophos" or CommandLine contains "sentinel" or CommandLine contains "defend" or CommandLine contains "vss" or CommandLine contains "sqlwriter" or CommandLine contains "postgres" or CommandLine contains "oracle")
 
 // jenkins/jenkins_api_token_created.yml — Jenkins user API token created (durable-access backdoor)
 uri contains "ApiTokenProperty/generateNewToken"
@@ -142,7 +154,7 @@ uri contains "/scriptText" or uri contains "/script"
 CommandLine contains "/dest:rdp-tcp#"
 
 // lateral_movement/service_creation_psexec_7045.yml — Suspicious service installed (psexec-style remote exec)
-EventID == 7045 and (ImagePath contains "\\cmd.exe" or ImagePath contains "powershell" or ImagePath contains "%COMSPEC%" or ImagePath contains "\\ADMIN$\\" or ImagePath contains "\\Temp\\" or ImagePath contains "\\Users\\")
+EventID == 7045 and (ImagePath contains "\\ADMIN$\\" or ImagePath contains "%COMSPEC%" or ImagePath contains "\\cmd.exe" or ImagePath contains "powershell.exe" or ImagePath contains "powershell -" or ImagePath contains "pwsh.exe" or ImagePath contains "cscript" or ImagePath contains "wscript" or ImagePath contains "rundll32" or ImagePath contains "mshta")
 
 // lateral_movement/unconstrained_delegation_4624.yml — Unconstrained delegation abuse - DC machine account authenticating to a non-DC (4624)
 (EventID == 4624 and LogonType == 3 and AuthenticationPackageName =~ "Kerberos" and (TargetUserName in~ ("DC1$", "DC2$"))) and (not((Computer startswith "DC1" or Computer startswith "DC2")))
@@ -175,7 +187,7 @@ eventType in~ ("user.mfa.factor.reset_all", "user.mfa.factor.deactivate", "syste
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // persistence/rogue_account_creation_4720.yml — Rogue account creation (4720)
-EventID == 4720
+EventID == 4720 and (not(SubjectUserName =~ "svc_iam_provisioning"))
 
 // persistence/scheduled_task_suspicious_4698.yml — Scheduled task created with a suspicious action
 EventID == 4698 and (TaskContent contains "-enc" or TaskContent contains "-EncodedCommand" or TaskContent contains "-w hidden" or TaskContent contains "-WindowStyle Hidden" or TaskContent contains "FromBase64String" or TaskContent contains "\\Users\\" or TaskContent contains "\\Temp\\" or TaskContent contains "\\mshta.exe" or TaskContent contains "\\regsvr32.exe" or TaskContent contains "\\rundll32.exe" or TaskContent contains "DownloadString" or TaskContent contains "IEX")

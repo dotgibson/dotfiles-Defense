@@ -6,7 +6,9 @@ description: |
   access rights, from a process that is not a known security/AV engine. Sysmon 10
   (ProcessAccess) sees this far better than the Security log; the GrantedAccess
   masks below are the classic dump-capable combinations (0x1010, 0x1410, 0x1438,
-  0x143a, 0x1fffff).
+  0x143a, 0x1fffff). 0x1fffff is PROCESS_ALL_ACCESS - the broadest of the set and the one
+  most likely to be a legitimate agent opening LSASS with a full-rights handle, so if this
+  rule stays noisy after the allowlist below is populated, that mask is where the noise is.
   Validate (purple): run "nxc -M lsassy" / a remote LSASS dump from dotfiles-Kali
   (hacktheplanet "Lateral movement" fold; htpx pair lsass-dump-lsassy). Tune the
   SourceImage allowlist to your EDR/AV.
@@ -31,11 +33,20 @@ detection:
       - '0x143a'
       - '0x1fffff'
   filter_av:
+    # DEPLOY-REQUIRED: extend with YOUR endpoint-protection agents. The list below covers
+    # Defender (MsMpEng/MsSense) and the two OS processes that legitimately hold LSASS
+    # handles; the third-party entries are the common EDRs, kept as EXAMPLES because the
+    # binary names differ by product and version. In any non-Defender shop the EDR reads
+    # LSASS continuously, so until this matches your agent this high-severity rule fires
+    # steadily. Run detections/sigma/deploy-required.sh to find this.
     SourceImage|contains:
       - '\MsMpEng.exe'
       - '\MsSense.exe'
       - '\wininit.exe'
       - '\csrss.exe'
+      - '\CSFalconService.exe'     # example (CrowdStrike) — verify against your fleet
+      - '\SentinelAgent.exe'       # example (SentinelOne) — verify against your fleet
+      - '\RepMgr.exe'              # example (Carbon Black) — verify against your fleet
   condition: selection and not filter_av
 falsepositives:
   - Endpoint protection / EDR agents reading LSASS (allowlist by SourceImage).

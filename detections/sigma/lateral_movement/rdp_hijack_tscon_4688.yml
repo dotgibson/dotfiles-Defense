@@ -1,6 +1,6 @@
 title: RDP session hijack - tscon redirect to an RDP endpoint
 id: b60118d5-1b56-4de9-a188-e69c1554d590
-status: experimental
+status: test
 description: |
   Detects RDP session hijacking: a process creation carrying a
   "tscon ... /dest:rdp-tcp#" command line. The hijack cannot happen without it, so

@@ -32,7 +32,7 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Kali's
 | Priv Esc / Persistence   | Sysmon 1/13, 4720/7045  | sysmon, sigma         | LOLBAS / persistence folds  |
 | Coercion / Relay / AD CS | 5145 pipes, 4886 SAN    | siem                  | coercion → relay → DC fold  |
 | Exfil / C2               | Suricata, Zeek conn/dns | network               | reverse-shell / pivot folds |
-| Impact                   | 4688 vssadmin/wbadmin/bcdedit | sigma           | ransomware-precursor fold   |
+| Impact                   | 4688 vssadmin/wbadmin/bcdedit, 4688 net/sc stop, 4663 file writes | sigma | ransomware fold (precursor → teardown → payload) |
 
 The right-hand column is the point: every row has a Kali fold that proves the
 detection works.

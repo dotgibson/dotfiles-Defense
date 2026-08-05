@@ -2,22 +2,22 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**82 rules · 91 detection documents · 63 techniques · 10 tactics · 23 logsources.**
+**86 rules · 96 detection documents · 64 techniques · 10 tactics · 23 logsources.**
 
 ## By ATT&CK tactic
 
 | Tactic | ID | Techniques | Rules |
 | ------ | -- | ---------: | ----: |
 | Execution | TA0002 | 8 | 10 |
-| Persistence | TA0003 | 13 | 32 |
-| Privilege Escalation | TA0004 | 6 | 7 |
+| Persistence | TA0003 | 13 | 34 |
+| Privilege Escalation | TA0004 | 7 | 9 |
 | Defense Evasion | TA0005 | 7 | 11 |
-| Credential Access | TA0006 | 14 | 17 |
+| Credential Access | TA0006 | 15 | 17 |
 | Discovery | TA0007 | 12 | 3 |
-| Lateral Movement | TA0008 | 8 | 7 |
+| Lateral Movement | TA0008 | 9 | 7 |
 | Collection | TA0009 | 1 | 1 |
 | Exfiltration | TA0010 | 2 | 2 |
-| Impact | TA0040 | 4 | 4 |
+| Impact | TA0040 | 4 | 6 |
 
 ## By technique
 
@@ -45,7 +45,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1087.002 | 2 | `ldap_recon_explicit_creds_4648`, `sharphound_ldap_sweep_4662` |
 | T1098 | 16 | `aws_login_profile_created`, `cloudflare_api_token_created`, `gcp_iam_policy_backdoor`, `github_credential_backdoor`, `gitlab_token_backdoor`, `harbor_robot_account_created`, `jenkins_api_token_created`, `k8s_clusteradmin_binding`, `npm_maintainer_added`, `okta_api_token_created`, `pypi_collaborator_added`, `pypi_trusted_publisher_added`, `rbcd_allowedtoact_5136`, `slack_app_installed`, `tfc_token_backdoor`, `vault_approle_backdoor` |
 | T1098.001 | 3 | `aws_iam_access_key_created`, `entra_sp_credential_backdoor`, `gcp_service_account_key_created` |
-| T1098.003 | 1 | `gws_admin_role_grant` |
+| T1098.003 | 3 | `aws_iam_privesc_policy`, `entra_directory_role_grant`, `gws_admin_role_grant` |
 | T1110.003 | 1 | `password_spray_4625` |
 | T1114.003 | 1 | `gws_external_mail_forwarding` |
 | T1134.001 | 2 | `potato_seimpersonate_4688`, `potato_seimpersonate_sysmon_1` |
@@ -58,8 +58,8 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1207 | 1 | `dcshadow_rogue_dc_4742` |
 | T1484.002 | 1 | `okta_idp_created` |
 | T1485 | 1 | `data_destruction_wipe` |
-| T1486 | 1 | `bitlocker_abuse_encryption` |
-| T1489 | 1 | `service_stop_burst` |
+| T1486 | 2 | `bitlocker_abuse_encryption`, `mass_file_encryption_4663` |
+| T1489 | 2 | `service_stop_burst`, `service_stop_protected_services` |
 | T1490 | 1 | `recovery_inhibition_process` |
 | T1525 | 1 | `harbor_image_pushed_trusted_tag` |
 | T1528 | 2 | `entra_illicit_consent_grant`, `gws_illicit_oauth_grant` |
@@ -71,6 +71,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1555 | 2 | `dpapi_backupkey_5145`, `vault_bulk_secret_read` |
 | T1556 | 2 | `okta_idp_created`, `shadow_credentials_keycredentiallink_5136` |
 | T1556.006 | 1 | `okta_mfa_factor_reset` |
+| T1558 | 1 | `unconstrained_delegation_4624` |
 | T1558.003 | 1 | `kerberoasting_rc4_tgs` |
 | T1558.004 | 2 | `asrep_roast_4768`, `asrep_roast_probing_4771` |
 | T1558.005 | 1 | `ccache_theft_staging` |
@@ -91,7 +92,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 
 | Directory | product | Rules |
 | --------- | ------- | ----: |
-| `cloud` | `aws`, `azure`, `gcp` | 7 |
+| `cloud` | `aws`, `azure`, `gcp` | 9 |
 | `cloudflare` | `cloudflare` | 3 |
 | `credential_access` | `windows` | 10 |
 | `defense_evasion` | `windows` | 1 |
@@ -99,7 +100,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `github` | `github` | 3 |
 | `gitlab` | `gitlab` | 3 |
 | `google_workspace` | `google_workspace` | 3 |
-| `impact` | `windows` | 4 |
+| `impact` | `windows` | 6 |
 | `jenkins` | `jenkins` | 3 |
 | `kubernetes` | `kubernetes` | 3 |
 | `lateral_movement` | `windows` | 5 |
