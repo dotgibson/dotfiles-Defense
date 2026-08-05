@@ -193,10 +193,24 @@ else
   cat <<EOF
   review:  git show $TAG
 
+  You should be ON release/$TAG right now — this script commits to whatever branch you are
+  standing on, and RELEASE-RUNBOOK.md §1.1 step 1 branches before staging for that reason.
+  If you staged from main instead, the release commit is now sitting on your local main, one
+  ahead of origin, where it must NEVER be pushed (main is protected and takes the commit
+  through the PR below). Push it to the branch as step 1 shows, then 'git reset --hard
+  origin/main' to put your local main back.
+
   Ship IN THIS ORDER — land the commit FIRST, then tag the MERGED tip. main is protected,
   so the commit lands via a PR (a merge commit); tagging only AFTER that, at origin/main,
   keeps the tag on main's HEAD and 'git describe' clean. (Tagging before the merge leaves
   the tag one commit behind and needs a re-point — the trap PUSH=1 falls into.)
+
+  Also note $MAJOR was just force-moved LOCALLY onto this not-yet-merged commit, so it
+  disagrees with origin's $MAJOR until step 2 below. Abandoning the cut?
+  'git tag -d $TAG $MAJOR' then 'git fetch --tags --force origin' undoes both. Delete
+  $MAJOR explicitly — a fetch only UPDATES tags origin already has, so on a MAJOR (where
+  $MAJOR is newly minted and origin has never seen it) fetching leaves it behind, pointing
+  at the commit you just dropped. Full recipe: RELEASE-RUNBOOK.md §"Abandoning a cut".
 
   --no-follow-tags below is LOAD-BEARING: $TAG already exists locally, and with
   \`push.followTags = true\` set a plain push carries it to origin — putting the tag on the
