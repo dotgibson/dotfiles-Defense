@@ -114,7 +114,9 @@ alias vim='nvim'
 
 # ── git ───────────────────────────────────────────────────────────────────────
 # The git alias set is the single source of truth in 25-git.zsh (OMZ-style, loaded
-# right after this file). Only the non-git lazygit launcher lives here.
+# right after this file). Two exceptions live here because they are TOOL-DETECTION
+# gated, not git-workflow aliases: the `lg` lazygit launcher and the HAVE_DIFFT-gated
+# `gdft` below.
 alias lg='lazygit'
 
 # difftastic (difft): AST/structural diff — an OPT-IN companion to delta, never the

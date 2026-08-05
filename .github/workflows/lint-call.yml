@@ -8,14 +8,14 @@ name: lint (reusable)
 #
 #   jobs:
 #     lint:
-#       uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v3
+#       uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v4
 #       # Kali only:  with: { extra_ls_files_excludes: ":!:offensive/companion/**" }
 #
 # The ONLY per-repo variance is the extra `git ls-files` exclude (Kali excludes its
 # vendored htpx `offensive/companion/` subtree); everything else — the pinned-tool
 # bootstrap, SHELLCHECK_OPTS, the core/ exclude, shfmt-advisory — is constant.
 #
-# CHECKOUT IS INVERTED vs the old per-repo lint.yml: dotfiles-core@v3 is checked out
+# CHECKOUT IS INVERTED vs the old per-repo lint.yml: dotfiles-core@v4 is checked out
 # at ROOT (so `./.github/actions/setup-core-tools` + `scripts/tool-versions.env`
 # resolve here — the SAME major line callers pin this workflow to, mirroring
 # auto-tag-call.yml), and the CALLER repo is checked out into `caller/` (the tree we
@@ -53,8 +53,8 @@ jobs:
     env:
       EXTRA_EXCLUDES: ${{ inputs.extra_ls_files_excludes }}
     steps:
-      # 1) Core@v3 at ROOT — provides the composite action + pinned tool-versions.env.
-      #    (v3 = the current major, matching the @v3 callers; keep in step on a major bump.)
+      # 1) Core@v4 at ROOT — provides the composite action + pinned tool-versions.env.
+      #    (v4 = the current major, matching the @v4 callers; keep in step on a major bump.)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

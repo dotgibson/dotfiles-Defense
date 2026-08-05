@@ -32,7 +32,7 @@ ZPLUGINDIR="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins"
 
 # ── Pinned plugin revisions ───────────────────────────────────────────────────
 # These plugins are the ONLY third-party CODE that runs in every interactive shell
-# on every one of the 9 OS repos, yet they were the one thing this repo left
+# on every one of the eight OS repos, yet they were the one thing this repo left
 # UNPINNED while pinning its CI linters (ci.yml), pre-commit hooks (rev:), and even
 # GitHub Actions by SHA. An unpinned `master` clone means an upstream breaking
 # change — or a compromised tag — fans out to every machine on the next install.

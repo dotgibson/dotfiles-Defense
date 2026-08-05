@@ -23,8 +23,8 @@ systems at once.
 The fleet is not eight things that each version themselves. It is **one
 versioned thing (Core) vendored into thin per-OS consumers**:
 
-- **Core** (`dotfiles-core`) carries the SemVer in `core.version` (currently
-  `3.6.0`). It is the single source of truth, vendored into each OS repo's
+- **Core** (`dotfiles-core`) carries the SemVer in `core.version` (read it there
+  rather than trusting a number copied into prose). It is the single source of truth, vendored into each OS repo's
   `core/` via `git subtree`. A defect here fans out N-way, so Core is the thing
   that earns a version number, a tag, and a changelog.
 - **OS-native repos** (`dotfiles-{MacBook,Fedora,Arch,openSUSE,Alpine,Gentoo}`)
@@ -69,7 +69,8 @@ vendor anything on their own. They run on two offset slots so the reviews don't
 all land at once:
 
 - **Mondays 06:00 UTC** — `freshness.yml` (rolls the zsh-plugin + nvim pins
-  forward as a PR) and `fleet-drift.yml` (flags any OS repo lagging Core's tip).
+  forward as a PR) and `fleet-drift.yml` (flags any OS repo lagging the latest **released**
+  Core tag — not `main`'s tip, which would report every unreleased commit as drift).
 - **Tuesdays 07:00 UTC** — `claude-routines.yml` (`/doc-audit` + `/tool-scout`),
   deliberately offset a day behind freshness so its findings issue lands after
   that week's pin PR.
@@ -190,8 +191,16 @@ tag**:
 
 ```sh
 # in an OS repo, adopt a specific Core release rather than main's tip
-git subtree pull --prefix=core <core-remote> v3.6.0 --squash
+git subtree pull --prefix=core <core-remote> v<X.Y.Z> --squash
+make core-lock   # or hand-edit core.lock — see the caveat below
 ```
+
+**Do not hand-run that in practice.** A raw subtree pull updates `core/` but not
+`core.lock`, and `core-integrity.sh` compares the vendored tree against the commit the
+lock pins — so the freshly-synced repo reports `TAMPERED` until the lock is regenerated,
+and `make core-lock` does not exist in every consumer (most have no root `Makefile`).
+`sync-core.sh` commits both together, and `sync-fanout.yml` runs it for you on every
+release. The recipe above is here to show the *pinning model*, not as an operator step.
 
 Now "what Alpine runs" is a frozen, named version, and rolling one OS back is
 just pulling the previous tag there — it touches no other repo. `sync-core.sh`
@@ -219,8 +228,10 @@ of the vendored commit), so the named version is recorded automatically and
 
 ### Pinning reusable workflows (the `@vN` policy)
 
-The fleet's reusable workflows (`bootstrap-test.yml`, `core-integrity-call.yml`) are
-called cross-repo from each OS repo. Pinning the caller's `uses:` ref trades off two
+The fleet's reusable workflows — `auto-tag-call.yml`, `bootstrap-test.yml`,
+`claude-routines-call.yml`, `core-integrity-call.yml`, `lint-call.yml`,
+`notify-failure-call.yml`, `notify-web-call.yml` — are called cross-repo from each
+OS repo. Pinning the caller's `uses:` ref trades off two
 things: **determinism** (a mutable `@main` can change a repo's CI with zero diff in
 that repo — a real supply-chain concern for an *integrity* guard) against
 **auto-propagation** (a guard/bootstrap improvement should reach every repo without
@@ -274,8 +285,9 @@ available for drafting a body by hand if you want to edit it before publishing.
 ### Tag baseline
 
 The fleet has carried annotated `vX.Y.Z` tags since `v1.0.0`, so there is no
-one-time adoption step — `core.version` (currently `3.6.0`) matches the latest
-tag, and the next release just runs the checklist above to cut `v3.6.1` / `v3.7.0`.
+one-time adoption step — `core.version` matches the latest tag (read it there rather
+than trusting a number copied into prose), and the next release just runs the checklist
+above to cut the next patch or minor.
 The `core_tag` provenance only appears in each `core.lock` on the next `make sync`,
 which is when `git describe` first has a tag to resolve against the vendored
 commit.
@@ -290,9 +302,14 @@ make fleet-drift   # confirm no repo lags the new tag
 ### Roll one OS back
 
 ```sh
-# in the affected OS repo only
+# in the affected OS repo only — and regenerate core.lock with it (see §4's caveat),
+# or core-integrity will report the rolled-back tree as TAMPERED
 git subtree pull --prefix=core <core-remote> v<previous> --squash
 ```
+
+Note this does **not** reverse an already-merged newer subtree on its own: pulling an
+older tag merges *backwards*, it does not un-merge. Confirm the resulting `core/` tree
+matches the tag you intended before relying on it.
 
 ## 6. Tooling that backs this policy
 
@@ -325,7 +342,7 @@ so a CI-cut tag can't rely on a separate `on: push: tags` workflow:
 | ---- | ---------- | ------------------ | ------------ |
 | **dotfiles-core** | you (`make tag` → push) | `release.yml` (`on: push: tags`) — fires because *you* pushed the tag | curated `CHANGELOG.md` section |
 | **OS repos** (×8) | `auto-tag.sh` in CI on a `core/**` fan-out | `auto-tag.sh --release`, **in the same job** (the token-pushed tag can't trigger `release.yml`) | grouped Conventional-Commit notes (`auto-tag.sh` → `--notes-file`; `--generate-notes` only as the empty-range fallback) |
-| **dotfiles-Windows** — auto patch | `auto-tag.sh` in CI on an `nvim/`/`starship/` sync | same as OS repos (calls `auto-tag-call.yml@v3`) | grouped Conventional-Commit notes (same `auto-tag.sh` `--notes-file` path) |
+| **dotfiles-Windows** — auto patch | `auto-tag.sh` in CI on an `nvim/`/`starship/` sync | same as OS repos (calls `auto-tag-call.yml@v4`) | grouped Conventional-Commit notes (same `auto-tag.sh` `--notes-file` path) |
 | **dotfiles-Windows** — deliberate minor/major | **you**, by hand for host work (`git tag` → push) | **you** (`gh release create --notes-file`) — auto-tag only ever patches and never fires on a CHANGELOG commit or a tag push | curated `CHANGELOG.md` section |
 
 So: Core releases read like the changelog; OS-repo and Windows **auto-patch** releases get

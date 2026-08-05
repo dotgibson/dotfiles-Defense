@@ -17,12 +17,13 @@
 #
 # A caller stub (in an OS repo) looks like — pinned to the moving MAJOR tag @vN per the
 # `@vN` policy in RELEASE-STRATEGY.md, NOT @main: a caller's contract then changes only via
-# a Core release, and a MAJOR bump (this v4 assertion switch) is the one intentional,
-# reviewed caller edit — so an OS repo on @v3 keeps the v3 assertions until it deliberately
-# moves to @v4 as part of the fan-out (re-vendoring v4 Core + updating its bootstrap together):
+# a Core release, and a MAJOR bump is the one intentional, reviewed caller edit — so a repo
+# pinned @vN keeps that major's assertions until it deliberately moves to @vN+1 as part of the
+# fan-out (re-vendoring the new major's Core + updating its bootstrap together). The fleet is
+# on @v4 today:
 #   jobs:
 #     test:
-#       uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v3
+#       uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v4
 #       with:
 #         image: alpine:3.20
 #         prep:  apk add --no-cache bash zsh

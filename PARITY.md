@@ -16,7 +16,7 @@ one of:
 - **`gap`** — a capability one shell has and the other could, but doesn't yet.
   An open item, not a promise.
 
-> Sources: zsh in `zsh/{aliases,git,fzf,bindings,tools}.zsh`; pwsh in
+> Sources: zsh in `zsh/{00-tools,20-aliases,25-git,35-fzf,40-bindings}.zsh`; pwsh in
 > `dotfiles-Windows/powershell/core/{00-aliases,10-tools,20-functions}.ps1`.
 
 ## Prompt & tool init
@@ -31,9 +31,14 @@ one of:
 
 ## Aliases
 
-The alias surface is broadly `aligned`: `ll`/`la`, `cat`→bat, `grep`→rg, `http`→xh,
+The alias surface is broadly `aligned`: `ll`/`la`, `cat`→bat, `http`→xh,
 `dns`→doggo, `du`→dust, `df`→duf, `top`/`htop`→btop, `watch`→viddy, `fm`/`y`→yazi,
-`md`→glow (pwsh `gmd`, since `md` is a builtin), `ping`→gping, `lg`→lazygit. The git
+`md`→glow (pwsh `gmd`, since `md` is a builtin), `ping`→gping, `lg`→lazygit.
+`grep` is the one `deliberate` divergence in that list: pwsh defines `grep`→rg
+(`00-aliases.ps1`), zsh does **not** — shadowing `grep` on a Unix box would change
+what every script in `$PATH` gets, so Core keeps it POSIX and ships `rg` as its own
+smart-case command (`zsh/20-aliases.zsh`). Windows has no POSIX `grep` to shadow, so
+the same alias is safe there. The git
 shorthands are the **full curated OMZ-style set** from `zsh/25-git.zsh` on both shells —
 `g`, the `gst`/`gss` status family, `ga`/`gaa`/`gap`, the `gc`/`gcm`/`gca`/`gcam`/`gc!`
 commit family, `gco`/`gcb`/`gsw` checkout/switch, `gd`/`gds`/`gdw`, the `glog` graph
