@@ -453,6 +453,29 @@ bash 3.2-safe; run it on a schedule and commit the diff. An empty feed matches n
 so nothing goes stale or false-positives — the same discipline as the `DEPLOY-REQUIRED`
 placeholders.
 
+**Cryptomining / resource hijacking (T1496.001)** — the Impact tactic's one wire-side
+technique, and the reason `DEFENSE-METHODOLOGY.md`'s Impact row reads `sigma, network`:
+
+- `zeek/cryptomine-pool.zeek` — the behavioural half. A Stratum-port session that is
+  long-lived and **thin** — the exact inverse of `reverse-tunnel.zeek`'s long-and-fat
+  profile, because a miner's work happens on the CPU, not on the wire: a job down, a
+  share up, repeat. It never inspects payload, which is the point — the documented
+  attack runs xmrig with `--tls`, so a payload signature would miss it. Second notice
+  (`Known_Pool_Destination`) matches known pool addresses on **any** port, which is what
+  covers pool-over-443 where the port test can't help.
+- `suricata/cryptomine.rules` — the plaintext Stratum handshake (`mining.subscribe` /
+  `.authorize` / `.submit`), shipped with the caveat written into the file: against the
+  documented `--tls` command it matches nothing. It catches the lazy case, which is still
+  common, and the rule says so rather than implying parity with the Zeek half.
+
+**Pool feed** — pool infrastructure rotates, so it isn't hard-coded either.
+[`update-pool-feed.sh`](network/update-pool-feed.sh) is the same design as the JA3 script
+above (deterministic dedup + sort, empty feed matches nothing, bash 3.2-safe) and
+regenerates `zeek/cryptomine-pool-feed.zeek` (a `redef CryptoMine::pool_hosts` fragment)
+and `suricata/cryptomine-pool.lst`. Ships empty, so it is inert until you populate it.
+Unlike JA3 there is no single canonical pool blocklist — treat the default as a starting
+point and prefer your own threat intel via `--url`.
+
 ### `siem/` — deployable backend forms
 
 - **`splunk/savedsearches.generated.conf`** — GENERATED. Every rule in `sigma/`
@@ -528,22 +551,26 @@ placeholders.
   fire. `impact/bitlocker_abuse_encryption` still covers the slice process creation can
   see. What remains is a deployment trade, not a coverage hole: event 11 is the loudest
   block in the Sysmon config, and narrowing it narrows this rule's reach with it.
-- **T1496.001 Compute Hijacking (cryptojacking) has no detection here yet, and one half
-  of it never will.** The pair is documented in **`dotfiles-Kali`**, under that repo's
+- **T1496.001 Compute Hijacking — the network half shipped; the other half never will.**
+  The pair is documented in **`dotfiles-Kali`**, under that repo's
   `offensive/companion/entries/` — red `resource-hijack-xmrig`, blue
-  `cryptomine-pool-detect` — so this is a broken purple loop rather than an unscoped
-  technique; authoring the network half is tracked in **#109**. The blue companion asks
-  for **two** converging tells: a Stratum connection to a mining pool, and a process
-  pegged near 100% CPU for a sustained period. The first is reachable from Zeek
-  `conn.log` and is what #109 will ship. The second is not reachable at all: Sysmon has
-  **no** resource/utilisation event at any config level — this is not a "turn on event N"
-  gap like the T1486 one above, which was closed by doing exactly that — and the lab stack
-  ships no metrics collector. Closing it
-  would mean owning a new class of data source for a single corroborating signal, and no
-  other blue companion entry asks for process-resource telemetry, so it was declined
-  deliberately in **#110** (closed recorded-not-planned) rather than left to look like an
-  oversight. Consequence to know when the rule lands: the detection is *weaker*, not
-  absent — the companion's own position is that either signal alone is worth a look.
+  `cryptomine-pool-detect`. The blue companion asks for **two** converging tells: a
+  Stratum connection to a mining pool, and a process pegged near 100% CPU for a sustained
+  period. The first is now covered by `network/zeek/cryptomine-pool.zeek` (#109), closing
+  the purple loop. The second is not reachable at all: Sysmon has **no**
+  resource/utilisation event at any config level — this is not a "turn on event N" gap
+  like the T1486 one above, which was closed by doing exactly that — and the lab stack
+  ships no metrics collector. Closing it would mean owning a new class of data source for
+  a single corroborating signal, and no other blue companion entry asks for
+  process-resource telemetry, so it was declined deliberately in **#110** (closed
+  recorded-not-planned) rather than left to look like an oversight.
+  **So the shipped detection is deliberately weaker than the companion specifies**: one
+  tell, not two. The companion's own position is that either signal alone is worth a
+  look, which is why one is worth shipping — but a Stratum session on an odd port from a
+  build server is a *lead*, not a verdict, and it should be triaged as one.
+  Note also that `navigator/COVERAGE.md` shows T1496.001 as uncovered and always will —
+  the roll-up reads the Sigma tree only. Same caveat as C2 and the `siem/` detections;
+  don't "fix" the report to compensate.
 - **Collection (TA0009) now has a host-side half, and it was the marginal one.** The
   tactic used to be one cloud rule (`gws_external_mail_forwarding`, T1114.003), which the
   coverage-gap report called "thin" while explicitly saying *note, don't necessarily
