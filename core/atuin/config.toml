@@ -12,12 +12,24 @@
 # with the prefix `ATUIN_` and `__` as the nesting separator, which is the supported
 # way for an OS layer (os/<os>.zsh — fragment 80) or a host layer (99-local) to differ:
 #
-#     export ATUIN_DAEMON__ENABLED=true    # [daemon] enabled = true, this box only
-#     export ATUIN_SEARCH_MODE=prefix      # top-level search_mode
+#     export ATUIN_DAEMON__ENABLED=true    # [daemon] enabled — left unset below, so this works
+#     export ATUIN_SYNC_ADDRESS=https://…  # sync_address — absent from this file, so this works
+#
+# AN OVERRIDE ONLY REACHES ATUIN FOR A KEY THIS FILE DOES NOT SET, and that is the whole
+# reason the [daemon] block below writes no values. atuin adds the config file as a source
+# AFTER the environment one, so the file wins on every key it mentions. A per-machine key
+# therefore has to be left unset here — asserting even its own default disables the override.
+#
+# So the settings below are NOT overridable, by design: search_mode, filter_mode, style,
+# inline_height, show_preview, enter_accept, keymap_mode, secrets_filter, history_filter and
+# update_check are fleet-wide decisions, asserted on purpose. Wanting one of them to differ
+# per machine means DELETING it here, not exporting against it — an `ATUIN_SEARCH_MODE`
+# export is silently ignored while `search_mode` is written below (verified against atuin
+# 18.19.0: the value stays `fuzzy`).
 #
 # Account/sync settings ([sync], sync_address, auto_sync) are deliberately ABSENT:
 # they are per-account state, not fleet config, and atuin's defaults already no-op
-# on a box that never ran `atuin login`.
+# on a box that never ran `atuin login`. Being absent, they ARE env-overridable.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ── search + TUI ──────────────────────────────────────────────────────────────
@@ -90,8 +102,23 @@ update_check = false
 # plain always-running unit over systemd SOCKET ACTIVATION: activation keeps the socket
 # accepting while the daemon behind it is dead, which is precisely the undetectable state.
 [daemon]
-enabled = false   # flip per machine with ATUIN_DAEMON__ENABLED=true, never by editing this file
-autostart = false # let atuin start/health-check the daemon itself (the no-systemd answer)
+# enabled AND autostart ARE DELIBERATELY LEFT UNSET — writing them here, even as `false`,
+# is what BREAKS the per-machine opt-in. atuin builds its config as
+# defaults → Environment → config FILE (settings.rs: the file source is added *after* the
+# Environment one, and in the `config` crate the later source wins), so any key present in
+# this file SHADOWS its ATUIN_* override. With `enabled = false` written out, an OS layer
+# exporting ATUIN_DAEMON__ENABLED=true was silently ignored: verified against atuin 18.19.0
+# by stracing the client, which made ZERO connect() calls to the socket with the key
+# present and one with it absent.
+#
+# Leaving them unset costs nothing: atuin's own defaults are already
+# `daemon.enabled = false` / `daemon.autostart = false` (settings.rs:1515-1516), so Core
+# still ships the daemon OFF — it is just off by DEFAULT rather than off by ASSERTION, and
+# the env override can now actually reach it. scripts/test-core.sh pins this.
+#
+# The same trap applies to any future per-machine key: if a machine is meant to override it
+# via ATUIN_*, it must not be written here. Fleet-wide settings (the UX block above) are the
+# opposite case — those are asserted here on purpose.
 # sync_frequency = 300  # seconds between daemon-driven syncs (upstream default)
 # systemd_socket = false  # take the socket from systemd socket activation instead of socket_path
 # socket_path = "…/atuin.sock"  # LEFT UNSET on purpose: the default is $XDG_RUNTIME_DIR/atuin.sock

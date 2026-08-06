@@ -13,6 +13,76 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.9.3] - 2026-08-06
+
+### Fixed
+
+- **The atuin daemon opt-in never worked. `ATUIN_DAEMON__ENABLED=true` was silently
+  ignored on every machine.** Core shipped `atuin/config.toml` with `[daemon] enabled =
+  false` written out explicitly, and that assertion is what broke it: atuin builds its
+  config as defaults → **environment** → config **file**, adding the file source last
+  (`settings.rs` — the `Environment` source goes in at the builder, the file at
+  `build_config()` afterwards), and in the `config` crate the later source wins. So any key
+  this file mentions **shadows its `ATUIN_*` override**. The one key the whole per-OS design
+  depends on being overridable was the one Core asserted.
+
+  The fix is to write no value: `enabled` and `autostart` are now left unset. Upstream's own
+  defaults are already `false`/`false` (`settings.rs:1515-1516`), so Core still ships the
+  daemon **off** — off by default rather than off by assertion — and the override reaches it.
+
+  **Measured, not reasoned**, against atuin **18.19.0** built from crates.io. `atuin doctor`
+  reports the resolved `daemon_enabled`, and the client was straced for `connect()` on the
+  socket, which is the only thing that distinguishes the two paths — exit codes cannot,
+  because the client degrades silently to direct SQLite when the daemon is unreachable,
+  which is exactly why this went unnoticed:
+
+  | Config | `daemon_enabled` | `connect(atuin.sock)` |
+  | --- | --- | --- |
+  | `enabled = false` written + `ATUIN_DAEMON__ENABLED=true` | `false` | **0 calls** |
+  | key absent + `ATUIN_DAEMON__ENABLED=true` | `true` | 1 call |
+  | no config file at all + `ATUIN_DAEMON__ENABLED=true` | `true` | — |
+  | **after this change**, no env | `false` | — |
+  | **after this change**, `ATUIN_DAEMON__ENABLED=true` | `true` | 1 call |
+
+  What this was costing the fleet: `dotfiles-Fedora`'s bootstrap installed and enabled a
+  systemd unit that started a daemon **no client ever talked to**, and `dotfiles-Alpine`'s
+  exports were inert. Core's guard made it quieter still — it reads `ATUIN_DAEMON__ENABLED`
+  from the environment, where it _was_ set, so on Fedora it found the unit's socket present,
+  stood down satisfied, and reported healthy while every write went straight to SQLite.
+  Nothing was broken for a user; the feature simply did not exist.
+
+  `scripts/test-core.sh` now asserts the two keys stay unset, negative-tested by putting
+  `enabled = false` back and watching it fail. The check is static because the behavioural
+  proof needs an atuin binary CI does not have. The same trap applies to any future
+  per-machine key — asserting even its default disables the override — which is now stated
+  in the config header, `PORTING-MATRIX.md` footnote 20, and beside the block itself.
+
+  **Three follow-ups from review, all of them the same defect wearing other hats:**
+
+  - The guard scanned only inside a literal `[daemon]` table, so the equally valid dotted
+    form `daemon.enabled = false` at top level recreated the bug and passed green. Widening
+    the regex was still the wrong shape — `daemon = { enabled = false }` and
+    `daemon . enabled = false` are also valid and also deserialize to the same key, so a
+    pattern match can only ever cover the spellings someone thought of. The guard now
+    **parses** the TOML with `tomllib` (the idiom `audit-core.sh`'s config gate already
+    uses) and inspects the resolved `daemon` table, which is what atuin itself resolves.
+    All four spellings negative-tested; an unparseable file fails distinctly rather than
+    being read as clean.
+  - The config header advertised `export ATUIN_SEARCH_MODE=prefix` as its example of an
+    override — while the same file writes `search_mode = "fuzzy"`, which makes that export
+    silently ignored. Documenting the precedence trap and then demonstrating it was the
+    worst of both. The example now uses `sync_address`, a key the file genuinely leaves
+    unset, and the header names the ten settings that are deliberately **not** overridable
+    so the distinction is explicit rather than inferred.
+  - The v4.8.0 upgrade note told adopters to port `sync_address`, `auto_sync` and
+    `filter_mode` to `ATUIN_*` overrides. The first two work; `filter_mode` is written by
+    this file and cannot. That entry now carries the correction inline rather than being
+    quietly rewritten — it was wrong when shipped, and the record should say so.
+
+  Verified against atuin 18.19.0 rather than assumed: with Core's config in place,
+  `ATUIN_SEARCH_MODE=prefix` still resolves to `fuzzy` and `ATUIN_FILTER_MODE=prefix` still
+  resolves to `global`.
+
 ## [v4.9.2] - 2026-08-05
 
 ### Changed
@@ -328,6 +398,10 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   long-standing behaviour, not new here). atuin has no `include` directive, so port anything you
   had customised — `sync_address`, `auto_sync`, `filter_mode` — to `ATUIN_*` env overrides in your
   OS or `99-local` layer rather than editing the vendored file.
+  **Corrected later:** that works for `sync_address` and `auto_sync`, which this file leaves
+  unset, but **not** for `filter_mode`, which it writes — a key the Core config sets cannot be
+  env-overridden at all. To vary one of those per machine, delete it from `atuin/config.toml`.
+  See the `[Unreleased]` entry on the daemon opt-in for why.
 
 ### Changed
 
