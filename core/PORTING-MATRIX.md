@@ -227,7 +227,16 @@ differs per machine is how the daemon gets **launched**, so that half lives in t
 The exports belong in that repo's `os/<os>.zsh` (loader fragment 80), **never** in the Core
 config: Core is vendored identically to every repo, so a per-machine value there would be
 wrong on the other seven. `autostart` is mutually exclusive with `systemd_socket = true` —
-pick the unit or pick autostart, not both. Adoption order is Fedora first (the template the
+pick the unit or pick autostart, not both.
+
+**For those exports to work at all, `atuin/config.toml` must leave `enabled` and `autostart`
+unset** — and it does. atuin builds its config as defaults → environment → config **file**,
+with the file source added last, so in the `config` crate the file WINS: any key written
+there shadows its `ATUIN_*` override. Core previously wrote `enabled = false` explicitly,
+which silently made every export in this table a no-op — measured against atuin 18.19.0, the
+client made zero `connect()` calls to the daemon socket with the key present and one with it
+absent. Upstream's defaults are already `false`, so leaving the keys out ships the same OFF
+default while letting the override through. `scripts/test-core.sh` asserts they stay out. Adoption order is Fedora first (the template the
 Linux repos are stamped from), Alpine second (it is the design's real constraint, so proving
 it early is worth more than doing it last), then the rest.
 
