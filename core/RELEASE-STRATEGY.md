@@ -245,11 +245,16 @@ out automatically; a major bump is the one intentional, reviewed caller edit. Th
 GitHub's own recommended pattern for reusable workflows.
 
 - **Authoring:** new callers use `@vN` for the current major (not `@main`, not a bare SHA).
+  One deliberate exception: `dotfiles-Windows` SHA-pins its `auto-tag-call` caller, trading the
+  auto-fan-out for immunity to a moved tag. It vendors no `core/`, so it is outside the
+  `scripts/os-repos.txt` sweep and needs a hand bump.
 - **Bootstrapping a major:** `vN` is created/advanced by `make tag PUSH=1`; the very first
   `vN` can also be stamped by hand (`git tag -f vN vN.0.0 && git push -f origin vN`).
 - **Trade vs. exact-SHA pinning:** a SHA is maximally deterministic but needs a manual
   caller bump fleet-wide on every change — rejected as too high-churn for a first-party,
-  same-owner reusable workflow.
+  same-owner reusable workflow. `dotfiles-Windows` takes the opposite side of that trade for
+  its one caller, and pays exactly that cost — its pin only advances when a human bumps it, so
+  it lags Core by however long that goes unnoticed.
 
 ### What CI must prove before a tag
 
@@ -342,7 +347,7 @@ so a CI-cut tag can't rely on a separate `on: push: tags` workflow:
 | ---- | ---------- | ------------------ | ------------ |
 | **dotfiles-core** | you (`make tag` → push) | `release.yml` (`on: push: tags`) — fires because *you* pushed the tag | curated `CHANGELOG.md` section |
 | **OS repos** (×8) | `auto-tag.sh` in CI on a `core/**` fan-out | `auto-tag.sh --release`, **in the same job** (the token-pushed tag can't trigger `release.yml`) | grouped Conventional-Commit notes (`auto-tag.sh` → `--notes-file`; `--generate-notes` only as the empty-range fallback) |
-| **dotfiles-Windows** — auto patch | `auto-tag.sh` in CI on an `nvim/`/`starship/` sync | same as OS repos (calls `auto-tag-call.yml@v4`) | grouped Conventional-Commit notes (same `auto-tag.sh` `--notes-file` path) |
+| **dotfiles-Windows** — auto patch | `auto-tag.sh` in CI on an `nvim/`/`starship/` sync | same as OS repos, but SHA-pinned (calls `auto-tag-call.yml` at a commit, not `@v4`) | grouped Conventional-Commit notes (same `auto-tag.sh` `--notes-file` path) |
 | **dotfiles-Windows** — deliberate minor/major | **you**, by hand for host work (`git tag` → push) | **you** (`gh release create --notes-file`) — auto-tag only ever patches and never fires on a CHANGELOG commit or a tag push | curated `CHANGELOG.md` section |
 
 So: Core releases read like the changelog; OS-repo and Windows **auto-patch** releases get

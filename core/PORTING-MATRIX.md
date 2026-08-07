@@ -31,50 +31,50 @@ _Repo status_ at the bottom).
 
 ## Package names (modern CLI stack)
 
-| Tool             | Arch                   | openSUSE     | Alpine            | Gentoo (atom)              | Kali (apt)      |
-| ---------------- | ---------------------- | ------------ | ----------------- | -------------------------- | --------------- |
-| eza              | `eza`                  | `eza`        | `eza`             | `sys-apps/eza`             | `eza`           |
-| bat              | `bat`                  | `bat`        | `bat`             | `sys-apps/bat`             | `bat`⁴          |
-| fd               | `fd`                   | `fd`         | `fd`              | `sys-apps/fd`              | `fd-find`⁴      |
-| ripgrep          | `ripgrep`              | `ripgrep`    | `ripgrep`         | `sys-apps/ripgrep`         | `ripgrep`       |
-| zoxide           | `zoxide`               | `zoxide`     | `zoxide`          | `app-shells/zoxide`        | `zoxide`        |
-| fzf              | `fzf`                  | `fzf`        | `fzf`             | `app-shells/fzf`           | `fzf`           |
-| git-delta        | `git-delta`            | `git-delta`  | `delta`           | `dev-util/git-delta`       | `git-delta`     |
-| btop             | `btop`                 | `btop`       | `btop`            | `sys-process/btop`         | `btop`          |
-| tldr             | `tealdeer`             | `tealdeer`¹  | cargo³            | `app-misc/tealdeer`¹²      | `tealdeer`      |
-| neovim           | `neovim`               | `neovim`     | `neovim`          | `app-editors/neovim`       | `neovim`        |
-| lazygit          | `lazygit`              | `lazygit`    | `lazygit`         | `dev-vcs/lazygit`¹²        | `lazygit`       |
-| zsh              | `zsh`                  | `zsh`        | `zsh`²            | `app-shells/zsh`           | `zsh`           |
-| tmux             | `tmux`                 | `tmux`       | `tmux`            | `app-misc/tmux`            | `tmux`          |
-| starship         | `starship`             | `starship`¹⁸ | `starship`        | `app-shells/starship`      | script³         |
-| atuin²⁰          | `atuin`                | `atuin`¹⁸    | `atuin`           | `app-shells/atuin`         | `atuin`³        |
-| yazi             | `yazi`                 | `yazi`¹⁸     | `yazi`            | `app-misc/yazi`¹²          | cargo³          |
-| tree-sitter-cli⁵ | `tree-sitter-cli`      | cargo³       | `tree-sitter-cli` | cargo³                     | `mise`/`cargo`³ |
-| jq               | `jq`                   | `jq`         | `jq`              | `app-misc/jq`              | `jq`            |
-| yq⁶              | `go-yq`                | go³          | `yq-go`           | `app-misc/yq-go`           | `yq-go`         |
-| duf              | `duf`                  | `duf`        | testing¹⁴         | `sys-fs/duf`               | `duf`           |
-| dust             | `dust`                 | `dust`       | `dust`            | `sys-block/dust`           | `du-dust`⁴      |
-| procs            | `procs`                | `procs`      | `procs`           | `sys-process/procs`        | `procs`         |
-| viddy¹⁶          | AUR¹⁶                  | `viddy`¹⁸    | `viddy`           | cargo³                     | cargo³          |
-| sd               | `sd`                   | `sd`         | `sd`              | `sys-apps/sd`¹²            | `sd`            |
-| gron             | `gron`                 | `gron`       | `gron`            | go³                        | `gron`          |
-| jnv¹⁷            | AUR                    | cargo        | cargo             | cargo                      | cargo           |
-| glow             | `glow`                 | `glow`       | testing¹⁴         | `app-misc/glow`¹²          | `glow`¹⁵        |
-| gum              | `gum`                  | `gum`        | `gum`             | `app-misc/gum`¹²           | `gum`¹⁵         |
-| xh               | `xh`                   | `xh`         | `xh`              | `net-misc/xh`¹²            | `xh`            |
-| doggo            | `doggo`                | `doggo`¹⁸    | `doggo`           | `net-dns/doggo`            | go³             |
-| gping¹⁹          | `gping`                | `gping`¹⁹    | `gping`           | GURU¹²·¹⁹                  | `gping`¹⁹       |
-| carapace         | AUR³                   | go³          | `carapace`        | `app-shells/carapace`¹²    | go³             |
-| op (1Password)¹³ | AUR                    | vendor rpm   | vendor apk        | GURU¹²                     | vendor apt      |
-| hyperfine        | `hyperfine`            | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`     |
-| shellcheck       | `shellcheck`           | `ShellCheck` | `shellcheck`      | `dev-util/shellcheck`      | `shellcheck`    |
-| shfmt⁷           | `shfmt`                | `shfmt`      | `shfmt`           | `dev-go/shfmt`             | `shfmt`⁷        |
-| ouch             | `ouch`                 | `ouch`¹⁸     | testing           | cargo³                     | cargo³          |
-| jujutsu (jj)⁸    | `jujutsu`              | `jujutsu`    | `jujutsu`         | `dev-vcs/jujutsu`          | cargo³          |
-| sesh⁹            | AUR⁹                   | go⁹          | go⁹               | go⁹                        | go⁹             |
-| difftastic¹⁰     | `difftastic`           | `difftastic` | `difftastic`      | `dev-util/difftastic`      | `difftastic`    |
-| ast-grep¹¹       | `ast-grep`             | `ast-grep`¹⁸ | `ast-grep`        | cargo³                     | cargo³          |
-| w3m              | `w3m`                  | `w3m`        | `w3m`             | `www-client/w3m`           | `w3m`           |
+| Tool             | Arch              | openSUSE     | Alpine            | Gentoo (atom)              | Kali (apt)        |
+| ---------------- | ----------------- | ------------ | ----------------- | -------------------------- | ----------------- |
+| eza              | `eza`             | `eza`        | `eza`             | `sys-apps/eza`             | `eza`             |
+| bat              | `bat`             | `bat`        | `bat`             | `sys-apps/bat`             | `bat`⁴            |
+| fd               | `fd`              | `fd`         | `fd`              | `sys-apps/fd`              | `fd-find`⁴        |
+| ripgrep          | `ripgrep`         | `ripgrep`    | `ripgrep`         | `sys-apps/ripgrep`         | `ripgrep`         |
+| zoxide           | `zoxide`          | `zoxide`     | `zoxide`          | `app-shells/zoxide`        | `zoxide`          |
+| fzf              | `fzf`             | `fzf`        | `fzf`             | `app-shells/fzf`           | `fzf`             |
+| git-delta        | `git-delta`       | `git-delta`  | `delta`           | `dev-util/git-delta`       | `git-delta`       |
+| btop             | `btop`            | `btop`       | `btop`            | `sys-process/btop`         | `btop`            |
+| tldr             | `tealdeer`        | `tealdeer`¹  | cargo³            | `app-misc/tealdeer`¹²      | `tealdeer`        |
+| neovim           | `neovim`          | `neovim`     | `neovim`          | `app-editors/neovim`       | `neovim`          |
+| lazygit          | `lazygit`         | `lazygit`    | `lazygit`         | `dev-vcs/lazygit`¹²        | `lazygit`         |
+| zsh              | `zsh`             | `zsh`        | `zsh`²            | `app-shells/zsh`           | `zsh`             |
+| tmux             | `tmux`            | `tmux`       | `tmux`            | `app-misc/tmux`            | `tmux`            |
+| starship         | `starship`        | `starship`¹⁸ | `starship`        | `app-shells/starship`      | script³           |
+| atuin²⁰          | `atuin`           | `atuin`¹⁸    | `atuin`           | `app-shells/atuin`         | `atuin`³          |
+| yazi             | `yazi`            | `yazi`¹⁸     | `yazi`            | `app-misc/yazi`¹²          | cargo³            |
+| tree-sitter-cli⁵ | `tree-sitter-cli` | cargo³       | `tree-sitter-cli` | cargo³                     | `tree-sitter-cli` |
+| jq               | `jq`              | `jq`         | `jq`              | `app-misc/jq`              | `jq`              |
+| yq⁶              | `go-yq`           | go³          | `yq-go`           | `app-misc/yq-go`           | `yq-go`           |
+| duf              | `duf`             | `duf`        | testing¹⁴         | `sys-fs/duf`               | `duf`             |
+| dust             | `dust`            | `dust`       | `dust`            | `sys-block/dust`           | `du-dust`⁴        |
+| procs            | `procs`           | `procs`      | `procs`           | `sys-process/procs`        | `procs`           |
+| viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸    | `viddy`           | cargo³                     | cargo³            |
+| sd               | `sd`              | `sd`         | `sd`              | `sys-apps/sd`¹²            | `sd`              |
+| gron             | `gron`            | `gron`       | `gron`            | go³                        | `gron`            |
+| jnv¹⁷            | AUR               | cargo        | cargo             | cargo                      | cargo             |
+| glow             | `glow`            | `glow`       | testing¹⁴         | `app-misc/glow`¹²          | `glow`¹⁵          |
+| gum              | `gum`             | `gum`        | `gum`             | `app-misc/gum`¹²           | `gum`¹⁵           |
+| xh               | `xh`              | `xh`         | `xh`              | `net-misc/xh`¹²            | `xh`              |
+| doggo            | `doggo`           | `doggo`¹⁸    | `doggo`           | `net-dns/doggo`            | go³               |
+| gping¹⁹          | `gping`           | `gping`¹⁹    | `gping`           | GURU¹⁹                     | `gping`¹⁹         |
+| carapace         | AUR³              | go³          | `carapace`        | `app-shells/carapace`¹²    | go³               |
+| op (1Password)¹³ | AUR               | vendor rpm   | vendor apk        | GURU¹²                     | vendor apt        |
+| hyperfine        | `hyperfine`       | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`       |
+| shellcheck       | `shellcheck`      | `ShellCheck` | `shellcheck`      | `dev-util/shellcheck`      | `shellcheck`      |
+| shfmt⁷           | `shfmt`           | `shfmt`      | `shfmt`           | `dev-go/shfmt`             | `shfmt`⁷          |
+| ouch             | `ouch`            | `ouch`¹⁸     | testing           | cargo³                     | cargo³            |
+| jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`    | `jujutsu`         | `dev-vcs/jujutsu`          | cargo³            |
+| sesh⁹            | AUR⁹              | go⁹          | go⁹               | go⁹                        | go⁹               |
+| difftastic¹⁰     | `difftastic`      | `difftastic` | `difftastic`      | `dev-util/difftastic`      | `difftastic`      |
+| ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸ | `ast-grep`        | cargo³                     | cargo³            |
+| w3m              | `w3m`             | `w3m`        | `w3m`             | `www-client/w3m`           | `w3m`             |
 
 ¹ openSUSE: in Tumbleweed main OSS as `tealdeer` (also Leap 15.6); on older Leap, `cargo install tealdeer`.
 ² Alpine default shell is `ash`; you must `apk add zsh` explicitly.
@@ -138,7 +138,7 @@ so it shadows nothing; prefer the `ast-grep` binary name over `sg` (which can co
 (`community` — a musl build, so the outlier is covered) and Homebrew; elsewhere via
 `cargo install ast-grep` / `mise` / `npm` / `pip`. Inert without the binary — nothing depends on it.
 ¹² Gentoo **GURU overlay** (`sd`, `glow`, `gum`, `xh`, `carapace`, `1password-cli`, `tealdeer`,
-`yazi`, `lazygit`, `direnv`, `gping`): not in the main `::gentoo` tree. Enable once with `eselect
+`yazi`, `lazygit`, `direnv`): not in the main `::gentoo` tree. Enable once with `eselect
 repository enable guru && emaint sync -r guru`, then `emerge` the atom. bootstrap.sh does this
 best-effort, per-atom (one masked atom doesn't block the rest), in its `guru_install` pass —
 which runs AFTER the main-tree emerge, so these must not sit in the main `packages.txt` blocks
@@ -172,9 +172,9 @@ auto-installing. Inert without the binary.
 unfamiliar API/JSON response" verb, complementing `jq` (transform), `gron` (grep), and `yq`
 (YAML). Its own command (no alias, like `jq`/`gron`/`ast-grep`), `HAVE_JNV`-guarded in
 `zsh/00-tools.zsh`, inert without the binary. A **Rust** CLI (embeds `jaq`, so no external
-`jq` needed). **Detect-only for now — unlike the ³ tools, `jnv` is NOT yet added to any
-`Brewfile` / `install/packages.txt` / `bootstrap.sh`, so Core lights up `HAVE_JNV` only once
-you install it yourself.** The cells above name where each platform gets it when you opt in —
+`jq` needed). **On Linux this is detect-only — unlike the ³ tools, `jnv` is in no
+`install/packages.txt` and no `bootstrap.sh` installs it, so Core lights up `HAVE_JNV` only
+once you install it yourself. macOS is the exception: the `Brewfile` carries it.** The cells above name where each platform gets it when you opt in —
 macOS `brew install jnv`, Arch `paru -S jnv` (AUR), Nix, or elsewhere `cargo install --locked
 jnv` (musl-safe on Alpine) — not an automatic install. Wiring it into the per-repo bootstrap
 (the ³ best-effort path viddy/yazi/ouch use) is a tracked follow-up in the OS repos; there is
@@ -198,8 +198,9 @@ trades upstream-latest for the distro build — and is deliberately **not** done
 `ouch`/`ast-grep` it is the _only_ way to get them installed without doing it by hand.
 
 ¹⁹ gping: the `ping` replacement — Core aliases `ping`→`gping` (`HAVE_GPING`-guarded in
-`zsh/20-aliases.zsh`), so a box without the binary just keeps classic `ping`. **Detect-only,
-like `jnv`¹⁷: gping is in NO repo's `install/packages.txt` and no `bootstrap.sh` installs it**,
+`zsh/20-aliases.zsh`), so a box without the binary just keeps classic `ping`. **Detect-only on
+Linux, like `jnv`¹⁷: gping is in no Linux repo's `install/packages.txt` and no `bootstrap.sh`
+installs it — the macOS `Brewfile` does carry it**,
 so the alias only lights up once you install it yourself — this row exists so there is a
 documented path when you do. (`aliases.md` and `PARITY.md` have advertised the alias since
 v3; the matrix row is what was missing.) A **Rust** CLI → `cargo install gping` anywhere
@@ -208,8 +209,9 @@ covered), Homebrew (`gping`), nixpkgs, and Debian/Kali apt — where the **sourc
 `rust-gping` but the **binary** you install is plain `gping` (Debian trixie 1.19.0, sid/Kali
 rolling 1.20.4). openSUSE: **Leap 15.6** carries it first-class in `main/oss` but well behind
 (1.16.1); **Tumbleweed** builds it from Factory, so verify with `zypper se gping` and fall back
-to cargo if your snapshot lacks it. Gentoo is **GURU-only** (`net-analyzer/gping`, see ¹²) —
-there is no main-tree atom. Inert without the binary; nothing depends on it.
+to cargo if your snapshot lacks it. Gentoo is **GURU-only** (`net-analyzer/gping`) — there is
+no main-tree atom, and unlike the ¹² atoms `bootstrap.sh` does **not** emerge it, so enable
+GURU per ¹² and `emerge net-analyzer/gping` by hand. Inert without the binary; nothing depends on it.
 
 ²⁰ atuin **daemon mode** — the one part of the atuin story that is NOT Core's to decide.
 Core ships `atuin/config.toml` (symlinked to `~/.config/atuin/config.toml`) with the
@@ -217,12 +219,12 @@ Core ships `atuin/config.toml` (symlinked to `~/.config/atuin/config.toml`) with
 the DB lock, which is where atuin's tail latency comes from on a busy multi-pane box. What
 differs per machine is how the daemon gets **launched**, so that half lives in the OS repo:
 
-| Machine | How the daemon runs | What the OS layer exports |
-| --- | --- | --- |
-| Fedora · Arch · openSUSE · Gentoo (systemd) · Kali · Defense | `systemd --user` unit — copy `examples/atuin-daemon.service` into `~/.config/systemd/user/`, then `systemctl --user enable --now atuin-daemon` (and `loginctl enable-linger $USER` if you want it alive outside a login session) | `ATUIN_DAEMON__ENABLED=true` |
-| Alpine (musl, no systemd) | atuin supervises its own daemon — no unit, no service manager, nothing to install | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
-| macOS | same as Alpine: `autostart` beats hand-writing a launchd plist, and `XDG_RUNTIME_DIR` is unset there so the socket lands in the data dir — which atuin resolves itself | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
-| Windows | out of scope — `dotfiles-Windows` vendors no `core/` and replicates its host config in PowerShell | — |
+| Machine                                                      | How the daemon runs                                                                                                                                                                                                              | What the OS layer exports                                     |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Fedora · Arch · openSUSE · Gentoo (systemd) · Kali · Defense | `systemd --user` unit — copy `examples/atuin-daemon.service` into `~/.config/systemd/user/`, then `systemctl --user enable --now atuin-daemon` (and `loginctl enable-linger $USER` if you want it alive outside a login session) | `ATUIN_DAEMON__ENABLED=true`                                  |
+| Alpine (musl, no systemd)                                    | atuin supervises its own daemon — no unit, no service manager, nothing to install                                                                                                                                                | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
+| macOS                                                        | same as Alpine: `autostart` beats hand-writing a launchd plist, and `XDG_RUNTIME_DIR` is unset there so the socket lands in the data dir — which atuin resolves itself                                                           | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
+| Windows                                                      | out of scope — `dotfiles-Windows` vendors no `core/` and replicates its host config in PowerShell                                                                                                                                | —                                                             |
 
 The exports belong in that repo's `os/<os>.zsh` (loader fragment 80), **never** in the Core
 config: Core is vendored identically to every repo, so a per-machine value there would be
