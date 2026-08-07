@@ -13,6 +13,117 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`scripts/bench-atuin-daemon.sh` — the atuin daemon's latency claim is no longer purely
+  borrowed.** Adoption's whole justification is that the daemon owns the SQLite writes so
+  shells stop contending for the DB lock, and that was cited from upstream, never measured
+  here. The script measures the per-command pair a shell hook actually runs
+  (`history start` + `history end`) under N concurrent writers sharing one seeded history
+  DB, daemon off vs on, reported as p50/p95/p99 — plus the daemon-spawn cost the **first**
+  command pays on the autostart path, which is unique to machines with no service manager.
+  Report-only and deliberately **not** part of `make audit` (it needs a real atuin binary and
+  starts a background daemon); `make bench-atuin` runs it, and it SKIPs cleanly on a box
+  without atuin. It also asserts behaviourally something the hermetic suite can only take on
+  faith from upstream's `settings.rs`: that atuin, with `XDG_RUNTIME_DIR` unset, binds
+  exactly the socket path `_core_atuin_daemon_guard` probes.
+
+### Fixed
+
+- **`exec zsh` — the documented first step after a bootstrap — dropped you into
+  `zsh-newuser-install` with no Core loaded.** The managed `~/.zshrc` _exports_
+  `ZDOTDIR=$XDG_CONFIG_HOME/zsh`, but nothing ever created `$ZDOTDIR/.zshrc`. The first
+  shell was fine (`ZDOTDIR` unset ⇒ zsh reads `~/.zshrc`); every zsh started from inside it
+  inherited the export, found none of `.zshenv`/`.zprofile`/`.zshrc`/`.zlogin` there, and was
+  treated as a brand-new user. The wizard was the visible half — the real damage was a shell
+  with no fragments, no plugins, no prompt. On a non-TTY there was no wizard at all, just a
+  silently empty shell; and the wizard's own option `(0)` writes a comment-only
+  `$ZDOTDIR/.zshrc`, permanently suppressing it while permanently keeping the shell empty.
+  `blib_write_zshrc_loader` now seeds `$ZDOTDIR/.zshrc` as a link to `~/.zshrc` (via
+  `blib_link`, so it backs up, is dry-run aware, and is idempotent) — including on the
+  already-managed early-return path, so boxes bootstrapped before this fix are reconciled on
+  the next run rather than only on a fresh write. Note `scripts/bench-core.sh` and
+  `scripts/new-os-repo.sh` already built the coherent `$ZDOTDIR` model, which is exactly why
+  the suite never caught this; Section I of `scripts/test-core.sh` now asserts it.
+
+- **The update nudge could report a Unix timestamp as the package count** — e.g.
+  `󰚰 1786128391 updates available`. `_PKGUP_CACHE` is positional (`"<count>\n<epoch>"`) but
+  both readers split it with an _unquoted_ `${(f)…}`, and zsh drops empty fields from an
+  unquoted expansion. The empty count is not something `_pkgup_refresh` can write — it
+  normalises an empty result to `-1`. It comes from the startup hook itself: on the first
+  shell of a fresh box there is no cache, so the count it reads is empty, and claiming the
+  throttle slot persists that empty field alongside a fresh timestamp while the background
+  refresh is still in flight. Read back unquoted, the leading empty field vanishes and the
+  epoch shifts into the count slot — where it passes the `<1->` positive-integer check and
+  renders. From there it is self-sustaining: `last` shifts to empty ⇒ `0`, which defeats the
+  once-a-day throttle so the check re-fires on _every_ shell, each one rewriting the bogus
+  count. Both reads are now quoted (`"${(@f)…}"`), and a non-numeric count is discarded
+  before it can be written back, closing the race from the writer side too.
+
+- **`zsh/00-tools.zsh` documented an atuin fallback that does not exist.** The comment on
+  `_core_atuin_daemon_guard` said an absent or stale daemon socket makes "every atuin call
+  pay a failed connect and an error" and that "atuin then writes SQLite directly" — so a
+  missing daemon "must cost latency". Measured against atuin 18.19.0, none of that holds:
+  `atuin history start` exits 0, prints a well-formed history id, writes nothing to stderr,
+  and **discards the entry** (verified for an absent socket, a stale socket file, and with
+  and without `--hook`; the daemon-off control writes every row). The guard is therefore
+  data-loss prevention, not a latency optimisation, and the "startup probe, not a watchdog"
+  caveat is correspondingly sharper: a daemon that dies mid-session costs that shell every
+  subsequent command, unrecorded and unannounced. Comment corrected; no behaviour change.
+
+- **`core.manifest` advertised a keybinding that does not exist.** Its `zsh/35-fzf.zsh`
+  stanza named `Ctrl-F/R` for the fzf widgets; `zsh/40-bindings.zsh` binds `^T`, and there is
+  no `^F` binding anywhere in Core — `PARITY.md` even records that zsh moved off `Ctrl+F`.
+  A one-token error, but in the file the system calls its contract, vendored verbatim into
+  eight repos, so it misinformed eight copies at once. Now `Ctrl-T/R`.
+
+- **Three `PORTING-MATRIX.md` footnotes asserted "nothing installs this" against repos that
+  do**, and two of them contradicted each other:
+
+  - ¹⁷ said `jnv` is in no `Brewfile`; `dotfiles-MacBook/Brewfile` carries it. Scoped to
+    Linux, with macOS named as the exception.
+  - ¹⁹ said no repo installs `gping`; the same `Brewfile` carries it. Same scoping.
+  - ¹² listed `gping` among Gentoo's GURU-overlay atoms while ¹⁹ said nothing installs it.
+    ¹⁹ was right: `gping` appears nowhere in `dotfiles-Gentoo`'s `guru_install` list, its
+    `packages.txt`, or its `bootstrap.sh` at all. Dropped from ¹².
+
+- **The matrix sent Kali to `mise`/`cargo` for `tree-sitter-cli`, which it apt-installs.**
+  `dotfiles-Kali/install/packages.txt` carries the plain apt name and its `bootstrap.sh` has
+  no tree-sitter installer, so the ³ footnote pointed at a path the repo never takes.
+
+- **`lib/bootstrap-lib.sh` still gave the atuin advice v4.9.3 corrected.** It told you to
+  re-apply a backed-up local config "via `ATUIN_*` env" with no carve-out — the exact pattern
+  that release proved does not work for the ten keys `atuin/config.toml` sets. This was the
+  last surviving instance; `PORTING-MATRIX.md`, `examples/README.md` and both OS layers were
+  already correct.
+
+- **A cross-reference dangled one release after it was written.** The v4.8.0 correction note
+  pointed at "the `[Unreleased]` entry on the daemon opt-in"; cutting v4.9.3 promoted that
+  entry, leaving the pointer aimed at an empty section. Now names `[v4.9.3]` — the hazard of
+  referring to `[Unreleased]` from a dated section at all.
+
+### Changed
+
+- **The `@vN` pinning policy is no longer stated as universal, because it is 27 of 28.**
+  `dotfiles-Windows` SHA-pins its `auto-tag-call` caller on purpose — immunity to a moved tag,
+  traded against the auto-fan-out — and both `RELEASE-RUNBOOK.md` and `RELEASE-STRATEGY.md`
+  read as though every caller tracks `@v4`. Worse, the runbook's own straggler sweep
+  (`grep -rl 'uses:.*@v4'` across `scripts/os-repos.txt`) **structurally cannot find it**:
+  Windows vendors no `core/`, so it is not in that list. It is therefore invisible to the
+  grep and unmoved by the alias — currently several releases behind. Both documents now name
+  the exception and say to check it by hand.
+
+- **The daemon rationale in `atuin/config.toml` and `zsh/00-tools.zsh` now reports what was
+  measured, and it is not the whole pitch.** A container run reproducing the topology of the
+  Alpine path (no systemd, `XDG_RUNTIME_DIR` unset) puts the median and p95 win at
+  ~1.4× and 1.2–1.3× — real, and steady across runs. But **p99 flips sign run to run and
+  the maximum is consistently ~2× worse with the daemon on**: it trades frequent small lock
+  waits for rarer, larger stalls. "Removes the tail latency" was therefore an overclaim in
+  both files and is now scoped to the typical command rather than the worst one. The
+  autostart path's first command additionally pays ~+41 ms for the spawn. Still unmeasured
+  and still needing hardware nobody has to hand: musl, the systemd-unit path, and a network
+  home — where the claim is strongest and least tested.
+
 ## [v4.9.3] - 2026-08-06
 
 ### Fixed
@@ -401,7 +512,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   **Corrected later:** that works for `sync_address` and `auto_sync`, which this file leaves
   unset, but **not** for `filter_mode`, which it writes — a key the Core config sets cannot be
   env-overridden at all. To vary one of those per machine, delete it from `atuin/config.toml`.
-  See the `[Unreleased]` entry on the daemon opt-in for why.
+  See the `[v4.9.3]` entry on the daemon opt-in for why.
 
 ### Changed
 

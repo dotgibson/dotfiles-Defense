@@ -210,7 +210,10 @@ fi
 
 # ── atuin daemon (OPT-IN) — degrade to direct writes when it isn't reachable ───
 # atuin's daemon owns the SQLite writes and shells talk to it over a unix socket, which
-# removes the DB-lock contention every shell and every tmux pane otherwise pays. Core
+# relieves the DB-lock contention every shell and every tmux pane otherwise pays —
+# measured at ~1.4x on p50 and ~1.2-1.3x on p95, though the far tail got WORSE, so
+# don't sell it as a tail fix (scripts/bench-atuin-daemon.sh; full numbers and caveats
+# in the config). Core
 # ships the [daemon] block OFF (core/atuin/config.toml); a machine opts IN from its OS
 # layer (os/<os>.zsh) or host layer (99-local) with atuin's own env overrides —
 # ATUIN_DAEMON__ENABLED=true, plus ATUIN_DAEMON__AUTOSTART=true where nothing else
@@ -218,10 +221,17 @@ fi
 #
 # What this guards, precisely — the distinction matters, so no overclaiming: with the
 # daemon enabled and its socket ABSENT or STALE (the file survived a crashed daemon,
-# nothing listening), every atuin call pays a failed connect and an error, on every
-# command. So probe once and, when nothing is listening, force the daemon off for THIS
-# shell; atuin then writes SQLite directly. Silent by design: a missing daemon must cost
-# latency, never noise on every prompt.
+# nothing listening), atuin does NOT fall back to a direct write. Measured on 18.19.0:
+# `atuin history start` exits 0, prints a well-formed history id, writes nothing to
+# stderr — and DISCARDS the entry. No error, no fallback, no row. Verified for an absent
+# socket, a stale socket file, and with and without --hook; the daemon-off control writes
+# every row. (It also makes the dead-socket path benchmark FASTER than a direct write,
+# 4.17 ms vs 8.27 ms mean, because it is timing a no-op.)
+#
+# So this guard is DATA-LOSS PREVENTION, not a latency optimisation: probe once and, when
+# nothing is listening, force the daemon off for THIS shell so atuin really does write
+# SQLite directly. Silent by design — but what a missing daemon would otherwise cost is
+# the history itself, not milliseconds.
 #
 # What it does NOT guard: an ACCEPT-BUT-SILENT socket — something is listening (systemd
 # socket activation holding the socket while the daemon behind it is dead or wedged) and
@@ -232,7 +242,11 @@ fi
 # service manager. Proving liveness would mean a bounded application-level request on the
 # startup path — a fork and a timeout per shell, which this file exists to avoid.
 #
-# It is a startup probe, NOT a watchdog: a daemon that dies later still costs that shell.
+# It is a startup probe, NOT a watchdog — and given the silent-discard behaviour above,
+# that limit bites hard: a daemon that dies mid-session costs that shell not latency but
+# EVERY command it runs afterwards, unrecorded and unannounced. On a long-lived tmux
+# session (especially with Linger=no, where the daemon stops with the last login session)
+# that is a realistic way to lose a day of history without noticing.
 # Re-probing every precmd would put a connect(2) in the prompt path, which is the trade
 # this repo's startup-cost discipline says no to.
 #

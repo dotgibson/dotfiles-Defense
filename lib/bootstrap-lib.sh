@@ -348,7 +348,10 @@ blib_link_core() {
     # ATUIN_CONFIG_DIR needed), linked unconditionally like the two above; inert without
     # the binary. NOTE: a hand-written ~/.config/atuin/config.toml is BACKED UP by
     # blib_link (…pre-dotfiles.<epoch>) — re-apply anything local via ATUIN_* env in the
-    # OS/host layer, which is also how a machine turns the daemon on.
+    # OS/host layer, which is also how a machine turns the daemon on. CAVEAT: an ATUIN_*
+    # override only reaches atuin for a key the Core config does NOT itself set (atuin adds
+    # the config file as a source AFTER the environment, so the file wins). See that file's
+    # header for the ten it sets; varying one of those means deleting it, not exporting.
     [[ -f "$dotfiles/core/atuin/config.toml" ]] && blib_link "$dotfiles/core/atuin/config.toml" "$config/atuin/config.toml"
     # portable sesh config, seeded ONCE (edited locally, never tracked back).
     blib_seed "$dotfiles/core/sesh/sesh.toml.example" "$config/sesh/sesh.toml" \
@@ -424,15 +427,24 @@ blib_wire_summary() {
 # already in place; backs up any prior ~/.zshrc first (incl. a pre-v4 "v2" one, which no
 # longer matches, so it is upgraded). The heredocs are single-quoted, so $HOME/$ZDOTDIR/
 # etc. stay LITERAL in the written file (evaluated at shell start, not at write time).
+#
+# The entry file EXPORTS ZDOTDIR (see the heredoc below), so it must also exist AT
+# $ZDOTDIR/.zshrc — see _blib_seed_zdotdir_rc.
 blib_write_zshrc_loader() {
   blib_want zsh || return 0   # the .zshrc loader belongs to the zsh group
   local rc="$HOME/.zshrc"
 
   if [[ -f "$rc" ]] && grep -q "dotfiles-managed v4" "$rc" 2>/dev/null; then
+    # Already managed — but a box bootstrapped before the seeding below existed still
+    # has no $ZDOTDIR/.zshrc, so reconcile that here rather than only on a fresh write.
+    _blib_seed_zdotdir_rc "$rc"
     return 0
   fi
   if _blib_dry; then
     blib_say "would write managed ~/.zshrc loader (v4 numbered-fragment glob)"
+    # Preview the seeding too — BLIB_DRY's contract is the FULL plan, and this is a
+    # second file the real run creates.
+    _blib_seed_zdotdir_rc "$rc"
     return 0
   fi
   blib_say "writing .zshrc loader"
@@ -472,6 +484,54 @@ else
   print -u2 -- "zshrc: Core loader not found at $ZSH_CFG/loader.zsh — re-run the dotfiles bootstrap to (re)link Core."
 fi
 ZRC
+  _blib_seed_zdotdir_rc "$rc"
+}
+
+# _blib_seed_zdotdir_rc <managed-rc> — make the entry file reachable AT $ZDOTDIR too.
+#
+# The managed ~/.zshrc EXPORTS ZDOTDIR=$XDG_CONFIG_HOME/zsh. That is fine for the shell
+# that reads ~/.zshrc (ZDOTDIR is unset at that point, so zsh looks in $HOME), but every
+# zsh started from inside it INHERITS the export and looks in $ZDOTDIR instead — where,
+# without this, there is no .zshrc/.zshenv/.zprofile/.zlogin at all. zsh then treats the
+# user as brand new and runs zsh-newuser-install, and none of Core loads. `exec zsh` is
+# the documented first step after a bootstrap (README "Getting Started"), so the very
+# first thing a fresh box is told to do walked straight into the wizard.
+#
+# Worse than the wizard: on a non-TTY there is no wizard, just a shell with no Core.
+# And the wizard's own option (0) writes a comment-only $ZDOTDIR/.zshrc, which silences
+# it permanently while leaving the shell empty — the failure becomes invisible.
+#
+# Seed it as a LINK, not a copy, so it tracks ~/.zshrc when the loader is regenerated.
+# Re-entrant by construction: the file resolves ZDOTDIR with := (a no-op when already
+# exported) and loader.zsh globs [0-9][0-9]-*.zsh, which ".zshrc" cannot match — so being
+# read via $ZDOTDIR sources the fragments exactly once, same as via $HOME.
+_blib_seed_zdotdir_rc() {
+  local rc="$1"
+  # Resolve ZDOTDIR the same way the written entry file does.
+  local zdot="${ZDOTDIR:-${XDG_CONFIG_HOME:-$HOME/.config}/zsh}"
+  # ZDOTDIR pointing at $HOME means ~/.zshrc IS the $ZDOTDIR entry — nothing to seed, and
+  # linking would make it its own target.
+  [[ -n "$zdot" && "$zdot" != "$HOME" ]] || return 0
+  local dst="$zdot/.zshrc"
+  # INVERTED LAYOUT: some setups point ~/.zshrc AT $ZDOTDIR/.zshrc rather than the other
+  # way round. The two path STRINGS still differ, so a string compare sees nothing wrong,
+  # but they are one file — and blib_link would move the real file aside and leave the two
+  # symlinks referring to each other. That is an ELOOP on the next shell: zsh resolves
+  # $ZDOTDIR/.zshrc → ~/.zshrc → $ZDOTDIR/.zshrc and gives up. Compare RESOLVED files
+  # (-ef is dev+inode, symlinks followed), gated on rc actually being a link so the normal
+  # layout — where dst is our own symlink back to a real rc — still reaches blib_link and
+  # keeps its idempotent no-op accounting.
+  if [[ -L "$rc" && "$rc" -ef "$dst" ]]; then
+    blib_warn "$dst already resolves to $rc — leaving it alone (linking would make a symlink cycle)"
+    return 0
+  fi
+  # On a FRESH dry run ~/.zshrc has not been written yet, so blib_link would report the
+  # source missing rather than previewing the link. Say what the real run would do.
+  if _blib_dry && [[ ! -e "$rc" ]]; then
+    blib_say "would seed $dst -> ~/.zshrc"
+    return 0
+  fi
+  blib_link "$rc" "$dst"
 }
 
 # ── privilege escalation ──────────────────────────────────────────────────────

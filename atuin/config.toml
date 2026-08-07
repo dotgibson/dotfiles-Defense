@@ -81,10 +81,32 @@ update_check = false
 
 # ── daemon (OPT-IN — ships OFF) ───────────────────────────────────────────────
 # atuin's daemon owns the SQLite writes; shells talk to it over a unix socket instead
-# of every shell and every tmux pane contending for the DB lock. That is the tail
-# latency this adopts away — but a shell that starts a background daemon as a side
-# effect of being opened is a behaviour change, so it is off here and stays off until
-# a machine asks for it.
+# of every shell and every tmux pane contending for the DB lock. That is the contention
+# this adopts away — but a shell that starts a background daemon as a side effect of
+# being opened is a behaviour change, so it is off here and stays off until a machine
+# asks for it.
+#
+# WHAT IS ACTUALLY MEASURED, AND WHAT IS STILL BORROWED. That rationale came from
+# upstream and went unmeasured here. scripts/bench-atuin-daemon.sh now puts numbers on
+# the part that can be measured without special hardware: a container reproducing the
+# TOPOLOGY of the Alpine path (no systemd, XDG_RUNTIME_DIR unset, so the socket falls
+# back to the data dir). 8 concurrent writers, one 20k-row DB, 1600 samples per arm,
+# timing the `history start` + `history end` pair a shell hook actually runs:
+#
+#     p50    ~43 ms -> ~31 ms       ~1.4x faster      (steady across runs)
+#     p95    ~57 ms -> ~46 ms       1.2-1.3x faster   (steady across runs)
+#     p99    ~65 ms -> 57-106 ms    FLIPS SIGN run to run — unresolved
+#     max    ~77 ms -> 140-180 ms   consistently WORSE with the daemon
+#
+# Read that carefully before repeating the pitch: the median and p95 win is real, but
+# "removes the TAIL latency" is NOT what the far tail did. The daemon traded frequent
+# small lock waits for rarer, larger stalls. Adopt it for the typical command, not the
+# worst one. On the autostart path the FIRST command of a fresh shell additionally pays
+# ~+41 ms for the daemon spawn (p50, steady across runs); later commands do not.
+#
+# Still unmeasured, still needing machines nobody has to hand: musl (the above is
+# glibc), the systemd-unit path, and a network home — which is where the contention
+# claim is strongest and least tested. This narrows the gap; it does not close it.
 #
 # HOW A MACHINE OPTS IN (the launcher is OS-native, so it lives in the OS repo, not here):
 #   systemd distros — install the user unit (examples/atuin-daemon.service),
