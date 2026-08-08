@@ -1553,6 +1553,62 @@ _zh="$(mktemp -d "$SANDBOX/zh.XXXXXX")"
 if [[ -f "$_zh/.zshrc" && ! -L "$_zh/.zshrc" ]]; then
   pass "zshrc: ZDOTDIR=\$HOME leaves ~/.zshrc a real file (no self-link)"; else fail "zshrc: ZDOTDIR=\$HOME produced a self-referential link"; fi
 
+# ── J. shipped example systemd unit (examples/atuin-daemon.service) ───────────
+# This file is classified repo-meta by ci-classify (nothing links it, so it cannot break a
+# shell) and was consequently never validated at all. It still ships onto real machines by
+# copy-paste, and its failure mode is quiet: with the daemon enabled and unreachable, atuin
+# exits 0 and DISCARDS the entry, so a unit whose ExecStart the binary rejects becomes a
+# 3s restart loop while shells silently record nothing. Cheap assertions, pure bash.
+hdr "example systemd unit (examples/atuin-daemon.service)"
+_UNIT="$HERE/examples/atuin-daemon.service"
+if [[ ! -f "$_UNIT" ]]; then
+  skip "atuin unit (examples/atuin-daemon.service absent)"
+else
+  _ux="$(grep -E '^ExecStart=' "$_UNIT" || true)"
+  # RUN the ExecStart payload against stub atuins rather than pattern-matching it. String
+  # assertions are too weak here: "contains daemon start" is satisfied by the PROBE alone,
+  # so a unit that probes correctly and then execs the bare form in BOTH branches would
+  # pass while being exactly the bug this fixes. Executing it pins the actual choice.
+  _uxcmd="$(sed -n "s|^ExecStart=/bin/sh -c '\(.*\)'\$|\1|p" "$_UNIT")"
+  if [[ -z "$_uxcmd" ]]; then
+    fail "atuin unit: could not extract the sh -c payload from ExecStart (format changed?)"
+  else
+    _ustub="$(mktemp -d "$SANDBOX/unitstub.XXXXXX")"
+    mkdir -p "$_ustub/new" "$_ustub/old"
+    # NEW atuin: `daemon start` exists, so the probe succeeds and start must be chosen.
+    printf '%s\n' '#!/bin/sh' \
+      '[ "$1" = daemon ] && [ "$2" = start ] && [ "$3" = --help ] && exit 0' \
+      '[ "$1" = daemon ] && [ "$2" = start ] && { echo START >"$UNIT_MARK"; exit 0; }' \
+      '[ "$1" = daemon ] && [ -z "$2" ] && { echo BARE >"$UNIT_MARK"; exit 0; }' \
+      'exit 2' >"$_ustub/new/atuin"
+    # OLD atuin: no `start` subcommand — the probe must fail and the bare form be chosen.
+    printf '%s\n' '#!/bin/sh' \
+      '[ "$1" = daemon ] && [ "$2" = start ] && exit 2' \
+      '[ "$1" = daemon ] && { echo BARE >"$UNIT_MARK"; exit 0; }' \
+      'exit 2' >"$_ustub/old/atuin"
+    chmod +x "$_ustub/new/atuin" "$_ustub/old/atuin"
+
+    UNIT_MARK="$_ustub/mark.new" PATH="$_ustub/new:$PATH" sh -c "$_uxcmd" >/dev/null 2>&1
+    if [[ "$(cat "$_ustub/mark.new" 2>/dev/null)" == START ]]; then
+      pass "atuin unit: on an atuin WITH 'daemon start', ExecStart runs the non-deprecated form"; else fail "atuin unit: modern atuin did not get 'daemon start' (got: $(cat "$_ustub/mark.new" 2>/dev/null || echo nothing))"; fi
+
+    UNIT_MARK="$_ustub/mark.old" PATH="$_ustub/old:$PATH" sh -c "$_uxcmd" >/dev/null 2>&1
+    if [[ "$(cat "$_ustub/mark.old" 2>/dev/null)" == BARE ]]; then
+      pass "atuin unit: on an atuin WITHOUT it, ExecStart falls back to the bare form"; else fail "atuin unit: old atuin got no working fallback (got: $(cat "$_ustub/mark.old" 2>/dev/null || echo nothing))"; fi
+  fi
+  # `exec A || exec B` LOOKS like a fallback but is not: once exec succeeds the process is
+  # replaced, so atuin exiting non-zero can never reach the `||`. Pin that it is not used.
+  if [[ "$_ux" != *"|| exec"* ]]; then
+    pass "atuin unit: no 'exec … || exec …' pseudo-fallback"; else fail "atuin unit: 'exec … || exec …' cannot fall back — exec replaces the process"; fi
+  # Syntax, when the tool is around (Linux CI; absent on macOS runners).
+  if have systemd-analyze; then
+    if systemd-analyze verify "$_UNIT" >/dev/null 2>&1; then
+      pass "atuin unit: systemd-analyze verify clean"; else fail "atuin unit: systemd-analyze verify reported problems"; fi
+  else
+    skip "atuin unit: systemd-analyze verify (not installed)"
+  fi
+fi
+
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
 # Everything below needs a real zsh. On a bare box we SKIP it (not fail) and fall
 # through to the shared summary, so a Section-C failure still surfaces as exit 1.
