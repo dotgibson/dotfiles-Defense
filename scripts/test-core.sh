@@ -1609,6 +1609,188 @@ else
   fi
 fi
 
+# ── J2. the atuin daemon bench harness (scripts/bench-atuin-daemon.sh) ────────
+# The bench itself needs a real atuin, a real zsh and a background daemon, so `make audit`
+# can never run it — which is exactly why its FAIL-CLOSED surface is worth pinning here.
+# Everything below is pure bash + python3: no atuin, no zsh, no systemd bus.
+#
+# What is deliberately NOT covered: the row-count rule end to end. Driving it would need a
+# stub atuin AND a stub zsh emulating zsh/datetime's $EPOCHREALTIME — a large, brittle fake
+# of the very thing under measurement. (run_writers' short-arm refusal has the same status:
+# validated by running the bench on a box that has atuin, not by this suite.) Test 6 pins the
+# piece that IS cheaply hermetic — the SQL the whole rule rests on.
+hdr "atuin daemon bench harness (scripts/bench-atuin-daemon.sh)"
+_BENCH="$HERE/scripts/bench-atuin-daemon.sh"
+if [[ ! -x "$_BENCH" ]]; then
+  skip "atuin bench harness (scripts/bench-atuin-daemon.sh absent or not executable)"
+else
+  _bout=""
+  _brc=0
+  _b_run() { # _b_run [env=val ...] -- [args ...]
+    local envs=()
+    while (($#)) && [[ "$1" != -- ]]; do
+      envs+=("$1")
+      shift
+    done
+    shift || true
+    # ${envs[@]+"${envs[@]}"}, not "${envs[@]}" — macOS ships bash 3.2, where expanding an
+    # EMPTY array under `set -u` is an "unbound variable" error rather than zero words. The
+    # calls that pass no env vars are exactly the ones that tripped it, so the bug only ever
+    # showed on macOS. scripts/lib/common.sh pins the same 3.2 constraint for the same reason.
+    _bout="$(env CORE_COLOR=never ${envs[@]+"${envs[@]}"} "$_BENCH" "$@" 2>&1)"
+    _brc=$?
+  }
+
+  # 1. --help documents the new surface. This is what stops a flag landing undocumented, and
+  #    — more to the point — stops the UNVALIDATED marker being dropped from the USER-VISIBLE
+  #    surface while surviving only in a source comment.
+  _b_run -- --help
+  if ((_brc == 0)) && [[ "$_bout" == *"--systemd"* && "$_bout" == *"CORE_ATBENCH_BASE"* &&
+    "$_bout" == *"UNVALIDATED-SYSTEMD"* ]]; then
+    pass "atuin bench: --help documents --systemd, CORE_ATBENCH_BASE and the UNVALIDATED marker"
+  else
+    fail "atuin bench: --help is missing one of --systemd / CORE_ATBENCH_BASE / UNVALIDATED-SYSTEMD (rc=$_brc)"
+  fi
+
+  # 2. The fail-closed arg contract still holds now that a flag exists which does not exit.
+  _b_run -- --definitely-not-a-flag
+  if ((_brc == 2)) && [[ "$_bout" == *"unexpected argument"* ]]; then
+    pass "atuin bench: an unknown argument still exits 2"
+  else
+    fail "atuin bench: unknown argument should exit 2 (got rc=$_brc)"
+  fi
+
+  # 3. --systemd fails CLOSED and does not degrade. Stub systemd-run/systemctl that behave
+  #    like a box with no bus, prepended to PATH so this is identical on a laptop with a real
+  #    user manager and in CI without one. The load-bearing assertion is the last one: a skip
+  #    that still printed a results table would be the silent degradation the flag exists to
+  #    prevent, and "rc==0" alone would not catch it.
+  _sdstub="$(mktemp -d "$SANDBOX/sdstub.XXXXXX")"
+  for _t in systemd-run systemctl; do
+    printf '%s\n' '#!/bin/sh' \
+      'echo "Failed to connect to bus: No medium found" >&2' 'exit 1' >"$_sdstub/$_t"
+    chmod +x "$_sdstub/$_t"
+  done
+  _bout="$(env CORE_COLOR=never PATH="$_sdstub:$PATH" "$_BENCH" --systemd 2>&1)"
+  _brc=$?
+  if ((_brc == 0)) && [[ "$_bout" == *"systemd"* && "$_bout" != *"results (ms per command"* &&
+    "$_bout" != *"daemon off"* ]]; then
+    pass "atuin bench: --systemd with no user bus SKIPs (rc 0) and reports no numbers"
+  else
+    fail "atuin bench: --systemd must skip without degrading to the no-systemd path (rc=$_brc)"
+  fi
+
+  # 4. CORE_ATBENCH_BASE validation — a caller error, so exit 2, never a silent skip.
+  #    The non-writable leg is meaningless as root (-w is always true), hence the guard.
+  _b_run "CORE_ATBENCH_BASE=relative/path" --
+  _rc_rel=$_brc
+  _b_run "CORE_ATBENCH_BASE=$SANDBOX/definitely-absent" --
+  _rc_abs=$_brc
+  if ((_rc_rel == 2)) && ((_rc_abs == 2)); then
+    pass "atuin bench: CORE_ATBENCH_BASE rejects a relative and a nonexistent path (exit 2)"
+  else
+    fail "atuin bench: CORE_ATBENCH_BASE validation should exit 2 (relative=$_rc_rel absent=$_rc_abs)"
+  fi
+
+  # 5. Knob validation. WRITERS=0 is the one that matters: it makes every arm vacuously
+  #    complete AND vacuously row-correct (0 samples, 0 rows) — a green run that measured
+  #    nothing, which is precisely the outcome the row rule exists to make impossible.
+  #    `08` is the third leg and the subtle one: it passes a `^[0-9]+$` digit class, and bash
+  #    then reads it as OCTAL, so an arithmetic range check dies with "value too great for
+  #    base" rather than producing the promised exit 2 — and the bad value goes on to break
+  #    the writer loops. Assert the exit code AND that no arithmetic error leaked to stderr.
+  _b_run "CORE_ATBENCH_WRITERS=abc" --
+  _rc_nan=$_brc
+  _b_run "CORE_ATBENCH_WRITERS=0" --
+  _rc_zero=$_brc
+  _b_run "CORE_ATBENCH_WRITERS=08" --
+  _rc_oct=$_brc
+  _oct_out="$_bout"
+  if ((_rc_nan == 2)) && ((_rc_zero == 2)) && ((_rc_oct == 2)) &&
+    [[ "$_oct_out" != *"value too great for base"* ]]; then
+    pass "atuin bench: non-numeric, zero and octal-looking (08) CORE_ATBENCH_WRITERS exit 2"
+  else
+    fail "atuin bench: knob validation should exit 2 (abc=$_rc_nan zero=$_rc_zero 08=$_rc_oct)"
+  fi
+
+  # 6. EXECUTE the row-count SQL rather than pattern-match it — Section J's philosophy applied
+  #    to the standing rule. Extract ROWCOUNT_PY from the script (failing loudly if the
+  #    extraction comes back empty, exactly as Section J does for ExecStart) and run it against
+  #    a synthetic history table. This pins both predicates the rule rests on: the total, and
+  #    the `duration >= 0` FINISHED count that catches a silently-discarded `history end`.
+  _rcpy="$(sed -n "/^ROWCOUNT_PY='/,/^'$/p" "$_BENCH" | sed -e "1s/^ROWCOUNT_PY='//" -e '$d')"
+  if [[ -z "$_rcpy" ]]; then
+    fail "atuin bench: could not extract ROWCOUNT_PY from the script (format changed?)"
+  elif ! have python3; then
+    skip "atuin bench: row-count SQL (python3 not installed)"
+  else
+    _rcdb="$SANDBOX/rowcount.db"
+    rm -f "$_rcdb"
+    python3 -c 'import sqlite3, sys
+con = sqlite3.connect(sys.argv[1])
+con.execute("create table history (duration integer)")
+con.executemany("insert into history values (?)", [(-1,), (-1,), (5,), (7,), (0,)])
+con.commit(); con.close()' "$_rcdb"
+    _tot="$(python3 -c "$_rcpy" "$_rcdb" '1=1')"
+    _fin="$(python3 -c "$_rcpy" "$_rcdb" 'duration >= 0')"
+    if [[ "$_tot" == 5 && "$_fin" == 3 ]]; then
+      pass "atuin bench: the row-count SQL counts all rows (5) and finished rows (3)"
+    else
+      fail "atuin bench: row-count SQL wrong (total=$_tot want 5; finished=$_fin want 3)"
+    fi
+    # And it must FAIL CLOSED — a -1 can only ever break an equality check, never satisfy one.
+    if [[ "$(python3 -c "$_rcpy" "$SANDBOX/no-such.db" '1=1')" == -1 ]]; then
+      pass "atuin bench: the row-count SQL returns -1 on an unreadable DB (fails closed)"
+    else
+      fail "atuin bench: row-count SQL must return -1 when it cannot read the DB"
+    fi
+  fi
+
+  # 7. The two-metric split, EXECUTED rather than grepped. The writer emits `start_ms
+  #    pair_ms` per line; the stats block must read one column per table. This needs a real
+  #    test because the failure is invisible: the previous parser split the whole file on
+  #    whitespace, so two-column input would flatten into a single distribution of double
+  #    the length — a table that looks entirely normal and is entirely wrong. Feed it
+  #    samples whose two columns differ and pin that each table reports its own.
+  # Anchored on the stats INVOCATION, not on `<<'PY'`: the seeder above it uses the same
+  # heredoc tag, so the generic pattern silently extracted the wrong block. Avoids `$` in
+  # the pattern so BSD and GNU sed agree on it.
+  _stats="$(sed -n '/^python3 - .*OFF_OK/,/^PY$/p' "$_BENCH" | sed -e '1d' -e '$d')"
+  if [[ -z "$_stats" ]]; then
+    fail "atuin bench: could not extract the stats block from the script (format changed?)"
+  elif ! have python3; then
+    skip "atuin bench: two-metric split (python3 not installed)"
+  else
+    _sdir="$(mktemp -d "$SANDBOX/stats.XXXXXX")"
+    mkdir -p "$_sdir/off" "$_sdir/on"
+    # start: off 10 ms, on 5 ms  (p50 ratio 2.00x).  pair: off 30 ms, on 25 ms  (1.20x).
+    # The ratios are the assertion, and 1.20x is the load-bearing one: a flattened parse
+    # yields the SAME distribution for both tables, so it can still produce 2.00x — but it
+    # can never produce a second, different ratio.
+    for _i in 1 2 3 4 5 6 7 8 9 10; do
+      printf '10.000000 30.000000\n' >>"$_sdir/off/1.txt"
+      printf '5.000000 25.000000\n' >>"$_sdir/on/1.txt"
+    done
+    _sout="$(python3 -c "$_stats" "$_sdir" 1 1 'daemon on' 2>&1)"
+    if [[ "$_sout" == *"PROMPT LATENCY"* && "$_sout" == *"TOTAL WRITE WORK"* &&
+      "$_sout" == *"2.00x faster"* && "$_sout" == *"1.20x faster"* ]]; then
+      pass "atuin bench: prompt-latency and total-write-work tables read separate columns"
+    else
+      fail "atuin bench: the two-metric split did not report both columns independently"
+    fi
+
+    # 8. A malformed sample line must REFUSE the arm, not coerce it. Same standing rule as
+    #    the row count: a half-parsed latency table is indistinguishable from a real one.
+    printf 'only-one-column\n' >"$_sdir/off/1.txt"
+    _sout="$(python3 -c "$_stats" "$_sdir" 1 1 'daemon on' 2>&1)"
+    if [[ "$_sout" == *"arm refused"* ]]; then
+      pass "atuin bench: a malformed sample line refuses the arm"
+    else
+      fail "atuin bench: a malformed sample line must refuse the arm, not be coerced"
+    fi
+  fi
+fi
+
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
 # Everything below needs a real zsh. On a bare box we SKIP it (not fail) and fall
 # through to the shared summary, so a Section-C failure still surfaces as exit 1.

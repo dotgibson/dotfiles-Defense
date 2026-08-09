@@ -84,7 +84,10 @@ jobs:
         with:
           persist-credentials: false
           repository: ${{ github.repository_owner }}/dotfiles-core
-          ref: v3
+          # Must track the same major as the callers (`@v4`). `v3` is frozen at v3.9.0,
+          # so pinning it here silently ran every routine from a prompt two majors of
+          # fixes stale. `vN` is a moving alias, advanced on each release.
+          ref: v4
       # 2) The caller OS repo into caller/ — its install/packages.txt / Brewfile is
       #    what the routine reads (exposed to the CLI via --add-dir).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -91,22 +91,56 @@ update_check = false
 # the part that can be measured without special hardware: a container reproducing the
 # TOPOLOGY of the Alpine path (no systemd, XDG_RUNTIME_DIR unset, so the socket falls
 # back to the data dir). 8 concurrent writers, one 20k-row DB, 1600 samples per arm,
-# timing the `history start` + `history end` pair a shell hook actually runs:
+# timing `history start` + `history end` TOGETHER:
 #
 #     p50    ~43 ms -> ~31 ms       ~1.4x faster      (steady across runs)
 #     p95    ~57 ms -> ~46 ms       1.2-1.3x faster   (steady across runs)
 #     p99    ~65 ms -> 57-106 ms    FLIPS SIGN run to run — unresolved
 #     max    ~77 ms -> 140-180 ms   consistently WORSE with the daemon
 #
-# Read that carefully before repeating the pitch: the median and p95 win is real, but
-# "removes the TAIL latency" is NOT what the far tail did. The daemon traded frequent
-# small lock waits for rarer, larger stalls. Adopt it for the typical command, not the
-# worst one. On the autostart path the FIRST command of a fresh shell additionally pays
-# ~+41 ms for the daemon spawn (p50, steady across runs); later commands do not.
+# WHICH METRIC THOSE ARE, because it decides what they can be quoted for. Timing the two
+# calls together measures TOTAL WRITE WORK, not prompt latency: atuin's `_atuin_precmd`
+# fires `history end` into a detached background subshell — `(atuin history end ... &)` —
+# so only `history start`, taken in a command substitution by `_atuin_preexec`, is on the
+# path a human waits on. The numbers above are real load; they are not what a command
+# costs the user.
 #
-# Still unmeasured, still needing machines nobody has to hand: musl (the above is
-# glibc), the systemd-unit path, and a network home — which is where the contention
-# claim is strongest and least tested. This narrows the gap; it does not close it.
+# THE TAIL QUESTION IS THEREFORE OPEN, not settled. The median and p95 win is solid and
+# holds on every host tried. But the far-tail reading — that the daemon trades frequent
+# small waits for rarer, larger stalls — comes entirely from pair-timed runs, and the one
+# measurement that timed ONLY the blocking call (real Fedora hardware, systemd unit) found
+# the opposite: p99 improving 49-69%, with spread collapsing from 2.86x to 1.28x at 16
+# writers. `end` is exactly where the two would diverge — with the daemon off it is the
+# slower call (the UPDATE costs more than the INSERT) and with it on they equalise. So do
+# not repeat either the "removes tail latency" pitch or its rebuttal as established.
+# bench-atuin-daemon.sh now reports the two metrics separately; the re-measurement it
+# enables is what should settle this. On the autostart path the FIRST command of a fresh
+# shell additionally pays ~+41 ms for the daemon spawn (p50, steady across runs).
+#
+# MUSL, measured since — in an Alpine 3.21 CONTAINER (real Alpine userland, real musl,
+# no systemd), against a glibc control on the SAME host, atuin 18.19.0, two runs each.
+# Compare the RATIOS, not the milliseconds: absolute figures move with the host, and
+# these were taken on different hardware from the block above.
+#
+#                     musl (2 runs)              glibc control (2 runs)
+#     p50     1.43x / 1.46x faster        1.46x / 1.42x faster
+#     p95     1.13x / 1.24x faster        1.32x / 1.32x faster
+#     p99     1.23x / 1.70x SLOWER        1.31x / 1.07x faster  (magnitude unstable)
+#     max     consistently WORSE          flips run to run
+#
+# So the p50 win is the one result that has held on every host tried so far. The far tail
+# is where musl and glibc appear to DIVERGE: on musl the p99 was worse with the daemon on
+# BOTH runs — a stable sign, not the coin-flip glibc gives. Note the same caveat as above,
+# though: these are pair-timed too, so the divergence is in total write work, and whether
+# it survives on the blocking call alone is untested. Do not cite it as a latency result.
+# The autostart spawn cost reproduced at ~+45 ms (p50).
+#
+# Still unmeasured, still needing machines nobody has to hand: musl on REAL HARDWARE (the
+# above is a container, so it does not settle scheduling or storage behaviour on a real
+# Alpine box), the systemd-unit path, and a network home — which is where the contention
+# claim is strongest and least tested. `scripts/bench-atuin-daemon.sh --systemd` and its
+# CORE_ATBENCH_BASE knob now exist for the latter two, but --systemd has itself never run
+# against a real systemd user bus. This narrows the gap; it does not close it.
 #
 # HOW A MACHINE OPTS IN (the launcher is OS-native, so it lives in the OS repo, not here):
 #   systemd distros — install the user unit (examples/atuin-daemon.service),

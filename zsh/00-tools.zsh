@@ -211,9 +211,12 @@ fi
 # ── atuin daemon (OPT-IN) — degrade to direct writes when it isn't reachable ───
 # atuin's daemon owns the SQLite writes and shells talk to it over a unix socket, which
 # relieves the DB-lock contention every shell and every tmux pane otherwise pays —
-# measured at ~1.4x on p50 and ~1.2-1.3x on p95, though the far tail got WORSE, so
-# don't sell it as a tail fix (scripts/bench-atuin-daemon.sh; full numbers and caveats
-# in the config). Core
+# measured at ~1.4x on p50 and ~1.2-1.3x on p95. Whether it helps or hurts the FAR tail
+# is unsettled: the runs that said "worse" timed `history start` + `history end`
+# together, but the hook backgrounds `end`, and the one run that timed only the blocking
+# call found p99 improving instead. Don't sell it as a tail fix, or as a tail regression,
+# until that is re-measured (scripts/bench-atuin-daemon.sh reports the two metrics
+# separately; full numbers and caveats in the config). Core
 # ships the [daemon] block OFF (core/atuin/config.toml); a machine opts IN from its OS
 # layer (os/<os>.zsh) or host layer (99-local) with atuin's own env overrides —
 # ATUIN_DAEMON__ENABLED=true, plus ATUIN_DAEMON__AUTOSTART=true where nothing else

@@ -63,13 +63,13 @@ jobs:
       # enough (auto-tag reads the OS repo's history via -C, not Core's). Pin the checkout to
       # the SAME major line callers pin this workflow to (@v4) so the script version can't
       # drift from the pinned workflow definition — deterministic between releases, advancing
-      # only when v3 moves (the @vN policy; RELEASE-STRATEGY.md).
-      - name: Check out dotfiles-core (reference, pinned to v3)
+      # only when v4 moves (the @vN policy; RELEASE-STRATEGY.md).
+      - name: Check out dotfiles-core (reference, pinned to v4)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           repository: ${{ github.repository_owner }}/dotfiles-core
-          ref: v3
+          ref: v4
           path: dotfiles-core
           fetch-depth: 1
       - name: Cut the next release tag (idempotent)

@@ -7,7 +7,7 @@
 # pre-commit call the same scripts/audit-core.sh, so `make audit` == green CI.
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-.PHONY: help setup doctor audit audit-changed test bench profile bench-atuin lint sync sync-dry fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern release tag release-notes
+.PHONY: help setup doctor audit audit-changed test bench profile bench-atuin bench-atuin-systemd lint sync sync-dry fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern release tag release-notes
 
 help: ## Show this help
 	@echo "dotfiles-core — make targets:"
@@ -37,6 +37,9 @@ profile: ## Per-module zsh startup breakdown (attributes the total cost; slowest
 
 bench-atuin: ## Measure atuin write latency, daemon off vs on, under contention (needs atuin; skips if absent)
 	@./scripts/bench-atuin-daemon.sh
+
+bench-atuin-systemd: ## Same, but through a transient systemd user unit (UNVALIDATED; skips without a user bus)
+	@./scripts/bench-atuin-daemon.sh --systemd
 
 lint: audit ## Alias for `audit` (the audit IS the lint+test gate)
 
