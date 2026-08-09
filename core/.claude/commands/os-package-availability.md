@@ -34,6 +34,38 @@ the list still resolve upstream*.
    Packages / Arch + AUR / openSUSE OBS / Alpine pkgs / Gentoo portage /
    Homebrew formulae). Flag: **renamed** (old → new), **dropped**, or **moved** to
    a secondary repo.
+
+   **Query every release users are actually on, not just one.** A single-release
+   check cannot tell "present everywhere" apart from "already dropped in the next
+   release" — and the second is precisely what this routine exists to catch.
+
+   Pick targets by **release model**, not from a fixed distro → branch map:
+
+   - **Versioned** (Fedora, openSUSE Leap, Alpine stable) — every currently-supported
+     stable release, **plus** that distro's own development branch where it has one
+     (Fedora → rawhide, Alpine → edge).
+   - **Rolling** (Arch, Gentoo, Homebrew, Kali, openSUSE Tumbleweed) — a single
+     current target, and that one query is the complete answer.
+
+   Do not invent a development branch for a distro that hasn't got one. Tumbleweed is
+   a **separate rolling product**, not Leap's next release, and Kali tracks its own
+   `kali-rolling` repos rather than Debian `sid` — treating either as "the next
+   release" turns ordinary cross-distro differences into false **Drifted** findings.
+
+   Two anchors, because a single-release check has already filed a false "Clean":
+
+   - **Name the release every version came from.** A version resolved in one release
+     is not evidence the name resolves in another. Report per release — `tealdeer
+     1.7.3 on F43/F44, absent from rawhide` — never as one unqualified ✓. If you
+     quote a version, you must be able to say which release you read it from.
+   - **On a versioned distro, still in stable but gone from that distro's own
+     development branch is a finding, not a pass.** It is a scheduled break, and
+     reporting it while the package still installs is the entire value of an
+     availability audit — by the time it fails, it is no longer early. Treat it as
+     **Drifted (likely)**, say which release it disappears in, and check whether the
+     package is orphaned or unmaintained upstream, which is what normally precedes a
+     drop. This anchor does not apply to rolling targets: absence there is simply
+     absence, and belongs under Broken.
 2. **Cross-check `PORTING-MATRIX.md`.** Its package-name table has columns for
    **Arch, openSUSE, Alpine, Gentoo, and Kali only** — `fedora` and `macbook` have
    **no column** (Fedora is the template the others are stamped from; macOS is
@@ -72,11 +104,21 @@ about `PORTING-MATRIX.md`, put the evidence in the report: quote the full matrix
 row (or the footnote's current text) alongside the `file:line`, so a reader can
 check the column without opening the file:
 
-- **Broken (fix needed)** — a name that no longer resolves as written.
-- **Drifted (likely)** — renamed / moved but still installable under an alias, or a
+- **Broken (fix needed)** — a name that no longer resolves as written on a
+  currently-supported release.
+- **Drifted (likely)** — renamed / moved but still installable under an alias; a name
+  that still resolves on stable but has vanished from the development branch; or a
   stale matrix footnote.
 - **Clean** — what was checked and still resolves, so a green run is trustworthy.
-  Quantify: N packages checked, which distro index was queried.
+  Quantify: N packages checked, which distro index was queried, and **which releases**
+  — a verdict that doesn't name its release coverage isn't a Clean, it's an untested
+  claim. On a **versioned** distro, a run that checked one release only is **partial**,
+  not Clean, and must say so. On a **rolling** target the single current repo is full
+  coverage, so a one-target run is Clean — say which target, not "partial".
+
+Account for the whole list. State N checked against the N in the list, and if those
+differ, name the entries you skipped and why — a tally that silently omits entries
+reads as full coverage without having it.
 
 Report-first. Fixes to a package list land in the **OS repo**
 (`install/packages.txt` / `Brewfile`); fixes to the matrix land in **dotfiles-core**

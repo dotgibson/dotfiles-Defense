@@ -116,7 +116,9 @@ shell widget (`35-fzf.zsh`) and the `prefix + f` tmux popup (`tmux-sesh.sh`); bo
 degrade to a `find`+`fzf` sessionizer when it's absent. `core-doctor` already
 reports `sesh` via its own `command -v` probe (it does not read `HAVE_SESH`);
 `00-tools.zsh` now also sets `HAVE_SESH` for parity with the other detected tools.
-Packaged in the AUR (`sesh`), Homebrew
+Packaged in the AUR as `sesh-bin` (which
+`provides`/`conflicts` `sesh`, so `paru -S sesh` still resolves — there is no
+AUR package under the bare name), Homebrew
 (`sesh`), and nixpkgs (`sesh`); **not** in Arch-official, openSUSE, Alpine,
 Gentoo, Fedora, or Debian/Kali apt — so most of the fleet uses
 `go install github.com/joshmedeski/sesh/v2@latest` (note the **v2** module path),

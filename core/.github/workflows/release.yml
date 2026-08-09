@@ -94,3 +94,37 @@ jobs:
             gh release create "$TAG" --verify-tag --title "$TAG" --notes-file release-body.md
           fi
           echo "Published release $TAG"
+
+  # Tell dotfiles-web a new Core version exists, so its fleet-sync bot regenerates and
+  # COMMITS src/data/generated.json — the file every install command on the showcase is
+  # pinned to — instead of the site advertising the previous tag until the next Tuesday.
+  #
+  # WHY THIS LIVES HERE and not in notify-web.yml, which already has a `release: published`
+  # trigger for exactly this: the Release above is created by `gh release create` under the
+  # built-in GITHUB_TOKEN, and an event raised by GITHUB_TOKEN never starts another workflow
+  # run (GitHub's recursion guard — the same one that stops a GITHUB_TOKEN push from firing
+  # `pull_request`). So notify-web.yml's release trigger COULD NEVER FIRE for a release this
+  # workflow publishes: it sat dead from the day it was added, and dotfiles-web's
+  # `repository_dispatch: types: [core-release]` never received a single POST
+  # (dotgibson/dotfiles-web#109). Dispatching from inside the publishing job sidesteps the
+  # guard entirely. Running after `publish` also means repos/.../releases/latest already
+  # returns the new tag by the time the site regenerates, so the refresh can't produce a
+  # generated.json that is momentarily AHEAD of the API — which dotfiles-web's
+  # data-freshness guard, comparing by string inequality, would fail just as loudly.
+  #
+  # best_effort is LOAD-BEARING, not caution: sync-fanout.yml triggers on this workflow's
+  # `workflow_run` and gates on `conclusion == 'success'` — the WHOLE run's conclusion, not
+  # publish's. Without it a transient curl/token blip here would mark the release run failed
+  # and silently skip fanning the published tag out to the nine OS repos, which is a far
+  # worse outcome than a missed notification. (`continue-on-error` would be the obvious
+  # lever, but a job that calls a reusable workflow with `uses` may not set it.) The dropped
+  # notification is cheap by comparison: dotfiles-web polls hourly for exactly this case.
+  notify-web:
+    needs: publish
+    uses: ./.github/workflows/notify-web-call.yml
+    with:
+      event_type: core-release
+      best_effort: true
+    secrets:
+      WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }} # legacy PAT (fallback)
+      FLEET_APP_PRIVATE_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY }} # App auth (G2)

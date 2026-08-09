@@ -28,7 +28,159 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   faith from upstream's `settings.rs`: that atuin, with `XDG_RUNTIME_DIR` unset, binds
   exactly the socket path `_core_atuin_daemon_guard` probes.
 
+  The harness now also covers the two paths it structurally could not, and enforces a rule
+  that stops it lying. **`--systemd`** measures the systemd-unit path: `env -i` guaranteed
+  `XDG_RUNTIME_DIR` was unset, so atuin's default `$XDG_RUNTIME_DIR/atuin.sock` — the Fedora
+  shape, and the _other_ branch of `_core_atuin_daemon_guard`'s expression — was unreachable
+  by construction. It runs the daemon from a sandbox-scoped **transient** unit
+  (`systemd-run --user`), never your `atuin-daemon.service`, points `XDG_RUNTIME_DIR` at the
+  sandbox so it cannot collide with a real daemon, asserts the unit's `MainPID` actually
+  holds the listening socket, and **skips rather than degrades** without a user bus —
+  reporting no-systemd numbers under a systemd label is the one thing the flag exists to
+  prevent. _It is **UNVALIDATED**: it was written where `systemd-run --user` cannot reach a
+  bus, so only its fail-closed skip path has ever executed, and it says so in `--help`, on
+  every run, and on the results table itself._ **`CORE_ATBENCH_BASE`** puts the sandbox HOME
+  and history DB on a network home, with the socket deliberately decoupled onto a short local
+  path — `AF_UNIX` does not work on NFS/SMB and `sun_path` caps near 108 bytes — and discloses
+  the cost of that, which is that such a run no longer exercises atuin's default socket
+  resolution, so the socket-agreement claim is **withdrawn** rather than weakened. And every
+  arm must now prove its writes landed: the DB's row delta has to equal the samples the arm
+  claims, or the arm is not reported. That is not hypothetical — with the daemon enabled and
+  unreachable, atuin 18.19.0 exits 0, prints a well-formed history id, writes nothing to
+  stderr and discards the entry (`atuinsh/atuin#3561`), which is the fastest table this
+  script can produce for work that never happened. The check covers both halves, since
+  `history end` _updates_ the row rather than inserting one and a pure row count would sail
+  past a silently-discarded `end`.
+
+- **The atuin daemon bench's fail-closed surface is now pinned by the suite**
+  (`scripts/test-core.sh` Section J2). `make audit` can never run the bench itself — it needs
+  a real atuin, a real zsh and a background daemon — which is precisely why the parts that
+  _are_ hermetic are worth asserting: that `--help` documents every knob including the
+  unvalidated marker, that an unknown argument still exits 2, that a malformed
+  `CORE_ATBENCH_WRITERS` or `CORE_ATBENCH_BASE` exits 2 rather than skipping (`WRITERS=0`
+  otherwise makes every arm vacuously complete _and_ vacuously row-correct), and that
+  `--systemd` against a stubbed busless `systemctl` skips with **no results table** — the
+  no-degradation requirement expressed executably rather than asserted in prose. The
+  row-count SQL is extracted from the script and _executed_ against a synthetic table, the
+  same "run it, don't pattern-match it" idiom Section J uses on the example unit's `ExecStart`.
+
 ### Fixed
+
+- **Every atuin bench figure ever produced was labelled latency and was not.** The harness
+  timed `history start` and `history end` in one span, but a shell hook does not pay for the
+  two calls the same way: atuin's `_atuin_preexec` takes `start` in a command substitution,
+  so the prompt blocks on it, while `_atuin_precmd` fires `end` into a detached background
+  subshell — `(atuin history end ... &)` — where it costs the box and nothing else. Timing
+  the pair measures total write work; only `start` is time a human waits. The writer now
+  takes a timestamp **between** the two calls (both metrics from one pass, so the tables are
+  strictly comparable — same samples, same contention) and the results print as two clearly
+  separated tables, latency first, each saying what it may be quoted for.
+
+  This is not a presentational fix: **it puts the far-tail conclusion back in question.** The
+  recorded finding that the daemon trades frequent small waits for rarer, larger stalls comes
+  entirely from pair-timed runs, while the one measurement that timed only the blocking call
+  (real Fedora hardware, systemd unit) found p99 improving 49–69%. `end` is precisely where
+  the two would diverge — with the daemon off it is the slower call, and with it on they
+  equalise. `atuin/config.toml` and `zsh/00-tools.zsh` now relabel their figures as total
+  write work and mark the tail question **open in both directions** rather than settled
+  against the daemon; the p50/p95 win is unaffected and still holds on every host tried.
+  No new measurements are claimed here — this change makes the re-measurement possible.
+
+  The parser is the risky half and is tested accordingly (`test-core.sh` Section J2): the
+  previous one split each file on all whitespace, so two-column input would have flattened
+  into one distribution of double the length — a table that looks completely normal and is
+  completely wrong. The stats block is now extracted and _executed_ against synthetic samples
+  whose two columns differ, pinning that each table reports its own, and a malformed sample
+  line refuses the arm instead of being coerced.
+
+- **The atuin bench dropped an arm roughly one run in eight, and the reason looked like
+  atuin misbehaving under contention.** `history start` is not the only write a command
+  makes: `meta.db` (and the `key` beside it) are created lazily by the first `history end`.
+  The warmup in `db_reset` ran `history start` _alone_, so `meta.db` did not exist when the
+  writers launched and all N of them raced to create and migrate it on their first
+  `history end` — one losing on `UNIQUE constraint failed: _sqlx_migrations.version`, which
+  aborted that writer at iteration 1 and cost the whole arm. It was always the _first_ arm,
+  because `meta.db` survived a `db_reset` that only ever removed `history.db`. The warmup now
+  runs a complete `start`+`end` pair, and the snapshot/restore covers the whole data
+  directory rather than one file — which also delivers what the old comment already claimed:
+  `records.db` grew monotonically across arms before this, so each arm was measured against a
+  bigger sync store than the one before it, exactly the variable being controlled for.
+
+- **The bench could never detect musl, and mislabelled the one run where that mattered.**
+  `ldd --version 2>&1 | grep -qi musl` looks right but cannot work under the `set -o pipefail`
+  in force at the top of the script: musl's `ldd` exits non-zero after printing its banner, so
+  the pipeline fails even though `grep` matched. Every musl run therefore reported
+  `unknown libc` _and_ went on to list musl among the things it had not covered — on the one
+  run where that was false, and on the cheapest of the remaining gaps. Now the output is
+  captured and matched as a string.
+
+- **The showcase was never told a release had happened, and had not been since the
+  notification was written.** `notify-web.yml` listens for `release: published`, but the
+  Release is created by `release.yml` running `gh release create` under the built-in
+  `GITHUB_TOKEN` — and an event raised by `GITHUB_TOKEN` never starts another workflow run
+  (the same recursion guard that stops a `GITHUB_TOKEN` push from firing `pull_request`).
+  So the Release published, the event was inert, and dotfiles-web's
+  `repository_dispatch: types: [core-release]` received not one POST in its lifetime.
+  Nothing about the dispatch itself was broken — right event type, right target, working
+  token — which is why it read as healthy from both ends. User-visible downstream: the
+  site's only remaining refresh was a Tuesday cron, so its committed `generated.json` sat
+  two releases behind (v4.7.1 against Core's 4.9.3) and every published install command was
+  pinned to a stale `--branch`. `release.yml` now dispatches `core-release` itself from a
+  job after `publish`, where no guard applies; `notify-web-call.yml` grew an `event_type`
+  input (default `refresh`, so the `@v4` callers across the fleet are untouched), validated
+  against an allowlist because a typo'd type POSTs 204 and triggers nothing. That job is
+  `best_effort`, because `sync-fanout` gates on this workflow's overall conclusion and a
+  failed notification must never be able to stop a published tag from reaching the OS
+  repos. `notify-web.yml` keeps its `release:` trigger for a Release published by hand from
+  the UI, and now documents the trap so the dead path isn't mistaken for the live one.
+
+- **`/os-package-availability` could query a single release and still return "Clean" —
+  the one verdict the routine exists to rule out.** Step 1 said to confirm each name
+  "still exists in this distro's repos" without ever saying _which_ releases to look in,
+  so a run against one release could not distinguish "present everywhere" from "already
+  dropped in the next release" — and would report a version read from stable as evidence
+  the name resolves, full stop. That is not hypothetical: the Fedora run filed a Clean
+  verdict while `tealdeer` and `procs` had both gone orphan and neither had been rebuilt
+  for rawhide/F45, quoting their F43/F44 versions as passes. Both still install today and
+  break on the F45 upgrade, which is exactly the early warning this audit is for. The
+  routine now picks targets by **release model**: versioned distros (Fedora, openSUSE Leap,
+  Alpine stable) need every currently-supported stable release plus that distro's own
+  development branch where one exists, while rolling targets (Arch, Gentoo, Homebrew, Kali,
+  Tumbleweed) have a single current repo that is itself full coverage. It also requires
+  every quoted version to name the release it came from; classifies "in stable, gone from
+  that distro's development branch" as **Drifted** rather than a pass; and requires a Clean
+  verdict to state its release coverage and reconcile N-checked against N-in-list, so a
+  partial run has to call itself partial.
+- **`claude-routines-call.yml` ran the routines from a frozen `v3` checkout.** The reusable
+  workflow checks out dotfiles-core to get the routine prompt, `PORTING-MATRIX.md` and the
+  pinned CLI, and pinned that checkout to `ref: v3` — directly under a comment reading
+  "Core@v4 at ROOT … (v4 = the current major, matching the `@v4` callers)". `v3` is frozen
+  at v3.9.0 (2026-07-19) while the line has since reached v4.9.3, and the routine prompt
+  differs between the two, so every scheduled run has been executing the v3.9.0 prompt no
+  matter what shipped in v4 — including the fix above. Bumped to `v4` so the callers and the
+  content they run agree.
+- **`lint-call.yml` and `auto-tag-call.yml` ran the fleet from the same frozen `v3`
+  checkout.** The defect above was not confined to the routines workflow — these two
+  reusable workflows carry it in the three remaining pins, and the lint one is the
+  consequential half. Both check out dotfiles-core for the pinned
+  `scripts/tool-versions.env`, the `setup-core-tools` composite and the release scripts, and
+  pinned that checkout to `ref: v3` while every comment beside them declared v4
+  (`lint-call.yml:57` reads "v4 = the current major, matching the `@v4` callers"; the
+  auto-tag step said "pin to the SAME major line callers pin this workflow to (@v4)" and
+  then pinned v3 in the same breath). So every OS repo's lint gate has been running v3.9.0's
+  pinned tools — shellcheck 0.10.0, shfmt 3.8.0, actionlint 1.7.8 — while Core lints itself
+  with 0.11.0 / 3.13.1 / 1.7.12: the fleet was held to a weaker gate than the repo defining
+  it. Bumped all three pins to the moving `v4` alias.
+
+  Measured before bumping, against `dotfiles-Fedora` with the gate's exact
+  `SHELLCHECK_OPTS` and file selection: shellcheck 0.10.0 → 0.11.0 is **byte-identical**
+  (exit 0, no findings either way) and actionlint 1.7.8 → 1.7.12 likewise. `shfmt` is
+  advisory by construction — the step wraps it in an `if/else` that swallows the drift exit
+  rather than setting `continue-on-error` (`lint-call.yml:156-170`), so new formatting
+  opinions in 3.13.1 can only warn; note that a genuine shfmt _install_ failure still reds
+  the step, which is the point of not using `continue-on-error`. So the bump is expected to
+  be a no-op for the blocking legs rather than a new-findings event — verified on one repo,
+  not all eight.
 
 - **`examples/atuin-daemon.service` started the daemon by a deprecated name, and that
   failure mode is silent.** `ExecStart` ran `atuin daemon`; 18.19.0 warns on every start and
@@ -112,6 +264,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   `dotfiles-Kali/install/packages.txt` carries the plain apt name and its `bootstrap.sh` has
   no tree-sitter installer, so the ³ footnote pointed at a path the repo never takes.
 
+- **Footnote ⁹ named an AUR package that does not exist.** It said sesh is "Packaged in the
+  AUR (`sesh`)"; the AUR has no package under that bare name. The real one is `sesh-bin`,
+  which declares `provides`/`conflicts` on `sesh` — so `paru -S sesh` resolves anyway, which
+  is precisely why the wrong name read as correct. Confirmed against the AUR RPC: an `info`
+  lookup for `sesh` returns nothing, and a name search returns eight packages, none of them a
+  bare `sesh`, ruling out a source-build entry alongside `sesh-bin`. The Arch cell on the
+  sesh row still reads `AUR`, which was always accurate; only the footnote was wrong.
+
 - **`lib/bootstrap-lib.sh` still gave the atuin advice v4.9.3 corrected.** It told you to
   re-apply a backed-up local config "via `ATUIN_*` env" with no carve-out — the exact pattern
   that release proved does not work for the ten keys `atuin/config.toml` sets. This was the
@@ -124,6 +284,15 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   referring to `[Unreleased]` from a dated section at all.
 
 ### Changed
+
+- **The daemon's contention claim now has a musl number.** Measured in an Alpine 3.21
+  container (real Alpine userland, real musl, no systemd) against a glibc control on the same
+  host, atuin 18.19.0, two runs each. The p50 win holds and is the most robust result so far
+  (~1.4x on both libcs), but the far tail is where they **diverge**: on musl the p99 was worse
+  with the daemon on _both_ runs — a stable sign, where glibc gives a coin flip. That is the
+  strongest evidence yet against selling the daemon as a tail fix, and it lands on the path
+  Alpine actually ships. `atuin/config.toml` carries the table and the caveat that a container
+  is not real hardware.
 
 - **The `@vN` pinning policy is no longer stated as universal, because it is 27 of 28.**
   `dotfiles-Windows` SHA-pins its `auto-tag-call` caller on purpose — immunity to a moved tag,

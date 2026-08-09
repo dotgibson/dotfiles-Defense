@@ -7,6 +7,18 @@
 #     fleet-sync's weekly cron (which left Monday's data-freshness guard red until Tue).
 # Receiving side: dotfiles-web's deploy.yml (refresh) + fleet-sync.yml (core-release).
 #
+# THE RELEASE PATH HERE IS A BACKSTOP, NOT THE MAIN ROUTE — and it is worth knowing why,
+# because it looked like the main route for months while sending nothing at all. Our
+# releases are published by release.yml running `gh release create` under the built-in
+# GITHUB_TOKEN, and an event raised by GITHUB_TOKEN never starts another workflow run
+# (GitHub's recursion guard). So `release: published` is INERT for every release we cut:
+# this workflow never ran on one, and dotfiles-web's `repository_dispatch:
+# types: [core-release]` never received a single POST (dotgibson/dotfiles-web#109).
+# release.yml now dispatches core-release itself, from inside the publishing job, which
+# the guard cannot suppress. The trigger below still earns its place for a Release
+# published by HAND from the GitHub UI — a human-raised event, which does fire — and
+# release.yml does not run in that case (no tag push), so the two never double-send.
+#
 # Setup (G2): with the fleet GitHub App configured (the FLEET_APP_ID variable +
 # FLEET_APP_PRIVATE_KEY secret — see dotfiles-core GITHUB-APP-AUTH.md) this mints a
 # short-lived dotfiles-web-scoped token for the dispatch. Fallback: a fine-grained PAT

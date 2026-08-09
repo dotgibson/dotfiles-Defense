@@ -59,7 +59,7 @@ jobs:
         with:
           persist-credentials: false
           repository: ${{ github.repository_owner }}/dotfiles-core
-          ref: v3
+          ref: v4
       # 2) The caller repo into caller/ — the tree we lint.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -179,7 +179,8 @@ jobs:
         with:
           persist-credentials: false
           repository: ${{ github.repository_owner }}/dotfiles-core
-          ref: v3
+          # Same major as the callers (`@v4`) — see the note on the shell-lint job above.
+          ref: v4
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
