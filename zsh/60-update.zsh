@@ -76,8 +76,23 @@ _pkgup_mgr() {
   else echo none; fi
 }
 
-# Best-effort, NON-ROOT count of upgradable packages. Runs in the background.
+# Best-effort, NON-ROOT count of upgradable packages.
 # Offline / unknown → prints -1 (caller stays silent). Never touches the system.
+#
+# The `</dev/null` hangs off the whole `case`, not the individual probes, because the safety
+# has to hold for every branch and every caller. (It must go on the case and not on the
+# function definition — `f() { ... } </dev/null` binds at DEFINITION time in zsh and does
+# nothing at call time; verified, it still reads a piped stdin.)
+# This used to be documented as "runs in the background", and while
+# that was true the shape was accidentally safe: zsh gives a background job /dev/null stdin
+# under `setopt nomonitor`, so a prompting manager hit EOF and moved on. But `up` also calls
+# it in the FOREGROUND via _pkgup_refresh once the upgrade finishes, and there it inherits the
+# terminal — with stdout captured by $(...) and stderr sent to /dev/null, so any prompt is
+# invisible and unanswerable. That is how `up` came to print "Complete!" and then hang for
+# good on Fedora: a repo with repo_gpgcheck=1 whose signing key only ever reached root's
+# keyring makes every non-root --refresh ask to import it (dnf5 keys repos per user, under
+# <cachedir>/<repo>/pubring), and a declined import is never persisted, so it asks forever.
+# Pinning stdin here makes the probe unpromptable no matter who calls it or how.
 _pkgup_count() {
   case "$(_pkgup_mgr)" in
   brew)
@@ -114,7 +129,7 @@ _pkgup_count() {
     else echo -1; fi
     ;;
   *) echo -1 ;;
-  esac
+  esac </dev/null
 }
 
 # Best-effort LIST of upgradable package names — the names behind _pkgup_count's
@@ -122,6 +137,9 @@ _pkgup_count() {
 # no-system-mutation commands as _pkgup_count, emitting names instead of counting
 # (brew skips the network `brew update` the count does — the nudge already ran it).
 # Empty/unknown manager → nothing, so the caller just falls back to a name-only confirm.
+# Same stdin pin as _pkgup_count, for the same reason: `up` runs this one
+# through _core_spin, which backgrounds it — a prompt there would be doubly hidden, behind
+# both the captured output and a spinner that reads as progress while nothing advances.
 _pkgup_list() {
   case "$(_pkgup_mgr)" in
   brew) brew outdated --quiet 2>/dev/null ;;
@@ -135,10 +153,11 @@ _pkgup_list() {
   apt) apt-get -s upgrade 2>/dev/null | awk '/^Inst /{print $2}' ;;
   apk) apk list -u 2>/dev/null | awk '{print $1}' ;;
   emerge) command -v eix >/dev/null 2>&1 && eix -u --only-names 2>/dev/null ;;
-  esac
+  esac </dev/null
 }
 
-# Background refresh → writes "<count>\n<epoch>" to the cache.
+# Refresh → writes "<count>\n<epoch>" to the cache. Backgrounded by the startup hook, but
+# `up` calls it in the FOREGROUND after an upgrade — see _pkgup_count on why that matters.
 _pkgup_refresh() {
   local n
   n="$(_pkgup_count 2>/dev/null)"

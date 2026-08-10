@@ -223,6 +223,29 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   be a no-op for the blocking legs rather than a new-findings event — verified on one repo,
   not all eight.
 
+- **`up` and the maintenance runner could hang forever, invisibly, on a package manager
+  that stopped to ask a question.** dnf5 verifies repository _metadata_ signatures against a
+  per-repo, **per-user** keyring (`<cachedir>/<repo>/pubring`), not the rpm keyring. So a
+  repo with `repo_gpgcheck=1` whose signing key only ever reached root's keyring — the
+  ordinary outcome of a bootstrap that runs `sudo rpm --import` and then `sudo dnf install`
+  — re-prompts to import it on every **non-root** `--refresh`, and since a declined import
+  is never persisted, it prompts again forever. Every probe that hits this runs with stdout
+  captured by `$(...)` and stderr sent to `/dev/null`, so the question is invisible while it
+  holds the terminal. `_pkgup_count`/`_pkgup_list` were documented as backgrounded, where
+  zsh's `nomonitor` hands a job `/dev/null` stdin and the shape was accidentally safe — but
+  `up` calls `_pkgup_refresh` in the **foreground** once the upgrade finishes, so it inherits
+  the terminal and `up` prints `Complete!` and then never returns. The runner's
+  upgradable-count block is not a `step()`, so it had no stdin discipline at all and the run
+  stopped dead after the last ✓ with no error. Pin stdin so the probes cannot be prompted
+  regardless of caller, give `step()` the same treatment — which closes the identical
+  exposure on the git-credential and tpm paths — and bound the count probe with `_to`
+  (`MAINT_PKGCOUNT_TIMEOUT`, default 180s) for the separate case of a mirror that accepts
+  the connection and then stalls. The redirect goes on the `case`/`fi`, **not** the function
+  definition: in zsh `f() { … } </dev/null` binds at definition time and does nothing at
+  call time, so it reads as correct in review while fixing nothing. Regression tests assert
+  the probes cannot consume the _caller's_ stdin rather than asserting they don't hang —
+  same property, but it fails instead of wedging a suite that has no timeout anywhere.
+
 - **`examples/atuin-daemon.service` started the daemon by a deprecated name, and that
   failure mode is silent.** `ExecStart` ran `atuin daemon`; 18.19.0 warns on every start and
   points at `atuin daemon start`. On its own that is cosmetic — but with the daemon enabled
