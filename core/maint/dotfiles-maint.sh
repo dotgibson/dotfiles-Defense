@@ -42,6 +42,9 @@ export PATH="$HOME/.local/bin:${CARGO_HOME:-$HOME/.cargo}/bin:/opt/homebrew/bin:
 : "${MAINT_NVIM_TIMEOUT:=600}"
 : "${MAINT_TS_TIMEOUT:=300}" # seconds the headless TS parser update may block (see below)
 : "${MAINT_BREW_TIMEOUT:=900}"
+# The upgradable-count probe below refreshes package metadata over the network. It is a
+# nudge, not a transaction — a slow mirror must cost us an accurate number, never the run.
+: "${MAINT_PKGCOUNT_TIMEOUT:=180}"
 # Log rotation bound (B6): trim to MAINT_LOG_KEEP lines once the log passes
 # MAINT_LOG_MAX, so an append-only daily log can't grow without limit. Configurable so
 # a noisy box can keep more history (or a tiny one less); KEEP < MAX or trimming churns.
@@ -83,11 +86,21 @@ _to() {
 }
 
 # run a labeled step, capture rc, never abort the script
+#
+# </dev/null is load-bearing, not tidiness. This runner is unattended by design, but it
+# inherits whatever stdin it was started with — a terminal, when invoked via `maint-run`.
+# Every step's output goes to $LOG, so a step that decides to PROMPT (dnf asking to import
+# a repo signing key, git asking for credentials on an expired token, ssh asking to trust a
+# host key, tpm's per-plugin clones) writes the question to the log where nobody sees it and
+# then blocks on the tty forever. The run appears to stop dead after the last ✓ with no
+# error — the exact shape of dotfiles-Fedora's "maint-run never completes". Handing every
+# step an EOF turns each of those into a fast, logged failure that the ✗ path reports and
+# continues past, which is the behaviour this runner already promises.
 step() {
   local label="$1"
   shift
   log "▶ ${label}"
-  if "$@" >>"$LOG" 2>&1; then log "  ✓ ${label}"; else log "  ✗ ${label} (rc=$?) — continuing"; fi
+  if "$@" </dev/null >>"$LOG" 2>&1; then log "  ✓ ${label}"; else log "  ✗ ${label} (rc=$?) — continuing"; fi
 }
 
 log "═══════════ dotfiles-maint start ($(uname -s) $(hostname 2>/dev/null)) ═══════════"
@@ -264,21 +277,33 @@ OS_ID=""
 PKG_CACHE="$XDG_CACHE_HOME/zsh/pkg-updates"
 mkdir -p "${PKG_CACHE%/*}"
 count=-1
+# This chain does NOT go through step(), so it gets step()'s stdin discipline explicitly:
+# the `</dev/null` on `fi` below covers every branch (command substitutions inherit the
+# compound statement's stdin). Without it these are the worst-shaped calls in the runner —
+# stdout is swallowed by $(...), stderr by 2>/dev/null, so a manager that stops to ask a
+# question is both invisible AND blocking. dnf5 is the live case: it verifies repo metadata
+# against a PER-USER keyring (<cachedir>/<repo>/pubring), so a repo with repo_gpgcheck=1
+# whose key only ever reached root's keyring makes every non-root --refresh prompt to import
+# it — and since the answer never arrives it is never persisted, so it prompts again forever.
+# EOF makes that a declined key and a slightly-low count instead of a dead run.
+#
+# _to bounds the ones that touch the network, for the other failure: a mirror that accepts
+# the connection and then stalls. pacman -Qu reads the local DB only, so it stays unwrapped.
 if have brew; then
-  count=$(brew outdated --quiet 2>/dev/null | grep -c .)
+  count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" brew outdated --quiet 2>/dev/null | grep -c .)
 elif have checkupdates; then
-  count=$(checkupdates 2>/dev/null | grep -c .)
+  count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" checkupdates 2>/dev/null | grep -c .)
 elif have pacman; then
   count=$(pacman -Qu 2>/dev/null | grep -c .)
 elif have dnf; then
-  count=$(dnf -q --refresh check-update 2>/dev/null | grep -cE '^[a-zA-Z0-9][^ ]*[[:space:]]')
+  count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" dnf -q --refresh check-update 2>/dev/null | grep -cE '^[a-zA-Z0-9][^ ]*[[:space:]]')
 elif have zypper; then
-  count=$(zypper -q list-updates 2>/dev/null | grep -c '^v ')
+  count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" zypper -q list-updates 2>/dev/null | grep -c '^v ')
 elif have apt-get; then
-  count=$(apt-get -s upgrade 2>/dev/null | grep -cE '^Inst ')
+  count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" apt-get -s upgrade 2>/dev/null | grep -cE '^Inst ')
 elif have apk; then
-  count=$(apk list -u 2>/dev/null | grep -c .)
-fi
+  count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" apk list -u 2>/dev/null | grep -c .)
+fi </dev/null
 printf '%s\n%s\n' "${count:--1}" "$(date +%s)" >"$PKG_CACHE"
 log "system packages: ${count} upgradable (cache refreshed; apply with \`up\`)"
 
