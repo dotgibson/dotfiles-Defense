@@ -120,6 +120,18 @@ Account for the whole list. State N checked against the N in the list, and if th
 differ, name the entries you skipped and why — a tally that silently omits entries
 reads as full coverage without having it.
 
+**Read a line before you cite it.** A `file:line` is a claim like any other, and in a
+package list it is the easiest one to get wrong: the files are dense, every entry added
+above a name shifts it, and adjacent lines look alike (`dust`/`duf`, `sd`/`gnu-sed`).
+Before writing `Brewfile:53`, read line 53 and confirm it holds the package you are
+naming. Do not carry a number over from a previous run's report, infer it from a nearby
+entry, or quote a grep hit you have not re-checked against the file as it is now. This
+has already shipped: the 2026-08-09 macbook run cited `dust` at `Brewfile:53` when `:53`
+is `duf`, and `gnu-sed` at `:64` when `:64` is `visidata` — both names were correct and
+both resolved, so the verdict stood, but the citations pointed at the wrong entries. A
+green run whose line numbers are wrong teaches the next reader to distrust the ones that
+are right, which costs the audit the thing it is for.
+
 Report-first. Fixes to a package list land in the **OS repo**
 (`install/packages.txt` / `Brewfile`); fixes to the matrix land in **dotfiles-core**
 (`PORTING-MATRIX.md`). Do not edit anything unless I explicitly ask.
