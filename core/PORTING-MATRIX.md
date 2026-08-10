@@ -68,9 +68,9 @@ _Repo status_ at the bottom).
 | op (1Password)¹³ | AUR               | vendor rpm   | vendor apk        | GURU¹²                     | vendor apt        |
 | hyperfine        | `hyperfine`       | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`       |
 | shellcheck       | `shellcheck`      | `ShellCheck` | `shellcheck`      | `dev-util/shellcheck`      | `shellcheck`      |
-| shfmt⁷           | `shfmt`           | `shfmt`      | `shfmt`           | `dev-go/shfmt`             | `shfmt`⁷          |
+| shfmt⁷           | `shfmt`           | `shfmt`      | `shfmt`           | go³                        | `shfmt`⁷          |
 | ouch             | `ouch`            | `ouch`¹⁸     | testing           | cargo³                     | cargo³            |
-| jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`    | `jujutsu`         | `dev-vcs/jujutsu`          | cargo³            |
+| jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`    | `jujutsu`         | cargo³                     | cargo³            |
 | sesh⁹            | AUR⁹              | go⁹          | go⁹               | go⁹                        | go⁹               |
 | difftastic¹⁰     | `difftastic`      | `difftastic` | `difftastic`      | `dev-util/difftastic`      | `difftastic`      |
 | ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸ | `ast-grep`        | cargo³                     | cargo³            |
@@ -99,17 +99,23 @@ one, install the Go build via `mise use -g yq` or the upstream release binary.
 On **openSUSE** the main OSS `yq` is the kislyuk **Python** build (the Go build
 only ships from a personal OBS repo), so `dotfiles-openSUSE` go-installs the
 mikefarah build in `bootstrap.sh` (`go³`) rather than packaging the wrong `yq`.
-⁷ shfmt: not always in stable apt (Debian/Kali) and the Gentoo atom is
-`dev-go/shfmt`. If the package is missing, `mise use -g shfmt` or
+⁷ shfmt: not always in stable apt (Debian/Kali), and **not packaged on Gentoo** —
+absent from `::gentoo` and from GURU (third-party overlays carry it as
+`dev-util/shfmt`; there is no `dev-go/shfmt` atom), so Gentoo takes the `go³`
+path. If the package is missing, `mise use -g shfmt` or
 `go install mvdan.cc/sh/v3/cmd/shfmt@latest`. (These mid-2026 rows are
 best-effort — verify the exact package on first stamp of each distro.)
 ⁸ jujutsu (jj): OPT-IN, additive git companion — never replaces git, so a box
 without it just skips the HAVE_JJ-gated aliases. Packaged on Arch (`jujutsu`),
-openSUSE (`jujutsu`), Gentoo (`dev-vcs/jujutsu`), Fedora (`jujutsu`), Homebrew
-(`jj`), nixpkgs (`jujutsu`) and Alpine (`community` — a native musl build); not
-in stable Debian/Kali apt (`cargo install jujutsu`) — same cargo pattern as
-yazi/ouch. As an opt-in tool it is availability-documented here but not carried
-in any OS repo's `packages.txt` yet. The config (`jujutsu/config.toml`) is inert
+openSUSE (`jujutsu`), Fedora (`jujutsu`), Homebrew (`jj`), nixpkgs (`jujutsu`)
+and Alpine (`community` — a native musl build); **not** in stable Debian/Kali
+apt, and **not on Gentoo** — absent from `::gentoo` **and** from GURU — so both
+take `cargo install --locked jj-cli`, the same cargo pattern as yazi/ouch. The
+crate is **`jj-cli`**, not `jujutsu`: the `jujutsu` crate is a stub pinned at
+0.7.2 whose own description reads "You don't want this crate - you want the
+`jj-cli` crate", so `cargo install jujutsu` lands a redirect rather than the
+VCS. As an opt-in tool it is availability-documented here but not carried in any
+OS repo's `packages.txt` yet. The config (`jujutsu/config.toml`) is inert
 without the binary.
 ⁹ sesh: smart tmux session manager that Core already drives from the `Ctrl-G`
 shell widget (`35-fzf.zsh`) and the `prefix + f` tmux popup (`tmux-sesh.sh`); both

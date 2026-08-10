@@ -66,6 +66,47 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`/os-package-availability` cited line numbers it never read.** The macbook run on
+  2026-08-09 (dotfiles-MacBook#120) filed a correct green verdict — all 76 `Brewfile`
+  entries re-verified as resolving — but pointed two of its citations at the wrong
+  entries: `dust` at `Brewfile:53` when `:53` is `duf`, and `gnu-sed` at `:64` when `:64`
+  is `visidata`. The names were right and the packages resolve, so nothing was
+  mis-diagnosed; the reference was simply to a neighbouring line. Package lists make this
+  the cheapest possible error — they are dense, every entry inserted above a name shifts
+  it, and neighbours look alike — and the routine's reporting rules asked for `file:line`
+  without ever saying to confirm the line. The prompt now requires reading the line before
+  citing it, and forbids carrying a number over from a previous run's report, inferring it
+  from a nearby entry, or quoting a grep hit it has not re-checked. A green run with wrong line
+  numbers is the corrosive case: it invites the reader to distrust the citations that are
+  correct, which is the whole value of an availability audit.
+
+- **`PORTING-MATRIX.md` claimed two Gentoo atoms that do not exist.** The Gentoo run of
+  `/os-package-availability` on 2026-08-09 (dotfiles-Gentoo#80) returned a clean verdict for
+  `install/packages.txt` — every atom in the Gentoo install list still resolves — but caught
+  the matrix asserting main-tree packaging for two tools that are not in `::gentoo` at all:
+  `dev-vcs/jujutsu` (row + footnote 8) and `dev-go/shfmt` (row + footnote 7). Both 404 on
+  packages.gentoo.org and return nothing on search. Re-verification went one step further than
+  the report and closed off the obvious fallback: **neither is in GURU either** — the overlay
+  carries no `dev-vcs/jj`, and the `dev-go/shfmt` atom exists in no repository anywhere (the
+  third-party overlays that ship shfmt call it `dev-util/shfmt`). Both Gentoo cells now render
+  as `cargo³`/`go³`, the footnote-3 convention already used for `ouch`, `ast-grep`, and `sesh`,
+  and footnotes 7 and 8 say plainly that the tool is absent from the main tree **and** the
+  overlay rather than naming an atom a reader would try to `emerge`. Footnote 7 had hedged
+  ("verify the exact package on first stamp"), which is exactly the hedge that lets a wrong
+  atom survive a review — a name in the Gentoo column reads as a promise that `emerge <atom>`
+  works, and for these two it never did. No OS repo's `packages.txt` needed an edit: jj and
+  shfmt are opt-in/dev tooling and were already carried in none of them, so nothing was ever
+  installing the wrong name.
+
+  The same pass caught a second, older error in footnote 8 that had nothing to do with Gentoo:
+  the cargo fallback was written as `cargo install jujutsu`, and **`jujutsu` is not the crate
+  that installs `jj`.** It is a stub pinned at 0.7.2 whose own description reads "You don't want
+  this crate - you want the `jj-cli` crate"; the real one is `jj-cli` (0.44.0). That fallback is
+  what the Debian/Kali `cargo³` cell points at too, so the one wrong crate name had been the
+  documented install route for every unpackaged distro, not just the two rows this change
+  touches. It now reads `cargo install --locked jj-cli`, matching the `--locked` form the OS
+  bootstraps already use for their own cargo builds.
+
 - **Every atuin bench figure ever produced was labelled latency and was not.** The harness
   timed `history start` and `history end` in one span, but a shell hook does not pay for the
   two calls the same way: atuin's `_atuin_preexec` takes `start` in a command substitution,
