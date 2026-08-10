@@ -2295,6 +2295,116 @@ ucheck "ui: _core_confirm declines with no TTY (fail-safe)" \
 ucheck "ui: _core_spin propagates the wrapped command's exit code" \
   "source '$UI'; _core_spin t true 2>/dev/null && ! _core_spin t false 2>/dev/null"
 
+# ui.zsh: the spinner's animation loop must not become a BUSY loop when its pacing
+# primitive stops pacing. _core_nap cannot report failure — it swallows both arms
+# (`zselect … 2>/dev/null`, `sleep 0.1 2>/dev/null`) and always returns 0 — so a box with
+# neither zsh/zselect nor a usable `sleep` silently turns a 100ms tick into an unthrottled
+# spin that pegs a core for the whole wrapped command. Measured before the guard: 100% CPU
+# for the command's full duration; after: 0%, same wall time, same exit status.
+#
+# Needs a REAL pty: _core_spin returns early unless stderr is a tty (`[[ ! -t 2 ]]` runs the
+# command directly), so a captured run never reaches the loop at all — which is exactly how
+# this went unnoticed. The command must also be a FUNCTION: with gum installed _core_spin
+# delegates real binaries to `gum spin` and the hand-rolled loop is skipped.
+#
+# Asserted on the ITERATION COUNT, not on CPU%: deterministic and CI-safe. With the guard,
+# the loop stops animating just past 200; without it a broken nap runs six figures of
+# iterations in the same window.
+if have python3; then
+  _spinout="$(python3 - "$UI" <<'PYSPIN' 2>/dev/null
+import pty, os, sys, select, time, re
+ui = sys.argv[1]
+body = (
+    "source %s; typeset -g NAPS=0; _core_nap(){ (( NAPS++ )); return 0 }; "
+    "slowfn(){ sleep 3; return 7 }; _core_spin t slowfn; print RC=$?; print NAPS=$NAPS"
+) % ui
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp("zsh", ["zsh", "-f", "-i", "-c", body]); os._exit(1)
+out, start = b"", time.time()
+while time.time() - start < 60:
+    r, _, _ = select.select([fd], [], [], 0.01)
+    if r:
+        try: d = os.read(fd, 262144)
+        except OSError: break
+        if not d: break
+        out += d
+    p, _st = os.waitpid(pid, os.WNOHANG)
+    if p: break
+else:
+    os.kill(pid, 9)
+txt = out.decode(errors="replace")
+rc = re.findall(r"RC=(\d+)", txt)
+naps = re.findall(r"NAPS=(\d+)", txt)
+print("%s %s" % (rc[-1] if rc else "x", naps[-1] if naps else "x"))
+PYSPIN
+  )"
+  _srrc="${_spinout%% *}" _srnaps="${_spinout##* }"
+  if [[ "$_srrc" == 7 && "$_srnaps" =~ ^[0-9]+$ ]] && ((_srnaps <= 250)); then
+    pass "ui: _core_spin stops animating instead of busy-spinning when _core_nap cannot pace (naps=$_srnaps, rc=$_srrc)"
+  else
+    fail "ui: _core_spin busy-spins when _core_nap cannot pace (rc=$_srrc naps=$_srnaps; want rc=7 and naps<=250)"
+  fi
+else
+  skip "_core_spin busy-loop guard (python3 absent — needs a pty to reach the animation loop)"
+fi
+
+# lib/ux.sh: ux_spin's loop body must be NORMALISED, because this library is SOURCED by
+# callers running `set -euo pipefail` (bootstrap.sh is one). A bare command that fails inside
+# the loop therefore kills the CALLER, not just the animation — and the case that matters is
+# precisely the one the busy-spin guard above exists for: with a `sleep` that exits non-zero,
+# an unnormalised `sleep 0.1` aborted the whole shell at 127 before the spin counter was ever
+# incremented, so the guard could not run, the wrapped child was left running, and the cursor
+# stayed hidden. Same pty requirement as above (ux_spin runs the command directly when stdout
+# is not a tty, never reaching the loop), so this is python3-gated too.
+if have python3; then
+  _uxout="$(python3 - "$HERE/lib/ux.sh" <<'PYUX' 2>/dev/null
+import pty, os, sys, select, time, re
+ux = sys.argv[1]
+# The wrapped command must SUCCEED and ux_spin must be called BARE. Both matter:
+# `ux_spin … || rc=$?` puts the call in a tested context, which suspends `set -e` for the
+# whole function body — so the very condition under test would be switched off, and the
+# check would pass no matter what (it did, until this was corrected). A bare call keeps
+# `set -e` live, and a succeeding command means the ONLY thing that can abort the script
+# is the unnormalised pacing failure inside the loop.
+script = (
+    "set -euo pipefail\n"
+    "source %s\n"
+    "sleep() { return 127; }\n"          # pacing primitive absent / rejecting
+    "fn() { command sleep 2; return 0; }\n"
+    "ux_spin lbl fn\n"                   # BARE: set -e stays in force
+    "echo UXRC=$?\n"
+    "echo UXEND\n"
+) % ux
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp("bash", ["bash", "-c", script]); os._exit(1)
+out, start = b"", time.time()
+while time.time() - start < 60:
+    r, _, _ = select.select([fd], [], [], 0.01)
+    if r:
+        try: d = os.read(fd, 262144)
+        except OSError: break
+        if not d: break
+        out += d
+    p, _st = os.waitpid(pid, os.WNOHANG)
+    if p: break
+else:
+    os.kill(pid, 9)
+txt = out.decode(errors="replace")
+rc = re.findall(r"UXRC=(\d+)", txt)
+print("%s %s" % (rc[-1] if rc else "x", "END" if "UXEND" in txt else "NOEND"))
+PYUX
+  )"
+  if [[ "$_uxout" == "0 END" ]]; then
+    pass "ux: ux_spin survives a failing pacing primitive under a 'set -e' sourcer"
+  else
+    fail "ux: a failing pacing primitive kills a 'set -e' caller of ux_spin (got '${_uxout}', want '0 END')"
+  fi
+else
+  skip "ux_spin set -e normalisation (python3 absent — needs a pty to reach the animation loop)"
+fi
+
 # ui.zsh: _core_nap is the spinner's per-frame delay primitive — it must return 0
 # (the while-loop relies on it not aborting) and complete promptly via zselect WITHOUT
 # forking a fractional `sleep` that busybox may reject. We can't time it portably here,
