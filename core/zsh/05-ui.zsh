@@ -405,6 +405,19 @@ _core_spin() {
     printf '\r%s %s %s(%ds)%s' "${fr[$((i % nfr + 1))]}" "$title" "$_d" "$SECONDS" "$_x" >&2
     _core_nap
     ((i++))
+    # This loop is paced ENTIRELY by _core_nap, and _core_nap cannot report failure: it
+    # swallows both arms (`zselect … 2>/dev/null`, `sleep 0.1 2>/dev/null`) and always
+    # `return 0`. So if neither can actually sleep — no zsh/zselect and no `sleep` on PATH,
+    # or a timed wait that keeps returning early — the tick silently stops being 100ms and
+    # this becomes an unthrottled spin that pegs a core for as long as the wrapped command
+    # runs. Measured with a no-op nap: ~143k iterations in 3s.
+    #
+    # The animation is cosmetic; the `wait` below is what actually matters. So on detecting
+    # a nap that is not pacing us, give up on ANIMATING rather than on the command — break
+    # to the blocking wait, which costs no CPU and returns the same status. 200 iterations
+    # inside 5s is only reachable when the tick is broken (a working 100ms nap needs ~20s to
+    # get there), so a merely slow command never trips it.
+    if ((i > 200 && SECONDS < 5)); then break; fi
   done
   wait "$pid"
   local rc=$?

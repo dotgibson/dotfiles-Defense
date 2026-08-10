@@ -66,6 +66,27 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **The spinner could peg a CPU core for the entire length of the command it was
+  decorating.** `_core_spin`'s animation loop is paced entirely by `_core_nap`, and
+  `_core_nap` cannot report failure: it swallows both arms (`zselect … 2>/dev/null`,
+  `sleep 0.1 2>/dev/null`) and unconditionally returns 0. On a box where neither can
+  actually sleep — no `zsh/zselect` module and no usable `sleep` — the 100ms tick silently
+  became an unthrottled spin. Measured on the real function under a pty: **100% CPU for the
+  command's full duration, versus 0% with the guard**, same wall time and same exit status
+  either way. The animation is cosmetic and the `wait` is what matters, so the loop now
+  detects a nap that is not pacing it (>200 iterations inside 5s, unreachable with a working
+  tick) and stops _animating_ rather than stopping the command, falling through to the
+  blocking wait. `lib/ux.sh`'s `ux_spin` carried the same shape around a bare `sleep 0.1`
+  and gets the same guard, keeping the bash and zsh spinners the deliberate mirrors they are
+  documented to be. Two things made this hard to see and are worth recording: the loop is
+  unreachable without a **tty** (`[[ ! -t 2 ]]` runs the command directly, so every captured
+  or piped run takes the passthrough path), and where `gum` is installed `_core_spin`
+  delegates real binaries to `gum spin` — leaving the hand-rolled loop live only for
+  **function** arguments, which is exactly what `up` passes it (`_pkgup_list_to`). The new
+  regression test therefore drives a real pty with a function argument, and asserts on the
+  iteration count (~201 guarded, six figures unguarded) rather than on CPU%, which is not
+  deterministic enough for CI.
+
 - **`/os-package-availability` cited line numbers it never read.** The macbook run on
   2026-08-09 (dotfiles-MacBook#120) filed a correct green verdict — all 76 `Brewfile`
   entries re-verified as resolving — but pointed two of its citations at the wrong
