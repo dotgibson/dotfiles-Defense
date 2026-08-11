@@ -250,11 +250,23 @@ default while letting the override through. `scripts/test-core.sh` asserts they 
 Linux repos are stamped from), Alpine second (it is the design's real constraint, so proving
 it early is worth more than doing it last), then the rest.
 
-Under the **systemd-unit** launcher, `zsh/00-tools.zsh` probes the socket once before the first
-prompt and forces the daemon **off for that shell** when nothing is listening: an absent — or stale,
-i.e. left behind by a crashed daemon — socket otherwise costs atuin a failed connect on every
-command. So a dead daemon costs the lock relief, not every prompt. `core-doctor` shows the
-degraded state; nothing else says a word.
+Under the **systemd-unit** launcher, `zsh/00-tools.zsh` probes the socket before the first prompt
+and then, throttled to at most one `connect(2)` a minute, for the life of the shell, forcing the
+daemon **off for that shell** the first time a connect fails: an absent — or stale, i.e. left
+behind by a crashed daemon — socket does not cost atuin a failed write, it costs the row. So a
+dead daemon costs the lock relief, not your history — including for a session that was already
+open when the daemon went away, which is the case the one-shot probe used to miss entirely
+(`dotgibson/dotfiles-core#366`). Degradation is **one-way**: the guard unhooks itself and never
+re-enables, because direct writes always work, so the only price of being early is the lock relief
+until the next shell. A shell that was **already** degraded when it started stays silent — nothing
+changed under it — while one whose daemon died **mid-session** prints a single warning, that being
+the case where an open session's plumbing changed underneath it. `core-doctor` distinguishes the
+two afterwards, and `core-doctor --json` exposes them as `atuin_daemon.degraded` / `.was_up`.
+`CORE_ATUIN_PROBE_INTERVAL` tunes the window for a box where `connect(2)` on that path is not
+cheap. One wrinkle worth knowing: the disable is an `export` (that is how it reaches the `atuin`
+binary), so a shell started _from_ a degraded shell inherits `ATUIN_DAEMON__ENABLED=false` and
+stands down as "never opted in" — harmless, since it also writes directly, but it will not pick
+the daemon back up until you start a shell from a clean parent.
 
 **Under `autostart` the probe deliberately does not run** — and that is the Alpine and macOS
 rows above, so on two of the eight machines this safety net is not the thing keeping you out

@@ -66,6 +66,50 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **A shell that outlived atuin's daemon recorded nothing, silently, for the rest of its
+  life.** `_core_atuin_daemon_guard` was a startup probe: one `zsocket` connect at the first
+  `precmd`, then it unhooked itself. That covers a shell started _after_ the daemon went away
+  and nothing else — so a long-lived tmux pane whose daemon stopped underneath it (the ordinary
+  case under systemd `Linger=no`, where the user daemon dies with the last login session) kept
+  handing every command to a socket nobody was listening on. atuin 18.19.0 neither falls back
+  nor complains: `atuin history start` exits 0, prints a well-formed history id, writes nothing
+  to stderr and **discards the entry** (`atuinsh/atuin#3561` — and note the direction of travel,
+  since 18.16.1 at least failed loudly). A day of history, gone, with no symptom until you go
+  looking for a command you know you ran.
+
+  The guard is now a **watchdog**. It stays on `precmd` and re-probes, throttled to at most one
+  `connect(2)` every 60 seconds; when the window has not elapsed the per-prompt cost is a single
+  arithmetic expression over three integers — no fork, no syscall — which is the honest version
+  of this layer's startup-cost discipline. What that discipline forbids on the prompt path is an
+  _unconditional_ syscall, not the compare that decides whether to make one. The probe itself
+  measures ~0.06–0.10 ms against a local unix socket, so the window could be far shorter; it is
+  60 s because `precmd` fires per **prompt**, not per second — which already bounds the probe
+  rate by how fast you type — and because the throttle's real job is the socket path that is
+  _not_ local, where `connect(2)` can block with no timeout available. `CORE_ATUIN_PROBE_INTERVAL`
+  is the escape hatch for such a box.
+
+  Three properties are deliberate, and the suite now pins each. **Degradation is one-way**: the
+  first failed connect disables the daemon for that shell and unhooks the guard for good. Direct
+  writes always work, so a false positive — a probe landing in the shipped unit's `RestartSec=3`
+  gap, say — costs only the lock relief until the next shell, whereas the opposite error costs
+  the history; and during that gap atuin _is_ discarding, so degrading early is still right.
+  **The warning is mid-session only**: a shell already degraded at its first prompt stays as
+  silent as it has always been (nothing changed under it, and machines that simply never run the
+  daemon must not learn a line of startup noise), while a shell that _had_ a working daemon and
+  lost it prints one `_core_warn` line — "once" being structural, since the degrade path unhooks
+  before it warns. **And the throttle fails safe**: its deadline is honoured only while it is at
+  most one window away, so a backwards NTP step, a resume from suspend, or the
+  `$EPOCHSECONDS`/`$SECONDS` fallback changing source mid-shell all fall through to a probe
+  rather than parking the watchdog for the length of the jump. `core-doctor` now says which of
+  the two degradations happened, and `core-doctor --json` grows an `atuin_daemon` object so a
+  statusline can see a silently degraded shell without the user going looking.
+
+  The prose has been corrected along with the code, because it asserted the opposite trade:
+  `zsh/00-tools.zsh` claimed "it is a startup probe, NOT a watchdog" and that "re-probing every
+  precmd would put a `connect(2)` in the prompt path", and `examples/atuin-daemon.service` told
+  you sessions already open "keep discarding". `atuin/config.toml` and `PORTING-MATRIX.md`
+  footnote ²⁰ are updated to match.
+
 - **The spinner could peg a CPU core for the entire length of the command it was
   decorating.** `_core_spin`'s animation loop is paced entirely by `_core_nap`, and
   `_core_nap` cannot report failure: it swallows both arms (`zselect … 2>/dev/null`,

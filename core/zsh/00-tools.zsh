@@ -231,10 +231,10 @@ fi
 # every row. (It also makes the dead-socket path benchmark FASTER than a direct write,
 # 4.17 ms vs 8.27 ms mean, because it is timing a no-op.)
 #
-# So this guard is DATA-LOSS PREVENTION, not a latency optimisation: probe once and, when
-# nothing is listening, force the daemon off for THIS shell so atuin really does write
-# SQLite directly. Silent by design — but what a missing daemon would otherwise cost is
-# the history itself, not milliseconds.
+# So this guard is DATA-LOSS PREVENTION, not a latency optimisation: keep probing (see the
+# throttle below) and, the first time nothing is listening, force the daemon off for THIS shell
+# so atuin really does write SQLite directly. Mostly silent by design — but what a missing daemon
+# would otherwise cost is the history itself, not milliseconds.
 #
 # What it does NOT guard: an ACCEPT-BUT-SILENT socket — something is listening (systemd
 # socket activation holding the socket while the daemon behind it is dead or wedged) and
@@ -245,17 +245,52 @@ fi
 # service manager. Proving liveness would mean a bounded application-level request on the
 # startup path — a fork and a timeout per shell, which this file exists to avoid.
 #
-# It is a startup probe, NOT a watchdog — and given the silent-discard behaviour above,
-# that limit bites hard: a daemon that dies mid-session costs that shell not latency but
-# EVERY command it runs afterwards, unrecorded and unannounced. On a long-lived tmux
-# session (especially with Linger=no, where the daemon stops with the last login session)
-# that is a realistic way to lose a day of history without noticing.
-# Re-probing every precmd would put a connect(2) in the prompt path, which is the trade
-# this repo's startup-cost discipline says no to.
+# It is a WATCHDOG, not merely a startup probe — because the silent-discard behaviour above is
+# what makes that difference load-bearing. A daemon that dies mid-session costs that shell not
+# latency but EVERY command it runs afterwards, unrecorded and unannounced; on a long-lived tmux
+# session (especially with Linger=no, where the daemon stops with the last login session) that is
+# how a day of history disappears with no symptom until you go looking for a command you know you
+# ran — dotgibson/dotfiles-core#366. So the hook STAYS on precmd and re-probes, THROTTLED: a real
+# connect(2) at most once every $_CORE_ATUIN_DAEMON_INTERVAL seconds, behind a clock comparison,
+# so the per-prompt cost in the healthy case is one arithmetic expression over three integers.
+# That is the honest version of this file's startup-cost discipline: what it forbids on the prompt
+# path is an UNCONDITIONAL syscall, not the compare that decides whether to make one. Measured
+# here, the probe itself is ~0.06-0.10ms against a local unix socket (the zmodload after the first
+# is ~8us), so the window could be far shorter than it is. It is 60s because precmd fires per
+# PROMPT, not per second — an idle pane pays nothing and records nothing, so the probe rate is
+# already bounded by how fast you type — and because the throttle's real job is the case where
+# connect(2) is NOT cheap: a socket path on a networked or wedged filesystem, where it can block
+# with no timeout available to us. CORE_ATUIN_PROBE_INTERVAL is the escape hatch for that box.
+#
+# DEGRADATION IS ONE-WAY. The first failed connect disables the daemon for this shell and unhooks
+# the guard for good; it never re-enables. Direct writes always work, so a false positive costs
+# only the lock relief until the next shell — the same asymmetry the zsh/net/socket fallback below
+# is decided on. That is also why a probe landing in the shipped unit's RestartSec=3 gap is allowed
+# to degrade a shell that would have recovered: during that gap atuin IS discarding, so degrading
+# is the right answer even when it is early. Re-enabling would mean trusting, on the prompt path
+# and for the rest of the session, a socket we just watched lie.
+#
+# IT WARNS EXACTLY ONCE, AND ONLY MID-SESSION. A shell already degraded at its first prompt says
+# nothing — nothing changed under the user, and the machines that simply do not run the daemon
+# must not learn a new line of startup noise. A shell that HAD a working daemon and lost it prints
+# one _core_warn line, because its history plumbing changed under a session that is still open.
+# _CORE_ATUIN_DAEMON_WAS_UP is the entire discriminator, and "once" is structural (the degrade path
+# unhooks before it warns), not a second flag to keep in sync.
+#
+# THE CLOCK, at load position 00. $EPOCHSECONDS is a zsh/datetime parameter and 60-update.zsh —
+# fragment 60 — is what loads that module, AFTER this file. It does not matter: the hook's BODY
+# first runs at the first precmd, by which point every fragment has been sourced, so in a normal
+# shell EPOCHSECONDS is already there and costs this file nothing. Loading zsh/datetime here
+# instead would be a module load on every interactive shell to buy an answer that is already free.
+# Where it is genuinely absent — CORE_PROFILE=minimal stops after 30-functions, and the unit tests
+# source this file alone — ${EPOCHSECONDS:-SECONDS} falls back to $SECONDS (seconds since this
+# shell started, a builtin parameter, no module). Both are fork-free integers that only go up,
+# which is all a throttle needs; the guard's gate handles the fact that they share no epoch.
 #
 # NOT gated: `atuin init zsh` above. That script is daemon-agnostic — the daemon is used
 # at COMMAND time by the hooks it registers — so gating it would only cost the Ctrl+E TUI.
-# Runs at the FIRST precmd, not at source time: the OS (80) and host (99) fragments load
+# Runs at the FIRST precmd, not at source time — and then, throttled, for the life of the
+# shell: the OS (80) and host (99) fragments load
 # AFTER this file, so the opt-in env isn't set yet while 00-tools.zsh is being sourced.
 # A named function (not an inline hook body) so scripts/test-core.sh can drive it directly.
 # precmd_functions is edited DIRECTLY (the same idiom as the _cmd_block_precmd reorder
@@ -263,22 +298,74 @@ fi
 # add-zsh-hook for this one registration is a measurable ~1ms of shell startup — the exact
 # cost this file exists to avoid — and APPEND is all we need. Appending also keeps the
 # `$?`-sensitive hooks (_cmd_block_precmd, starship_precmd) first, where they must be.
+# The guard's whole state — grepping _CORE_ATUIN_DAEMON_ returns all of it. Declared
+# unconditionally, like the function itself; only the precmd REGISTRATION below is
+# HAVE_ATUIN-gated, because scripts/test-core.sh drives the guard on a box with no atuin and a
+# test that has to construct the state it then asserts on proves nothing. Two typesets, ~1us
+# each: the entire startup cost of turning the probe into a watchdog.
+#   _INTERVAL  seconds between real connects — and, in the gate below, the largest clock jump the
+#              throttle will believe. Seeded with the DEFAULT here and re-resolved from
+#              CORE_ATUIN_PROBE_INTERVAL inside the guard, NOT read from the environment at this
+#              point: os/<os>.zsh (80) and 99-local.zsh (99) load AFTER this file, so a
+#              per-machine knob is not set yet while 00-tools.zsh is being sourced — the same
+#              load-order fact that puts the whole probe on the first precmd. Reading it here
+#              would silently ignore every override written in the layer that would actually
+#              write one. A garbage or negative value evaluates to <= 0 under `typeset -gi`,
+#              which means "probe every prompt": fail-safe, in the direction that keeps history.
+#   _NEXT      earliest clock value at which the next connect may happen. 0 = due now, which is
+#              why the FIRST precmd probes undelayed. The tests back-date it to time-travel.
+typeset -gi _CORE_ATUIN_DAEMON_INTERVAL=60
+typeset -gi _CORE_ATUIN_DAEMON_NEXT=0
 _core_atuin_daemon_guard() {
+  local -i _rc=$? # FIRST line: emulate resets $?. The hook is PERSISTENT now, so a precmd an OS
+                  # (80) or host (99) fragment appends AFTER it would otherwise see our return
+                  # value instead of the user's command status. Two integer ops buys that
+                  # transparency for good; the one-shot never had to care.
   emulate -L zsh
-  precmd_functions=(${precmd_functions:#_core_atuin_daemon_guard}) # one-shot: never runs twice
+  # THROTTLE — the whole per-prompt cost of the healthy case: one arithmetic expression over three
+  # integers. No fork, no subshell, no syscall, and no parameter EXPANSION beyond the clock read
+  # (inside (( )) a bare name IS the parameter). The second conjunct is the one that matters:
+  # honour the deadline only while it is at most one interval away. A deadline further out than
+  # that does not mean we are early, it means the CLOCK moved under us — a backwards NTP step, a
+  # resume from suspend, or the EPOCHSECONDS/SECONDS fallback changing source mid-shell (they
+  # share no epoch) — and honouring it would park the watchdog for the length of the jump,
+  # silently, which is the exact failure this hook exists to end. Every skew case therefore falls
+  # through to a probe: wrong in the cheap direction, never in the expensive one.
+  local -i now=${EPOCHSECONDS:-SECONDS} # ${:-} yields the literal NAME; -i evaluates it
+  (( now < _CORE_ATUIN_DAEMON_NEXT &&
+     _CORE_ATUIN_DAEMON_NEXT - now <= _CORE_ATUIN_DAEMON_INTERVAL )) && return $_rc
+  # STAND-DOWN, permanently. Both conditions are settled by the time the first precmd runs (80 and
+  # 99 have been sourced), and a machine that never opted in must not carry even the compare above
+  # for the life of the shell — so this UNHOOKS rather than returning.
   # The truthy set is config-rs's (the crate atuin parses this env with), not just "true":
   # someone who writes ATUIN_DAEMON__ENABLED=1 has opted in as far as atuin is concerned,
-  # so the guard must agree or it silently sits out exactly when it is needed.
-  [[ ${ATUIN_DAEMON__ENABLED:l} == (1|t|true|y|yes|on) ]] || return 0   # not opted in
-  [[ ${ATUIN_DAEMON__AUTOSTART:l} == (1|t|true|y|yes|on) ]] && return 0 # atuin supervises it itself
+  # so the guard must agree or it silently sits out exactly when it is needed. AUTOSTART means
+  # atuin supervises the daemon itself, so an absent socket there is a cue to start one, not a fault.
+  if [[ ${ATUIN_DAEMON__ENABLED:l} != (1|t|true|y|yes|on) ]] ||
+    [[ ${ATUIN_DAEMON__AUTOSTART:l} == (1|t|true|y|yes|on) ]]; then
+    precmd_functions=(${precmd_functions:#_core_atuin_daemon_guard})
+    return $_rc
+  fi
+  # Resolve the window HERE rather than at source time, for the same load-order reason the whole
+  # probe is deferred to the first precmd: 80/99 have not been sourced yet while this file is,
+  # so a per-machine CORE_ATUIN_PROBE_INTERVAL would be invisible to a source-time read. Once per
+  # PROBE (not per prompt), immediately before a zmodload and a connect(2) — so one parameter
+  # expansion is free here, while the throttle gate above stays expansion-free. Re-resolving each
+  # probe also means the knob can be changed mid-session and takes effect at the next window.
+  typeset -gi _CORE_ATUIN_DAEMON_INTERVAL=${CORE_ATUIN_PROBE_INTERVAL:-60}
   # Same default atuin resolves: $XDG_RUNTIME_DIR/atuin.sock, falling back to the data dir
-  # where XDG_RUNTIME_DIR is unset (macOS).
+  # where XDG_RUNTIME_DIR is unset (macOS). Re-resolved on EVERY probe, never cached: if
+  # XDG_RUNTIME_DIR is torn down mid-session (systemd removes /run/user/$UID at the last logout —
+  # the SAME event that stops the daemon under Linger=no) we must follow atuin to the path it will
+  # actually use, not keep probing one nobody binds any more.
   local sock="${ATUIN_DAEMON__SOCKET_PATH:-${XDG_RUNTIME_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/atuin}/atuin.sock}"
   # A real connect, because a stale socket FILE passes a plain -S test — which is exactly
   # the case that hangs. zsocket returns non-zero immediately when nothing is listening;
   # on success it hands back an open fd in $REPLY that we close right away. REPLY is
   # LOCAL: zsocket writes it, and clobbering the caller's REPLY from a precmd hook would
-  # be a nasty little cross-talk bug. `--` because the path comes from the environment.
+  # be a nasty little cross-talk bug — which matters MORE now than it did as a one-shot, because
+  # this runs between every pair of commands for the life of the shell and read/vared/zsocket/
+  # completion all live in $REPLY. `--` because the path comes from the environment.
   #
   # The daemon stays on ONLY when a connect actually succeeded. If zsh/net/socket is
   # missing (it ships with zsh everywhere the fleet runs, so this is near-dead code), we
@@ -287,11 +374,33 @@ _core_atuin_daemon_guard() {
   # guard exists to catch. Cost of being wrong that way is the lock relief, and
   # core-doctor says so; cost of the other way is the failure mode itself.
   local REPLY
-  if zmodload -F zsh/net/socket +b:zsocket 2>/dev/null; then
-    zsocket -- "$sock" 2>/dev/null && { exec {REPLY}>&-; return 0 }
+  if zmodload -F zsh/net/socket +b:zsocket 2>/dev/null && zsocket -- "$sock" 2>/dev/null; then
+    exec {REPLY}>&-
+    typeset -g _CORE_ATUIN_DAEMON_WAS_UP=1 # "a connect worked here, at least once"
+    typeset -gi _CORE_ATUIN_DAEMON_NEXT=$((now + _CORE_ATUIN_DAEMON_INTERVAL))
+    return $_rc
   fi
+  # DEGRADE — one way, and terminal. Unhook FIRST, so nothing below can leave the hook armed to
+  # warn a second time; "once" is structural, not a fourth flag to keep in sync.
+  precmd_functions=(${precmd_functions:#_core_atuin_daemon_guard})
   export ATUIN_DAEMON__ENABLED=false                           # degrade to direct SQLite writes
-  typeset -g _CORE_ATUIN_DAEMON_DEGRADED=1                     # core-doctor reports it; the shell stays quiet
+  typeset -g _CORE_ATUIN_DAEMON_DEGRADED=1                     # core-doctor reports it
+  # Warn ONLY if this shell ever had a working daemon. Already-down-at-startup stays as silent as
+  # it has always been — nothing changed under the user.
+  [[ -n ${_CORE_ATUIN_DAEMON_WAS_UP:-} ]] || return $_rc
+  local msg="atuin daemon went away — this shell now writes history directly (no lock relief)"
+  # 05-ui.zsh is fragment 05 and this body runs at precmd, so _core_warn/_core_hint are always
+  # there in a real shell. The fallback is for this file sourced STANDALONE (the unit tests, an OS
+  # repo poking at it): a message this shell only ever gets one chance to deliver is not worth
+  # losing to a missing helper. Plain ASCII, because 05-ui.zsh is also where the non-UTF-8 glyph
+  # degradation lives.
+  if (($+functions[_core_warn])); then
+    _core_warn "$msg"
+    _core_hint "restart the daemon, then open a new shell to use it again; core-doctor shows the state"
+  else
+    print -u2 -r -- "! $msg"
+  fi
+  return $_rc
 }
 [[ -n ${HAVE_ATUIN:-} ]] &&
   precmd_functions=(${precmd_functions:#_core_atuin_daemon_guard} _core_atuin_daemon_guard)
