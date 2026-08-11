@@ -45,7 +45,7 @@ typeset -gA ZPLUGIN_PINS=(
   jeffreytse/zsh-vi-mode                      91cafe4a09b6670cb8e761aa413e5f7b9e00816f
   zsh-users/zsh-history-substring-search      14c8d2e0ffaee98f2df9850b19944f32546fdea5
   zsh-users/zsh-autosuggestions               85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
-  zsh-users/zsh-syntax-highlighting           1d85c692615a25fe2293bdd44b34c217d5d2bf04
+  zsh-users/zsh-syntax-highlighting           c4d95591843d49838b7ad30081e7aba3135a6703
   Aloxaf/fzf-tab                              24105b15714bfec37989ed5c5b6e60f572253019
   MichaelAquilina/zsh-you-should-use          5f3d129864ee4505043d88c3486224f1d75b692e
   olets/zsh-transient-prompt                 bdd5917f38db4b4995134e8fb0251ce01cd9a068

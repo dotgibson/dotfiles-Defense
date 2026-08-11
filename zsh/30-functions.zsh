@@ -118,7 +118,8 @@ _core_wired() {
 
 # _core_doctor_json — machine-readable health (B12). The gate scripts emit --json; the
 # RUNTIME health verb did not, so a statusline/editor/CI could not consume it. One object
-# on stdout, never paged: {version, tools{name:bool}, wired{name:bool}, resolved{…}}.
+# on stdout, never paged: {version, tools{name:bool}, wired{name:bool},
+# atuin_daemon{degraded:bool, was_up:bool}, resolved{…}}.
 # Pure zsh (no python): tool names are fixed identifiers, so no escaping is needed.
 _core_doctor_json() {
   emulate -L zsh
@@ -141,6 +142,17 @@ _core_doctor_json() {
     ((first)) || print -rn -- ","; first=0
     if _core_have "$t" && _core_wired "$t"; then print -rn -- "\"$t\":true"; else print -rn -- "\"$t\":false"; fi
   done
+  # atuin's daemon state: the one Core integration that can change under a LIVE shell, and the
+  # one whose failure mode is silent data loss (00-tools.zsh). `degraded` is the actionable bit;
+  # `was_up` separates a daemon that died mid-session (the user got one warning) from one that
+  # was never reachable (silent by design). A statusline is exactly the consumer that should be
+  # able to see a degraded shell without the user going looking. Both false on the machines that
+  # never opted in. NOT exposing an `opted_in` field on purpose: after degradation
+  # ATUIN_DAEMON__ENABLED reads false, so it would lie.
+  print -rn -- "},\"atuin_daemon\":{\"degraded\":"
+  if [[ -n ${_CORE_ATUIN_DAEMON_DEGRADED:-} ]]; then print -rn -- true; else print -rn -- false; fi
+  print -rn -- ",\"was_up\":"
+  if [[ -n ${_CORE_ATUIN_DAEMON_WAS_UP:-} ]]; then print -rn -- true; else print -rn -- false; fi
   print -rn -- "},\"resolved\":{\"fd\":\"${FD_BIN:-}\",\"bat\":\"${BAT_BIN:-}\""
   (($+functions[_pkgup_mgr])) && print -rn -- ",\"pkg_manager\":\"$(_pkgup_mgr)\""
   print -r -- "}}"
@@ -247,12 +259,21 @@ _core_doctor_render() {
     _core_have "$w" || continue
     if _core_wired "$w"; then
       wline+="  ${g}✓${r} ${w}"
-      # atuin's daemon is OPT-IN and degrades SILENTLY: 00-tools.zsh's
-      # _core_atuin_daemon_guard turns it off for this shell when the socket isn't
-      # reachable, so history still records — just without the daemon's lock relief.
-      # Silent is right at the prompt, invisible is not, so the doctor says it.
-      [[ $w == atuin && -n ${_CORE_ATUIN_DAEMON_DEGRADED:-} ]] &&
-        wline+=" ${d}(daemon socket unreachable → direct writes)${r}"
+      # atuin's daemon is OPT-IN and can degrade at two different moments: 00-tools.zsh's
+      # _core_atuin_daemon_guard probes the socket before the first prompt and then,
+      # throttled, for the life of the shell, turning the daemon off when nothing is
+      # listening so history still records — just without the daemon's lock relief. Both
+      # paths end in the same place, but only one of them was ANNOUNCED: startup
+      # degradation is silent by design, while a mid-session death printed one warning,
+      # possibly hours ago and possibly scrolled away. Silent is right at the prompt,
+      # invisible is not, so the doctor says which happened.
+      if [[ $w == atuin && -n ${_CORE_ATUIN_DAEMON_DEGRADED:-} ]]; then
+        if [[ -n ${_CORE_ATUIN_DAEMON_WAS_UP:-} ]]; then
+          wline+=" ${d}(daemon died mid-session → direct writes)${r}"
+        else
+          wline+=" ${d}(daemon socket unreachable at startup → direct writes)${r}"
+        fi
+      fi
     else wline+="  ${d}○ ${w} (idle)${r}"; fi
   done
   if [[ -n "$wline" ]]; then

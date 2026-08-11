@@ -2128,9 +2128,12 @@ check "core-doctor renders a health report and returns 0" \
 check "core-doctor --help returns 0 (not mis-read)" \
   'out=$(core-doctor --help); (( $? == 0 )) && [[ $out == *"usage: core-doctor"* ]]'
 # core-doctor --json (B12): a machine-readable object on stdout that actually parses and
-# carries the tools/wired/resolved keys — so a statusline/editor/CI can consume health.
-check "core-doctor --json emits parseable JSON with tools/wired/resolved" \
-  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"wired\",\"resolved\"]) <= set(d)"'
+# carries the tools/wired/atuin_daemon/resolved keys — so a statusline/editor/CI can consume
+# health. atuin_daemon's shape is asserted exactly (not just present): it is the one field here
+# describing state that can change under a LIVE shell, so a consumer polling it needs both
+# booleans to keep meaning what they say.
+check "core-doctor --json emits parseable JSON with tools/wired/atuin_daemon/resolved" \
+  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"wired\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"])"'
 # core-doctor "install missing" hint: the block is gated on _pkgup_mgr (from update.zsh,
 # absent in this ui+functions harness) so the default render never reaches it. Stub the
 # manager + force every tool ✗ (missing), then assert the copy-paste line renders AND the
@@ -2682,12 +2685,22 @@ ucheck "browser: macOS (OSTYPE=darwin) leaves \$BROWSER unset even with no DISPL
 # and it doubles as the _cache_eval salt — yet nothing asserted it. (2) The daemon guard:
 # with the daemon enabled and its socket absent or STALE, atuin does not fall back — measured
 # on 18.19.0 it exits 0, prints a well-formed id, writes nothing to stderr and DISCARDS the
-# entry. So Core probes the socket once before the first prompt and forces the daemon off for
-# that shell, which is what makes atuin really write SQLite. The stake is the history itself,
+# entry. So Core probes the socket before the first prompt AND THEN, THROTTLED, FOR THE LIFE OF
+# THE SHELL, and forces the daemon off permanently the first time a connect fails — which is what
+# makes atuin really write SQLite. The stake is the history itself,
 # not per-command latency. Case (d) below pins the OTHER half of that contract — the accept-but-silent
 # state it deliberately does not claim to catch. Both are hermetic — no atuin
 # binary needed: the guard is defined unconditionally (only its precmd registration is
 # HAVE_ATUIN-gated), and a real listener comes from zsh's own zsocket.
+# Cases (g)-(l) are the WATCHDOG half (dotgibson/dotfiles-core#366). They manufacture a
+# mid-session daemon death by closing the listening fd `zsocket -l` handed back — the socket FILE
+# survives, which is exactly case (c)'s stale state, but arrived at mid-run — and they time-travel
+# past the throttle window by BACK-DATING _CORE_ATUIN_DAEMON_NEXT. This suite has no `sleep`
+# anywhere and must not grow one. Two rules every body below obeys: never wrap the guard in
+# `$(…)` or a pipeline (the globals and the precmd_functions edits would be lost to the subshell)
+# — redirect stderr to a file under $SANDBOX and grep that instead; and where an assertion touches
+# precmd_functions, pass PATH="$ATBIN:$PATH" so the registration actually happened, or the check
+# is vacuously true.
 ATBIN="$SANDBOX/atbin"
 ATCACHE="$SANDBOX/atcache"
 rm -rf "$ATBIN" "$ATCACHE"
@@ -2733,19 +2746,139 @@ ucheck "atuin daemon: a stale socket file (no listener) degrades too, not just a
 #     Note what this listener also IS: accept-but-silent, i.e. the exact blind spot named in
 #     00-tools.zsh (a socket-activated socket in front of a dead daemon looks like this). The
 #     assertion therefore pins the guard's DOCUMENTED scope in both directions — it must not
-#     claim to catch a state a connect cannot distinguish.
+#     claim to catch a state a connect cannot distinguish. A live listener also ARMS the
+#     watchdog, so _CORE_ATUIN_DAEMON_WAS_UP is the healthy path's new observable.
 ucheck "atuin daemon: a listening socket keeps the daemon enabled (accept-but-silent is out of scope)" \
-  "rm -f '$SANDBOX/live-atuin.sock'; zmodload zsh/net/socket; zsocket -l '$SANDBOX/live-atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -z \${_CORE_ATUIN_DAEMON_DEGRADED:-} ]]" \
+  "rm -f '$SANDBOX/live-atuin.sock'; zmodload zsh/net/socket; zsocket -l '$SANDBOX/live-atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -z \${_CORE_ATUIN_DAEMON_DEGRADED:-} && -n \$_CORE_ATUIN_DAEMON_WAS_UP ]]" \
   ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/live-atuin.sock"
 # (e) AUTOSTART — atuin supervises its own daemon there (the no-systemd answer for
-#     Alpine/macOS), so an absent socket is EXPECTED, not a fault. Don't disable it.
-ucheck "atuin daemon: autostart owns the lifecycle, so the guard stands down" \
-  "source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true ]]" \
+#     Alpine/macOS), so an absent socket is EXPECTED, not a fault. Don't disable it — and don't
+#     keep re-probing for the life of the shell either: stand down means UNHOOK.
+ucheck "atuin daemon: autostart owns the lifecycle, so the guard stands down and unhooks" \
+  "source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -z \${precmd_functions[(r)_core_atuin_daemon_guard]} ]]" \
+  PATH="$ATBIN:$PATH" XDG_CACHE_HOME="$ATCACHE" \
   ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__AUTOSTART=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
-# (f) ONE-SHOT — the guard must unhook itself, or every prompt pays the probe.
-ucheck "atuin daemon: guard removes itself from precmd after one run" \
+# (f) NOT OPTED IN → the guard unhooks PERMANENTLY. The machines that never asked for the daemon
+#     must not carry even the throttle's integer compare for the life of the shell. This is a
+#     STAND-DOWN, not the one-shot the guard used to be — an opted-in shell now stays hooked on
+#     purpose, which is case (g). (This body never sets ATUIN_DAEMON__ENABLED, so it has always
+#     exercised the stand-down; only the label was wrong.)
+ucheck "atuin daemon: a shell that never opted in unhooks the guard for good" \
   "source '$TOOLS_FILE'; [[ -n \${precmd_functions[(r)_core_atuin_daemon_guard]} ]] && { _core_atuin_daemon_guard; [[ -z \${precmd_functions[(r)_core_atuin_daemon_guard]} ]] }" \
   PATH="$ATBIN:$PATH" XDG_CACHE_HOME="$ATCACHE"
+# (g) WATCHDOG, NOT ONE-SHOT — the regression that would silently reintroduce #366. An opted-in
+#     shell with a LIVE daemon must KEEP the hook, arm the throttle deadline, and record that it
+#     was ever healthy. Without all three the shell reverts to the old behaviour: fine at
+#     startup, then blind for the rest of its life.
+ucheck "atuin daemon: an opted-in shell with a live daemon KEEPS the guard hooked and arms the window" \
+  "zmodload zsh/net/socket
+   rm -f '$SANDBOX/wd-live.sock'; zsocket -l '$SANDBOX/wd-live.sock'
+   source '$TOOLS_FILE'; _core_atuin_daemon_guard
+   [[ \$ATUIN_DAEMON__ENABLED == true && -n \$_CORE_ATUIN_DAEMON_WAS_UP ]] || exit 1
+   [[ -n \${precmd_functions[(r)_core_atuin_daemon_guard]} ]] || exit 1
+   (( _CORE_ATUIN_DAEMON_NEXT > 0 ))" \
+  PATH="$ATBIN:$PATH" XDG_CACHE_HOME="$ATCACHE" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/wd-live.sock"
+# (h) THROTTLE — the other half of (g), and what keeps the prompt path honest. Kill the daemon
+#     INSIDE the window and probe again: the guard must NOT connect, so the shell stays enabled
+#     and undegraded. If this ever goes green→red the throttle is gone and every prompt is paying
+#     a connect(2).
+ucheck "atuin daemon: a second precmd inside the window does not re-connect (throttled)" \
+  "zmodload zsh/net/socket
+   rm -f '$SANDBOX/thr.sock'; zsocket -l '$SANDBOX/thr.sock'; LFD=\$REPLY
+   source '$TOOLS_FILE'; _core_atuin_daemon_guard
+   (( _CORE_ATUIN_DAEMON_NEXT > 0 )) || exit 1
+   exec {LFD}>&-                                   # the daemon dies; the stale socket file remains
+   [[ -S '$SANDBOX/thr.sock' ]] || exit 1
+   _core_atuin_daemon_guard
+   [[ \$ATUIN_DAEMON__ENABLED == true && -z \${_CORE_ATUIN_DAEMON_DEGRADED:-} ]]" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/thr.sock"
+# (i) MID-SESSION DEATH — the whole point of #366, driven end to end without a sleep: healthy
+#     probe, daemon dies, BACK-DATE the deadline to travel past the window, probe again. The
+#     shell must degrade, unhook for good, and say so EXACTLY once — that warning is the only
+#     signal a session which is already open ever gets.
+ucheck "atuin daemon: past the window a mid-session death degrades, warns once and unhooks" \
+  "zmodload zsh/net/socket
+   rm -f '$SANDBOX/wd.sock' '$SANDBOX/wd.err'; zsocket -l '$SANDBOX/wd.sock'; LFD=\$REPLY
+   source '$UI'; source '$TOOLS_FILE'
+   _core_atuin_daemon_guard
+   [[ -n \$_CORE_ATUIN_DAEMON_WAS_UP ]] || exit 1
+   exec {LFD}>&-
+   _CORE_ATUIN_DAEMON_NEXT=0                       # time travel: no sleep in this suite, ever
+   _core_atuin_daemon_guard 2>'$SANDBOX/wd.err'
+   [[ \$ATUIN_DAEMON__ENABLED == false && -n \$_CORE_ATUIN_DAEMON_DEGRADED ]] || exit 1
+   [[ -z \${precmd_functions[(r)_core_atuin_daemon_guard]} ]] || exit 1
+   grep -q 'atuin daemon' '$SANDBOX/wd.err'" \
+  PATH="$ATBIN:$PATH" XDG_CACHE_HOME="$ATCACHE" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/wd.sock"
+# (j) SILENT AT STARTUP — the other side of (i), and the assertion that stops a well-meant future
+#     change turning this into startup noise on every machine whose daemon simply is not running.
+#     A shell ALREADY degraded at its first prompt had nothing change under it, so it must
+#     degrade with an EMPTY stderr.
+ucheck "atuin daemon: a shell that started with the daemon already down degrades SILENTLY" \
+  "rm -f '$SANDBOX/quiet.err'
+   source '$UI'; source '$TOOLS_FILE'
+   _core_atuin_daemon_guard 2>'$SANDBOX/quiet.err'
+   [[ \$ATUIN_DAEMON__ENABLED == false && -n \$_CORE_ATUIN_DAEMON_DEGRADED ]] || exit 1
+   [[ -z \${_CORE_ATUIN_DAEMON_WAS_UP:-} ]] || exit 1
+   [[ ! -s '$SANDBOX/quiet.err' ]]" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
+# (k) CLOCK SKEW, FAIL-SAFE — a deadline further out than one window cannot mean "early", it
+#     means the clock moved (backwards NTP step, resume from suspend, or the EPOCHSECONDS/SECONDS
+#     fallback changing source mid-shell — they share no epoch). Honouring it would park the
+#     watchdog for the length of the jump, SILENTLY, which is the failure this hook exists to
+#     end. So the guard must probe anyway.
+ucheck "atuin daemon: a deadline beyond one window means the clock moved — probe anyway" \
+  "source '$TOOLS_FILE'
+   _CORE_ATUIN_DAEMON_NEXT=\$(( \${EPOCHSECONDS:-SECONDS} + 10 * _CORE_ATUIN_DAEMON_INTERVAL ))
+   _core_atuin_daemon_guard
+   [[ \$ATUIN_DAEMON__ENABLED == false && -n \$_CORE_ATUIN_DAEMON_DEGRADED ]]" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
+# (l) THE WINDOW is a real number with a real escape hatch — the knob is what makes a box where
+#     connect(2) on that path is NOT cheap (a socket on a networked or wedged FS) tunable without
+#     patching Core, and what makes the manual repro take 5s instead of 60.
+#     The override is set AFTER sourcing, which is the only test of it worth having: os/<os>.zsh
+#     (80) and 99-local.zsh (99) load after 00-tools.zsh, so that is where a per-machine knob is
+#     actually written. Setting it BEFORE the source — the obvious way to write this — passes
+#     even when the guard reads the env at source time and therefore ignores every real override.
+ucheck "atuin daemon: the probe window defaults to 60s and the first precmd is due immediately" \
+  "source '$TOOLS_FILE'; (( _CORE_ATUIN_DAEMON_INTERVAL == 60 && _CORE_ATUIN_DAEMON_NEXT == 0 ))"
+ucheck "atuin daemon: CORE_ATUIN_PROBE_INTERVAL set by a LATER fragment still overrides the window" \
+  "source '$TOOLS_FILE'
+   CORE_ATUIN_PROBE_INTERVAL=5           # as os/<os>.zsh or 99-local.zsh would: after 00, not before
+   _core_atuin_daemon_guard
+   (( _CORE_ATUIN_DAEMON_INTERVAL == 5 ))" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
+# (m) \$REPLY CROSS-TALK — `local REPLY` inside the guard was a nicety when it ran once before the
+#     first prompt. As a persistent hook it runs between every pair of commands, where
+#     read/vared/zsocket/completion all live in \$REPLY, so dropping it would produce an
+#     intermittent, unreproducible bug. Pin it.
+ucheck "atuin daemon: the guard does not clobber the caller's \$REPLY" \
+  "source '$TOOLS_FILE'; REPLY=mine; _core_atuin_daemon_guard; [[ \$REPLY == mine ]]" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
+# (n)-(p) \$? TRANSPARENCY, on all four exit paths. As a one-shot the guard could return whatever
+#     it liked: it ran once, before the first prompt, and unhooked. As a PERSISTENT precmd it sits
+#     in the hook list for the life of the shell, so any precmd an OS (80) or host (99) fragment
+#     appends AFTER it would see the guard's status instead of the user's command — a prompt that
+#     never shows a failure again, and nothing in Core would notice. That is why the guard opens
+#     with `local -i _rc=\$?` (before `emulate -L zsh`, which resets it) and returns \$_rc from
+#     every exit. Four paths, so four exits: throttled, healthy, degrade, stand-down.
+ucheck "atuin daemon: \$? survives the guard on the healthy and throttled paths" \
+  "zmodload zsh/net/socket
+   rm -f '$SANDBOX/rc-live.sock'; zsocket -l '$SANDBOX/rc-live.sock'
+   source '$TOOLS_FILE'
+   false; _core_atuin_daemon_guard; (( \$? == 1 )) || exit 1   # healthy probe: arms the window
+   (( _CORE_ATUIN_DAEMON_NEXT > 0 )) || exit 1
+   false; _core_atuin_daemon_guard; (( \$? == 1 )) || exit 1   # throttled: the gate's early return
+   true;  _core_atuin_daemon_guard; (( \$? == 0 ))             # and a success survives too" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/rc-live.sock"
+ucheck "atuin daemon: \$? survives the guard on the degrade path" \
+  "source '$UI'; source '$TOOLS_FILE'
+   false; _core_atuin_daemon_guard; (( \$? == 1 )) || exit 1
+   [[ -n \$_CORE_ATUIN_DAEMON_DEGRADED ]]" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock"
+ucheck "atuin daemon: \$? survives the guard on the stand-down path" \
+  "source '$TOOLS_FILE'; false; _core_atuin_daemon_guard; (( \$? == 1 ))"
 
 # atuin/config.toml must NOT write `enabled`/`autostart` into [daemon]. atuin layers the
 # config FILE after the Environment source (settings.rs), so the later file source wins and

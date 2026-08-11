@@ -151,9 +151,13 @@ update_check = false
 #                     daemon (autostart is NOT compatible with systemd_socket).
 #   Windows         — out of scope; dotfiles-Windows vendors no core/.
 #
-# Safety net: zsh/00-tools.zsh probes the socket once, before the first prompt, and forces
-# the daemon OFF for that shell when nothing is listening — an absent or stale socket
-# otherwise costs a failed connect on every command. It cannot detect an ACCEPT-BUT-SILENT
+# Safety net: zsh/00-tools.zsh probes the socket before the first prompt AND, throttled to at
+# most one connect a minute, for the life of the shell — because with the daemon enabled and
+# the socket absent or stale atuin does not fail, it DISCARDS. The first failed connect forces
+# the daemon OFF for that shell, permanently, so atuin writes SQLite directly; a daemon that
+# dies mid-session also prints one warning, since that shell's history plumbing changed under
+# a session still open (dotgibson/dotfiles-core#366). CORE_ATUIN_PROBE_INTERVAL tunes the
+# window. It cannot detect an ACCEPT-BUT-SILENT
 # socket, which is the shape of the indefinite freeze in atuinsh/atuin#3382 — so prefer the
 # plain always-running unit over systemd SOCKET ACTIVATION: activation keeps the socket
 # accepting while the daemon behind it is dead, which is precisely the undetectable state.

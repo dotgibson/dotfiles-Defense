@@ -47,11 +47,12 @@ Documentation=https://docs.atuin.sh/reference/daemon/
 # breaks one of them — and breaking it is not loud: with the daemon enabled and unreachable,
 # atuin exits 0, prints a well-formed history id, writes nothing to stderr, and DISCARDS the
 # entry. A failed ExecStart plus Restart=on-failure below is therefore an indefinite
-# 3-second restart loop with nothing ever listening. Core shells started afterwards do
-# survive it — zsh/00-tools.zsh's _core_atuin_daemon_guard probes the socket once and forces
-# the daemon off so atuin writes SQLite directly — but that probe is one-shot per shell, so
-# sessions already open when the daemon went away keep discarding, and anyone using this
-# unit WITHOUT that guard (i.e. most people copying this file) has no such backstop at all.
+# 3-second restart loop with nothing ever listening. Core shells survive it — zsh/00-tools.zsh's
+# _core_atuin_daemon_guard probes the socket at the first prompt and again, throttled, for the
+# life of the shell, and forces the daemon off for good the first time a connect fails so atuin
+# writes SQLite directly; a session that was healthy and lost the daemon says so once, then
+# degrades quietly. Anyone using this unit WITHOUT that guard — i.e. most people copying this
+# file — has no such backstop at all, and every command runs into the loop unrecorded.
 #
 # So ask the binary which spelling it has, then exec it. Note the probe cannot be folded
 # into `exec A || exec B`: once exec succeeds the process is REPLACED, so a non-zero exit
