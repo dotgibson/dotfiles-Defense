@@ -132,6 +132,14 @@ gocase() {
 
 # note — timestamped line into the active case's running notes (audit trail)
 note() {
+  # Reject the empty note: this file is an audit trail, and a bare `note` would
+  # otherwise append a timestamp with no content — indistinguishable from a real
+  # entry whose text was lost. Same usage-error shape as mkcase above.
+  # Strip ALL whitespace before the test, not just check for the empty string:
+  # `note "   "` is the same worthless entry as `note`, and a shell-quoting slip
+  # or an empty $VAR expansion is exactly how you'd produce one by accident.
+  # [[:space:]] covers tabs and newlines too, which a plain space check misses.
+  [[ -z "${*//[[:space:]]/}" ]] && { echo "Usage: note <text>" >&2; return 1; }
   local dir="${CASE:-$PWD}/notes"; mkdir -p "$dir"
   printf '%s  %s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" "$*" >> "$dir/notes.md"
 }

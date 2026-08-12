@@ -37,4 +37,4 @@ installed. Case/evidence data never lives in the repo — it lives in
 |----------|---------|
 | `mkcase <incident-or-codename>` | Create a dated case workspace at `$CASES_DIR/<YYYYMMDD>-<slug>/{evidence,network,timeline,iocs,report,notes}`; renders `case.md` from `defense/templates/case.md` (or a minimal stub), copies `defense/templates/hunt.md` if present, sets `$CASE`, `cd`s in, and opens `case.md` in `${EDITOR:-nvim}` — fill in scope/authorization before touching evidence |
 | `gocase` | fzf-jump between existing cases under `$CASES_DIR` (previews `case.md`); sets `$CASE` and `cd`s in |
-| `note [text]` | Append a timestamped line to the active case's `notes/notes.md` (`$CASE/notes`, falls back to `$PWD/notes`) |
+| `note <text>` | Append a timestamped line to the active case's `notes/notes.md` (`$CASE/notes`, falls back to `$PWD/notes`); empty **or whitespace-only** text is a usage error, so the audit trail never gets a contentless entry |
