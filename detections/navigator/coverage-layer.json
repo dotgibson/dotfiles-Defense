@@ -226,9 +226,9 @@
     },
     {
       "techniqueID": "T1485",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): data_destruction_wipe"
+      "comment": "2 rule(s): aws_data_destruction, data_destruction_wipe"
     },
     {
       "techniqueID": "T1486",
@@ -259,6 +259,18 @@
       "score": 2,
       "enabled": true,
       "comment": "2 rule(s): entra_illicit_consent_grant, gws_illicit_oauth_grant"
+    },
+    {
+      "techniqueID": "T1530",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): aws_s3_bulk_exfil"
+    },
+    {
+      "techniqueID": "T1531",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): account_access_removal_4725"
     },
     {
       "techniqueID": "T1543",

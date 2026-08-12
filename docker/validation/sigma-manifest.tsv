@@ -90,3 +90,4 @@ cloud_pypi_collaborator_added	none	docker/validation/sigma-fixtures/cloud_pypi_c
 cloud_slack_app_installed	none	docker/validation/sigma-fixtures/cloud_slack_app_installed.jsonl	detections/sigma/slack/slack_app_installed.yml	6f66f0e6-7c7c-40ca-bf12-05ed5338066f	-
 cloud_slack_external_shared_channel	none	docker/validation/sigma-fixtures/cloud_slack_external_shared_channel.jsonl	detections/sigma/slack/slack_external_shared_channel.yml	59446f62-cb86-4873-9733-7dfd51e3e138	-
 ccache-theft-linux	none	docker/validation/sigma-fixtures/ccache_theft_linux.jsonl	detections/sigma/linux/ccache_theft_staging.yml	2eefd732-05eb-45cd-b50b-e0d3946d5ee3	-
+account-access-removal-4725	windows-audit	docker/validation/sigma-fixtures/account_access_removal_4725.jsonl	detections/sigma/impact/account_access_removal_4725.yml	26bd9736-4bbc-4f3a-b33d-541d312a1844	docker/validation/sigma-fixtures/account_access_removal_4725_tn.jsonl

@@ -6,6 +6,9 @@
 // Windows rules). Regenerate with detections/siem/gen-siem.sh; CI drift-gates it.
 // Rules a backend cannot express (Sigma correlations) are noted, not dropped.
 
+// cloud/aws_data_destruction.yml — AWS storage-delete base - one destructive call on a storage service
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
 // cloud/aws_iam_access_key_created.yml — AWS IAM access key created (backdoor triage)
 eventSource =~ "iam.amazonaws.com" and eventName =~ "CreateAccessKey"
 
@@ -14,6 +17,9 @@ eventSource =~ "iam.amazonaws.com" and eventName =~ "CreateAccessKey"
 
 // cloud/aws_login_profile_created.yml — AWS IAM login profile created or updated (console takeover)
 eventSource =~ "iam.amazonaws.com" and (eventName in~ ("CreateLoginProfile", "UpdateLoginProfile"))
+
+// cloud/aws_s3_bulk_exfil.yml — S3 object-read base - a single GetObject on a bucket
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // cloud/entra_directory_role_grant.yml — Entra directory role assigned (tenant privilege escalation)
 OperationName in~ ("Add member to role", "Add eligible member to role", "Add member to role in PIM requested (permanent)", "Add member to role completed (PIM activation)", "Add member to role requested (PIM activation)")
@@ -116,6 +122,9 @@ eventName =~ "email_forwarding_out_of_domain"
 
 // google_workspace/gws_illicit_oauth_grant.yml — Google Workspace illicit OAuth grant (consent phish)
 eventName =~ "authorize" and (scope contains "mail.google.com" or scope contains "auth/gmail" or scope contains "auth/drive" or scope contains "auth/spreadsheets" or scope contains "auth/documents" or scope contains "auth/contacts") and (not(client_id =~ "000000000000-example.apps.googleusercontent.com"))
+
+// impact/account_access_removal_4725.yml — Account-management base - password reset, disable, or delete (4724/4725/4726)
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // impact/bitlocker_abuse_encryption.yml — Data encrypted for impact - BitLocker driven from the command line
 (Image endswith "\\manage-bde.exe" and (CommandLine contains "-on" or CommandLine contains "-protectors -add" or CommandLine contains "-forcerecovery")) or ((Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and (CommandLine contains "Enable-BitLocker" or CommandLine contains "Add-BitLockerKeyProtector"))

@@ -1,0 +1,5 @@
+{"Event": {"System": {"EventID": 4725, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver1"}}}
+{"Event": {"System": {"EventID": 4725, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver2"}}}
+{"Event": {"System": {"EventID": 4726, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver3"}}}
+{"Event": {"System": {"EventID": 4726, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver4"}}}
+{"Event": {"System": {"EventID": 4724, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver5"}}}

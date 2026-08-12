@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**89 rules · 101 detection documents · 67 techniques · 10 tactics · 24 logsources.**
+**92 rules · 107 detection documents · 69 techniques · 10 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
@@ -15,9 +15,9 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Credential Access | TA0006 | 15 | 17 |
 | Discovery | TA0007 | 12 | 3 |
 | Lateral Movement | TA0008 | 9 | 7 |
-| Collection | TA0009 | 4 | 3 |
+| Collection | TA0009 | 5 | 4 |
 | Exfiltration | TA0010 | 2 | 2 |
-| Impact | TA0040 | 4 | 7 |
+| Impact | TA0040 | 5 | 9 |
 
 ## By technique
 
@@ -59,12 +59,14 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1195.002 | 2 | `npm_malicious_package_publish`, `pypi_token_release_upload` |
 | T1207 | 1 | `dcshadow_rogue_dc_4742` |
 | T1484.002 | 1 | `okta_idp_created` |
-| T1485 | 1 | `data_destruction_wipe` |
+| T1485 | 2 | `aws_data_destruction`, `data_destruction_wipe` |
 | T1486 | 3 | `bitlocker_abuse_encryption`, `mass_file_encryption_4663`, `mass_file_encryption_sysmon_11` |
 | T1489 | 2 | `service_stop_burst`, `service_stop_protected_services` |
 | T1490 | 1 | `recovery_inhibition_process` |
 | T1525 | 1 | `harbor_image_pushed_trusted_tag` |
 | T1528 | 2 | `entra_illicit_consent_grant`, `gws_illicit_oauth_grant` |
+| T1530 | 1 | `aws_s3_bulk_exfil` |
+| T1531 | 1 | `account_access_removal_4725` |
 | T1543 | 3 | `github_self_hosted_runner_registered`, `gitlab_rogue_runner_associated`, `tfc_rogue_agent_pool` |
 | T1546.003 | 1 | `wmi_event_subscription_consumer` |
 | T1550.002 | 1 | `passthehash_4624_fanout` |
@@ -95,7 +97,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 
 | Directory | product | Rules |
 | --------- | ------- | ----: |
-| `cloud` | `aws`, `azure`, `gcp` | 9 |
+| `cloud` | `aws`, `azure`, `gcp` | 11 |
 | `cloudflare` | `cloudflare` | 3 |
 | `collection` | `windows` | 2 |
 | `credential_access` | `windows` | 10 |
@@ -104,7 +106,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `github` | `github` | 3 |
 | `gitlab` | `gitlab` | 3 |
 | `google_workspace` | `google_workspace` | 3 |
-| `impact` | `windows` | 7 |
+| `impact` | `windows` | 8 |
 | `jenkins` | `jenkins` | 3 |
 | `kubernetes` | `kubernetes` | 3 |
 | `lateral_movement` | `windows` | 5 |
