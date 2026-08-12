@@ -26,6 +26,18 @@ logsource:
   service: cloudtrail
 detection:
   selection:
+    # Scoped by eventSource as well as verb, per the convention the other CloudTrail rules
+    # follow. It matters more here than it looks: these verb names are not unique to one
+    # service - DeleteTable is AWS Glue as well as DynamoDB, and DeleteSnapshot is
+    # ElastiCache and FSx as well as EC2. This list IS the rule's scope boundary; add the
+    # storage services your estate actually runs.
+    eventSource:
+      - 'ec2.amazonaws.com'          # EBS snapshots
+      - 'rds.amazonaws.com'          # RDS / Aurora snapshots
+      - 's3.amazonaws.com'           # buckets and objects
+      - 'dynamodb.amazonaws.com'     # tables
+      - 'elasticache.amazonaws.com'  # cache snapshots (also DeleteSnapshot)
+      - 'fsx.amazonaws.com'          # FSx volume snapshots (also DeleteSnapshot)
     eventName:
       - 'DeleteSnapshot'
       - 'DeleteDBClusterSnapshot'

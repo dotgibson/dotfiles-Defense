@@ -20,7 +20,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/account-removal-4725.md
 author: dotfiles-Defense
 date: 2026-08-12
-name: account_management_action_4725
+name: account_removal_action
 tags:
   - attack.impact
   - attack.t1531
@@ -76,7 +76,7 @@ references:
 correlation:
   type: value_count
   rules:
-    - account_management_action_4725
+    - account_removal_action
   group-by:
     - SubjectUserName
   timespan: 10m
