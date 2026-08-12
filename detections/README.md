@@ -89,7 +89,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 89 rules / 101 documents, organized by ATT&CK tactic
+### `sigma/` — 92 rules / 107 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -158,10 +158,18 @@ purple-validatable out of the box.
 | `service_stop_protected_services` | proc create, ONE stop of a named backup/AV/DB service | T1489 | ransomware-precursor · service-stop-preransom |
 | `mass_file_encryption_4663` | 4663 write/delete handles, distinct files per host+process (value_count correlation) | T1486 | ransomware-precursor · ransomware-encrypt-files |
 | `mass_file_encryption_sysmon_11` | Sysmon 11 FileCreate, distinct files per host+image (value_count correlation) | T1486 | ransomware-precursor · ransomware-encrypt-files |
+| `account_access_removal_4725` | 4724/4725/4726, distinct target accounts per actor (value_count correlation) | T1531 | account-lockout-defenders · account-removal-4725 |
 
 They are one chain, not seven alerts: T1489 clears the locks, T1490 destroys the
 rollback, T1485/T1486 are the objective. Two of them on one host inside a window is
 the chain in progress — alert-chain them if your backend can.
+
+`account_access_removal_4725` is the chain's other half: not destroying the estate but
+locking the people who would respond out of it. It deliberately keys on 4724/4725/4726
+only — on 4729/4733 (group-member removal) `TargetUserName` holds the *group* and the
+removed principal is in `MemberName`, so folding them in would make the
+distinct-target count mix users with groups. That is a separate rule on its own fields,
+not a wider selection here.
 
 Two techniques carry a deliberate set of rules, covering different halves:
 
@@ -220,6 +228,8 @@ the rule gets muted, and a muted rule is a blind spot.
 | `aws_iam_access_key_created` | CloudTrail `CreateAccessKey` | T1098.001 | AWS IAM · aws-iam-backdoor-key |
 | `aws_login_profile_created` | CloudTrail Create/UpdateLoginProfile | T1098 | AWS IAM · aws-console-login-profile |
 | `aws_iam_privesc_policy` | CloudTrail policy attach/put/version + group add | T1098.003 | AWS IAM · aws-iam-privesc-policy |
+| `aws_s3_bulk_exfil` | CloudTrail S3 `GetObject`, distinct object keys per principal (value_count correlation) | T1530 | AWS S3 · aws-s3-mass-exfil |
+| `aws_data_destruction` | CloudTrail snapshot/bucket/object/table deletes per principal (event_count correlation) | T1485 | AWS destruction · cloud-snapshot-destroy |
 | `gcp_service_account_key_created` | GCP audit `CreateServiceAccountKey` | T1098.001 | GCP IAM · gcp-sa-key |
 
 **`kubernetes/`** (kube-apiserver audit — `product: kubernetes`)
@@ -338,9 +348,15 @@ the rule gets muted, and a muted rule is a blind spot.
 `ldap_recon_explicit_creds_4648`, `host_recon_command_burst`,
 `passthehash_4624_fanout`, `machine_account_creation_burst_4741`,
 `service_stop_burst`, `mass_file_encryption_4663`, `mass_file_read_4663`,
-`mass_file_encryption_sysmon_11`, and `vault_bulk_secret_read` are Sigma
-**correlation** rules (a base event + a `value_count` over a window); the rest are
-single-event selections. The two process-creation correlations
+`mass_file_encryption_sysmon_11`, `vault_bulk_secret_read`, `aws_s3_bulk_exfil`,
+`account_access_removal_4725`, and `aws_data_destruction` are Sigma
+**correlation** rules (a base event + a count over a window); the rest are
+single-event selections. All but one count *distinct values* of a field
+(`value_count`) — breadth is almost always the sharper invariant than raw rate.
+`aws_data_destruction` is the exception and uses `event_count`, because on the control
+plane the volume of deletes *is* the signal: a wiper that only calls `DeleteObject`
+would never trip a distinct-verb count, and unlike a file read there is no benign
+process that issues ten destructive API calls a minute. The two process-creation correlations
 (`host_recon_command_burst`, `service_stop_burst`) group by `Computer` rather than by
 account on purpose — the actor field differs per channel (Security-4688
 `SubjectUserName` vs Sysmon-1 `User`) and naming either would null the rule under the
@@ -381,6 +397,9 @@ comment isn't enforcement, so this is the discoverable checklist instead.)
 | `persistence/rogue_account_creation_4720` | `filter_provisioning` → your IAM/JML and helpdesk provisioning principals | every routine onboarding alerts |
 | `cloudflare/cloudflare_worker_deployed` | `filter_ci` → the deploy pipeline's Cloudflare identity | every CI Worker deploy is a `high` alert |
 | `cloud/aws_iam_privesc_policy` | `filter_iac` → your IaC / access-management automation principal(s) | Terraform's routine policy attachments alert alongside operator-driven ones |
+| `cloud/aws_s3_bulk_exfil` | `filter_bulk_readers` → your backup / replication / analytics / ETL role ARNs | the S3 twin of `filter_indexers`: object reads are constant, so an unfilled list means the nightly backup or an Athena scan trips the correlation and the rule gets muted |
+| `cloud/aws_data_destruction` | `filter_iac` → your IaC / automation principal(s) | a `terraform destroy` of an ephemeral environment and a scheduled snapshot-retention job both look exactly like the attack from CloudTrail alone |
+| `impact/account_access_removal_4725` | `filter_identity_admins` → your help-desk / JML / IAM provisioning principals | bulk offboarding alerts. This list is what makes the rule *sharp*, not merely quiet — the signal is an actor who does **not** normally administer identity |
 
 #### What `status:` means here
 
