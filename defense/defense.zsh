@@ -132,6 +132,10 @@ gocase() {
 
 # note — timestamped line into the active case's running notes (audit trail)
 note() {
+  # Reject the empty note: this file is an audit trail, and a bare `note` would
+  # otherwise append a timestamp with no content — indistinguishable from a real
+  # entry whose text was lost. Same usage-error shape as mkcase above.
+  [[ -z "$*" ]] && { echo "Usage: note <text>" >&2; return 1; }
   local dir="${CASE:-$PWD}/notes"; mkdir -p "$dir"
   printf '%s  %s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" "$*" >> "$dir/notes.md"
 }
