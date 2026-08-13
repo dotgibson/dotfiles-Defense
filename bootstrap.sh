@@ -51,7 +51,10 @@ link() {
 check_tools() {
   say "checking host tools (install missing ones via your OS layer — see install/README.md)"
   local t missing=0
-  for t in docker jq tshark zeek suricata chainsaw hayabusa sigma yara velociraptor vol log2timeline.py; do
+  # zsh leads the list deliberately: it is the shell this entire layer runs in, so its
+  # absence is categorically worse than a missing forensics tool. The end-of-run guard
+  # says so loudly — this line just makes it visible in the probe alongside the rest.
+  for t in zsh docker jq tshark zeek suricata chainsaw hayabusa sigma yara velociraptor vol log2timeline.py; do
     if command -v "$t" >/dev/null 2>&1; then
       ok "found: $t"
     else
@@ -66,7 +69,7 @@ check_tools() {
   fi
   if ((missing == 0)); then
     ok "all probed tools present"
-  else warn "$missing tool(s) missing (optional — install what you need)"; fi
+  else warn "$missing tool(s) missing — the forensics tools are optional; zsh is not"; fi
 }
 
 wire_links() {
@@ -122,4 +125,41 @@ ZRC
 ((DO_CHECK && !LINKS_ONLY)) && check_tools
 wire_links
 say "case data lives in ~/cases (outside this repo) — run \`mkcase <name>\` to start one"
-ok "Defense bootstrap complete — open a new shell, or: exec zsh"
+
+# Everything above wires a zsh config. On a box with no zsh — or with zsh installed but not
+# the login shell — every step still "succeeds" and nothing ever loads. So this is checked
+# OUTSIDE check_tools: --no-check and --links-only skip a tool probe, but must not silence a
+# correctness guard. Non-fatal, matching how missing host tools are handled — the script is
+# idempotent by design and has to stay re-runnable on a box mid-provisioning.
+# Best-effort, and it MUST NOT abort: this file runs under `set -euo pipefail`, where
+# pipefail makes `getent … | cut` return getent's status rather than cut's. getent exits 2
+# when the user is not in the passwd DB, and is 127 when absent altogether (it is not
+# universal outside glibc) — either would take the whole bootstrap down on its last line,
+# turning the non-fatal guard below into the loudest possible failure. So every lookup is
+# guarded, in descending order of trust: getent, then /etc/passwd, then $SHELL. All three
+# may come up empty; the guard reports that as "unknown" rather than caring.
+detect_login_shell() {
+  local user shell_field=""
+  user="$(id -un 2>/dev/null || true)"
+  if [[ -n "$user" ]]; then
+    if command -v getent >/dev/null 2>&1; then
+      shell_field="$(getent passwd "$user" 2>/dev/null | cut -d: -f7 || true)"
+    fi
+    if [[ -z "$shell_field" && -r /etc/passwd ]]; then
+      shell_field="$(awk -F: -v u="$user" '$1 == u { print $7; exit }' /etc/passwd 2>/dev/null || true)"
+    fi
+  fi
+  printf '%s' "${shell_field:-${SHELL:-}}"
+}
+
+login_shell="$(detect_login_shell)"
+if ! command -v zsh >/dev/null 2>&1; then
+  warn "zsh is NOT installed — the config above is wired but inert; nothing reads ~/.zshrc"
+  warn "  your OS-native layer owns package installation (see install/README.md)"
+elif [[ "$login_shell" != *zsh ]]; then
+  warn "zsh is installed, but your login shell is ${login_shell:-unknown}"
+  warn "  fix: chsh -s $(command -v zsh)  — takes effect at next login"
+  ok "Defense bootstrap complete — for this session: exec zsh"
+else
+  ok "Defense bootstrap complete — open a new shell, or: exec zsh"
+fi
