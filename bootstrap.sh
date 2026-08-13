@@ -14,19 +14,28 @@
 #   ./bootstrap.sh --links-only    # just (re)create symlinks
 #   ./bootstrap.sh --no-check      # skip the host-tool / docker probe
 #   ./bootstrap.sh --dry-run       # print the full plan, change nothing
+#   ./bootstrap.sh --only=zsh,git  # wire only these groups
+#   ./bootstrap.sh --skip=tmux     # wire everything except these
+#     groups: zsh nvim tmux git prompt tools (the band-85 role stage rides `zsh`)
 set -euo pipefail
 
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
 LINKS_ONLY=0
 DO_CHECK=1
+ONLY_CSV=""
+SKIP_CSV=""
 
 for a in "$@"; do case "$a" in
   --links-only) LINKS_ONLY=1 ;;
   --no-check) DO_CHECK=0 ;;
   --dry-run) BLIB_DRY=1 ;;
+  # Stashed, not applied: the validator (blib_select) lives in the library, which cannot
+  # be sourced until the subtree guard below has run. Applied right after the source.
+  --only=*) ONLY_CSV="${a#*=}" ;;
+  --skip=*) SKIP_CSV="${a#*=}" ;;
   -h | --help)
-    sed -n '2,16p' "$0"
+    sed -n '2,19p' "$0"
     exit 0
     ;;
   *)
@@ -38,12 +47,17 @@ for a in "$@"; do case "$a" in
 # ── core/ subtree present? ────────────────────────────────────────────────────
 # CHICKEN-AND-EGG: this one guard cannot move into the lib — you cannot source a file
 # out of core/ before confirming core/ exists (see bootstrap-lib.sh's header). So it
-# stays inline, ahead of the two `source` lines below.
-if [[ ! -d "$DOTFILES/core/zsh" ]]; then
-  echo "core/ subtree missing. One time, from the repo root run:" >&2
-  echo "  git subtree add --prefix=core <dotfiles-core remote> main --squash" >&2
-  exit 1
-fi
+# stays inline, ahead of the two `source` lines below — and it checks the paths those
+# lines actually READ, not just core/zsh as a proxy. A half-vendored subtree (core/zsh
+# present, core/lib absent) would otherwise die on bash's own `source: No such file`
+# under set -e, losing the one message that says how to fix it.
+for req in core/zsh core/lib/ux.sh core/lib/bootstrap-lib.sh; do
+  if [[ ! -e "$DOTFILES/$req" ]]; then
+    echo "core/ subtree missing or incomplete (no $req). One time, from the repo root run:" >&2
+    echo "  git subtree add --prefix=core <dotfiles-core remote> main --squash" >&2
+    exit 1
+  fi
+done
 
 # ux.sh first — it sets the UX_* palette the blib_* message helpers read; sourced the
 # other way round they still work, just uncoloured.
@@ -51,6 +65,11 @@ fi
 source "$DOTFILES/core/lib/ux.sh"
 # shellcheck source=core/lib/bootstrap-lib.sh
 source "$DOTFILES/core/lib/bootstrap-lib.sh"
+
+# Now that blib_select exists, validate the stashed selectors. It aborts on a malformed
+# selector or an unknown group name, so it must be called directly (never in a subshell).
+if [[ -n "$ONLY_CSV" ]]; then blib_select --only "$ONLY_CSV"; fi
+if [[ -n "$SKIP_CSV" ]]; then blib_select --skip "$SKIP_CSV"; fi
 
 # ── Host-tool / docker probe (report only — never installs) ──────────────────
 check_tools() {
@@ -89,7 +108,10 @@ wire_defense_stage() {
   # host-local (99-local.zsh), preserving the old `… os defense local` order. Drop any stale
   # pre-v4 unnumbered link so the loader doesn't see a dead entry.
   if [[ -L "$CONFIG/zsh/defense.zsh" ]]; then
-    if _blib_dry; then
+    # BLIB_DRY, not the library's _blib_dry(): the underscore marks that helper private,
+    # and this is the documented public knob. Sole raw mutation in this file — every
+    # other change goes through blib_link, which honours dry-run itself.
+    if [[ "${BLIB_DRY:-0}" != 0 ]]; then
       blib_say "would drop stale pre-v4 link: $CONFIG/zsh/defense.zsh"
     else
       rm -f "$CONFIG/zsh/defense.zsh"
