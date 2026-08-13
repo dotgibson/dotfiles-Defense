@@ -131,7 +131,28 @@ say "case data lives in ~/cases (outside this repo) — run \`mkcase <name>\` to
 # OUTSIDE check_tools: --no-check and --links-only skip a tool probe, but must not silence a
 # correctness guard. Non-fatal, matching how missing host tools are handled — the script is
 # idempotent by design and has to stay re-runnable on a box mid-provisioning.
-login_shell="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7)"
+# Best-effort, and it MUST NOT abort: this file runs under `set -euo pipefail`, where
+# pipefail makes `getent … | cut` return getent's status rather than cut's. getent exits 2
+# when the user is not in the passwd DB, and is 127 when absent altogether (it is not
+# universal outside glibc) — either would take the whole bootstrap down on its last line,
+# turning the non-fatal guard below into the loudest possible failure. So every lookup is
+# guarded, in descending order of trust: getent, then /etc/passwd, then $SHELL. All three
+# may come up empty; the guard reports that as "unknown" rather than caring.
+detect_login_shell() {
+  local user shell_field=""
+  user="$(id -un 2>/dev/null || true)"
+  if [[ -n "$user" ]]; then
+    if command -v getent >/dev/null 2>&1; then
+      shell_field="$(getent passwd "$user" 2>/dev/null | cut -d: -f7 || true)"
+    fi
+    if [[ -z "$shell_field" && -r /etc/passwd ]]; then
+      shell_field="$(awk -F: -v u="$user" '$1 == u { print $7; exit }' /etc/passwd 2>/dev/null || true)"
+    fi
+  fi
+  printf '%s' "${shell_field:-${SHELL:-}}"
+}
+
+login_shell="$(detect_login_shell)"
 if ! command -v zsh >/dev/null 2>&1; then
   warn "zsh is NOT installed — the config above is wired but inert; nothing reads ~/.zshrc"
   warn "  your OS-native layer owns package installation (see install/README.md)"
