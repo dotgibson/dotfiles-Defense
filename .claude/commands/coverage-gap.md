@@ -28,6 +28,20 @@ Focus for this run: **$ARGUMENTS** (empty = the whole matrix).
 - `DEFENSE-METHODOLOGY.md` — the ATT&CK → data-source → detection map this repo
   *intends* to cover. **Holes are measured against this intended set, not against all
   of ATT&CK.**
+- `DEFENSE-METHODOLOGY.md`'s **"Declined coverage" section and its
+  `methodology-check: known-absent` marker** — the answered set. Two different things
+  live in that marker: techniques **covered outside Sigma** (the whole `network/` plane
+  — they read "0" in `COVERAGE.md` by design) and techniques **deliberately declined**,
+  each with a stated reopen-condition. Treat both as **answered, not open**: do not
+  re-report one unless its stated reopen-condition has actually changed (e.g. a
+  TLS-inspecting proxy now exists, Sysmon Event 3 is now enabled, GCP Data Access
+  logging is now on). Re-deriving them from the ATT&CK matrix is the single most common
+  way this routine produces noise. The long form is in `detections/README.md`'s
+  "Coverage gaps (honest notes)".
+- **Check the corpus, not just the artifacts, before ranking anything as absent.** The
+  generated files are drift-gated but only as fresh as the last commit — a rule merged
+  after they were written still shows as a hole. `grep -ri 't1234' detections/` costs
+  nothing and is the difference between a real finding and a stale one.
 
 ## What to compute
 
@@ -38,7 +52,12 @@ Focus for this run: **$ARGUMENTS** (empty = the whole matrix).
    techniques than the methodology implies.
 3. **Uncovered intended techniques** — techniques named in `DEFENSE-METHODOLOGY.md`
    (or its data sources) with no rule. Verify each ATT&CK ID against live MITRE (IDs
-   move; sub-techniques get renumbered).
+   move; sub-techniques get renumbered) — and verify the **tactic** it belongs to
+   before ranking it as filling a thin tactic row. A technique's name is not its
+   tactic: T1530 *Data from Cloud Storage* reads like exfiltration and is Collection
+   (TA0009), so closing it moves the Collection row and leaves Exfiltration untouched.
+   Rank on the tactic ATT&CK actually assigns, or the ranking rationale is wrong even
+   when the gap is real.
 4. **Red↔blue holes** — if a `../dotfiles-Kali` sibling is present, attacks in its
    `PURPLE-TEAM.md` / `offensive/companion` red entries with no detection here. (Skip
    with a note if the sibling isn't checked out.)

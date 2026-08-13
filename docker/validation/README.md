@@ -76,7 +76,8 @@ the engine(s) the selected rows actually use.
 ## Scope — what's covered, what isn't
 
 This is the **network plane** (PCAP replay — offline, deterministic, hermetic). Covered:
-Zeek DNS tunnel + DGA, ICMP tunnel, reverse-tunnel/egress, cryptomining pool session;
+Zeek DNS tunnel + DGA, ICMP tunnel, reverse-tunnel/egress, cryptomining pool session,
+web-protocol beacon (`http-c2.zeek`);
 Suricata DNS-tunnel, ICMP oversized-echo, plaintext Stratum, and all four DCERPC coercion
 vectors (MS-EFSRPC/RPRN/DFSNM/FSRVP).
 
@@ -104,12 +105,21 @@ the real Kali attack is the honest fixture:
   handshake + X.509 chain for Zeek's SSL analyzer and the ja3 add-on.
 - `zeek/kerberoast-rc4.zeek` — needs a real Kerberos TGS-REP (ASN.1, RC4 etype).
 
+Worth contrasting with the covered case directly above them: `zeek/http-c2.zeek` watches the
+same encrypted traffic those two do, and *is* gated, because it clocks
+`connection_established` rather than `ssl_established`. That was a design choice made partly
+for this reason — a detection keyed on the TCP handshake needs no certificate to be provable,
+so `gen_web_beacon.py` can synthesize 22 beacon callbacks on port 443 with no TLS at all. The
+generator also computes the mean/stdev/CV it produced and refuses to write a PCAP that would
+not trip the thresholds, so a drifted fixture fails loudly here instead of going quietly
+non-firing in CI.
+
 Partial, trivially extendable (same shape as a covered row): the c2.rules
 oversized-query-name / echo-reply variants.
 
 ## Host / Sigma plane — coverage & findings
 
-Covered (37 rows, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
+Covered (63 rows, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
 every shape — Kerberoast, AS-REP, DCSync, GPP cpassword, coercion, DPAPI, LSASS access,
 NTDS dump, rogue-account / machine-account / scheduled-task / WMI-subscription persistence,
 DCShadow, RBCD, shadow-credentials, ADCS ESC1, RDP-hijack, PsExec, WMIexec, the potato
@@ -117,7 +127,8 @@ SeImpersonate pair, the full ransomware chain (recovery-inhibition, service-stop
 protected-service stop, data destruction, BitLocker abuse, mass encryption),
 unconstrained-delegation abuse, host-side collection (the 4663 read sweep and the archive
 staging step), and the correlation rules (password-spray, pass-the-hash, LDAP-recon,
-SharpHound, host-recon burst, mass-encryption on both 4663 and Sysmon 11, mass-read).
+SharpHound, host-recon burst, local-SAM enumeration sweep, share/session enumeration
+sweep, mass-encryption on both 4663 and Sysmon 11, mass-read).
 Each was verified firing against the real engine locally.
 
 ### True negatives — how a filter is proven
@@ -125,8 +136,8 @@ Each was verified firing against the real engine locally.
 This plane used to be true-positive only, which meant a row could prove a rule *fires* but
 never that it *doesn't*: an exclusion that silently stopped matching would keep the gate
 green while the rule quietly went noisy. `sigma-manifest.tsv` now carries a sixth column,
-the TN fixture (`-` for none), and **all 18 rules with a `filter_*` block have one**. The
-runner reports the count (`60/60 passed (19 with a true-negative)`), and rules that grow a
+the TN fixture (`-` for none), and **all 22 rules with a `filter_*` block have one**. The
+runner reports the count (`63/63 passed (22 with a true-negative)`), and rules that grow a
 filter but no TN are named in an advisory at the end of the run — the same
 discoverable-checklist idea as [`deploy-required.sh`](../../detections/sigma/deploy-required.sh).
 

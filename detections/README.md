@@ -89,7 +89,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Kali` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 92 rules / 107 documents, organized by ATT&CK tactic
+### `sigma/` — 94 rules / 111 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -131,6 +131,8 @@ purple-validatable out of the box.
 | `sharphound_ldap_sweep_4662` | 4662 dir-access (value_count correlation) | T1087.002 / T1069.002 | AD enumeration · bloodhound-sharphound |
 | `ldap_recon_explicit_creds_4648` | 4648 explicit-cred fan-out (value_count correlation) | T1087.002 / T1046 | recon · PURPLE-TEAM 4648 row |
 | `host_recon_command_burst` | proc create, distinct discovery commands per host (value_count correlation) | T1033 / T1082 / T1018 / T1016 / T1049 / T1057 / T1007 / T1087.001 / T1135 | Situational awareness · `whoami`/`net`/`nltest` sweep |
+| `local_group_enum_sweep_4798_4799` | 4798/4799 local group membership enumerated, distinct hosts per principal (value_count correlation) | T1069.001 / T1087.001 | AD enumeration · SharpHound LocalGroup / `net localgroup \\host` |
+| `host_enum_srvsvc_wkssvc_5145` | 5145 IPC$ to the srvsvc/wkssvc pipes, distinct hosts per principal (value_count correlation) | T1135 / T1049 / T1033 | SMB enumeration · smb-enum-nxc |
 
 **`persistence/`**
 
@@ -349,7 +351,8 @@ the rule gets muted, and a muted rule is a blind spot.
 `passthehash_4624_fanout`, `machine_account_creation_burst_4741`,
 `service_stop_burst`, `mass_file_encryption_4663`, `mass_file_read_4663`,
 `mass_file_encryption_sysmon_11`, `vault_bulk_secret_read`, `aws_s3_bulk_exfil`,
-`account_access_removal_4725`, and `aws_data_destruction` are Sigma
+`account_access_removal_4725`, `aws_data_destruction`,
+`local_group_enum_sweep_4798_4799`, and `host_enum_srvsvc_wkssvc_5145` are Sigma
 **correlation** rules (a base event + a count over a window); the rest are
 single-event selections. All but one count *distinct values* of a field
 (`value_count`) — breadth is almost always the sharper invariant than raw rate.
@@ -446,10 +449,18 @@ behaves on a host whose Sysmon config is broader than this one.
 
 **Command-and-Control (TA0011)** — the "Exfil / C2" methodology row, on Zeek + Suricata
 (behavioral invariants in Zeek, per-packet/fingerprint tells in Suricata; htpx pairs
-`dns-tunnel-c2`, `dga-c2-domains`, `reverse-tunnel-chisel`, `icmp-tunnel-c2`, `mtls-c2-sliver`):
+`dns-tunnel-c2`, `dga-c2-domains`, `reverse-tunnel-chisel`, `icmp-tunnel-c2`, `mtls-c2-sliver`,
+`https-beacon-sliver`):
 
 - `zeek/dns-c2.zeek` — DNS tunneling (T1071.004, long distinct-subdomain fan-out per
   zone) and DGA beaconing (T1568.002, long vowel-poor NXDOMAIN bursts), via SumStats.
+- `zeek/http-c2.zeek` — HTTPS/HTTP beaconing (T1071.001) by **callback regularity**:
+  jitter randomizes each interval but not the distribution, so a low coefficient of
+  variation (stdev ÷ mean) of the inter-arrival times per src→dst survives the jitter, a
+  rotated domain, and TLS. Clocks `connection_established`, never `ssl_established` —
+  which is both why it needs no analyzer and why it can be fixture-gated where
+  `tls-c2.zeek` cannot (see "Known gaps" in `docker/validation/README.md`). State is
+  O(1) per pair (streaming moments, not a timestamp vector).
 - `zeek/reverse-tunnel.zeek` — long-lived high-volume bidirectional external sessions
   (T1572); the same shape surfaces bulk egress (T1041/T1048).
 - `zeek/icmp-tunnel.zeek` — sustained large-payload ICMP echo to one external host
@@ -603,6 +614,40 @@ point and prefer your own threat intel via `--url`.
   `DEPLOY-REQUIRED` suppression list for exactly that reason, and both are worth
   substantially less unfilled than the rules above are. The methodology now carries a
   Collection row so the map matches the corpus.
+- **Discovery's single point of failure, narrowed — not solved.** Nine of the tactic's
+  techniques used to hang on `discovery/host_recon_command_burst.yml` alone, all on one
+  data source: if process-creation auditing is tuned out, or a host is EDR-blind, most of
+  Discovery went dark at once and `COVERAGE.md` would still have read 12 techniques.
+  `local_group_enum_sweep_4798_4799` (SAM-R local-group enumeration) and
+  `host_enum_srvsvc_wkssvc_5145` (the srvsvc/wkssvc enumeration pipes) now detect the same
+  operator behaviour on two independent feeds — the SAM-R path matters most, because
+  SharpHound enumerates local admins in-process and writes **no** process-creation event
+  at all, so the command-line rule never saw it. Score: techniques resting *exclusively*
+  on that one file went **9 → 5** (T1007, T1016, T1018, T1057, T1082 remain), and
+  techniques surviving the loss of that rule went **3 → 8**. The remaining five are the
+  ones whose only tell really is a command line, so closing them means a different
+  ingestion decision, not another rule.
+  **No tags were moved off the burst rule.** It genuinely matches commands for all nine,
+  so deleting tags would make the roll-up understate the rule while changing nothing about
+  resilience. Diversification is new files on new events, not re-labelling the old one.
+- **WMI is a dead end for discovery here, checked so it is not re-proposed.** The shipped
+  `sysmonconfig-detection-lab.xml` enables `WmiEvent` (events 19/20/21), which is
+  *subscription registration* telemetry — already consumed by
+  `persistence/wmi_event_subscription_consumer`. It records no WMI **query or method
+  invocation**, so it offers T1047/T1082 discovery nothing. WMI query logging means
+  adopting `Microsoft-Windows-WMI-Activity/Operational`, a separate ingestion ask.
+- **Declined this cycle (coverage-gap #124)**, with the reasons and reopen-conditions
+  recorded in `DEFENSE-METHODOLOGY.md`'s "Declined coverage" section and enforced by its
+  `known-absent` marker: **T1090.004** (domain fronting needs TLS decryption to compare SNI
+  against the inner Host — a Zeek script would be inert on the path it appears to cover,
+  the same reasoning that kept `CopyObject` out of `aws_s3_bulk_exfil`), **T1102.002**
+  (a Sysmon Event 3 *host* detection, not wire work as the report framed it; Event 3 is not
+  enabled here and is the loudest event Sysmon emits — and `http-c2.zeek` already catches a
+  beacon *to* a trusted web service on cadence alone), and **T1526 / T1580 / T1069.003**
+  (declined on the red side's own assessment — the Kali entry ships unpaired because the
+  activity is read-only, low-signal, and lands in GCP Data Access logs that are off by
+  default). The marker makes this ledger self-policing: ship a Sigma rule tagged with any
+  of them and CI fails until the prose is updated.
 - **External Reconnaissance (TA0043), Initial Access (TA0001), and Resource
   Development (TA0042)** have no detection here and are not meant to: the first is
   pre-compromise and only nominally in `DEFENSE-METHODOLOGY.md`'s "Recon / Discovery"

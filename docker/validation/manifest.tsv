@@ -17,3 +17,4 @@ coercion-rprn-suri	suricata	docker/validation/fixtures/gen_coercion.py	detection
 coercion-dfsnm-suri	suricata	docker/validation/fixtures/gen_coercion.py	detections/network/suricata/coercion.rules	DOTFILES-DEFENSE Coercion MS-DFSNM bind (DFSCoerce)
 coercion-fsrvp-suri	suricata	docker/validation/fixtures/gen_coercion.py	detections/network/suricata/coercion.rules	DOTFILES-DEFENSE Coercion MS-FSRVP bind (ShadowCoerce)
 cryptomine-suri	suricata	docker/validation/fixtures/gen_cryptomine.py	detections/network/suricata/cryptomine.rules	DOTFILES-DEFENSE Cryptomining - Stratum mining.subscribe (plaintext)
+web-beacon	zeek	docker/validation/fixtures/gen_web_beacon.py	detections/network/zeek/http-c2.zeek	HTTPC2::Web_Beacon
