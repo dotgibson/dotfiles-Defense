@@ -451,6 +451,50 @@ out="$(vrr 'The rule `detections/sigma/nope/invented.yml` is broken.')"
 contains "an unmatched path is not fatal" "$out" "rc=0"
 contains "an unmatched path is listed" "$out" "| unmatched | 1 |"
 
+# ── sibling repos ────────────────────────────────────────────────────────────
+# /detection-review reads the offensive twin (claude-routines.yml clones it to
+# ../dotfiles-Kali for the red↔blue mirror), so its reports legitimately cite files that
+# live over there. A fixture stands in for the clone, so the suite needs no network and
+# no sibling checkout on the developer's box.
+SIBROOT="$TMPROOT/sib"
+mkdir -p "$SIBROOT/dotfiles-Kali/offensive/companion/.github/workflows"
+: >"$SIBROOT/dotfiles-Kali/PURPLE-TEAM.md"
+: >"$SIBROOT/dotfiles-Kali/offensive/companion/.github/workflows/auto-tag.yml"
+
+vrr_sib() { # same as vrr, but with the sibling fixture visible
+  local f="$TMPROOT/vrr-sib.md"
+  printf '%s\n' "$1" >"$f"
+  local out rc
+  out="$(ROUTINE_SIBLING_GLOB="$SIBROOT/*" bash "$VRR" "$f" "$REPO" 2>&1)"
+  rc=$?
+  printf 'rc=%s\n%s\n---BODY---\n%s\n' "$rc" "$out" "$(cat "$f")"
+}
+
+# The reported flaw: a file that exists only in the sibling was counted as unmatched, week
+# after week, until a reader learns to skip the section.
+out="$(vrr_sib 'Mirror check against `PURPLE-TEAM.md` is clean.')"
+contains "a sibling-repo citation resolves" "$out" "| resolved in a sibling repo | 1 |"
+contains "it is not reported as unmatched" "$out" "| unmatched | 0 |"
+contains "the sibling is named" "$out" "in dotfiles-Kali"
+
+# The bug the noise was masking, and the reason siblings are resolved BEFORE the
+# correction branch: this path exists only in Kali, but its BASENAME exists here too, so
+# without sibling awareness it was rewritten to this repo's file — a citation confidently
+# pointing at the wrong repository. 15 real Kali paths fall into this class.
+cross='Kali ships `offensive/companion/.github/workflows/auto-tag.yml` for the companion.'
+out="$(vrr_sib "$cross")"
+contains "a cross-repo path is not auto-corrected" "$out" "| **auto-corrected** | **0** |"
+if printf '%s' "$out" | sed -n '/---BODY---/,$p' |
+  grep -q '`offensive/companion/.github/workflows/auto-tag.yml`'; then
+  ok "the cross-repo citation is left byte-identical"
+else
+  no "the cross-repo citation is left byte-identical" "it was rewritten into this repo"
+fi
+
+# And with no sibling present it must still behave — most callers have no sibling at all.
+out="$(vrr 'Mirror check against `PURPLE-TEAM.md` is clean.')"
+contains "no sibling present is not an error" "$out" "rc=0"
+
 # Ground truth is stamped in every report, so a stale corpus size is visible rather than
 # implied — the real #123 opened with "all 89 rules" against a tree that has more.
 out="$(vrr 'Reviewed the whole corpus.')"
