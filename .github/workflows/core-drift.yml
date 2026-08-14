@@ -79,6 +79,11 @@ jobs:
           LOCAL_SHA: ${{ steps.compare.outputs.local_sha }}
           UPSTREAM_VER: ${{ steps.compare.outputs.upstream_ver }}
         run: |
+          # shellcheck disable=SC2016
+          # The single-quoted printf formats below are markdown: the backticks are code
+          # spans in the issue body, and must reach GitHub literally rather than being
+          # run as command substitution. Every value that IS interpolated is passed as a
+          # printf argument in double quotes, never spliced into the format string.
           set -euo pipefail
           {
             printf 'The vendored `core/` subtree is **behind upstream**.\n\n'
