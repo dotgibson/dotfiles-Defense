@@ -42,7 +42,12 @@ jobs:
 
           local_ver="$(sed -n 's/^core_version=//p' core.lock | head -n1)"
           local_sha="$(sed -n 's/^core_sha=//p'     core.lock | head -n1)"
+          # Both fields are generated together by sync-core.sh, so either one missing means
+          # a malformed lock. Fail loudly rather than filing a report with a blank commit —
+          # a drift issue whose provenance line is empty is worse than no issue, because it
+          # looks authoritative while telling you nothing about what you actually carry.
           [ -n "$local_ver" ] || { echo "::error::core.lock has no core_version line"; exit 1; }
+          [ -n "$local_sha" ] || { echo "::error::core.lock has no core_sha line";     exit 1; }
 
           # Newest vX.Y.Z upstream. Deliberately NOT /releases/latest: Core tags every
           # release but does not always cut a GitHub Release, and a missing release would
