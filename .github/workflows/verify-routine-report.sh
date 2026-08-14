@@ -12,7 +12,9 @@
 # caught, because nothing checked.
 #
 # WHAT IT CHECKS. Only things that can be decided deterministically:
-#   • every backticked repo path the report cites, resolved against the git index
+#   • every backticked repo path the report cites, resolved against the git index — and
+#     against the SIBLING repos the routine reads, since /detection-review compares this
+#     corpus with the offensive twin and cites files from it
 #   • ground-truth corpus counts, stamped into the issue so a stale claim is visible
 #
 # WHAT IT DOES ABOUT A WRONG PATH. It fixes it. A citation naming a real file at the wrong
@@ -56,8 +58,33 @@ root="${2:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$root" || exit 1
 
 tracked="$(mktemp)"
-trap 'rm -f "$tracked"' EXIT
+siblings="$(mktemp)"
+trap 'rm -f "$tracked" "$siblings"' EXIT
 git ls-files >"$tracked" 2>/dev/null || : >"$tracked"
+
+# ── sibling repos ─────────────────────────────────────────────────────────────
+# /detection-review reads the OFFENSIVE twin as well as this repo — claude-routines.yml
+# clones dotfiles-Kali to ../dotfiles-Kali precisely so the red↔blue mirror dimension can
+# run — so its reports legitimately cite files that live over there. Without this, every
+# such citation reports as unmatched, week after week, until a reader learns to skip the
+# section. Worse than noise: Kali vendors the same core/ subtree, so ~40 basenames are
+# common to both repos, and a Kali citation whose basename also exists here would be
+# silently "corrected" into this repo or blocked as ambiguous. Resolving siblings BEFORE
+# either of those branches is what prevents that.
+#
+# Glob is overridable so the suite can point at a fixture instead of the real sibling.
+: >"$siblings"
+for _sib in ${ROUTINE_SIBLING_GLOB:-"$root"/../dotfiles-*}; do
+  [ -d "$_sib" ] || continue
+  _sib_abs="$(cd "$_sib" 2>/dev/null && pwd)" || continue
+  [ "$_sib_abs" = "$root" ] && continue # never treat this repo as its own sibling
+  _sib_name="${_sib_abs##*/}"
+  if [ -d "$_sib_abs/.git" ]; then
+    git -C "$_sib_abs" ls-files 2>/dev/null
+  else
+    (cd "$_sib_abs" && find . -type f 2>/dev/null | sed 's|^\./||')
+  fi | sed "s|^|${_sib_name}\t|" >>"$siblings"
+done
 
 # ── extract cited paths ───────────────────────────────────────────────────────
 # Backticked tokens that look like a repo path. Anchoring on backticks is what keeps this
@@ -72,6 +99,7 @@ verified=0
 proposed=()
 corrected=()
 ambiguous=()
+external=()
 unresolved=()
 
 # A citation is "proposed" when its line reads as a proposal rather than a reference.
@@ -108,13 +136,26 @@ for p in "${cites[@]}"; do
     continue
   fi
 
-  # 4. proposals are not facts about the tree — do not hold them to one
+  # 4. a sibling repo has it. Must come BEFORE the correct/ambiguous branches below:
+  #    Kali vendors the same core/, so a citation like `zsh/00-tools.zsh` exists in both
+  #    trees, and letting it fall through would rewrite a Kali reference into a Defense
+  #    path — a confidently wrong citation, which is exactly what this script exists to
+  #    prevent. Not rewritten: the path is correct in the sibling's context.
+  #    Literal tab in an -E pattern rather than -P: \t is a GNU/PCRE extension, and this
+  #    has to behave the same under whatever grep the box provides.
+  sib_hit="$(grep -E "$(printf '\t')(.*/)?${esc}$" "$siblings" 2>/dev/null | head -n1)"
+  if [ -n "$sib_hit" ]; then
+    external+=("$p (in ${sib_hit%%$'\t'*})")
+    continue
+  fi
+
+  # 5. proposals are not facts about the tree — do not hold them to one
   if _is_proposed "$p"; then
     proposed+=("$p")
     continue
   fi
 
-  # 5. the basename exists, but not where the report says — a wrong path for a real file.
+  # 6. the basename exists, but not where the report says — a wrong path for a real file.
   #    Correctable when the basename is UNIQUE in the tree, because then there is exactly
   #    one thing it can have meant. This is the common shape: a report writes
   #    `harbor/harbor_artifact_deleted.yml` for a rule that lives under `registry/`.
@@ -127,7 +168,7 @@ for p in "${cites[@]}"; do
     continue
   fi
 
-  # 6. several files share the basename, so there is no single right answer and guessing
+  # 7. several files share the basename, so there is no single right answer and guessing
   #    would file a citation that is confidently wrong. 17 basenames are duplicated in
   #    this tree (CLAUDE.md, config.toml, …), so this is a real case, not a theoretical
   #    one. Left for a human — and it is the ONLY thing that still blocks.
@@ -136,7 +177,7 @@ for p in "${cites[@]}"; do
     continue
   fi
 
-  # 7. nothing by that name anywhere — probably an unlabelled proposal, possibly invented
+  # 8. nothing by that name anywhere — probably an unlabelled proposal, possibly invented
   unresolved+=("$p")
 done
 
@@ -180,6 +221,7 @@ attack_ids=$(grep -rhoE 'T[0-9]{4}(\.[0-9]{3})?' detections/ 2>/dev/null | sort 
 
   printf '| citations | count |\n| --- | --- |\n'
   printf '| resolved as written | %s |\n' "$verified"
+  printf '| resolved in a sibling repo | %s |\n' "${#external[@]}"
   printf '| **auto-corrected** | **%s** |\n' "${#corrected[@]}"
   printf '| proposed (new files, not expected to exist) | %s |\n' "${#proposed[@]}"
   printf '| **ambiguous — left alone** | **%s** |\n' "${#ambiguous[@]}"
@@ -191,6 +233,12 @@ attack_ids=$(grep -rhoE 'T[0-9]{4}(\.[0-9]{3})?' detections/ 2>/dev/null | sort 
     printf '> path, and the basename was unique in the tree, so there was exactly one thing\n'
     printf '> it could have meant. The findings themselves are unreviewed.\n\n'
     for c in "${corrected[@]}"; do printf -- '- `%s`\n' "$c"; done
+    printf '\n'
+  fi
+
+  if [ "${#external[@]}" -gt 0 ]; then
+    printf 'Resolved in a sibling repo the routine reads (not in this tree, and correct as written):\n\n'
+    for e in "${external[@]}"; do printf -- '- `%s`\n' "$e"; done
     printf '\n'
   fi
 
@@ -209,7 +257,8 @@ attack_ids=$(grep -rhoE 'T[0-9]{4}(\.[0-9]{3})?' detections/ 2>/dev/null | sort 
     printf '\n'
   fi
 
-  if [ "${#corrected[@]}" -eq 0 ] && [ "${#ambiguous[@]}" -eq 0 ] && [ "${#unresolved[@]}" -eq 0 ]; then
+  if [ "${#corrected[@]}" -eq 0 ] && [ "${#ambiguous[@]}" -eq 0 ] && [ "${#unresolved[@]}" -eq 0 ] &&
+    [ "${#external[@]}" -eq 0 ]; then
     printf 'Every cited path resolved as written.\n\n'
   fi
 } >>"$report"
@@ -226,5 +275,5 @@ if [ "${#ambiguous[@]}" -gt 0 ]; then
   exit 1
 fi
 
-echo "verification passed: $verified resolved, ${#corrected[@]} auto-corrected, ${#proposed[@]} proposed, ${#unresolved[@]} unmatched"
+echo "verification passed: $verified resolved, ${#external[@]} in a sibling repo, ${#corrected[@]} auto-corrected, ${#proposed[@]} proposed, ${#unresolved[@]} unmatched"
 exit 0
