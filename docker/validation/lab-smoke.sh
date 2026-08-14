@@ -74,7 +74,9 @@ fi
 # — which would look like a stack failure rather than a bad password.
 created_env=0
 if [ ! -r "$env_file" ]; then
-  pw="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)Aa1!"
+  # head closing the pipe gives tr a SIGPIPE and a "write error: Broken pipe" on stderr,
+  # which looks like a failure in the log of a job whose whole job is to be trustworthy.
+  pw="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c 24)Aa1!"
   umask 077
   sed "s|^OPENSEARCH_INITIAL_ADMIN_PASSWORD=.*|OPENSEARCH_INITIAL_ADMIN_PASSWORD=${pw}|" \
     docker/"${stack}".env.example >"$env_file"
@@ -160,9 +162,14 @@ esac
 # the container is RUNNING. Its Node process then takes a while to serve /api/status, so a
 # single-shot curl races the app's startup and would fail intermittently — a flaky check
 # nobody trusts is worse than no check.
+# AUTHENTICATED, and that is the point rather than an inconvenience. OpenSearch ships the
+# security plugin enabled, so Dashboards answers /api/status with 401 until credentials are
+# supplied — the first run of this check learned that the hard way. Passing the admin
+# password here is what makes this an end-to-end credential assertion: a wrong password in
+# docker/.env fails at this line rather than silently producing a lab nobody can log into.
 status=""
 for _ in $(seq 1 30); do
-  status="$(curl -s --max-time 5 http://localhost:5601/api/status 2>/dev/null)"
+  status="$(curl -s --max-time 5 -u "admin:${admin_pw}" http://localhost:5601/api/status 2>/dev/null)"
   case "$status" in
   *'"level":"available"'*) break ;;
   esac
