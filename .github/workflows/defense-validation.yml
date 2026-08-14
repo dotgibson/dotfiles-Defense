@@ -39,16 +39,28 @@ jobs:
       - name: tests/test-defense.sh
         run: ./tests/test-defense.sh
 
-      # Belt and braces around the installer's most dangerous property: --dry-run must not
-      # write. The suite asserts this against a scratch HOME; this step re-asserts it
-      # against a pristine runner HOME, where a stray write would be unmistakable.
+      # Belt and braces around the installer's most dangerous property: --dry-run must
+      # not write. Runs against a DEDICATED empty HOME, not the runner's own: snapshotting
+      # a populated $HOME races with everything else on the machine that touches it, which
+      # made this step pass on a PR and fail on the very next push of the same commit. An
+      # empty directory that is still empty afterwards is the deterministic form of the
+      # same assertion. The suite asserts this too; keeping it here as an independent
+      # check means a regression in the suite's own helper cannot hide it.
       - name: bootstrap --dry-run writes nothing
         run: |
-          before="$(find "$HOME" -mindepth 1 2>/dev/null | sort | sha256sum)"
-          ./bootstrap.sh --dry-run --no-check
-          after="$(find "$HOME" -mindepth 1 2>/dev/null | sort | sha256sum)"
-          if [ "$before" != "$after" ]; then
-            echo "::error::bootstrap.sh --dry-run modified HOME" >&2
+          scratch="$(mktemp -d)"
+          HOME="$scratch" ./bootstrap.sh --dry-run --no-check
+          written="$(find "$scratch" -mindepth 1 2>/dev/null)"
+          if [ -n "$written" ]; then
+            echo "::error::bootstrap.sh --dry-run wrote into HOME:" >&2
+            printf '%s\n' "$written" >&2
             exit 1
           fi
-          echo "HOME unchanged by --dry-run"
+          echo "clean HOME untouched by --dry-run"
+
+      # And that it still exits 0 against the runner's real, populated HOME — the code
+      # paths differ when $dst already exists (blib_link takes its "would back up" branch),
+      # so this covers ground the empty-HOME run cannot. Exit status only; no write
+      # assertion, because that is what made this racy.
+      - name: bootstrap --dry-run succeeds against a populated HOME
+        run: ./bootstrap.sh --dry-run --no-check > /dev/null
