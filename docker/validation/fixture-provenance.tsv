@@ -1,0 +1,176 @@
+# fixture-provenance.tsv — how each validation fixture's field names were established.
+#
+# WHY. run-sigma-validation.sh and run-cloud-validation.sh prove a rule fires against OUR
+# fixture. Where the fixture was hand-written from the same belief that produced the rule,
+# that proves internal consistency and nothing about the provider's schema — a rule keyed
+# on a field the provider does not emit passes its true positive AND its true negative,
+# then sits inert in production. See #149: npm_malicious_package_publish's TN fixture
+# asserts `actor.type: ci` because the rule does, and neither is confirmed against npm.
+#
+# This file does not fix that. It makes it VISIBLE, so a reader can tell which green
+# checks rest on a verified schema and which rest on an assumption.
+#
+# FORMAT: <fixture path><TAB><provenance><TAB><note>
+#
+# PROVENANCE, in descending order of trust:
+#   captured           taken from a real event emitted by the real system. The note gives
+#                      the source (Phase-3 capture, a tenant export, a vendor sample).
+#   vendor-documented  field names taken from the provider's published schema. The note
+#                      gives the URL or document.
+#   unverified         written from inference or from the rule itself. Trust accordingly.
+#
+# Everything starts `unverified` because that is the honest default: nobody recorded
+# otherwise, and Phase 3 (captured fixtures) is explicitly not done. Upgrading a row is a
+# real piece of work — confirm the fields, cite the source in the note, change the value.
+# check-fixture-provenance.sh enforces that every manifest-referenced fixture has a row,
+# so a NEW fixture cannot arrive without someone stating where its schema came from.
+
+docker/validation/sigma-fixtures/account_access_removal_4725.jsonl	unverified	-
+docker/validation/sigma-fixtures/account_access_removal_4725_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/adcs_esc1_4886.jsonl	unverified	-
+docker/validation/sigma-fixtures/archive_staging_password_filtered_parent_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/archive_staging_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/archive_staging_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/asrep_probing_4771.jsonl	unverified	-
+docker/validation/sigma-fixtures/asrep_roast_4768.jsonl	unverified	-
+docker/validation/sigma-fixtures/asrep_roast_4768_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/bitlocker_abuse_4688.jsonl	unverified	-
+docker/validation/sigma-fixtures/ccache_theft_linux.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/aws_data_destruction_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/aws_data_destruction_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_aws_iam_access_key_created.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/aws_iam_privesc_policy_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/aws_iam_privesc_policy_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_aws_login_profile_created.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/aws_s3_bulk_exfil_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/aws_s3_bulk_exfil_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/cloudflare_api_token_created_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/cloudflare_api_token_created_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/cloudflare_waf_rule_disabled_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/cloudflare_waf_rule_disabled_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/cloudflare_worker_deployed_ci_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/cloudflare_worker_deployed_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/cloudflare_worker_deployed_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_entra_directory_role_grant.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_entra_illicit_consent_grant.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_entra_illicit_consent_grant_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_entra_sp_credential_backdoor.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/gcp_audit_log_sink_deleted_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/gcp_audit_log_sink_deleted_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/gcp_iam_policy_backdoor_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/gcp_iam_policy_backdoor_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/gcp_service_account_key_created_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/gcp_service_account_key_created_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_github_branch_protection_tamper.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_github_credential_backdoor.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_github_self_hosted_runner_registered.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/gitlab_protected_branch_tamper_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/gitlab_protected_branch_tamper_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/gitlab_rogue_runner_associated_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/gitlab_rogue_runner_associated_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/gitlab_token_backdoor_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/gitlab_token_backdoor_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_gws_admin_role_grant.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_gws_external_mail_forwarding.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/gws_illicit_oauth_grant_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/gws_illicit_oauth_grant_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/harbor_artifact_deleted_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/harbor_artifact_deleted_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/harbor_image_pushed_trusted_tag_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/harbor_image_pushed_trusted_tag_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/harbor_robot_account_created_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/harbor_robot_account_created_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_jenkins_api_token_created.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_jenkins_job_backdoor.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_jenkins_script_console.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/k8s_clusteradmin_binding_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/k8s_clusteradmin_binding_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/k8s_pod_exec_attach_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/k8s_pod_exec_attach_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/k8s_privileged_pod_created_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/k8s_privileged_pod_created_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_npm_maintainer_added.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/npm_malicious_package_publish_tn.jsonl	unverified	actor.type unconfirmed against npm audit schema — see #149
+docker/validation/sigma-fixtures/cloud/npm_malicious_package_publish_tp.jsonl	unverified	actor.type unconfirmed against npm audit schema — see #149
+docker/validation/sigma-fixtures/cloud_npm_publish_2fa_disabled.jsonl	unverified	mfa field unconfirmed against npm audit schema — see #149
+docker/validation/sigma-fixtures/cloud_okta_api_token_created.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_okta_idp_created.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_okta_mfa_factor_reset.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_pypi_collaborator_added.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/pypi_token_release_upload_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/pypi_token_release_upload_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/pypi_trusted_publisher_added_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/pypi_trusted_publisher_added_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/slack_2fa_enforcement_disabled_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/slack_2fa_enforcement_disabled_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_slack_app_installed.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_slack_external_shared_channel.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/snowflake_data_unload_tn.jsonl	unverified	Snowflake column casing unconfirmed — flagged by /detection-review
+docker/validation/sigma-fixtures/cloud/snowflake_data_unload_tp.jsonl	unverified	Snowflake column casing unconfirmed — flagged by /detection-review
+docker/validation/sigma-fixtures/cloud/snowflake_network_policy_change_tn.jsonl	unverified	Snowflake column casing unconfirmed — flagged by /detection-review
+docker/validation/sigma-fixtures/cloud/snowflake_network_policy_change_tp.jsonl	unverified	Snowflake column casing unconfirmed — flagged by /detection-review
+docker/validation/sigma-fixtures/cloud/snowflake_user_created_tn.jsonl	unverified	Snowflake column casing unconfirmed — flagged by /detection-review
+docker/validation/sigma-fixtures/cloud/snowflake_user_created_tp.jsonl	unverified	Snowflake column casing unconfirmed — flagged by /detection-review
+docker/validation/sigma-fixtures/cloud/tfc_rogue_agent_pool_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/tfc_rogue_agent_pool_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/tfc_token_backdoor_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/tfc_token_backdoor_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/tfc_variable_injection_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/tfc_variable_injection_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/vault_approle_backdoor_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/vault_approle_backdoor_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/vault_audit_device_disabled_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/vault_audit_device_disabled_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/vault_bulk_secret_read_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/vault_bulk_secret_read_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/coercion_5145.jsonl	unverified	-
+docker/validation/sigma-fixtures/data_destruction_4688.jsonl	unverified	-
+docker/validation/sigma-fixtures/dcshadow_4742.jsonl	unverified	-
+docker/validation/sigma-fixtures/dcshadow_4742_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/dcsync_4662.jsonl	unverified	-
+docker/validation/sigma-fixtures/dcsync_4662_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/dpapi_backupkey_5145.jsonl	unverified	-
+docker/validation/sigma-fixtures/dpapi_backupkey_5145_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/gpp_cpassword_5145.jsonl	unverified	-
+docker/validation/sigma-fixtures/gpp_cpassword_5145_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/host_recon_burst_4688.jsonl	unverified	-
+docker/validation/sigma-fixtures/kerberoast_4769.jsonl	unverified	-
+docker/validation/sigma-fixtures/kerberoast_4769_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/ldap_recon_4648.jsonl	unverified	-
+docker/validation/sigma-fixtures/ldap_recon_4648_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/local_group_enum_4798_4799.jsonl	unverified	-
+docker/validation/sigma-fixtures/local_group_enum_4798_4799_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/lsass_access_sysmon10.jsonl	unverified	-
+docker/validation/sigma-fixtures/lsass_access_sysmon10_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/machine_account_4741.jsonl	unverified	-
+docker/validation/sigma-fixtures/mass_encrypt_4663.jsonl	unverified	-
+docker/validation/sigma-fixtures/mass_encrypt_sysmon11.jsonl	unverified	-
+docker/validation/sigma-fixtures/mass_encrypt_sysmon11_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/mass_read_4663_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/mass_read_4663_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/ntds_dump_4688.jsonl	unverified	-
+docker/validation/sigma-fixtures/passthehash_4624.jsonl	unverified	-
+docker/validation/sigma-fixtures/passthehash_4624_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/password_spray_4625.jsonl	unverified	-
+docker/validation/sigma-fixtures/password_spray_4625_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/potato_security_4688.jsonl	unverified	-
+docker/validation/sigma-fixtures/potato_sysmon1.jsonl	unverified	-
+docker/validation/sigma-fixtures/rbcd_5136.jsonl	unverified	-
+docker/validation/sigma-fixtures/rbcd_5136_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/rdp_hijack_4688.jsonl	unverified	-
+docker/validation/sigma-fixtures/recovery_inhibition_4688.jsonl	unverified	-
+docker/validation/sigma-fixtures/rogue_account_4720.jsonl	unverified	-
+docker/validation/sigma-fixtures/rogue_account_4720_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/scheduled_task_4698.jsonl	unverified	-
+docker/validation/sigma-fixtures/service_psexec_7045.jsonl	unverified	-
+docker/validation/sigma-fixtures/service_stop_burst_4688.jsonl	unverified	-
+docker/validation/sigma-fixtures/service_stop_protected_services.jsonl	unverified	-
+docker/validation/sigma-fixtures/shadow_credentials_5136.jsonl	unverified	-
+docker/validation/sigma-fixtures/share_session_enum_5145.jsonl	unverified	-
+docker/validation/sigma-fixtures/share_session_enum_5145_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/sharphound_4662.jsonl	unverified	-
+docker/validation/sigma-fixtures/sharphound_4662_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/unconstrained_deleg_4624.jsonl	unverified	-
+docker/validation/sigma-fixtures/unconstrained_deleg_4624_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/wmi_consumer_20.jsonl	unverified	-
+docker/validation/sigma-fixtures/wmiexec_4688.jsonl	unverified	-

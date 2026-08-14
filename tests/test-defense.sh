@@ -629,6 +629,81 @@ is "a filter with no true negative fails the gate" "1" "$rc"
 contains "the reason is stated, not just the rule" "$out" "nothing proves the exclusion still excludes"
 
 # ─────────────────────────────────────────────────────────────────────────────
+group "check-fixture-provenance.sh — every fixture says where its schema came from"
+
+CFP="$REPO/docker/validation/check-fixture-provenance.sh"
+[ -x "$CFP" ] && ok "provenance gate is executable" || no "provenance gate is executable"
+
+out="$("$CFP" "$REPO" 2>&1)"
+is "the ledger is complete today" "0" "$?"
+contains "it reports the breakdown" "$out" "fixture provenance:"
+
+# Everything is `unverified` right now and that is the honest state — Phase 3 (captured
+# fixtures) is not done. The gate must NOT fail on that; failing would be failing on the
+# truth rather than on a regression.
+contains "an all-unverified corpus still passes" "$out" "unverified"
+
+# Both failure modes, driven against a throwaway copy so the real ledger is untouched.
+PROV="$TMPROOT/prov"
+mkdir -p "$PROV"
+cp -r "$REPO/docker" "$PROV/"
+
+printf 'probe\tdetections/sigma/x.yml\tdocker/validation/sigma-fixtures/cloud/_probe.jsonl\t-\tid\n' \
+  >>"$PROV/docker/validation/sigma-cloud-manifest.tsv"
+out="$(bash "$PROV/docker/validation/check-fixture-provenance.sh" "$PROV" 2>&1)"
+rc=$?
+is "a fixture with no provenance row fails" "1" "$rc"
+contains "the unrecorded fixture is named" "$out" "_probe.jsonl"
+contains "the fix names the allowed values" "$out" "captured|vendor-documented|unverified"
+
+PROV2="$TMPROOT/prov2"
+mkdir -p "$PROV2"
+cp -r "$REPO/docker" "$PROV2/"
+sed -i '0,/\tunverified\t/{s/\tunverified\t/\tprobably-fine\t/}' \
+  "$PROV2/docker/validation/fixture-provenance.tsv"
+out="$(bash "$PROV2/docker/validation/check-fixture-provenance.sh" "$PROV2" 2>&1)"
+rc=$?
+is "an unknown provenance value fails" "1" "$rc"
+contains "the bad value is quoted back" "$out" "probably-fine"
+
+# And an upgrade must actually register, or the ledger is write-only theatre.
+PROV3="$TMPROOT/prov3"
+mkdir -p "$PROV3"
+cp -r "$REPO/docker" "$PROV3/"
+sed -i '0,/\tunverified\t/{s/\tunverified\t/\tcaptured\t/}' \
+  "$PROV3/docker/validation/fixture-provenance.tsv"
+out="$(bash "$PROV3/docker/validation/check-fixture-provenance.sh" "$PROV3" 2>&1)"
+contains "upgrading a row to captured is counted" "$out" "1 captured"
+
+# An EMPTY provenance is malformed, not exempt. Reported as <empty> specifically, which
+# also pins that the parser reads column 2 exactly: tab is an IFS whitespace character, so
+# a bare `read` collapses `path<TAB><TAB>note` and judges the NOTE as the provenance.
+PROV4="$TMPROOT/prov4"
+mkdir -p "$PROV4"
+cp -r "$REPO/docker" "$PROV4/"
+sed -i '0,/\tunverified\t/{s/\tunverified\t/\t\t/}' "$PROV4/docker/validation/fixture-provenance.tsv"
+out="$(bash "$PROV4/docker/validation/check-fixture-provenance.sh" "$PROV4" 2>&1)"
+rc=$?
+is "an empty provenance fails" "1" "$rc"
+contains "an empty provenance is named as empty, not as the note" "$out" "<empty>"
+
+# A stale row (fixture no manifest uses) must not be counted into a summary that says
+# "N referenced" — the label and the numbers have to agree.
+PROV5="$TMPROOT/prov5"
+mkdir -p "$PROV5"
+cp -r "$REPO/docker" "$PROV5/"
+printf 'docker/validation/sigma-fixtures/_gone.jsonl\tcaptured\tstale\n' \
+  >>"$PROV5/docker/validation/fixture-provenance.tsv"
+out="$(bash "$PROV5/docker/validation/check-fixture-provenance.sh" "$PROV5" 2>&1)"
+contains "a stale captured row is not counted as referenced" "$out" "0 captured"
+contains "but the stale row is reported" "$out" "stale row"
+
+# The two rules #149 is about must carry their caveat, so the ledger points at the doubt
+# rather than merely recording a value.
+contains "the npm fixtures carry the #149 caveat" \
+  "$(cat "$REPO/docker/validation/fixture-provenance.tsv")" "see #149"
+
+# ─────────────────────────────────────────────────────────────────────────────
 group "lint-shell.sh — CI-identical shell lint"
 
 LS="$REPO/tests/lint-shell.sh"

@@ -113,6 +113,19 @@ jobs:
         # new one. Genuine exceptions go in no-fixture-allowlist.tsv, with a reason.
         run: ./docker/validation/check-rule-coverage.sh
 
+      - name: Fixture provenance gate (hard gate)
+        # The coverage gate above proves every rule HAS a fixture. It cannot prove the
+        # fixture reflects the provider's schema — and where a fixture was hand-written
+        # from the same belief that produced the rule, the test is circular: the rule
+        # passes its true positive and its true negative while being inert in production
+        # (#149). No gate can tell a plausible invented field from a real one.
+        #
+        # What this enforces is that the distinction is never lost: every fixture a
+        # manifest references must declare where its schema came from, so a new fixture
+        # cannot arrive without someone saying whether the field names are captured,
+        # vendor-documented, or assumed.
+        run: ./docker/validation/check-fixture-provenance.sh
+
       - name: ATT&CK tag validity (advisory — needs live MITRE data)
         continue-on-error: true
         run: sigma check --fail-on-issues detections/sigma/

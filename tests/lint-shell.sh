@@ -52,11 +52,24 @@ opts=""
 [ -r "$lint_wf" ] && opts="$(grep -m1 'SHELLCHECK_OPTS:' "$lint_wf" | sed 's/.*SHELLCHECK_OPTS: *//; s/^"//; s/"$//')"
 [ -n "$opts" ] || opts="-e SC1090 -e SC1091 -e SC2015 -e SC2088"
 
-# Same file set as the gate: repo-owned shell only, never the vendored subtree.
+# Same file set as the gate — repo-owned shell only, never the vendored subtree — PLUS
+# any new .sh not yet added to the index.
+#
+# CI lints `git ls-files`, which by definition cannot see a file you have not staged. That
+# is fine in CI, where everything is committed. Locally it means a brand-new script — the
+# case where linting matters MOST — is silently skipped, and this script reports "clean"
+# about a file it never opened. That happened: check-fixture-provenance.sh passed here and
+# failed the real gate on SC2028, because it was untracked when this ran. Untracked files
+# are included so the local answer matches what CI will say once they are committed.
 if [ "$#" -gt 0 ]; then
   files=("$@")
 else
-  mapfile -t files < <(git ls-files '*.sh' ':!:core/**')
+  mapfile -t files < <(
+    {
+      git ls-files '*.sh' ':!:core/**'
+      git ls-files --others --exclude-standard '*.sh' ':!:core/**'
+    } | sort -u
+  )
 fi
 if [ "${#files[@]}" -eq 0 ]; then
   echo "no repo-owned .sh files"
