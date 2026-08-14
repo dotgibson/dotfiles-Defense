@@ -28,7 +28,9 @@ on:
   workflow_call:
     inputs:
       bump:
-        description: "Which SemVer component to advance (patch|minor|major)."
+        # Validated against this allowlist at runtime in the `tag` job — workflow_call
+        # inputs cannot be `type: choice`, so the type system will not do it for us.
+        description: "Which SemVer component to advance. One of: patch, minor, major."
         type: string
         required: false
         default: patch
@@ -75,4 +77,35 @@ jobs:
       - name: Cut the next release tag (idempotent)
         env:
           GH_TOKEN: ${{ github.token }} # gh release create (when release=true) needs a token
-        run: ./dotfiles-core/scripts/auto-tag.sh "$GITHUB_WORKSPACE/osrepo" --push --bump "${{ inputs.bump }}" ${{ inputs.release && '--release' || '' }} --color never
+          # Caller-supplied values reach the script through the ENVIRONMENT, never spliced
+          # into the `run:` body — the same rule notify-web-call.yml states ("a caller-supplied
+          # string must not be able to write shell"). This job holds contents:write AND
+          # persist-credentials:true, so an interpolated "${{ inputs.bump }}" let a caller
+          # close the quote and run arbitrary code with the tag-push token.
+          BUMP: ${{ inputs.bump }}
+          RELEASE: ${{ inputs.release }}
+        # `bump` is a free-form string because workflow_call has no `type: choice` — that is
+        # workflow_dispatch-only. So the allowlist is enforced here at runtime: a typo fails
+        # loudly with the valid set rather than reaching auto-tag.sh's own arg parser, and
+        # env-indirection means even a hostile value is inert data, not code.
+        run: |
+          case "$BUMP" in
+          patch | minor | major) ;;
+          *)
+            # Do NOT echo the raw value into a workflow command. Shell-quoting does not
+            # help here: the runner parses stdout LINE BY LINE, so a multiline value can
+            # start a new `::...::` on the next line and forge or suppress annotations.
+            # Collapse newlines and drop the command punctuation (% is the escape
+            # introducer, : builds the `::` delimiter), then truncate — the same shape
+            # atuin-guard-verify.yml uses for upstream-derived text.
+            safe="$(printf '%s' "$BUMP" | tr -d '\r\n%:' | cut -c1-40)"
+            echo "::error::invalid bump '${safe}' — expected one of: patch, minor, major"
+            exit 2
+            ;;
+          esac
+          args=("$GITHUB_WORKSPACE/osrepo" --push --bump "$BUMP")
+          # Explicit if, not `[ … ] && args+=(…)`: a run: block is `bash -e`, where a false
+          # test as the last statement of an && list exits the step non-zero.
+          if [ "$RELEASE" = "true" ]; then args+=(--release); fi
+          args+=(--color never)
+          ./dotfiles-core/scripts/auto-tag.sh "${args[@]}"

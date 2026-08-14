@@ -103,8 +103,28 @@ jobs:
         # Fail fast if the pin didn't load — never silently fall back to a floating `latest`.
         run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:?not loaded from scripts/tool-versions.env}"
       - name: Run /os-package-availability
+        env:
+          # Via env, never interpolated into the script body — this job holds
+          # CLAUDE_CODE_OAUTH_TOKEN, so a caller-supplied string spliced into `run:`
+          # would execute with it. Bash expands it inside the quoted prompt as inert
+          # data instead.
+          DISTRO: ${{ inputs.distro }}
         run: |
-          claude -p "/os-package-availability ${{ inputs.distro }}" \
+          # env: makes DISTRO shell-safe, but the prompt is an INSTRUCTION channel — an
+          # arbitrary string there is a prompt-injection vector into a job holding
+          # CLAUDE_CODE_OAUTH_TOKEN, and a typo would file a package audit for a target
+          # that does not exist. The input contract is six names, so enforce it before
+          # the agent runs. (Sanitised on the error path for the same workflow-command
+          # reason as auto-tag-call.yml.)
+          case "$DISTRO" in
+          fedora | arch | opensuse | alpine | gentoo | macbook) ;;
+          *)
+            safe="$(printf '%s' "$DISTRO" | tr -d '\r\n%:' | cut -c1-40)"
+            echo "::error::unsupported distro '${safe}' — expected one of: fedora, arch, opensuse, alpine, gentoo, macbook"
+            exit 2
+            ;;
+          esac
+          claude -p "/os-package-availability $DISTRO" \
             --add-dir "$GITHUB_WORKSPACE/caller" \
             --model opus \
             --permission-mode default \

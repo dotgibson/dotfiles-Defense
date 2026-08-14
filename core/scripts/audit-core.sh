@@ -245,7 +245,7 @@ trap 'exit 143' TERM
 # manifest, must appear here (or under a META_PREFIXES dir) or section 1 flags it.
 META_ALLOWLIST=(
   README.md PORTING-MATRIX.md CONTRIBUTING.md CHANGELOG.md LICENSE SECURITY.md aliases.md CLAUDE.md
-  ARCHITECTURE.md
+  ARCHITECTURE.md PORTABILITY.md VENDORING.md CODE_OF_CONDUCT.md
   PARITY.md RELEASE-STRATEGY.md RELEASE-RUNBOOK.md GITHUB-APP-AUTH.md V4-PROPOSAL.md
   core.manifest .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc renovate.json .prettierrc.json
   Makefile cliff.toml
@@ -439,34 +439,70 @@ fi
 # or macOS ~/Library path could slip into a portable shell module and fan out to eight repos
 # where it is simply wrong. Assert the sourced zsh modules stay OS-agnostic. EXCLUDED:
 # zsh/55-maint.zsh — the scheduler CONTROL SURFACE whose launchd arm legitimately writes
-# ~/Library/LaunchAgents (it switches on _maint_scheduler, the correct cross-OS shape).
+# ~/Library/LaunchAgents (it switches on _maint_scheduler, the correct cross-OS shape);
+# only THOSE lines are exempt, not the whole file (see the per-line note below).
 # Comment-stripped first, so an explanatory comment naming an OS path can't trip it.
-# Pure sed+grep (busybox-safe), shell-scoped like the other shell-layer gates.
+# Pure sed+grep (busybox-safe), and CROSS-CUTTING rather than shell-scoped — the scope is
+# the manifest, so it covers configs and the nvim tree too, and no --scope may skip it.
 hdr "Core⇄OS boundary (no OS paths in portable Core files)"
-if ((SCOPE_SHELL)); then
-  bnd_fail=0
-  # Scan BOTH the portable shell modules AND the SYMLINKED config files (mise, git,
-  # tmux, starship, atuin, jujutsu, lazygit — i.e. ALL of them; the list had quietly
-  # fallen behind the manifest twice). The latter were previously ungated — yet they are vendored and
-  # symlinked verbatim into every OS repo just like the zsh modules, so a hard-coded
-  # /opt/homebrew in starship.toml or an /Library/ path in gitconfig fans out N-way
-  # exactly the same way. A real drift of this shape was found downstream (an OS path
-  # baked into mise/config.toml). The os/ layer is where those belong. The .example
-  # templates are EXCLUDED — they are user-edited illustrations, not the live config.
-  while IFS= read -r f; do
-    [[ "$f" == zsh/55-maint.zsh ]] && continue # OS-switched scheduler surface (see above)
-    if sed 's/#.*//' "$f" | grep -qE '/opt/homebrew|/home/linuxbrew|/usr/local/Cellar|/Library/|/mnt/c/'; then
-      bnd_fail=1
-      fail "OS-specific path in a portable Core file ($f) — it belongs in the OS layer, not Core"
-    fi
-  done < <(git ls-files 'zsh/*.zsh' \
-    'mise/config.toml' 'git/gitconfig' 'atuin/config.toml' \
-    'jujutsu/config.toml' 'lazygit/config.yml' \
-    'tmux/tmux.conf' 'tmux/tmux.reset.conf' 'starship/starship.toml' 2>/dev/null)
-  ((bnd_fail)) || pass "portable Core files (shell modules + symlinked configs) carry no OS-absolute paths"
-else
-  skip "Core⇄OS boundary (out of scope)"
-fi
+# The scope is DERIVED FROM core.manifest, not from a hand-kept list. That list had
+# quietly fallen behind the manifest three times: first the symlinked configs were
+# ungated (a real /opt/homebrew drift was found downstream, baked into mise/config.toml),
+# then bin/, maint/ and tmux/scripts/ — and when THOSE were added, zsh/completions/*,
+# lib/ux.sh, lib/bootstrap-lib.sh and .bin/sync-upstream.sh were still missing. Every one
+# of those omissions is the same bug, so the fix is structural: the manifest already IS
+# the definition of "what is Core", and a file added to it is now scanned automatically.
+# The blind spot cannot silently reopen, because reopening it would mean the file is not
+# Core at all — which section 1 already fails on.
+#
+# It is also UNCONDITIONAL now (no SCOPE_SHELL guard). It used to be shell-scoped, but it
+# now covers manifested nvim/, toml and config files too, and it is pure sed+grep over
+# ~150 small files — cheap and cross-cutting, like the manifest/exec-bit/markdown gates.
+# A narrowed --scope run must not be able to skip a fan-out-correctness check.
+#
+# EXCLUDED, both deliberately and visibly — and note the exemption is per-LINE, not
+# per-file, for the one module that needs it:
+#   · zsh/55-maint.zsh — the scheduler CONTROL SURFACE, whose launchd arm legitimately
+#     writes ~/Library/LaunchAgents (it switches on _maint_scheduler, the correct
+#     cross-OS shape). Only the LaunchAgents lines are dropped. Skipping the whole file
+#     would re-open the blind spot inside it: an accidental /opt/homebrew or /mnt/c
+#     added to maint-install, or to any other function there, would sail through.
+#   · *.example — user-edited illustrations, not the live config.
+bnd_fail=0
+while IFS= read -r f; do
+  case "$f" in
+  *.example) continue ;; # user-edited illustration, not live config
+  esac
+  [[ -f "$f" ]] || continue
+  # NOTHING is stripped. Comment-stripping was a false-negative machine: `#` is a comment
+  # in shell and toml but the LENGTH OPERATOR in Lua, a delimiter inside a string is code
+  # (`export P="#/opt/…"`), and a line inside a heredoc or a Lua long-bracket string is
+  # runtime data however it starts. Each fix uncovered the next, because getting it right
+  # needs a parser for all five grammars this now scans.
+  #
+  # So the rule is simply: a manifested Core file must not contain an OS-absolute path
+  # ANYWHERE, prose included. Name the prefix instead of spelling it — "the Homebrew
+  # prefix", not the literal. That costs one wording choice in a comment and buys a gate
+  # with no hiding places at all.
+  bnd_src="$(cat "$f")"
+  # Then drop ONLY the sanctioned lines of the one exempt file — everything else in it
+  # is still scanned.
+  # REDACT the sanctioned segment; do not drop the line. Dropping it would exempt
+  # everything else on that line too, so a second literal riding along on a legitimate
+  # LaunchAgents assignment would evade the gate. Replacing just the segment leaves the
+  # rest of the line to be scanned normally.
+  [[ "$f" == zsh/55-maint.zsh ]] && bnd_src="${bnd_src//Library\/LaunchAgents/<sanctioned-launchd-path>}"
+  if grep -qE '/opt/homebrew|/home/linuxbrew|/usr/local/Cellar|/Library/|/mnt/c/' <<<"$bnd_src"; then
+    bnd_fail=1
+    fail "OS-specific path in a portable Core file ($f) — it belongs in the OS layer, not Core"
+  fi
+done < <(
+  # Expand the manifest: directory entries (nvim/) via git ls-files, file entries as-is.
+  for m in "${MANIFEST_PATHS[@]}"; do
+    if [[ "$m" == */ ]]; then git ls-files "$m" 2>/dev/null; else printf '%s\n' "$m"; fi
+  done | sort -u
+)
+((bnd_fail)) || pass "every manifested Core file carries no OS-absolute path (scope derived from core.manifest)"
 
 # ── 6. config files (toml / yaml parse) ──────────────────────────────────────
 # A malformed starship.toml / mise config.toml / ci.yml is still valid *text* —

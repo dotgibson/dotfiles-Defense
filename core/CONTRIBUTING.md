@@ -75,7 +75,14 @@ itself at commit time. Two deliberate non-checks:
   both, so a regression fails CI rather than reaching a machine.
 - **Indentation** is 2-space across the tree (`.editorconfig`).
 - **Keep OS-specific bits out.** Strip clipboard/paths/package-manager logic into
-  the OS repo; Core stays portable.
+  the OS repo; Core stays portable. **[`PORTABILITY.md`](PORTABILITY.md) is the how** —
+  the bash-3.2 floor, the BSD/busybox coreutils traps, and the shim pattern to reach an
+  OS capability without naming a path. Read it before your first Core change; the boundary
+  gate (`audit-core.sh` §5c) enforces it, and its scope is derived from `core.manifest`,
+  so a file you add is checked the moment you list it.
+- **Working in an OS repo instead?** [`VENDORING.md`](VENDORING.md) is the consumer-side
+  contract: what `core/` and `core.lock` mean, which number band your file may claim, and
+  how to send a fix back upstream.
 
 ## Commit messages
 
