@@ -1,0 +1,54 @@
+name: defense-validation
+
+# Functional gate for the two files this repo actually ships: defense/defense.zsh (the
+# band-85 role layer) and bootstrap.sh (the installer). The shared lint gate covers
+# shellcheck + `bash -n` + `zsh -n`, which is syntax only — nothing asserted that mkcase
+# builds the case tree, that note refuses an empty entry, that case data lands OUTSIDE the
+# repo, or that the host-tool probe tells "installed but off $PATH" apart from "missing".
+#
+# NO path filter, deliberately. A `paths:`-filtered workflow does not report a status on
+# PRs that miss the filter, and a REQUIRED check that never reports leaves the PR
+# permanently pending — which would wedge every docs-only PR, including one fixing this
+# file. This suite is seconds long, so it runs on everything and is safe to mark required.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: defense-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  role-layer:
+    name: role layer + installer (functional)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # zsh is not on the ubuntu-latest image by default, and defense.zsh is zsh —
+      # it opens with `[[ $- == *i* ]] || return 0`, so the suite drives it through
+      # `zsh -f -i`. Without the shell there is nothing to test.
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends zsh
+
+      - name: tests/test-defense.sh
+        run: ./tests/test-defense.sh
+
+      # Belt and braces around the installer's most dangerous property: --dry-run must not
+      # write. The suite asserts this against a scratch HOME; this step re-asserts it
+      # against a pristine runner HOME, where a stray write would be unmistakable.
+      - name: bootstrap --dry-run writes nothing
+        run: |
+          before="$(find "$HOME" -mindepth 1 2>/dev/null | sort | sha256sum)"
+          ./bootstrap.sh --dry-run --no-check
+          after="$(find "$HOME" -mindepth 1 2>/dev/null | sort | sha256sum)"
+          if [ "$before" != "$after" ]; then
+            echo "::error::bootstrap.sh --dry-run modified HOME" >&2
+            exit 1
+          fi
+          echo "HOME unchanged by --dry-run"
