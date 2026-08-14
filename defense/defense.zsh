@@ -69,10 +69,31 @@ _compose() {  # prefer Compose v2 (`docker compose`); warn on the EOL v1 fallbac
     docker-compose "${envargs[@]}" "$@"
   fi
 }
+# _siem_data_dir — create the bind-mount target BEFORE compose does.
+# The compose mounts ./<stack>/data/opensearch into the container. If that directory does
+# not exist yet, Docker creates it ROOT-owned, and the OpenSearch image runs as uid 1000 —
+# so the node dies on startup with:
+#   AccessDeniedException: /usr/share/opensearch/data/nodes
+# which reads like a broken compose file rather than a permissions problem. It is a
+# first-boot-only failure, which is why a lab that has run once never shows it. Creating
+# the directory here means it is owned by the invoking user instead; on a normal single-user
+# Linux box that is uid 1000 and matches the container. Where it doesn't, say so with the
+# exact fix rather than letting the stack fail obscurely.
+_siem_data_dir() {
+  local d="$DEFENSE_DIR/docker/${DEFENSE_STACK}/data/opensearch"
+  [[ -d "$d" ]] || mkdir -p "$d" 2>/dev/null
+  local owner
+  owner=$(stat -c '%u' "$d" 2>/dev/null) || return 0
+  [[ "$owner" == 1000 ]] && return 0
+  echo "!! $d is owned by uid $owner; OpenSearch runs as uid 1000 and will fail to start" >&2
+  echo "   fix: sudo chown -R 1000:1000 $d" >&2
+}
+
 siemup() {
   [[ -n ${HAVE_DOCKER:-} ]] || { echo "docker not installed" >&2; return 1; }
   local f="$DEFENSE_DIR/docker/${DEFENSE_STACK}.compose.yml"
   [[ -f "$f" ]] || { echo "no compose file: $f" >&2; return 1; }
+  _siem_data_dir
   echo ":: bringing up '$DEFENSE_STACK' (detached)"; _compose -f "$f" up -d
 }
 siemdown() {

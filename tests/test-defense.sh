@@ -235,6 +235,24 @@ contains "siemup without docker exits non-zero" "$out" "rc=1"
 out="$(zdef "$S" 'unset HAVE_DOCKER; siemdown; echo "rc=$?"')"
 contains "siemdown without docker exits non-zero" "$out" "rc=1"
 
+# siemup must create the OpenSearch bind-mount target BEFORE compose runs. Where it does
+# not exist, Docker creates it ROOT-owned and the node dies with
+# "AccessDeniedException: /usr/share/opensearch/data/nodes" — a first-boot-only failure,
+# which is why a lab that has run once never shows it. Found by lab-smoke.sh's first run.
+SIEMD="$TMPROOT/siemdir"
+mkdir -p "$SIEMD/docker"
+cp "$REPO/docker/detection-lab.compose.yml" "$SIEMD/docker/"
+CASES_DIR="$SIEMD/cases" DEFENSE_DIR="$SIEMD" EDITOR=true HOME="$SIEMD" \
+  zsh -f -i -c "source '$REPO/defense/defense.zsh' >/dev/null 2>&1
+    DEFENSE_DIR='$SIEMD'; HAVE_DOCKER=1
+    _compose() { :; }
+    siemup >/dev/null 2>&1" 2>/dev/null
+if [ -d "$SIEMD/docker/detection-lab/data/opensearch" ]; then
+  ok "siemup creates the OpenSearch data dir before compose can"
+else
+  no "siemup creates the OpenSearch data dir before compose can" "directory was not created"
+fi
+
 # ─────────────────────────────────────────────────────────────────────────────
 group "install/tools.lst — the single source for the probe list"
 
@@ -558,9 +576,9 @@ fi
 
 # An EXISTING .env is a real local secret — it must survive byte-identical.
 printf 'OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyRealPassw0rd!\n' >"$LABT/docker/.env"
-env_before="$(md5sum "$LABT/docker/.env" | cut -d' ' -f1)"
+env_before="$(cksum <"$LABT/docker/.env")"
 (cd "$LABT" && PATH="$LABT/stub:$PATH" ./docker/validation/lab-smoke.sh >/dev/null 2>&1)
-is "an existing .env is never overwritten" "$env_before" "$(md5sum "$LABT/docker/.env" | cut -d' ' -f1)"
+is "an existing .env is never overwritten" "$env_before" "$(cksum <"$LABT/docker/.env")"
 
 # The example's deliberately-invalid sentinel must be refused, not passed to OpenSearch —
 # which would fail as a confusing container error rather than a clear message.

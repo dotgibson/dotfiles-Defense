@@ -107,6 +107,30 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# ── prepare the bind-mount target ─────────────────────────────────────────────
+# Found by this script's first-ever run: the compose mounts ./<stack>/data/opensearch, and
+# where that directory does not exist Docker creates it ROOT-owned. The OpenSearch image
+# runs as uid 1000, so the node dies with
+#   AccessDeniedException: /usr/share/opensearch/data/nodes
+# and the stack never becomes healthy. It only bites a FIRST boot, which is why a lab that
+# has run before never shows it — and why nothing had ever caught it.
+#
+# siemup does the same thing for real users (defense.zsh, _siem_data_dir). Here we can also
+# chown, because CI has passwordless sudo and its runner uid is not 1000.
+data_dir="docker/${stack}/data/opensearch"
+mkdir -p "$data_dir"
+owner="$(stat -c '%u' "$data_dir" 2>/dev/null || echo unknown)"
+if [ "$owner" != "1000" ]; then
+  if sudo -n true 2>/dev/null; then
+    sudo chown -R 1000:1000 "docker/${stack}/data"
+    echo ":: chowned $data_dir to uid 1000 (OpenSearch's user)"
+  else
+    echo "::error::$data_dir is owned by uid $owner but OpenSearch runs as uid 1000."
+    echo "   fix: sudo chown -R 1000:1000 docker/${stack}/data"
+    exit 1
+  fi
+fi
+
 # ── boot ──────────────────────────────────────────────────────────────────────
 echo ":: starting $stack (this pulls ~1 GB on a cold cache)"
 compose up -d --wait --wait-timeout 300 || {
@@ -130,13 +154,26 @@ esac
 # ── assert Dashboards is up AND authenticated to OpenSearch ───────────────────
 # The only check here that exercises the credential wiring end to end: Dashboards reports
 # "available" only once it has actually talked to OpenSearch with the admin password.
-status="$(curl -s http://localhost:5601/api/status 2>/dev/null)"
+#
+# RETRIED, deliberately. `compose up --wait` waits for a service to be *healthy* only where
+# a healthcheck exists; Dashboards declares none, so --wait considers it ready the moment
+# the container is RUNNING. Its Node process then takes a while to serve /api/status, so a
+# single-shot curl races the app's startup and would fail intermittently — a flaky check
+# nobody trusts is worse than no check.
+status=""
+for _ in $(seq 1 30); do
+  status="$(curl -s --max-time 5 http://localhost:5601/api/status 2>/dev/null)"
+  case "$status" in
+  *'"level":"available"'*) break ;;
+  esac
+  sleep 5
+done
 case "$status" in
 *'"level":"available"'*)
   echo ":: dashboards available (and authenticated to opensearch)"
   ;;
 *)
-  echo "::error::dashboards did not report available: $(printf '%s' "${status:-<no response>}" | head -c 200)"
+  echo "::error::dashboards did not report available within 150s: $(printf '%s' "${status:-<no response>}" | head -c 200)"
   exit 1
   ;;
 esac
