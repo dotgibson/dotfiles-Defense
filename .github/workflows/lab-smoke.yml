@@ -1,0 +1,49 @@
+name: lab-smoke
+
+# Does the detection lab actually boot?
+#
+# Phases 0–2 of docker/LAB-VALIDATION-PLAN.md are gated — the network plane through real
+# Zeek/Suricata, the host and cloud Sigma planes through zircolite and sigma_eval. By
+# design none of them need the lab: the whole model is replay-against-fixtures. The
+# consequence is that the lab itself, the OpenSearch + Dashboards stack behind `siemup`,
+# was never started by anything. Its compose file was only ever checked for validity, which
+# proves it parses and nothing more.
+#
+# NOT a required check, deliberately. It pulls ~1 GB of images and takes a couple of
+# minutes, so gating every PR on it would tax changes that cannot affect it. It runs when
+# docker/ changes, on a weekly schedule to catch rot in the pinned images, and on demand.
+
+on:
+  push:
+    branches: [main]
+    paths: ["docker/**", ".github/workflows/lab-smoke.yml"]
+  pull_request:
+    paths: ["docker/**", ".github/workflows/lab-smoke.yml"]
+  schedule:
+    - cron: "23 5 * * 1" # Mondays 05:23 UTC — before the Wednesday routine cluster
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lab-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boot:
+    name: detection lab boots and serves
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # OpenSearch wants a large mmap count. `discovery.type=single-node` skips the
+      # bootstrap check that would otherwise refuse to start, so this is belt-and-braces —
+      # but a stack that dies on mmap limits looks like a broken compose file, and that is
+      # a bad hour to spend.
+      - name: Raise vm.max_map_count
+        run: sudo sysctl -w vm.max_map_count=262144
+
+      - name: Smoke-test the lab
+        run: ./docker/validation/lab-smoke.sh
