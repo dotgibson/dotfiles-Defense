@@ -26,7 +26,11 @@ body="${RUNNER_TEMP:-/tmp}/routine-issue-body.md"
 {
   printf '## %s — %s\n\n' "$title" "$(date -u +%Y-%m-%d)"
   cat "$report"
-  printf '\n_Filed by the claude-routines workflow. Report-first: review and act — nothing was changed._\n'
+  # Attribute to the workflow that actually invoked this, not a hard-coded name: the
+  # helper is shared (claude-routines and core-drift both call it), so a fixed footer
+  # would misattribute every report from any caller but the first.
+  printf '\n_Filed by the %s workflow. Report-first: review and act — nothing was changed._\n' \
+    "${GITHUB_WORKFLOW:-claude-routines}"
 } >"$body"
 
 # gh search is fuzzy, so re-check the title exactly before deciding to dedup.
