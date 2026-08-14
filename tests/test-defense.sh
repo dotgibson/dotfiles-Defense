@@ -249,9 +249,12 @@ lst_bootstrap="$(
   # cannot see into. DOTFILES is what it resolves install/tools.lst against, and
   # blib_warn is its error path. Stubbing the warn keeps a would-be failure quiet here
   # so the assertion below reports the mismatch itself rather than the noise.
-  # shellcheck disable=SC2034,SC2317
+  # SC2317 and SC2329 are the same complaint from different ShellCheck versions (0.9 vs
+  # the newer one CI pins), so both are named — dropping either makes this pass locally
+  # and fail in CI, or the reverse.
+  # shellcheck disable=SC2034
   DOTFILES="$REPO"
-  # shellcheck disable=SC2317
+  # shellcheck disable=SC2317,SC2329
   blib_warn() { :; }
   eval "$(sed -n '/^_probe_list()/,/^}/p' "$REPO/bootstrap.sh")"
   _probe_list | tr '\n' ' '
