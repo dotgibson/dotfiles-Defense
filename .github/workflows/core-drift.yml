@@ -79,26 +79,35 @@ jobs:
           LOCAL_SHA: ${{ steps.compare.outputs.local_sha }}
           UPSTREAM_VER: ${{ steps.compare.outputs.upstream_ver }}
         run: |
-          # shellcheck disable=SC2016
-          # The single-quoted printf formats below are markdown: the backticks are code
-          # spans in the issue body, and must reach GitHub literally rather than being
-          # run as command substitution. Every value that IS interpolated is passed as a
-          # printf argument in double quotes, never spliced into the format string.
           set -euo pipefail
-          {
-            printf 'The vendored `core/` subtree is **behind upstream**.\n\n'
-            printf '| | version |\n| --- | --- |\n'
-            printf '| vendored here (`core.lock`) | `%s` |\n' "$LOCAL_VER"
-            printf '| latest `dotgibson/dotfiles-core` | `%s` |\n' "$UPSTREAM_VER"
-            printf '\nVendored commit: `%s`\n\n' "$LOCAL_SHA"
-            printf 'Why this matters beyond being out of date: work done *against* the vendored\n'
-            printf 'copy can be wrong about upstream. A bug reproduced in `core/` here may already\n'
-            printf 'be fixed on `main`, and a report written from it wastes a maintainer'"'"'s time.\n'
-            printf 'Check upstream before filing anything about Core.\n\n'
-            printf 'To sync (a deliberate act — never edit `core/` in place):\n\n'
-            printf '```bash\ngit subtree pull --prefix core https://github.com/dotgibson/dotfiles-core.git v%s --squash\nmake core-lock\n```\n\n' "$UPSTREAM_VER"
-            printf 'Changelog: https://github.com/dotgibson/dotfiles-core/blob/v%s/CHANGELOG.md\n' "$UPSTREAM_VER"
-          } >drift-report.md
+          # Heredoc rather than printf formats: the backticks below are markdown code
+          # spans that must reach GitHub literally, and single-quoted printf strings
+          # containing them trip shellcheck's SC2016 under actionlint. Unquoted heredoc
+          # with escaped \` keeps the backticks literal while $VARS still interpolate.
+          cat >drift-report.md <<EOF
+          The vendored \`core/\` subtree is **behind upstream**.
+
+          | | version |
+          | --- | --- |
+          | vendored here (\`core.lock\`) | \`$LOCAL_VER\` |
+          | latest \`dotgibson/dotfiles-core\` | \`$UPSTREAM_VER\` |
+
+          Vendored commit: \`$LOCAL_SHA\`
+
+          Why this matters beyond being out of date: work done *against* the vendored copy
+          can be wrong about upstream. A bug reproduced in \`core/\` here may already be
+          fixed on \`main\`, and a report written from it wastes a maintainer's time.
+          Check upstream before filing anything about Core.
+
+          To sync (a deliberate act — never edit \`core/\` in place):
+
+          \`\`\`bash
+          git subtree pull --prefix core https://github.com/dotgibson/dotfiles-core.git v$UPSTREAM_VER --squash
+          make core-lock
+          \`\`\`
+
+          Changelog: https://github.com/dotgibson/dotfiles-core/blob/v$UPSTREAM_VER/CHANGELOG.md
+          EOF
           cat drift-report.md
 
       - name: File or update the drift issue
