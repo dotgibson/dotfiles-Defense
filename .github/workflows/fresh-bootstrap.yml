@@ -1,0 +1,54 @@
+name: fresh-bootstrap
+
+# Does this repo bootstrap on a machine that has nothing?
+#
+# Every other gate runs on a provisioned box, so none of them can see the failures that
+# only happen the FIRST time — and this repo has had them. `siemup` died on a fresh clone
+# because Docker created the OpenSearch bind-mount root-owned; that was invisible on every
+# box anyone had tested on, because the lab had already run there once.
+#
+# This boots a bare ubuntu:24.04 with only zsh + git, runs bootstrap.sh for real, and
+# asserts both halves: that the config bootstrap completes AND that the host-tool probe
+# honestly reports the forensics tooling as missing (this repo does not install it — a
+# probe claiming otherwise is the more dangerous bug).
+#
+# NOT a required check: it pulls an image, runs apt, and clones the zsh plugins, so it
+# takes minutes and needs network. It runs when the things that could break it change —
+# the installer, the role layer, or a Core subtree sync — plus weekly and on demand.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "bootstrap.sh"
+      - "defense/**"
+      - "core/**"
+      - "tests/test-fresh-bootstrap.sh"
+      - ".github/workflows/fresh-bootstrap.yml"
+  pull_request:
+    paths:
+      - "bootstrap.sh"
+      - "defense/**"
+      - "core/**"
+      - "tests/test-fresh-bootstrap.sh"
+      - ".github/workflows/fresh-bootstrap.yml"
+  schedule:
+    - cron: "41 4 * * 1" # Mondays 04:41 UTC — ahead of the lab smoke and the routines
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fresh-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bare-machine:
+    name: bootstraps on a bare ubuntu:24.04
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Bootstrap a machine that has nothing
+        run: ./tests/test-fresh-bootstrap.sh
