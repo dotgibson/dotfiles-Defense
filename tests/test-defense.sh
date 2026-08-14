@@ -495,6 +495,18 @@ fi
 out="$(vrr 'Mirror check against `PURPLE-TEAM.md` is clean.')"
 contains "no sibling present is not an error" "$out" "rc=0"
 
+# Discovery is announced either way. Without this, a run where nothing needed a sibling is
+# indistinguishable from one where the glob silently matched nothing — both print
+# "0 in a sibling repo". Two live routine runs hit exactly that ambiguity and could not
+# confirm the real ../dotfiles-Kali clone was being found at all.
+out="$(vrr_sib 'Nothing external cited here.')"
+contains "indexed siblings are announced" "$out" "indexed sibling repo(s): dotfiles-Kali"
+contains "the indexed file count is reported" "$out" "files)"
+
+out="$(ROUTINE_SIBLING_GLOB="$TMPROOT/no-such-*" bash "$VRR" "$TMPROOT/vrr-sib.md" "$REPO" 2>&1)"
+contains "finding none is announced too, not silent" "$out" "no sibling repos found"
+contains "the searched glob is named, so a bad path is diagnosable" "$out" "no-such-"
+
 # Ground truth is stamped in every report, so a stale corpus size is visible rather than
 # implied — the real #123 opened with "all 89 rules" against a tree that has more.
 out="$(vrr 'Reviewed the whole corpus.')"
