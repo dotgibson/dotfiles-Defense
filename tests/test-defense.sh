@@ -416,7 +416,12 @@ out="$(vrr 'The rule `harbor/harbor_artifact_deleted.yml` is under-scoped.')"
 contains "a wrong path fails the gate" "$out" "rc=1"
 contains "the wrong path is named" "$out" "harbor/harbor_artifact_deleted.yml"
 contains "the real location is given" "$out" "detections/sigma/registry/harbor_artifact_deleted.yml"
-contains "the issue body carries a warning" "$out" "[!WARNING]"
+contains "the report body carries a warning" "$out" "[!WARNING]"
+# The exit code is the gate: the workflow runs this as a plain step, so non-zero stops
+# the job and every step below it — including the filing — is skipped. Asserting the
+# blocking wording keeps the script's contract and the workflow's use of it in step.
+contains "the failure says it is blocking" "$out" "BLOCKING"
+contains "the body says the report was blocked" "$out" "blocked from filing"
 
 # Proposals are not claims about the tree. These reports propose files by path, and last
 # week's proposal is this week's file — holding them to existence would fail every good

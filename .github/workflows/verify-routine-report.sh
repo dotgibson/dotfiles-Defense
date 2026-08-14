@@ -24,7 +24,10 @@
 #
 # Usage: verify-routine-report.sh <report-file> [repo-root]
 # Exit:  0 = nothing provably wrong (report may still carry listed warnings)
-#        1 = at least one citation is provably wrong; caller should mark the run failed
+#        1 = at least one citation is provably wrong. The caller treats this as a HARD
+#            GATE: the report is not filed at all. It is written to the run summary
+#            instead, so the routine's work survives a block and can be filed by hand
+#            once the citations are corrected.
 # ──────────────────────────────────────────────────────────────────────────────
 # shellcheck disable=SC2016
 # Single-quoted backticks are load-bearing here in two ways, and both must stay literal:
@@ -142,7 +145,7 @@ attack_ids=$(grep -rhoE 'T[0-9]{4}(\.[0-9]{3})?' detections/ 2>/dev/null | sort 
   if [ "${#mislocated[@]}" -gt 0 ]; then
     printf '> [!WARNING]\n'
     printf '> **%s citation(s) point at a path that does not exist, for a file that does.**\n' "${#mislocated[@]}"
-    printf '> Treat the surrounding findings as unverified until the paths are corrected.\n\n'
+    printf '> The report was blocked from filing. Correct the paths and re-run, or file by hand.\n\n'
     for m in "${mislocated[@]}"; do printf -- '- `%s`\n' "$m"; done
     printf '\n'
   fi
@@ -160,7 +163,7 @@ attack_ids=$(grep -rhoE 'T[0-9]{4}(\.[0-9]{3})?' detections/ 2>/dev/null | sort 
 
 # ── verdict ───────────────────────────────────────────────────────────────────
 if [ "${#mislocated[@]}" -gt 0 ]; then
-  echo "::error::${#mislocated[@]} citation(s) point at the wrong path — report filed, run marked failed"
+  echo "::error::${#mislocated[@]} citation(s) point at the wrong path — BLOCKING: the report will not be filed"
   for m in "${mislocated[@]}"; do echo "  $m"; done
   exit 1
 fi
