@@ -525,6 +525,40 @@ is "an empty report exits 0" "0" "$?"
 contains "an empty report is reported as such" "$empty_out" "nothing to verify"
 
 # ─────────────────────────────────────────────────────────────────────────────
+group "lint-shell.sh — CI-identical shell lint"
+
+LS="$REPO/tests/lint-shell.sh"
+[ -x "$LS" ] && ok "lint helper is executable" || no "lint helper is executable"
+
+# Both the pinned version and the gate's flags are READ from the vendored core, never
+# restated here. That is the whole point: a hard-coded copy would drift from the gate it
+# imitates, which is the class of bug this script exists to prevent.
+# --plan so the suite never pulls a docker image: a network dependency inside a required
+# check is a flake waiting to happen, and CI's own lint job already lints for real.
+ls_out="$("$LS" --plan 2>&1)"
+pin_from_core="$(sed -n 's/^SHELLCHECK_VERSION=//p' "$REPO/core/scripts/tool-versions.env" | tr -d '"' | head -n1)"
+contains "reports the version CI pins" "$ls_out" "pinned by CI : $pin_from_core"
+contains "reports the local version" "$ls_out" "local        :"
+contains "reports the flags it will use" "$ls_out" "-e SC1090 -e SC1091 -e SC2015 -e SC2088"
+
+# The flags must come from the vendored workflow, so Core changing them changes this too.
+opts_from_core="$(grep -m1 'SHELLCHECK_OPTS:' "$REPO/core/.github/workflows/lint-call.yml" |
+  sed 's/.*SHELLCHECK_OPTS: *//; s/^"//; s/"$//')"
+contains "the flags match the vendored gate exactly" "$ls_out" "$opts_from_core"
+
+# It must name which engine it used — "clean" means nothing if you cannot tell whether it
+# came from the pinned version or a different local one.
+if printf '%s' "$ls_out" | grep -qE '^engine: '; then
+  ok "names the engine it linted with"
+else
+  no "names the engine it linted with" "no engine line in output"
+fi
+
+contains "--plan says nothing was linted" "$ls_out" "resolved only, nothing linted"
+"$LS" --plan >/dev/null 2>&1
+is "--plan exits 0" "0" "$?"
+
+# ─────────────────────────────────────────────────────────────────────────────
 group "bootstrap.sh — dry run is inert"
 
 DRYHOME="$TMPROOT/dryhome"

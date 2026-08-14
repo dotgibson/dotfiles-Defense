@@ -163,6 +163,19 @@ This is a **Role layer** stacked on Core + an OS layer:
    enters the repo. **Green the lint gate** (shellcheck + `bash -n` / `zsh -n`;
    vendored `core/` excluded).
 
+Before pushing, run both checks the way CI runs them:
+
+```bash
+./tests/test-defense.sh    # behaviour: the role layer + the installer
+./tests/lint-shell.sh      # shellcheck, at the version CI pins
+```
+
+`lint-shell.sh` exists because CI installs a **pinned** shellcheck while your
+distro ships whatever it ships, and the two disagree about which checks exist —
+so a file can be clean locally and red in CI for no visible reason. It reads the
+pin and the flags out of the vendored `core/`, then runs the pinned version
+(via docker when your local one differs), and says plainly when it cannot.
+
 Bugs and ideas: open an
 [issue](https://github.com/dotgibson/dotfiles-Defense/issues).
 
