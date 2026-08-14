@@ -12,8 +12,23 @@
 
 set -u
 
-# tmux pop-ups can launch with a minimal PATH; make sure fzf + clip resolve.
-export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$PATH"
+# tmux pop-ups inherit the tmux SERVER's environment, which can be minimal; make sure
+# fzf and Core's `clip` resolve. Nothing here is hardcoded: this is portable Core, and
+# an absolute Homebrew-prefix path would be wrong on seven of the eight repos it ships to.
+#
+# $HOME/.local/bin is portable — bootstrap installs `clip` there on every OS. A brew
+# prefix, if this box has one, is DISCOVERED rather than named: $HOMEBREW_PREFIX is
+# exported by `brew shellenv`, so the server usually carries it, with `brew --prefix`
+# as the fallback when brew is already on PATH. If neither resolves we add nothing and
+# the script takes its existing pager fallback — a missing tool degrades visibly,
+# whereas a wrong absolute path is a silent lie on every non-brew machine.
+export PATH="$HOME/.local/bin:$PATH"
+_brew_prefix="${HOMEBREW_PREFIX:-}"
+if [[ -z "$_brew_prefix" ]] && command -v brew >/dev/null 2>&1; then
+  _brew_prefix="$(brew --prefix 2>/dev/null)"
+fi
+[[ -n "$_brew_prefix" && -d "$_brew_prefix/bin" ]] && export PATH="$PATH:$_brew_prefix/bin"
+unset _brew_prefix
 
 rows=()
 e() { rows+=("$1"$'\t'"$2"$'\t'"$3"); } # group, key/command, description

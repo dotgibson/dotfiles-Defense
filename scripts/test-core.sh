@@ -1486,6 +1486,369 @@ else
   skip "fleet drift classifier (git unavailable)"
 fi
 
+# ── F6. sync-core.sh — THE fan-out, on hermetic fixtures ─────────────────────
+# scripts/sync-core.sh is the highest-blast-radius script here: it gates on the audit,
+# runs `git subtree pull` into eight working trees, and stamps core.lock. Until now it
+# had NO coverage at all — its only proof was sync-fanout.yml running it for real
+# against the live fleet, i.e. the fleet WAS the test.
+#
+# Everything below is a REFUSAL or an idempotency property. That matters for what these
+# tests are worth: a broken guard does not throw, it fans a bad tree out to eight repos
+# and reports success. So each case asserts the script DECLINED, and (where the guard is
+# per-repo) that it declined without abandoning the repos after it.
+#
+# The fixture is a miniature of the real topology: `coreremote` is the origin every OS
+# repo vendors from, `core` is the local checkout sync-core.sh runs out of ($HERE, as it
+# computes from BASH_SOURCE), and `repos/` is REPOS_ROOT. audit-core.sh is STUBBED in the
+# fixture so the audit gate can be driven both ways in-process — the real one cannot fail
+# on demand.
+# `git subtree` is a CONTRIB command, not part of core git: the Alpine/busybox image
+# ships git without it, and Debian splits it into a separate git-subtree package. Every
+# assertion below needs a real subtree add + pull, so probe for the command itself rather
+# than assuming `have git` implies it — otherwise the fixture silently builds an OS repo
+# with no core/ and half these tests fail for a reason that has nothing to do with
+# sync-core.sh. Probing the exec-path is deterministic; `git subtree --help` can page.
+_sc_subtree=0
+if have git; then
+  if [[ -x "$(git --exec-path 2>/dev/null)/git-subtree" ]] || have git-subtree; then _sc_subtree=1; fi
+fi
+if ((_sc_subtree)); then
+  hdr "sync-core.sh fan-out guards (hermetic fixtures)"
+  SCF="$SANDBOX/synccore"
+  rm -rf "$SCF"
+  mkdir -p "$SCF"
+  # Host git config must not reach in: a global commit.gpgsign blocks every fixture
+  # commit, and init.defaultBranch decides whether `main` even exists (load-bearing —
+  # CORE_BRANCH defaults to main). Same neutralisation the fleet-drift fixture uses.
+  _scg() { git -C "$1" -c commit.gpgsign=false -c user.email=t@example.com -c user.name=t "${@:2}"; }
+  # sync-core.sh runs `git subtree pull` and `git commit` INSIDE these fixtures with its
+  # own argv — it never inherits the -c flags above. A CI runner has no global git
+  # identity, so those commits abort with "Please tell me who you are" and the whole
+  # fan-out silently produces no core.lock. (A developer machine hides this: the global
+  # identity is already set, so it passes locally and fails only on CI.) Stamp the
+  # identity into each fixture's LOCAL config so any git invocation inside it can commit.
+  _sc_ident() {
+    git -C "$1" config user.email t@example.com
+    git -C "$1" config user.name t
+    git -C "$1" config commit.gpgsign false
+  }
+
+  # 1) coreremote — the vendored origin. Carries the REAL sync-core.sh + the libs it
+  #    sources, so the code under test is the shipped code, not a copy of its logic.
+  mkdir -p "$SCF/coreremote/scripts/lib" "$SCF/coreremote/lib"
+  cp "$HERE/scripts/sync-core.sh" "$SCF/coreremote/scripts/"
+  cp "$HERE/scripts/lib/common.sh" "$SCF/coreremote/scripts/lib/"
+  cp "$HERE/lib/ux.sh" "$HERE/lib/bootstrap-lib.sh" "$SCF/coreremote/lib/"
+  printf '9.9.9\n' >"$SCF/coreremote/core.version"
+  printf 'dotfiles-Test\ndotfiles-Other\ndotfiles-NotCloned\n' >"$SCF/coreremote/scripts/os-repos.txt"
+  printf 'core payload v1\n' >"$SCF/coreremote/payload.txt"
+  # The stub audit: exits with whatever $SCF/auditrc says, so a single file flips the
+  # pre-fan-out gate between green and red without touching the script under test.
+  printf '#!/usr/bin/env bash\nexit "$(cat "%s/auditrc" 2>/dev/null || echo 0)"\n' "$SCF" \
+    >"$SCF/coreremote/scripts/audit-core.sh"
+  chmod +x "$SCF/coreremote/scripts/audit-core.sh" "$SCF/coreremote/scripts/sync-core.sh"
+  printf '0\n' >"$SCF/auditrc"
+  _scg "$SCF/coreremote" init -q >/dev/null 2>&1
+  _sc_ident "$SCF/coreremote"
+  _scg "$SCF/coreremote" symbolic-ref HEAD refs/heads/main
+  _scg "$SCF/coreremote" add -A
+  _scg "$SCF/coreremote" commit -q -m "core c0"
+
+  # 2) core — the local checkout sync-core.sh runs from. A clone, so HEAD == remote tip
+  #    (the state the local-vs-remote guard demands).
+  git -c commit.gpgsign=false clone -q "$SCF/coreremote" "$SCF/core" >/dev/null 2>&1
+  _sc_ident "$SCF/core"
+  _SCS="$SCF/core/scripts/sync-core.sh"
+
+  # 3) the fleet. dotfiles-Test gets a real core/ subtree; the other two are the
+  #    "not cloned" and "no core/ yet" shapes the loop must SKIP rather than fail.
+  mkdir -p "$SCF/repos/dotfiles-Other" "$SCF/repos/dotfiles-NotCloned"
+  _sc_new_osrepo() { # <name>  — a repo with a real core/ subtree sharing history
+    local d="$SCF/repos/$1"
+    mkdir -p "$d"
+    _scg "$d" init -q >/dev/null 2>&1
+    _sc_ident "$d"
+    _scg "$d" symbolic-ref HEAD refs/heads/main
+    printf 'os layer\n' >"$d/os.txt"
+    _scg "$d" add -A
+    _scg "$d" commit -q -m "os c0"
+    _scg "$d" subtree add -q --prefix=core "$SCF/coreremote" main --squash >/dev/null 2>&1
+  }
+  _sc_new_osrepo dotfiles-Test
+  _scg "$SCF/repos/dotfiles-Other" init -q >/dev/null 2>&1   # a git repo with NO core/
+  _sc_ident "$SCF/repos/dotfiles-Other"
+  _scg "$SCF/repos/dotfiles-Other" symbolic-ref HEAD refs/heads/main
+  rm -rf "$SCF/repos/dotfiles-NotCloned/.git"                 # a dir that is not a repo
+
+  _sc_run() { # run the fixture's sync-core.sh against the fixture fleet
+    env -u DOTFILES_ALLOW_CORE_EDIT CORE_COLOR=never \
+      REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main \
+      SYNC_JOBS=1 "$@" bash "$_SCS" 2>&1
+  }
+
+  # --- the audit gate: the property that a RED tree must never fan out ---------
+  # This is the single most important assertion in the file: every other guard protects
+  # one repo, this one protects all eight. It must also refuse BEFORE mutating anything.
+  printf '1\n' >"$SCF/auditrc"
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(_sc_run)"; _sc_rc=$?
+  if ((_sc_rc != 0)) && grep -q 'refusing to fan out a red tree' <<<"$_sc_out"; then
+    pass "sync-core: a RED audit refuses the fan-out (rc=$_sc_rc)"
+  else
+    fail "sync-core: a red audit did NOT stop the fan-out (rc=$_sc_rc)"
+  fi
+  # ...and it refused BEFORE touching anything. HEAD alone is too weak a claim: a
+  # regression that WROTE core.lock or staged a file before returning would leave HEAD
+  # unchanged and still pass. Require the working tree to be clean as well.
+  if [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]] &&
+    [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
+    pass "sync-core: the red-audit refusal happens before any repo is mutated"
+  else
+    fail "sync-core: a repo was written to or moved despite the red-audit refusal"
+  fi
+  printf '0\n' >"$SCF/auditrc"
+
+  # --- the local-vs-remote guard ----------------------------------------------
+  # subtree pull fetches the REMOTE tip, but the audit above validated the LOCAL tree.
+  # Advance the remote so the two disagree; the run must refuse rather than vendor a
+  # commit nobody audited.
+  printf 'core payload v2\n' >"$SCF/coreremote/payload.txt"
+  _scg "$SCF/coreremote" commit -q -am "core c1"
+  _sc_out="$(_sc_run)"; _sc_rc=$?
+  if ((_sc_rc != 0)) && grep -q 'local HEAD' <<<"$_sc_out"; then
+    pass "sync-core: local HEAD != remote tip refuses (audited tree != vendored tree)"
+  else
+    fail "sync-core: local/remote mismatch was not caught (rc=$_sc_rc)"
+  fi
+  _scg "$SCF/core" pull -q --ff-only >/dev/null 2>&1   # realign for the runs below
+
+  # --- skip vs fail: an absent repo is not a failure ---------------------------
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  # Both names appearing is not the property — they would still appear if either branch
+  # were changed from skip() to err(). Assert the SUMMARY BUCKETS: two skipped, none
+  # failed. That is the distinction that decides whether a missing clone reds a fan-out.
+  if grep -q 'dotfiles-NotCloned' <<<"$_sc_out" && grep -qE 'dotfiles-Other.*no core/' <<<"$_sc_out" &&
+    grep -qE 'skipped 2' <<<"$_sc_out" && grep -qE 'failed 0' <<<"$_sc_out"; then
+    pass "sync-core: uncloned repo and core/-less repo land in the SKIPPED bucket, not failed"
+  else
+    fail "sync-core: absent/core-less repos not counted as skips (want skipped 2 / failed 0)"
+  fi
+
+  # --- dotfiles-Windows is never a target -------------------------------------
+  # It vendors no core/ (its host layer is native PowerShell), so fanning into it would
+  # be wrong, not merely useless. The fallback array inside the script must agree with
+  # scripts/os-repos.txt on that — assert the SHIPPED data file, not the fixture's.
+  if ! grep -qE '^[[:space:]]*dotfiles-Windows[[:space:]]*$' "$HERE/scripts/os-repos.txt" &&
+    ! grep -q 'dotfiles-Windows' <<<"$(sed -n '/^ALL_OS_REPOS=(/,/^)/p' "$HERE/scripts/sync-core.sh")"; then
+    pass "sync-core: dotfiles-Windows is in neither the fleet file nor the fallback array"
+  else
+    fail "sync-core: dotfiles-Windows would be fanned into (it carries no core/ subtree)"
+  fi
+
+  # --- --dry-run mutates nothing ----------------------------------------------
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(env -u DOTFILES_ALLOW_CORE_EDIT CORE_COLOR=never REPOS_ROOT="$SCF/repos" \
+    CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main SYNC_JOBS=1 bash "$_SCS" --dry-run 2>&1)"
+  if grep -q 'would: git -C' <<<"$_sc_out" &&
+    [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]] &&
+    [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
+    pass "sync-core: --dry-run prints the plan and writes nothing"
+  else
+    fail "sync-core: --dry-run mutated the target or printed no plan"
+  fi
+
+  # --- the real pull: core.lock lands at the ROOT and records the full sha -----
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  _sc_lock="$SCF/repos/dotfiles-Test/core.lock"
+  _sc_remote_sha="$(_scg "$SCF/coreremote" rev-parse main)"
+  if [[ -f "$_sc_lock" ]] && ! [[ -e "$SCF/repos/dotfiles-Test/core/core.lock" ]]; then
+    pass "sync-core: core.lock is written at the repo ROOT (a subtree pull cannot clobber it)"
+  else
+    fail "sync-core: core.lock is missing or landed inside core/"
+  fi
+  if grep -q "^core_sha=$_sc_remote_sha\$" "$_sc_lock" &&
+    grep -q '^core_version=9.9.9$' "$_sc_lock" && grep -q '^core_branch=main$' "$_sc_lock"; then
+    pass "sync-core: core.lock records the FULL vendored sha, version and branch"
+  else
+    fail "sync-core: core.lock contents wrong ($(tr '\n' ' ' <"$_sc_lock"))"
+  fi
+  # The tree must be CLEAN afterwards, or the dirty-tree guard blocks the next run —
+  # the self-inflicted deadlock the core.lock commit exists to prevent.
+  if [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
+    pass "sync-core: the target tree is clean after a sync (next run is not self-blocked)"
+  else
+    fail "sync-core: sync left the target dirty — the next run would refuse it"
+  fi
+
+  # --- idempotency: re-syncing the same sha must not manufacture a commit ------
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  if grep -q 'core.lock current' <<<"$_sc_out" &&
+    [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]]; then
+    pass "sync-core: re-syncing an unchanged sha is a no-op (no empty core.lock commit)"
+  else
+    fail "sync-core: a no-change re-sync still moved HEAD"
+  fi
+
+  # --- the dirty-tree guard, and that it does not abandon the rest of the fleet -
+  # Ordering matters here: dotfiles-Test sorts BEFORE dotfiles-Other in the fixture fleet
+  # file, so if a dirty first repo aborted the loop the second would never be reached.
+  printf 'uncommitted\n' >"$SCF/repos/dotfiles-Test/dirty.txt"
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  # Asserted on the ✗ line and the SUMMARY, deliberately NOT on $?. sync-core.sh exits
+  # ZERO here: the failure branch prints "done with failures" to stderr but never sets a
+  # status. That is load-bearing rather than an oversight to "fix" in passing —
+  # sync-fanout.yml runs this under `bash -e` and then does its OWN per-repo
+  # post-condition check (core.lock pins the released sha, branch ≥1 commit ahead), so a
+  # non-zero exit would abort that step and stop it opening PRs for the repos that DID
+  # sync. Pinning the observable contract here keeps the test honest about what the
+  # script actually promises; whether $? should also be non-zero is a design call.
+  if grep -q 'has uncommitted changes' <<<"$_sc_out" &&
+    grep -qE 'failed 1' <<<"$_sc_out"; then
+    pass "sync-core: a dirty target is refused and counted failed (not stashed, not force-merged)"
+  else
+    fail "sync-core: a dirty target was not refused/counted"
+  fi
+  if grep -q 'dotfiles-Other' <<<"$_sc_out"; then
+    pass "sync-core: a dirty repo does not abandon the repos after it"
+  else
+    fail "sync-core: the fan-out stopped at the first dirty repo"
+  fi
+  rm -f "$SCF/repos/dotfiles-Test/dirty.txt"
+else
+  skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
+fi
+
+# ── F7. the REAL link run (blib_link_core against a throwaway $HOME) ─────────
+# bootstrap-test.yml asserts the symlink graph, but it is workflow_call-only and
+# dotfiles-core ships no bootstrap.sh — so it only ever runs from the eight OS repos.
+# Core's own CI unit-tests the blib_* helpers and never performs a real link run, which
+# means a bootstrap-lib regression is caught downstream, in eight repos, instead of here.
+#
+# This closes that: link the ACTUAL Core tree into a sandbox $HOME/$config and assert the
+# graph a consumer depends on. Hermetic — the tpm directory is pre-seeded so the one-time
+# clone is skipped, which is the only network call in the whole function.
+if have git; then
+  hdr "bootstrap link run (blib_link_core against a sandbox HOME)"
+  LR="$SANDBOX/linkrun"
+  rm -rf "$LR"
+  mkdir -p "$LR/home" "$LR/config" "$LR/dotfiles"
+  # A consumer's layout is <repo>/core -> the vendored Core tree. COPY it rather than
+  # symlinking: blib_link_core runs `chmod +x` on core/tmux/scripts/*.sh and core/bin/clip*,
+  # and audit-core.sh launches this suite CONCURRENTLY with its own exec-bit gate — a
+  # symlink here would let the test mutate the very checkout that gate is reading, which is
+  # both a race and a violation of the read-only assumption the whole suite is built on.
+  # Copying per top-level directory keeps .git out without needing a non-portable tar flag.
+  mkdir -p "$LR/dotfiles/core"
+  for _lr_d in zsh nvim tmux vim git starship lazygit mise jujutsu atuin sesh bin lib; do
+    [[ -e "$HERE/$_lr_d" ]] && cp -R "$HERE/$_lr_d" "$LR/dotfiles/core/$_lr_d"
+  done
+  mkdir -p "$LR/config/tmux/plugins/tpm"   # pre-seed: skips the tpm clone (offline)
+  (
+    # shellcheck source=lib/bootstrap-lib.sh
+    HOME="$LR/home" XDG_CONFIG_HOME="$LR/config" \
+      BLIB_ONLY="" BLIB_SKIP="" \
+      bash -c '
+        set -u
+        . "'"$HERE/lib/bootstrap-lib.sh"'"
+        blib_link_core "'"$LR/dotfiles"'" "'"$LR/config"'" >/dev/null 2>&1
+      '
+  ) || true
+
+  _lr_is_link_to() { # <link> <target>  — a symlink resolving to the expected file
+    [[ -L "$1" ]] && [[ "$(readlink "$1")" == "$2" ]]
+  }
+  # The zsh chain is the load-order contract: every numbered Core fragment must land FLAT
+  # in $config/zsh under its own basename, because loader.zsh globs NN-*.zsh there. A
+  # rename or a missed file here is precisely what silently drops a stage on eight boxes.
+  _lr_missing=""
+  for f in "$HERE"/zsh/[0-9][0-9]-*.zsh; do
+    b="$(basename "$f")"
+    _lr_is_link_to "$LR/config/zsh/$b" "$LR/dotfiles/core/zsh/$b" || _lr_missing="$_lr_missing $b"
+  done
+  if [[ -z "$_lr_missing" ]]; then
+    pass "link run: every numbered Core zsh fragment is linked flat into \$ZSH_CFG"
+  else
+    fail "link run: zsh fragments missing or mislinked —$_lr_missing"
+  fi
+  # loader.zsh is not a numbered fragment but IS what sources them; a graph without it
+  # produces a shell that starts and loads nothing.
+  if _lr_is_link_to "$LR/config/zsh/loader.zsh" "$LR/dotfiles/core/zsh/loader.zsh"; then
+    pass "link run: loader.zsh is linked (the chain has an entry point)"
+  else
+    fail "link run: loader.zsh was not linked"
+  fi
+  # nvim is linked as a DIRECTORY symlink — the one manifest entry that is a whole tree.
+  if [[ -L "$LR/config/nvim" && -d "$LR/config/nvim" && -f "$LR/config/nvim/init.lua" ]]; then
+    pass "link run: nvim/ is a directory symlink resolving to a real init.lua"
+  else
+    fail "link run: nvim/ is not a resolvable directory symlink"
+  fi
+  # The rest of the symlinked surface, at the exact destinations bootstrap promises.
+  _lr_bad=""
+  _lr_is_link_to "$LR/config/tmux/tmux.conf" "$LR/dotfiles/core/tmux/tmux.conf" || _lr_bad="$_lr_bad tmux.conf"
+  _lr_is_link_to "$LR/config/starship.toml" "$LR/dotfiles/core/starship/starship.toml" || _lr_bad="$_lr_bad starship.toml"
+  _lr_is_link_to "$LR/config/lazygit/config.yml" "$LR/dotfiles/core/lazygit/config.yml" || _lr_bad="$_lr_bad lazygit"
+  _lr_is_link_to "$LR/config/jj/config.toml" "$LR/dotfiles/core/jujutsu/config.toml" || _lr_bad="$_lr_bad jj"
+  _lr_is_link_to "$LR/home/.gitconfig" "$LR/dotfiles/core/git/gitconfig" || _lr_bad="$_lr_bad .gitconfig"
+  _lr_is_link_to "$LR/home/.vimrc" "$LR/dotfiles/core/vim/vimrc" || _lr_bad="$_lr_bad .vimrc"
+  # Resolve the target, don't just prove it is *a* symlink — a dangling link, or one
+  # pointing at the wrong directory, would otherwise pass this grouped assertion.
+  _lr_is_link_to "$LR/config/tmux/scripts" "$LR/dotfiles/core/tmux/scripts" || _lr_bad="$_lr_bad tmux/scripts"
+  [[ -d "$LR/config/tmux/scripts" ]] || _lr_bad="$_lr_bad tmux/scripts(dangling)"
+  if [[ -z "$_lr_bad" ]]; then
+    pass "link run: tmux, starship, lazygit, jj, gitconfig and vimrc land where bootstrap promises"
+  else
+    fail "link run: wrong or missing links —$_lr_bad"
+  fi
+  # clip is SYMLINKED onto PATH — bootstrap-lib chmod +x's the SOURCE, not the link — so
+  # assert the target as well as the mode. nvim's clipboard provider, tmux copy-pipe and
+  # the zsh helpers all shell out to it by name, so a dangling link breaks copy on every
+  # surface at once while `-x` alone would still look fine on a wrong-but-executable file.
+  if _lr_is_link_to "$LR/home/.local/bin/clip" "$LR/dotfiles/core/bin/clip" &&
+    _lr_is_link_to "$LR/home/.local/bin/clip-paste" "$LR/dotfiles/core/bin/clip-paste" &&
+    [[ -x "$LR/home/.local/bin/clip" && -x "$LR/home/.local/bin/clip-paste" ]]; then
+    pass "link run: clip + clip-paste link onto ~/.local/bin and resolve executable"
+  else
+    fail "link run: clip/clip-paste missing, mislinked, or not executable"
+  fi
+  # The SEEDED files are the inverse contract: real copies, never symlinks, so a user's
+  # identity/local edits are never tracked back into Core. A symlink here would publish
+  # someone's git identity into the repo on their next commit.
+  if [[ -f "$LR/config/git/local.gitconfig" && ! -L "$LR/config/git/local.gitconfig" ]] &&
+    [[ -f "$LR/config/sesh/sesh.toml" && ! -L "$LR/config/sesh/sesh.toml" ]]; then
+    pass "link run: seeded local.gitconfig and sesh.toml are COPIES, not symlinks"
+  else
+    fail "link run: a seeded file is missing or was symlinked (user edits would track back)"
+  fi
+  # Idempotency: bootstrap is re-run after every sync, so a second pass must be a no-op.
+  # Comparing sorted PATH NAMES is not enough — blib_link removing and recreating every
+  # symlink leaves the exact same names behind, which is precisely the churn this is
+  # supposed to catch. Compare INODES: a torn-down-and-remade link gets a new one.
+  # The second run's exit status is captured rather than discarded, so a rerun that fails
+  # outright cannot pass this as "nothing changed".
+  _lr_inodes() { find "$LR/config" "$LR/home" -maxdepth 4 -type l -exec ls -di {} + 2>/dev/null | sort -k2; }
+  _lr_before="$(find "$LR/config" "$LR/home" -maxdepth 4 2>/dev/null | sort)"
+  _lr_ino_before="$(_lr_inodes)"
+  HOME="$LR/home" XDG_CONFIG_HOME="$LR/config" bash -c '
+    set -u
+    . "'"$HERE/lib/bootstrap-lib.sh"'"
+    blib_link_core "'"$LR/dotfiles"'" "'"$LR/config"'" >/dev/null 2>&1
+  '
+  _lr_rc=$?
+  _lr_after="$(find "$LR/config" "$LR/home" -maxdepth 4 2>/dev/null | sort)"
+  _lr_ino_after="$(_lr_inodes)"
+  if ((_lr_rc == 0)) && [[ "$_lr_before" == "$_lr_after" ]] &&
+    [[ -n "$_lr_ino_before" && "$_lr_ino_before" == "$_lr_ino_after" ]] &&
+    ! find "$LR/config" "$LR/home" -name '*.pre-dotfiles.*' | grep -q .; then
+    pass "link run: a second pass is a true no-op (same inodes, no backups, rc=0)"
+  else
+    fail "link run: re-running bootstrap churned links, backed a file up, or failed (rc=$_lr_rc)"
+  fi
+else
+  skip "bootstrap link run (git unavailable)"
+fi
+
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
 # Track B's --only/--skip gate. blib_select VALIDATES a comma-separated selector and
 # records BLIB_ONLY/BLIB_SKIP; blib_want is the allowlist/skiplist predicate the link
@@ -4566,6 +4929,161 @@ if have python3; then
 else
   skip "maint launchd plist (python3 absent — cannot parse plist XML)"
 fi
+
+# ── the PATH capture (the one seam where an OS prefix may enter the runner) ───
+# maint/dotfiles-maint.sh is portable Core and names no Homebrew/pkgsrc/Nix prefix, so
+# the scheduler unit is the ONLY thing that tells the unattended runner where this box
+# keeps its binaries. Drop the capture in a refactor and nothing breaks loudly: the job
+# still fires, still logs, still exits 0 — it just resolves no brew/mise and skips those
+# steps silently. That is why this is asserted per-scheduler rather than trusted.
+# A /sentinel/bin injected into PATH at install time must appear in the rendered unit.
+ucheck "maint: systemd unit bakes in the installing shell's PATH" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; PATH=/sentinel/bin:\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q '^Environment=\"PATH=.*/sentinel/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
+  PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-path-systemd"
+# cron's command field is sh, so the PATH rides as an env prefix — and `%` is cron's
+# newline metacharacter, which would truncate the line mid-PATH if it were not escaped.
+# The sentinel deliberately contains one.
+ucheck "maint: cron line carries the PATH, single-quoted, with % escaped" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; PATH='/sent%inel/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; line=\$(cat \"\$CRON_CAPTURE\"); [[ \$line == *\"PATH='\"* ]] && [[ \$line == *'sent\\%inel'* ]]" \
+  PATH="$SCHEDBIN:$PATH" CRON_CAPTURE="$SANDBOX/cron-path.captured"
+# The decisive one. cron's command field is handed to /bin/sh, so a PATH entry holding
+# $(…), a backtick, or a quote is CODE unless it is quoted as DATA — an unquoted or
+# double-quoted assignment would evaluate it on every scheduled run, silently and with
+# the user's privileges. Build the assignment exactly as maint-install does, then let a
+# real /bin/sh parse it back and compare: nothing but a true round-trip passes this.
+_mq_want='/we'"'"'ird/$(echo pwned)/`echo pwned`/"dq"/bin'
+_mq_rendered="$(zsh -c "source '$UI'; source '$MNT'; _maint_sh_squote \"\$1\"" _ "$_mq_want" 2>/dev/null)"
+_mq_got="$(sh -c "PATH=$_mq_rendered; printf '%s' \"\$PATH\"" 2>/dev/null)"
+if [[ "$_mq_got" == "$_mq_want" ]]; then
+  pass "maint: a hostile PATH round-trips through /bin/sh as data (no \$() evaluation)"
+else
+  fail "maint: PATH did not round-trip through sh (got '$_mq_got')"
+fi
+# launchd's plist is XML: an unescaped & in a directory name yields a malformed plist
+# that launchctl rejects at load time, i.e. a schedule that silently never runs. Assert
+# plistlib can still PARSE it and that the value round-trips — the escape and the parse
+# together, since either alone would pass while the pair is broken.
+if have python3; then
+  ucheck "maint: launchd plist XML-escapes the PATH and still parses" \
+    "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; PATH='/a&b/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; python3 -c 'import sys,plistlib; d=plistlib.load(open(sys.argv[1],\"rb\")); sys.exit(0 if \"/a&b/bin\" in d[\"EnvironmentVariables\"][\"PATH\"] else 1)' \"\$HOME/Library/LaunchAgents/com.dotfiles.maint.plist\"" \
+    PATH="$SCHEDBIN:$PATH" HOME="$SANDBOX/sched-path-launchd"
+else
+  skip "maint launchd PATH capture (python3 absent — cannot parse plist XML)"
+fi
+# systemd expands % SPECIFIERS inside Environment= (%h = home, %i = instance, …), so a
+# legitimate PATH entry like /sent%h/bin would silently become /sent<homedir>/bin — or
+# the unit would refuse to load on an unknown specifier. Quotes and backslashes carry
+# unit-file syntax there too. Assert the three documented substitutions against a
+# literal expectation rather than round-tripping through a reimplementation of the rule.
+_ms_got="$(zsh -c "source '$UI'; source '$MNT'; _maint_systemd_escape \"\$1\"" _ '/a%h/b"c/d\e/bin' 2>/dev/null)"
+_ms_want='/a%%h/b\"c/d\\e/bin'
+if [[ "$_ms_got" == "$_ms_want" ]]; then
+  pass "maint: systemd Environment= escapes %, \" and \\ (no specifier expansion)"
+else
+  fail "maint: systemd escape wrong (got '$_ms_got' want '$_ms_want')"
+fi
+# ...and the rendered unit actually carries it, so the helper cannot be wired up wrong.
+ucheck "maint: the systemd unit's PATH survives a % in the installing PATH" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; PATH='/sent%h/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q 'Environment=\"PATH=/sent%%h/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
+  PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-pct-systemd"
+
+# ── the stale-unit detector (_maint_unit_needs_refresh) ──────────────────────
+# This is what makes the migration survivable. A unit written before the PATH capture
+# still fires, still logs, still exits 0 — and silently resolves no brew/mise. maint-status
+# is the ONLY place that can surface it, so the detector is load-bearing rather than a
+# nicety.
+#
+# The SECOND silent death is a unit whose recorded runner path no longer resolves: move
+# the consuming repo and the scheduler keeps firing at the old absolute path. Observed in
+# the wild, and invisible from every angle — `maint-status` printed the timer happily,
+# `launchctl list` reported exit status 0 (the job had not fired since the move), and
+# `maint-run` kept working because it re-resolves the runner from the live config rather
+# than reading the unit. Only reading the unit back catches it, so each arm is asserted
+# per-scheduler with a REAL runner path for the healthy fixture — point the "current"
+# fixtures at a path that does not exist and this whole section passes vacuously.
+#
+# Four states per scheduler, and the last matters as much as the others: a box with NO
+# schedule installed must stay quiet, or every such box is nagged forever.
+_MRF="$SANDBOX/maint-refresh"
+_MRF_RUNNER="$HERE/maint/dotfiles-maint.sh" # a path that really exists
+_MRF_GONE="$_MRF/moved-away/core/maint/dotfiles-maint.sh"
+rm -rf "$_MRF"
+mkdir -p "$_MRF/bin" "$_MRF/sd-new/systemd/user" "$_MRF/sd-old/systemd/user" \
+  "$_MRF/sd-dead/systemd/user" "$_MRF/sd-none" \
+  "$_MRF/ld-new/Library/LaunchAgents" "$_MRF/ld-old/Library/LaunchAgents" \
+  "$_MRF/ld-dead/Library/LaunchAgents" "$_MRF/ld-none"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash %s\n' "$_MRF_RUNNER" \
+  >"$_MRF/sd-new/systemd/user/dotfiles-maint.service"
+printf '[Service]\nExecStart=/usr/bin/env bash %s\n' "$_MRF_RUNNER" \
+  >"$_MRF/sd-old/systemd/user/dotfiles-maint.service"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash %s\n' "$_MRF_GONE" \
+  >"$_MRF/sd-dead/systemd/user/dotfiles-maint.service"
+printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string><string>%s</string></array><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  "$_MRF_RUNNER" >"$_MRF/ld-new/Library/LaunchAgents/com.dotfiles.maint.plist"
+# ld-old is precisely the case a bare `EnvironmentVariables` presence test MISSES: the
+# dict exists but carries no PATH, so the runner is still handed a stripped environment
+# while the detector reports the schedule as current.
+printf '<plist><dict><key>EnvironmentVariables</key><dict><key>LANG</key><string>C</string></dict></dict></plist>\n' \
+  >"$_MRF/ld-old/Library/LaunchAgents/com.dotfiles.maint.plist"
+# ld-dead is the observed macOS case, rendered as maint-install writes it (ProgramArguments
+# on its own line, argv[0] the interpreter) so the argv[1] extraction is exercised for real.
+printf '<plist><dict>\n  <key>ProgramArguments</key>\n  <array><string>/bin/bash</string><string>%s</string></array>\n  <key>EnvironmentVariables</key>\n  <dict><key>PATH</key><string>/x/bin</string></dict>\n</dict></plist>\n' \
+  "$_MRF_GONE" >"$_MRF/ld-dead/Library/LaunchAgents/com.dotfiles.maint.plist"
+printf '#!/bin/sh\ncase "$1" in -l) cat "${CRON_TABLE:-/dev/null}" ;; *) exit 0 ;; esac\n' >"$_MRF/bin/crontab"
+chmod +x "$_MRF/bin/crontab"
+# The PATH prefix is SINGLE-quoted, as _maint_sh_squote renders it — the runner extraction
+# has to step over that assignment, so a fixture using bare or double quotes would let a
+# parser that simply grabbed field 6 pass.
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_RUNNER" >"$_MRF/cron-new"
+printf '30 09 * * * /usr/bin/env bash %s # dotfiles-maint\n' "$_MRF_RUNNER" >"$_MRF/cron-old"
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_GONE" >"$_MRF/cron-dead"
+: >"$_MRF/cron-none"
+
+ucheck "maint/refresh: systemd unit WITH the PATH capture and a resolvable runner is current" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-new"
+ucheck "maint/refresh: systemd unit WITHOUT it is flagged stale (why=path)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
+  XDG_CONFIG_HOME="$_MRF/sd-old"
+ucheck "maint/refresh: systemd unit whose runner path is gone is flagged (why=runner)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  XDG_CONFIG_HOME="$_MRF/sd-dead"
+ucheck "maint/refresh: no systemd unit at all stays quiet (no nag without a schedule)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-none"
+ucheck "maint/refresh: launchd plist WITH a PATH key and a resolvable runner is current" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-new"
+ucheck "maint/refresh: launchd plist with EnvironmentVariables but NO PATH is flagged stale (why=path)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
+  HOME="$_MRF/ld-old"
+ucheck "maint/refresh: launchd plist whose ProgramArguments runner is gone is flagged (why=runner)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  HOME="$_MRF/ld-dead"
+ucheck "maint/refresh: no launchd plist at all stays quiet" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-none"
+ucheck "maint/refresh: cron line carrying a PATH and a resolvable runner is current" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-new"
+ucheck "maint/refresh: cron line without a PATH is flagged stale (why=path)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-old"
+ucheck "maint/refresh: cron line whose runner path is gone is flagged (why=runner)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-dead"
+ucheck "maint/refresh: an empty crontab stays quiet" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-none"
+# The runner a unit records must be read back VERBATIM — the hint prints it, and an
+# extraction that mangled it (dropping the PATH prefix's quoting, or half a path with a
+# space) would still "detect" a dead runner while telling the operator the wrong path.
+ucheck "maint/refresh: the recorded runner path is read back verbatim (launchd argv[1])" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
+  HOME="$_MRF/ld-dead"
+ucheck "maint/refresh: the recorded runner path is read back verbatim (cron, past the PATH prefix)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-dead"
 
 # ── maint RUNNER stdin contract (hermetic, bash — the runner is not zsh) ──────
 # The runner is unattended but inherits whatever stdin started it (a terminal, via
