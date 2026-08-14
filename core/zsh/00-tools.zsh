@@ -116,14 +116,17 @@ _have tldr  && HAVE_TLDR=1          # tealdeer binary (20-aliases.zsh: help → 
 _have jq && HAVE_JQ=1               # JSON processor (gron greps; jq transforms — complements)
 _have yq && HAVE_YQ=1              # YAML/JSON/XML processor (the jq of YAML)
 _have jnv && HAVE_JNV=1            # interactive jq-filter editor + collapsible JSON viewer — own command, no alias (the "explore" verb to jq's "transform"/gron's "grep"). Opt-in; inert without the binary.
+_have lnav && HAVE_LNAV=1          # log reader — merges timelines, autodetects formats, runs SQL over records; own command, no alias (bat/rg read lines, jq/gron read JSON; nothing else reads a log AS a log). Opt-in; inert without the binary.
 _have duf && HAVE_DUF=1             # modern df (20-aliases.zsh: df → duf, with df -h fallback)
 _have ouch && HAVE_OUCH=1          # one-binary archive (un)packer (30-functions.zsh: extract prefers it)
 _have hyperfine && HAVE_HYPERFINE=1 # benchmarking (the perf note at the top of this file uses it)
+_have watchexec && HAVE_WATCHEXEC=1 # run a command when files change — own command, no alias (the EVENT-driven sibling to viddy's time-driven watch and hyperfine's measured repeat). Opt-in; inert without the binary.
 _have shellcheck && HAVE_SHELLCHECK=1 # shell linter (own command — no alias)
 _have shfmt && HAVE_SHFMT=1        # shell formatter (own command — no alias)
 _have jj && HAVE_JJ=1              # jujutsu — OPT-IN, colocated git companion (20-aliases.zsh: jjs/jjl/jjd)
 _have sesh && HAVE_SESH=1          # smart tmux session manager — drives Ctrl-G (35-fzf.zsh) + prefix+f (tmux-sesh.sh); both fall back to find+fzf when unset
 _have difft && HAVE_DIFFT=1        # difftastic — AST/structural diff; OPT-IN companion to delta (git dft), never the default pager (20-aliases.zsh: gdft)
+_have git-absorb && HAVE_GIT_ABSORB=1 # routes staged hunks into the earlier commit each belongs to, as fixup!s (git/gitconfig already sets rebase.autosquash). Installs as the `git absorb` SUBCOMMAND, so it shadows nothing and needs no alias. Detected on PATH only — a box that puts it in git's libexec dir instead has a working `git absorb` and an unset flag; probing `git absorb` would cost a fork per shell, which this file exists to avoid.
 [[ -n ${FD_BIN:-} ]] && HAVE_FD=1
 [[ -n ${BAT_BIN:-} ]] && HAVE_BAT=1
 [[ -n ${BROWSER_BIN:-} ]] && HAVE_BROWSER=1  # terminal web browser (20-aliases.zsh: web + headless BROWSER)
@@ -172,28 +175,123 @@ if [[ -n ${HAVE_STARSHIP:-} && -n ${RPROMPT:-} ]]; then
   add-zsh-hook precmd _starship_keep_rprompt
 fi
 
-# ── Command-block separators (Pass 2, P12) ────────────────────────────────────
-# A thin full-width rule drawn above each prompt that FOLLOWED a command, colored by
-# that command's exit status: dim (#414868) on success, red (#f7768e) on failure. It
-# turns scrollback into visually delimited "blocks" — scan the left edge for red to
-# find what broke. Pure precmd/preexec output (NO ZLE widget), so unlike a transient
-# prompt it cannot collide with zsh-vi-mode. A bare Enter draws no rule (the preexec
-# flag gates it), so idle prompts don't stack rules.
-if [[ -n ${HAVE_STARSHIP:-} ]]; then
-  autoload -Uz add-zsh-hook
+# ── Command blocks: OSC 133 prompt marks + the separator rule ─────────────────
+# ONE preexec/precmd pair with two jobs, because both need the SAME state — "did a
+# command run" and that command's true exit code. (The A mark is the one piece that
+# cannot live in a hook at all; it has its own block below, and its own reason.)
+#
+# (1) OSC 133 SEMANTIC PROMPT MARKS. tmux has parsed these since 3.4 and exposes
+#     next-prompt / previous-prompt in copy mode (bound to ] / [ in tmux.reset.conf),
+#     so "scroll up hunting for where that command started" becomes a keypress. The
+#     capability is already paid for fleet-wide (the floor is Gentoo's 3.6a) and was
+#     simply unused: Core emitted no OSC at all.
+#
+#     Only A and C are emitted, and the SUBSET is the point. `man tmux` documents a
+#     dependence on exactly those two — A (\e]133;A\e\\) for previous/next-prompt, C for
+#     the -o "jump to command output" variant. B (end-of-prompt) is skipped: nothing
+#     documented consumes it, and it would be a second thing to keep in PROMPT.
+#     D;<exit> is emitted anyway: it is free from the exit code captured below, and is
+#     what non-tmux OSC 133 consumers read for per-command status.
+#
+#     C and D are HOOK OUTPUT — `print` is a builtin, so emission is fork-free; -rn,
+#     since a trailing newline would open a blank line above every prompt; ST terminator
+#     (\e\\), which is what tmux documents, not BEL; and NOT wrapped in %{…%}, because
+#     this is output and not a prompt string. A is the exception and lives in $PROMPT —
+#     see the block below for why that is measured rather than preferred. No ZLE widget
+#     anywhere, so none of this can collide with zsh-vi-mode.
+#
+# (2) The SEPARATOR RULE (Pass 2, P12): a thin full-width rule above each prompt that
+#     FOLLOWED a command, colored by its exit status — dim (#414868) on success, red
+#     (#f7768e) on failure. Scan the left edge for red to find what broke. STARSHIP-ONLY
+#     (it is a prompt cosmetic), where the marks must work on a bare box and over SSH —
+#     so the hooks live OUTSIDE the HAVE_STARSHIP gate and only the rule stays inside it.
+#     One code path, two independently-gated outputs.
+#
+# A bare Enter is still a jump target (the A mark is in PROMPT, so every prompt carries
+# it) but emits no D and draws no rule — those describe a command that actually ran.
+#
+# WHERE THE MARKS STAND DOWN — decided ONCE here, so the per-prompt cost is one
+# parameter test:
+typeset -g _CORE_OSC133=1
+# Ghostty auto-injects its own shell integration, which already marks prompts — but into
+# the INITIAL shell ONLY, while GHOSTTY_SHELL_FEATURES is EXPORTED and therefore reaches
+# the tmux server and every pane it spawns. Standing down on the variable alone would
+# silence Core's marks in exactly the place they are used, with nothing else marking
+# there. So stand down only OUTSIDE tmux, where Ghostty's marks really are present to be
+# doubled; inside tmux Core is the only emitter and keeps the job.
+[[ -n ${GHOSTTY_SHELL_FEATURES:-} && -z ${TMUX:-} ]] && _CORE_OSC133=
+# A consumer that does not parse OSC (TERM=dumb — Emacs M-x shell) would render the
+# sequence as literal `]133;A` garbage above every prompt.
+[[ ${TERM:-} == dumb ]] && _CORE_OSC133=
+
+# ── The A mark lives in $PROMPT, not in a hook — MEASURED, not preference ─────
+# zsh's prompt preamble is \r, SGR resets, then ED (\e[J — "erase from the cursor to the
+# end of the screen"), and tmux drops a line's prompt flag when that line is cleared. An A
+# emitted from precmd lands on the very line the prompt is about to be drawn on, so the ED
+# that follows wipes the mark before the prompt is even visible: measured on tmux 3.7b,
+# previous-prompt then does not move AT ALL — the feature looks implemented and does
+# nothing. Embedding it in PROMPT as a ZERO-WIDTH %{…%} escape means it is re-emitted on
+# every prompt DRAW, after that ED, so the flag survives; it is also why every other shell
+# integration marks prompts this way. C and D are unaffected and stay in the hooks:
+# nothing reads them back off the grid, so being cleared costs them nothing.
+#
+# The companion half is in 45-plugins.zsh: zsh-transient-prompt REDRAWS each finished
+# prompt as a collapsed ❖, which is a fresh ED over the line that carried the mark — so
+# the transient string carries $_CORE_OSC133_MARK too, or scrollback (the thing you jump
+# THROUGH) would lose every mark the moment its command finished.
+typeset -g _CORE_OSC133_MARK=
+if [[ -n ${_CORE_OSC133:-} ]]; then
+  _CORE_OSC133_MARK=$'%{\e]133;A\e\\%}'
+  # APPENDED, so it runs AFTER starship_precmd: starship re-sets PROMPT wholesale on every
+  # precmd, so a mark applied before it would be discarded again each time. Idempotent —
+  # the compare is QUOTED, matching the mark as a literal string rather than as a pattern —
+  # because on a box without starship PROMPT is static and would otherwise grow one mark
+  # per prompt, forever.
+  _core_osc133_prompt() {
+    local -i rc=$? # transparent to $?, like _core_atuin_daemon_guard below
+    [[ $PROMPT == "$_CORE_OSC133_MARK"* ]] || PROMPT=${_CORE_OSC133_MARK}${PROMPT}
+    return $rc
+  }
+  precmd_functions=(${precmd_functions:#_core_osc133_prompt} _core_osc133_prompt)
+fi
+
+# Register only when the pair has work to do: marks stood down AND no starship means a
+# box must not carry the hooks at all.
+if [[ -n ${HAVE_STARSHIP:-} || -n ${_CORE_OSC133:-} ]]; then
   typeset -gi _CMD_BLOCK_RAN=0
-  _cmd_block_preexec() { _CMD_BLOCK_RAN=1 }
+  _cmd_block_preexec() {
+    [[ -n ${_CORE_OSC133:-} ]] && print -rn -- $'\e]133;C\e\\' # command output starts here
+    _CMD_BLOCK_RAN=1                                           # last, so the hook returns 0
+  }
   _cmd_block_precmd() {
     local ec=$?                               # captured FIRST — real command exit code
-    (( _CMD_BLOCK_RAN )) || return            # nothing ran → no rule
-    _CMD_BLOCK_RAN=0
-    local w=${COLUMNS:-80} col
-    if (( ec == 0 )); then col='%F{#414868}'; else col='%F{#f7768e}'; fi
-    print -rP -- "${col}${(l:w::─:)}%f"
+    if (( _CMD_BLOCK_RAN )); then
+      _CMD_BLOCK_RAN=0
+      [[ -n ${_CORE_OSC133:-} ]] && print -rn -- $'\e]133;D;'"$ec"$'\e\\'
+      if [[ -n ${HAVE_STARSHIP:-} ]]; then
+        local w=${COLUMNS:-80} col
+        if (( ec == 0 )); then col='%F{#414868}'; else col='%F{#f7768e}'; fi
+        print -rP -- "${col}${(l:w::─:)}%f"
+      fi
+    fi
+    # Hand back the command's status rather than the last print's. BELT AND BRACES, and
+    # measured as such rather than assumed: zsh saves and restores $? around EACH hook in
+    # precmd_functions, so on 5.9 a later hook (starship_precmd included) sees the command's
+    # code no matter what this one returns, a non-zero return does NOT stop the rest of the
+    # chain, and it does not reach the prompt's own %(?..) either. So this fixes nothing
+    # today — it states the contract the D;<exit> mark above depends on, in the same shape
+    # _core_atuin_daemon_guard already uses, and costs one integer.
+    return $ec
   }
-  add-zsh-hook preexec _cmd_block_preexec
-  add-zsh-hook precmd  _cmd_block_precmd
-  # Run our precmd FIRST so $? is the command's exit code, not starship_precmd's.
+  # Registered by editing the hook arrays DIRECTLY rather than via add-zsh-hook: the
+  # precmd line already had to, for ORDER, and now that this block runs on a box with no
+  # starship, autoloading add-zsh-hook for the preexec line would be the ~1ms of startup
+  # the atuin guard below refuses to pay for a single registration.
+  preexec_functions=(${preexec_functions:#_cmd_block_preexec} _cmd_block_preexec)
+  # Our precmd runs FIRST. The reason this line has always given — "so $? is the command's
+  # exit code, not starship_precmd's" — does not survive measurement: zsh restores $? around
+  # every hook, so position buys nothing there. What it does buy is OUTPUT order — the rule
+  # and the D mark belong above whatever a later hook prints, not interleaved with it.
   precmd_functions=(_cmd_block_precmd ${precmd_functions:#_cmd_block_precmd})
 fi
 
@@ -210,13 +308,17 @@ fi
 
 # ── atuin daemon (OPT-IN) — degrade to direct writes when it isn't reachable ───
 # atuin's daemon owns the SQLite writes and shells talk to it over a unix socket, which
-# relieves the DB-lock contention every shell and every tmux pane otherwise pays —
-# measured at ~1.4x on p50 and ~1.2-1.3x on p95. Whether it helps or hurts the FAR tail
-# is unsettled: the runs that said "worse" timed `history start` + `history end`
-# together, but the hook backgrounds `end`, and the one run that timed only the blocking
-# call found p99 improving instead. Don't sell it as a tail fix, or as a tail regression,
-# until that is re-measured (scripts/bench-atuin-daemon.sh reports the two metrics
-# separately; full numbers and caveats in the config). Core
+# relieves the DB-lock contention every shell and every tmux pane otherwise pays. On the
+# systemd path with the history DB on a local disk that is now MEASURED, not borrowed:
+# p50 ~1.55x and p95 ~2.3x faster on `history start` — the call the prompt actually blocks
+# on — across three runs, with p99 faster in every one but by an unstable 1.4-3.3x, so quote
+# the tail as a direction and not a figure (dotgibson/dotfiles-core#352). Two caveats that
+# change what may be quoted. Storage decides whether the tail is even visible: on tmpfs
+# the same harness gives coin-flip noise, and the win grows with how slow the filesystem
+# is. And figures that time `history start` + `history end` together are TOTAL WRITE WORK,
+# not latency — the hook backgrounds `end` — and their p99 remains unresolved. Say which
+# metric a number is (scripts/bench-atuin-daemon.sh reports the two separately; full
+# numbers, hosts and what is still unmeasured in the config). Core
 # ships the [daemon] block OFF (core/atuin/config.toml); a machine opts IN from its OS
 # layer (os/<os>.zsh) or host layer (99-local) with atuin's own env overrides —
 # ATUIN_DAEMON__ENABLED=true, plus ATUIN_DAEMON__AUTOSTART=true where nothing else
@@ -229,7 +331,27 @@ fi
 # stderr — and DISCARDS the entry. No error, no fallback, no row. Verified for an absent
 # socket, a stale socket file, and with and without --hook; the daemon-off control writes
 # every row. (It also makes the dead-socket path benchmark FASTER than a direct write,
-# 4.17 ms vs 8.27 ms mean, because it is timing a no-op.)
+# 4.17 ms vs 8.27 ms mean, because it is timing a no-op.) Upstream: atuinsh/atuin#3561 —
+# and note the direction of travel, because everything below is premised on this ONE fact:
+# 18.16.1 failed LOUDLY (empty ATUIN_HISTORY_ID, which then crashed `history end`), 18.19.0
+# fails silently. It has moved once, so it can move again, so it is MEASURED rather than
+# assumed: .github/workflows/atuin-guard-verify.yml runs scripts/verify-atuin-guard.sh every
+# Tuesday against whatever atuin upstream ships that week, and files an issue when the answer
+# changes. /tool-scout carries the judgment half.
+#
+# The line below is the MACHINE-READABLE anchor both of them compare against — one line, at
+# column 0, with nothing but the value after the `=`. It exists because grepping the prose
+# above is how a detector silently starts comparing against the wrong number: that paragraph
+# also names 18.16.1, and a re-verification that measures against the wrong version is worse
+# than one that never runs. Editing it is a CLAIM that the premise was re-measured at that
+# version — not a version bump.
+# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0
+#
+# ONE ANCHOR PER PREMISE. The stand-down below rests on a DIFFERENT upstream fact, measured by
+# a different mode (`--premise autostart`) and reported under its own issue title, so it gets
+# its own line rather than borrowing this one — otherwise re-measuring either premise would
+# silently re-date the claim about the other.
+# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=18.19.0
 #
 # So this guard is DATA-LOSS PREVENTION, not a latency optimisation: keep probing (see the
 # throttle below) and, the first time nothing is listening, force the daemon off for THIS shell
@@ -268,7 +390,12 @@ fi
 # is decided on. That is also why a probe landing in the shipped unit's RestartSec=3 gap is allowed
 # to degrade a shell that would have recovered: during that gap atuin IS discarding, so degrading
 # is the right answer even when it is early. Re-enabling would mean trusting, on the prompt path
-# and for the rest of the session, a socket we just watched lie.
+# and for the rest of the session, a socket we just watched lie. Note what that rests on: DISCARDING,
+# not merely "the row does not land now". An atuin that SPOOLED the entries and replayed them on the
+# next successful write would leave the same absence behind and invert this reasoning — one-way would
+# then be the wrong default. verify-atuin-guard.sh's closing daemon-off arm is what watches for that
+# (a delta above one), and it is the cheapest half: a spool only a live daemon would drain is out of
+# reach without spawning one, so /tool-scout carries the rest as an upstream question (#383).
 #
 # IT WARNS EXACTLY ONCE, AND ONLY MID-SESSION. A shell already degraded at its first prompt says
 # nothing — nothing changed under the user, and the machines that simply do not run the daemon
@@ -341,6 +468,18 @@ _core_atuin_daemon_guard() {
   # someone who writes ATUIN_DAEMON__ENABLED=1 has opted in as far as atuin is concerned,
   # so the guard must agree or it silently sits out exactly when it is needed. AUTOSTART means
   # atuin supervises the daemon itself, so an absent socket there is a cue to start one, not a fault.
+  # That last clause covers Alpine and macOS — two of the eight machines, for whom it is the ONLY
+  # mitigation — and it is now MEASURED rather than assumed (#402). It has its own mode, its own
+  # anchor above and its own issue title, because its remedy is nothing like the discard premise's:
+  # `scripts/verify-atuin-guard.sh --premise autostart` spawns a real daemon and owns its teardown,
+  # and the weekly workflow runs it as a separate job. On 18.19.0 all four arms spawn and land a
+  # row, INCLUDING over the stale socket a crashed daemon leaves — the client unlinks it first,
+  # which `atuin daemon start` on its own does not.
+  #
+  # If that ever regresses, the fix is NOT to delete this stand-down. The degrade path below
+  # exports ATUIN_DAEMON__ENABLED=false, which under autostart removes the spawn itself and
+  # permanently defeats the only launcher these two machines have — worse than the failure it
+  # would be reacting to. Warn without disabling, or stand down only after N failed spawns.
   if [[ ${ATUIN_DAEMON__ENABLED:l} != (1|t|true|y|yes|on) ]] ||
     [[ ${ATUIN_DAEMON__AUTOSTART:l} == (1|t|true|y|yes|on) ]]; then
     precmd_functions=(${precmd_functions:#_core_atuin_daemon_guard})

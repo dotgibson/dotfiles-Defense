@@ -3,7 +3,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Deliberately roll the pinned Neovim plugin revisions in nvim/lazy-lock.json
 # forward. This is the lazy.nvim counterpart of scripts/update-plugins.sh (which
-# bumps the zsh-plugin SHAs): pins exist so nothing floats silently into the 9 OS
+# bumps the zsh-plugin SHAs): pins exist so nothing floats silently into the 8 OS
 # repos, and THIS is the one place the nvim ones move — under review, not on their own.
 #
 # Why a committed lockfile at all: lazy.nvim clones plugins from their default

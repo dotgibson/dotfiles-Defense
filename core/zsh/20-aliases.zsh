@@ -79,9 +79,14 @@ fi
 # doggo: modern dig (DNS recon). dig stays as-is; this is a distinct verb.
 [[ -n ${HAVE_DOGGO:-} ]] && alias dns='doggo'
 # gron / sd are their own commands (no alias — never shadow sed in scripts).
-# jq / yq / jnv / hyperfine / shellcheck / shfmt are likewise their own commands: they
-# shadow nothing classic, so they get HAVE_* detection in 00-tools.zsh but no alias.
+# jq / yq / jnv / lnav / hyperfine / watchexec / shellcheck / shfmt are likewise their own
+# commands: they shadow nothing classic, so they get HAVE_* detection in 00-tools.zsh but
+# no alias.
 # (jnv is the interactive JSON explorer — you run `jnv file.json` or pipe into it.)
+# (lnav is the log reader — `lnav /var/log/...` or a directory; it merges and follows.)
+# (watchexec re-runs a command on file changes — `watchexec -e py -- pytest`. NOT aliased
+#  to `watch`: 20-aliases.zsh already points `watch` at viddy, and conflating "re-run on a
+#  timer" with "re-run on a change" would silently give you the wrong one.)
 
 # ── editor + misc QoL ─────────────────────────────────────────────────────────
 alias vim='nvim'
@@ -117,6 +122,9 @@ alias vim='nvim'
 # right after this file). Two exceptions live here because they are TOOL-DETECTION
 # gated, not git-workflow aliases: the `lg` lazygit launcher and the HAVE_DIFFT-gated
 # `gdft` below.
+# git-absorb gets NO alias at all — it installs as the `git absorb` subcommand, so git
+# already dispatches it and there is nothing to shadow. 00-tools.zsh detects it
+# (HAVE_GIT_ABSORB) purely so core-doctor can report it; see git/gitconfig's `fix` alias.
 alias lg='lazygit'
 
 # difftastic (difft): AST/structural diff — an OPT-IN companion to delta, never the

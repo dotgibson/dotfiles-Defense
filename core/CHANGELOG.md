@@ -13,7 +13,238 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.10.0] - 2026-08-13
+
 ### Added
+
+- **The `autostart` stand-down is measured now, not assumed** (`dotgibson/dotfiles-core#402`).
+  `_core_atuin_daemon_guard` stands down _entirely_ under `ATUIN_DAEMON__AUTOSTART` — it
+  unhooks itself from `precmd_functions` and never probes — because atuin is supposed to
+  supervise its own daemon there. That covers **Alpine and macOS**, two of the eight machines,
+  and on those two it was the only mitigation. Nothing measured it: the weekly detector never
+  set the variable, so a green run said nothing about those rows, and an upstream regression
+  would have cost them their history with no symptom — the same failure mode as #366.
+
+  `scripts/verify-atuin-guard.sh` gains `--premise discard|autostart` (default `discard`) plus
+  `make verify-atuin-guard-autostart`, and the weekly workflow gains `measure-autostart` and
+  `report-autostart` jobs with their own issue titles. **One premise, one verdict, one title**:
+  an autostart finding needs a different remedy from a discard one, and would otherwise arrive
+  under a heading that misdescribes it. The default target still starts no background process —
+  asserted by construction, since the stub logs every invocation it receives.
+
+  The measurement's own discipline is the interesting part. Because this premise is _caused_
+  rather than observed, "autostart did not spawn a daemon" and "this box cannot host a daemon"
+  are the same observation — so a **manual-spawn control** runs first and its failure is
+  `unmeasurable`, never a finding about upstream. A second control tries a manual bind over a
+  _stale_ socket and records the answer, which is what separates "the client will not re-spawn
+  after a crash" from "the daemon cannot bind over a leftover inode". Teardown goes through
+  `atuin daemon stop` and is **proven** by a connect rather than believed from an exit status,
+  escalating to the socket's owning PID and then a signal; the run refuses to spawn at all on a
+  build lacking either subcommand, because a daemon it cannot reap would be left writing into a
+  tree the exit trap is about to delete.
+
+  Two upstream facts this established on 18.19.0, both recorded in `PORTING-MATRIX.md`: the
+  **stale-socket shape is the load-bearing one** — every `atuin history start` is a fresh
+  process, so "fire-and-forget" can only mean a crashed daemon's leftover inode defeats the
+  spawn — and the healing lives in the **client**, since `atuin daemon start` alone refuses over
+  a stale inode with `Address already in use` while the autostart path unlinks it first. Also
+  measured, and load-bearing for the arms: with a daemon serving, `history start` writes nothing
+  and the row lands on `history end`.
+
+  `/tool-scout` loses a standing upstream question it could only ever have answered from release
+  notes, and the report names the trap in its own remedy: "make the guard stop standing down" is
+  the fix that breaks those two machines, because the degrade path sets
+  `ATUIN_DAEMON__ENABLED=false` and under autostart that removes the spawn itself.
+
+- **`git-absorb` — auto-route staged hunks into the earlier commit each belongs to**
+  (`dotgibson/dotfiles-core#394`). `00-tools.zsh` now detects `git-absorb` and sets
+  `HAVE_GIT_ABSORB`. It works out which earlier commit each **staged hunk** belongs to and
+  writes the `fixup!` commits for you; `git/gitconfig` already sets
+  `rebase.autosquash = true`, so `git rebase -i` folds them in without further ceremony. It
+  is the automatic counterpart to the `git fix` alias Core has always shipped — `git fix
+  <sha>` when you know the target commit, `git absorb` when you don't. That `[alias]` line
+  now carries a comment saying so.
+
+  **This is the house-style ideal: a tool that needs no alias at all.** It installs as
+  `git-absorb` on `PATH`, which git dispatches as the `git absorb` subcommand, so it shadows
+  nothing and `20-aliases.zsh` gains only a note explaining why there's nothing to add.
+  Detection exists purely so `core-doctor` can report it, where it joins the `dev / repo`
+  group. One documented caveat: the probe is `command -v git-absorb`, so a distro that
+  installed the binary into git's `libexec/git-core` instead of a `PATH` directory would
+  give a working `git absorb` and an unset flag — no mainstream package does, and probing
+  `git absorb --version` would add a `git` fork to every interactive shell, which
+  `00-tools.zsh` exists to avoid.
+
+  It is also the first `core-doctor --json` key that is not a bare identifier, so the
+  function's docstring now says which parsers care: the key is emitted quoted and the JSON
+  is valid, but jq's dot shorthand reads `.tools.git-absorb` as a subtraction — consumers
+  write `.tools["git-absorb"]`.
+
+  Packaged essentially everywhere and installed nowhere on Linux, so it takes the ²¹
+  "available, not installed" shape and joins that footnote's macOS-only bullet alongside
+  `lnav`. Verified against each distro's own package pages: Arch `extra`, Alpine
+  `community`, **Gentoo `dev-vcs/git-absorb` stable on amd64 in the main tree** (no GURU),
+  Homebrew and Debian/Kali all on 0.9.0 — note repology reports the Debian **source**
+  package as `rust-git-absorb` while the **binary** you install is `git-absorb`. **openSUSE
+  Tumbleweed is the one laggard at 0.6.17**, the gap #394 flagged, now confirmed rather than
+  snapshotted. New `PORTING-MATRIX.md` row and footnote ²⁶. (`zsh/00-tools.zsh`,
+  `zsh/20-aliases.zsh`, `zsh/30-functions.zsh`, `git/gitconfig`, `PORTING-MATRIX.md`)
+
+- **`watchexec` — event-driven repetition, the third corner of a triangle Core had two of**
+  (`dotgibson/dotfiles-core#393`). `00-tools.zsh` now detects `watchexec` and sets
+  `HAVE_WATCHEXEC`. `viddy` re-runs a command on a **timer** and `hyperfine` re-runs it a
+  fixed **count** while measuring; nothing re-ran it when **files changed** — the
+  "re-run the tests when I save" verb (`watchexec -e py -- pytest`). Own command, inert
+  without the binary, and deliberately **not** aliased to `watch`: `20-aliases.zsh` already
+  points `watch` at `viddy`, and collapsing "re-run on a timer" into "re-run on a change"
+  would silently hand you the wrong one. It also opens a new `dev / repo` group in both of
+  `core-doctor`'s inventories.
+
+  **It is the one tool in the matrix that nothing in the fleet installs, macOS included** —
+  unlike `lnav`, the MacBook `Brewfile` doesn't carry it either, so every machine is opt-in.
+  Arch `extra`, openSUSE Tumbleweed, Alpine `community` (native musl) and Homebrew are all
+  on 2.5.1; **Gentoo has it in GURU only** at 2.5.0 — and it is deliberately kept out of
+  footnote ¹²'s GURU list, which enumerates what `dotfiles-Gentoo` actually installs, not
+  what exists (the `gping`¹⁹ precedent). **Fedora and Debian/Kali don't package it at all**
+  — confirmed against Fedora's own package search, not a repology snapshot — so those two
+  take `cargo install --locked watchexec-cli`; note the crate is `watchexec-cli`, because
+  plain `watchexec` on crates.io is the library and installs no binary. New
+  `PORTING-MATRIX.md` row and footnote ²⁵. (`zsh/00-tools.zsh`, `zsh/20-aliases.zsh`,
+  `zsh/30-functions.zsh`, `PORTING-MATRIX.md`)
+
+- **`lnav` — the missing "read a log as a log" verb** (`dotgibson/dotfiles-core#392`).
+  `00-tools.zsh` now detects `lnav` and sets `HAVE_LNAV`. Core had no tool for this
+  category at all: `bat`/`rg` read a log as **lines**, `jq`/`gron`/`jnv` read it as
+  **JSON**, `glow` as markdown — none of them knows that a log is a sequence of
+  timestamped records. `lnav` autodetects the common formats, merges several files into
+  one timeline ordered by timestamp, follows like `tail -f`, and exposes the parsed
+  records to SQL. It's its own command with no alias (like `jq`/`gron`/`jnv`) and is inert
+  without the binary, so nothing changes on a box that doesn't have it.
+
+  Unlike the Rust/Go tools already in the matrix it is a **C++** CLI, so there is no
+  `cargo install`/`go install` escape hatch — but it doesn't need one: upstream ships
+  **static musl binaries** each release (`lnav-0.14.0-linux-musl-x86_64.zip` plus an
+  `arm64` twin), so the fallback on an unpackaged or lagging box is "unzip the official
+  build", not "compile it". It is **detect-only on Linux**: no Linux repo's `install/packages.txt` carries
+  it and no `bootstrap.sh` installs it, so the flag lights up only once you install it
+  yourself; **macOS is the exception, where the `Brewfile` has carried it since
+  2026-07-15**. That is `hyperfine`/`shellcheck`/`shfmt`/`ouch`'s situation, so `lnav`
+  joins that bullet in footnote ²¹ and its row carries ²¹ alongside its own ²⁴.
+
+  Every version was read off the distro's own package page rather than a repology snapshot,
+  and **Fedora is reported per release** because it is a versioned distro and one
+  unqualified "current" hides the answer: **F45/Rawhide 0.14.0, F44 0.13.2, F43 0.12.4**.
+  Arch `extra`, openSUSE Tumbleweed and Homebrew are on 0.14.0, and **Alpine has a native
+  musl build in `community`**. Two targets lag enough to name: **Gentoo at 0.11.2** — the
+  only version in the tree, and the package needs a new maintainer — and **Kali/Debian at
+  0.13.2**. On any of them the upstream static musl zip gets you 0.14.0 without waiting for
+  the package. New `PORTING-MATRIX.md` row and footnote ²⁴, and `lnav` joins the
+  `data / net` group in both of `core-doctor`'s inventories. (`zsh/00-tools.zsh`,
+  `zsh/20-aliases.zsh`, `zsh/30-functions.zsh`, `PORTING-MATRIX.md`)
+
+- **OSC 133 semantic prompt marks — `[` / `]` jump between prompts in tmux copy mode**
+  (`dotgibson/dotfiles-core#391`). Core emitted no OSC sequences at all, while tmux has parsed
+  OSC 133 since 3.4 and exposed `previous-prompt` / `next-prompt` in copy mode the whole time —
+  the capability was already paid for on every machine (the fleet floor is Gentoo's 3.6a) and
+  simply unused. `zsh/00-tools.zsh` now marks prompts and `tmux/tmux.reset.conf` binds `[` / `]`
+  in `copy-mode-vi` to jump between them, turning "scroll up hunting for where that command
+  started" into a keypress. No new file, no binary, no `core.manifest` change; `{` / `}` are
+  deliberately left alone (vi previous/next-paragraph), and no version gate is needed.
+
+  **The `A` mark lives in `$PROMPT`, and that is measured rather than preferred.** The obvious
+  implementation — emit `\e]133;A\e\\` from `precmd`, next to the command-block rule that
+  already runs there — does not work, and fails silently: zsh's prompt preamble ends in `ED`
+  (`\e[J`, "erase to end of screen") over the very line the mark was just written to, and tmux
+  drops a line's prompt flag when that line is cleared. Measured on tmux 3.7b, `previous-prompt`
+  then does not move at all — the feature looks implemented and does nothing. Embedding it in
+  `PROMPT` as a zero-width `%{…%}` escape means it is re-emitted on every prompt _draw_, after
+  that `ED`, which is also why every other shell integration marks prompts this way. The hook
+  that applies it is APPENDED to `precmd_functions`, so it runs after `starship_precmd` re-sets
+  `PROMPT` wholesale, and is idempotent for the box where `PROMPT` is static and would otherwise
+  grow one mark per prompt. `45-plugins.zsh` carries the same mark on the transient prompt:
+  collapsing a finished prompt to `❖` redraws that line too, and scrollback is exactly what
+  `previous-prompt` jumps _through_.
+
+  Only `A` and `C` are marks tmux documents a dependence on, so that is the subset;
+  `D;<exit>` is emitted anyway because it is free from the exit code already captured and is
+  what non-tmux OSC 133 consumers read for per-command status. `C`/`D` stay hook output — being
+  cleared costs them nothing, since nothing reads them back off the grid. The marks **stand
+  down** in two places: under Ghostty's own shell integration, but only OUTSIDE tmux —
+  `GHOSTTY_SHELL_FEATURES` is exported and reaches the tmux server, while Ghostty injects into
+  the initial shell only, so guarding on the variable alone would have silenced the marks in
+  exactly the place they are spent — and on `TERM=dumb`, which would render them as literal
+  `]133;A` garbage. Fourteen behavioural cases in `scripts/test-core.sh` pin all of it.
+
+  One premise of #391 did **not** survive measurement and is recorded here so it is not
+  re-derived: that `_cmd_block_precmd` returning its last `print`'s status rather than the
+  command's left `starship_precmd` reading the wrong `$?`. zsh saves and restores `$?` around
+  **each** hook in `precmd_functions` — measured on 5.9, every hook sees the command's code
+  regardless of what the one before it returned, a non-zero return does not stop the rest of
+  the chain, and it never reaches the prompt's own `%(?..)`. The hook now returns `$ec`
+  anyway, as the contract the `D;<exit>` mark is written against, but nothing was broken and
+  nothing user-visible changed — including starship's error indicator, which was always
+  correct. The same correction applies to the "run our precmd FIRST so `$?` is the command's"
+  comment that line has carried since P12: the ordering is worth keeping for OUTPUT order,
+  not for `$?`.
+
+- **The atuin daemon's systemd path is measured, and the tail claim holds on it**
+  (`dotgibson/dotfiles-core#352`). Adoption's whole justification was that the daemon owning
+  the SQLite writes removes the DB-lock contention every shell and tmux pane pays, and it had
+  never been measured here for want of a systemd box. `--systemd` has now run — seven times, on
+  Fedora 44 under WSL2 with a real user manager, a real transient unit, glibc 2.43 and atuin
+  18.19.0 — and every run passed the three checks a first real run had to: the unit stayed
+  active for the whole arm, its `MainPID` owned the listening socket, and the row deltas were
+  exact. On **prompt latency** — `history start` alone, the call `_atuin_preexec` blocks the
+  shell on, and the only figure quotable as latency — with the history DB on a local ext4 home,
+  three runs: **p50 1.55× / 1.55× / 1.60×, p95 2.50× / 2.33× / 2.17×, p99 2.91× / 3.25× /
+  1.35× faster**. The median win was already known; the tail win is the part that was borrowed
+  from upstream and is now measured — with the caveat the third run makes plain, that the p99
+  _sign_ is stable while its _magnitude_ is not, so the tail belongs in the record as "faster
+  in every run, 1.4–3.3×" rather than as a number. It agrees in direction with the one earlier
+  blocking-call run (p99 improving 49–69%) — but that was **the same machine** days earlier,
+  not a second host, so it is reproducibility over time and not independent corroboration.
+  Total write work (`start` + `end`, which the hook backgrounds)
+  improves at p50/p95 too, but its p99 remains unresolved — expected, since `end` is exactly
+  where the two metrics diverge.
+
+  **Storage backing turned out to be the confounder**, which is the part worth carrying
+  forward. Same harness, same host, same day, prompt-latency p99: **tmpfs** flips sign run to
+  run (2.23× slower, then 1.48× and 2.04× faster), **ext4** wins in every run (1.35–3.25×), and a
+  high-latency **non-local filesystem** wins 26–43× — daemon-off p99 there is 0.8–1.1 _seconds_
+  while daemon-on stays flat at ~27 ms. Without a real fsync there is barely a lock to contend
+  over, so the mechanism only becomes visible where storage is slow enough for lock hold time
+  to matter. That is the likeliest explanation for this repo's contradictory older figures,
+  whose storage was never recorded — likeliest, not established, since nobody re-ran them. The
+  harness now prints the sandbox filesystem on **every** run, not only under
+  `CORE_ATBENCH_BASE`, and adds "durable storage" to the not-covered list when the DB lands on
+  tmpfs, because the default sandbox lives in `/tmp` — which is precisely where the tail is
+  least readable. `atuin/config.toml` records all of it, relabels the older pair-timed and
+  unknown-storage tables as the weaker evidence they are, and names the cheap re-run that would
+  settle the musl question (the same Alpine container with the DB on real disk). The
+  `UNVALIDATED-SYSTEMD` marker is retired across the harness, `Makefile` and the suite; what
+  replaces it on the user-visible surface is the caveat that outlives the runs — not bare
+  metal, not a real multi-pane session, not musl on hardware, and a 9p mount is a proxy for a
+  network home rather than one. The autostart spawn cost reproduced on real disk at **+42.16 ms**
+  (p50), in line with the ~+41/+45 ms seen in containers.
+
+- **The modernization floor now bans `allow-unsafe-pr-checkout`, the one input that can
+  re-open a "pwn request" in this fleet.** `actions/checkout` v7 (2026-06-18) started
+  refusing to check out fork-PR code under `pull_request_target` / `workflow_run` — a
+  `repository:`, `ref:`, or head SHA resolving to the fork — and backported that enforcement
+  on 2026-07-20 to v3.7.0/v4.4.0/v5.1.0/v6.1.0/v7.0.1. The single escape hatch is an input
+  GitHub deliberately named to be easy to spot in code review and static analysis, so
+  `scripts/modern-baseline.yml` now greps for it as a rule-1 banned pattern. Nothing had to
+  be fixed first: the string appears nowhere, there is no `pull_request_target` in the fleet,
+  and the lone `workflow_run` trigger (`sync-fanout.yml`) checks out a released tag rather
+  than a fork ref — so this is purely preventative, and it fans out N-way to the OS and role
+  repos that consume `lint-call.yml@v4` and friends. `dotfiles-Kali` / `dotfiles-Defense` are
+  exactly the repos where someone might one day reach for `pull_request_target`. Rule 1's
+  existing `grep -HnF` sweep already covers both `.github/workflows/` and
+  `.github/actions/`, so no new enforcement branch was needed in `check-modern.sh`.
+  Also refreshes the `banned_runners` rationale with `ubuntu-22.04`'s now-fully-published
+  schedule — deprecation opens 2026-09-17, brownouts 2027-03-23/03-30/04-06/04-13, fully
+  unsupported 2027-04-17 (`actions/runner-images#14254`); comment-only, the ban itself has
+  been in place since it was added pre-emptively.
 
 - **`scripts/bench-atuin-daemon.sh` — the atuin daemon's latency claim is no longer purely
   borrowed.** Adoption's whole justification is that the daemon owns the SQLite writes so
@@ -37,9 +268,9 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   sandbox so it cannot collide with a real daemon, asserts the unit's `MainPID` actually
   holds the listening socket, and **skips rather than degrades** without a user bus —
   reporting no-systemd numbers under a systemd label is the one thing the flag exists to
-  prevent. _It is **UNVALIDATED**: it was written where `systemd-run --user` cannot reach a
-  bus, so only its fail-closed skip path has ever executed, and it says so in `--help`, on
-  every run, and on the results table itself._ **`CORE_ATBENCH_BASE`** puts the sandbox HOME
+  prevent. _It shipped **unvalidated** — written where `systemd-run --user` could not reach a
+  bus, so only its fail-closed skip path had ever executed — and has since been validated
+  against a real user manager; see the entry below._ **`CORE_ATBENCH_BASE`** puts the sandbox HOME
   and history DB on a network home, with the socket deliberately decoupled onto a short local
   path — `AF_UNIX` does not work on NFS/SMB and `sun_path` caps near 108 bytes — and discloses
   the cost of that, which is that such a run no longer exercises atuin's default socket
@@ -56,7 +287,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   (`scripts/test-core.sh` Section J2). `make audit` can never run the bench itself — it needs
   a real atuin, a real zsh and a background daemon — which is precisely why the parts that
   _are_ hermetic are worth asserting: that `--help` documents every knob including the
-  unvalidated marker, that an unknown argument still exits 2, that a malformed
+  scope caveat a figure must be quoted with, that an unknown argument still exits 2, that a malformed
   `CORE_ATBENCH_WRITERS` or `CORE_ATBENCH_BASE` exits 2 rather than skipping (`WRITERS=0`
   otherwise makes every arm vacuously complete _and_ vacuously row-correct), and that
   `--systemd` against a stubbed busless `systemctl` skips with **no results table** — the
@@ -64,7 +295,331 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   row-count SQL is extracted from the script and _executed_ against a synthetic table, the
   same "run it, don't pattern-match it" idiom Section J uses on the example unit's `ExecStart`.
 
+- **The guard's upstream premise is now measured weekly in CI — and the check it replaces
+  could report "all clear" from an apparatus that had never written a row**
+  (`dotgibson/dotfiles-core#383`).
+  `_core_atuin_daemon_guard` is a workaround for one measured fact: on atuin 18.19.0, with the
+  daemon enabled and its socket unreachable, `atuin history start` exits 0, prints an id, stays
+  silent on stderr and **discards the entry** (`atuinsh/atuin#3561`). A persistent `precmd` hook,
+  a throttled `connect(2)` on the prompt path, and a one-way degrade in every interactive shell
+  across eight repos are justified by that fact alone.
+
+  The copy-paste recipe that carried the standing re-verification **failed open**. It seeded its
+  database through the unreachable-daemon path, so on a build that discards, the database was
+  never created; its row count masked every failure as `0`; and before and after were therefore
+  both `0`, which is the premise-holds signature. It was right by luck, not by measurement — and
+  any apparatus failure at all, a missing `python3` or an unreadable DB, read the same way.
+  Measuring "the row count did not go up" without first proving the apparatus _can_ write
+  measures nothing.
+
+  `scripts/verify-atuin-guard.sh` replaces it and reports **three** verdicts rather than two,
+  because the third is the one that matters: `holds`, `moved`, and `unmeasurable` — the last
+  meaning the apparatus could not be trusted, which is emphatically **not** good news and never
+  collapses into `holds`. A daemon-**off** control arm runs first and must write exactly one row
+  before any verdict is allowed. Both unreachable shapes the guard claims to catch are measured —
+  an absent socket and a stale socket file left by a crashed daemon — and each is **proven**
+  unreachable first, by a bounded `connect(2)` and the `/proc/net/unix` LISTEN scan, so a delta
+  of zero can never rest on a socket that was quietly healthy. Exit codes are the verdict
+  (`0`/`1`/`3`), which deliberately breaks this repo's skip-and-exit-0 idiom in one place: exit 0
+  is a positive assertion about upstream, so a bare box must not be able to produce it.
+
+  `.github/workflows/atuin-guard-verify.yml` runs it every Tuesday at 13:00 UTC against
+  **whatever atuin upstream ships that week** — the one thing in this repo deliberately _not_
+  pinned, because a pinned atuin would re-measure a version whose behaviour is already recorded
+  and miss the next release, which is the one that actually costs history. That inversion is
+  bounded structurally rather than by trust, in three jobs: `resolve` holds a token and verifies
+  the download's checksum and GitHub build-provenance attestation but never executes a byte of it
+  (`gh attestation verify` has no anonymous mode, which is what forces the split); `measure` holds
+  **no** token at all and is the only job that runs upstream code, refusing to proceed unless the
+  asset still hashes to the digest `resolve` attested; `report` holds `issues: write` and never
+  sees the binary, consuming only an opaque base64 blob. `holds` files nothing — a bot that opens
+  an issue weekly to say nothing changed gets muted.
+
+  Review hardening, because the first cut of this got three of them wrong in ways that
+  matter. The detector now measures **four** arms, not two — `{absent, stale}` x
+  `{--hook, plain}` — because atuin's own `init zsh` emits
+  `atuin history start --hook -- "$1"`, so the plain form is a path no shell in the fleet
+  actually runs and a change scoped to hook mode could have broken every prompt while the
+  detector reported `holds`. An **unreadable database mid-run is now `unmeasurable`, not
+  `moved`**: `atuin_db_rows` returns `-1` on a failed read, `after - before` then goes
+  negative, and the verdict block read that as "the row count changed" — the same
+  apparatus-versus-upstream conflation the control arm exists to prevent, pointing the
+  other way. And a history id is checked for **shape**, not merely non-emptiness: the
+  premise is that the shell gets an id it can hand to `history end`, so a deprecation
+  notice on stdout must not read as a pass. In the workflow, a value derived from an
+  upstream file can no longer forge job outputs (a multi-line `.sha256` could append
+  `ok=true` after `ok=false` and get an unattested asset measured), and a verifier that
+  exits outside the documented 0/1/3 — or leaves an unparseable `verdict.json` — now fails
+  the job instead of passing for a quiet week.
+
+  A **second control arm runs last**, and it closes two holes at once. The opening control
+  proves the apparatus at `t=0` only — but a database that stops being **writable** mid-run
+  still **reads** fine, so the `-1` sentinel never fires, all four arms report an
+  honest-looking delta of `0`, and the run reports `holds` from an apparatus that had quietly
+  died. It also probes the premise the four arms structurally cannot see: the one-way degrade
+  is correct only while atuin **discards** during the outage, and an atuin that **spooled**
+  those entries would leave exactly the same absence behind — then flush them on the next
+  successful write, landing five rows on the closing arm instead of one. That would invert the
+  reasoning `zsh/00-tools.zsh` degrades on, so `> 1` is a `moved` finding and `< 1` is
+  `unmeasurable`; the verdict vocabulary is unchanged, and the only new outcomes are ways to
+  **not** reach `holds`. What it still cannot see is stated rather than implied: a spool only a
+  live daemon would drain needs a daemon spawned to observe.
+
+  Finally, the report no longer disclaims coverage it has. Its scope paragraph went on saying
+  "`--hook` is not exercised" after the matrix was widened to four arms — in the same output as
+  a reason that said "all four arms (absent/stale x hook/plain)" — and the assertion that
+  should have caught it grepped for two nouns the false sentence also contained. The coverage
+  claim is now **derived** from the arms that actually ran, in both renderers, because a
+  hand-written one is a second copy of the matrix and the second copy is the one that rots; the
+  test checks the report and the JSON from a single run for **agreement** rather than for
+  keywords.
+
+  The row-count SQL and its fail-closed `-1` now live in `scripts/lib/atuin-db.sh`, shared with
+  `scripts/bench-atuin-daemon.sh`: both rest on the same claim about atuin's schema, so a forked
+  copy would let one gate keep believing a model the other had already found stale.
+  `zsh/00-tools.zsh` gains a machine-readable `# CORE_ATUIN_GUARD_VERIFIED_AGAINST=` anchor,
+  because grepping the surrounding prose — which also names 18.16.1 — is how a detector silently
+  starts comparing against the wrong version.
+
+- **`/tool-scout` now re-checks the workarounds whose justification can expire**
+  (`dotgibson/dotfiles-core#383`).
+  `_core_atuin_daemon_guard` is not a preference — it is a workaround for one measured
+  upstream fact (atuin 18.19.0 discards a history entry when the daemon is enabled and
+  its socket is unreachable, `atuinsh/atuin#3561`), and every millisecond it spends on
+  the prompt path is justified by that fact alone. Nothing was watching whether it stayed
+  true: atuin is not pinned in `mise/config.toml` and has no `renovate.json` entry, so a
+  version bump arrives silently on whichever machine updates first, and the behaviour has
+  already changed once in the direction that makes it harder to notice (18.16.1 failed
+  loudly; 18.19.0 fails silently). The routine now carries a standing re-verification list
+  and the version each workaround was verified against.
+
+  The **measurement** is deliberately not there and must not be copied back: that is what
+  `scripts/verify-atuin-guard.sh` and its weekly job are for (entry above), and the recipe
+  that used to live in the routine is the one that failed open. What is left is the half a
+  script cannot do — compare the anchor in `zsh/00-tools.zsh` to atuin's newest release, lead
+  with any open verdict issue, and weigh the remedy as an eight-repo change — plus the
+  upstream questions no measurement here can reach: whether atuin still health-checks its own
+  daemon under `autostart` (the guard stands down entirely there, and that is the **only**
+  mitigation on Alpine and macOS), and whether it has gained a client-side buffer that would
+  invert the one-way degrade. A changelog that does not mention the bug is still not evidence
+  the bug is gone, so a release past the anchor is a finding in its own right.
+  Re-verifications lead the report rather than competing inside the ranked shortlist, and
+  "nothing is due" must be said out loud, since silence reads the same as forgetting.
+
 ### Fixed
+
+- **Three latent faults in `scripts/verify-atuin-guard.sh`**, each harmless while nothing
+  spawned and each load-bearing once something does (`dotgibson/dotfiles-core#402`). `run_one`
+  captured stdout with `$( )`, which blocks on **pipe EOF rather than child exit** — a client
+  that daemonized without reopening stdio would have hung the arm forever, and `timeout` could
+  not have cut it, since it signals only its direct child. A hit bound rendered as a **finding**:
+  `rc 124` reached the verdict block as "exit code is 124, was 0" and reported an apparatus limit
+  as `moved`; it is now `unmeasurable` with a named reason. And `AT_ENV` was assigned inside
+  `measure()`, so under `set -u` any trap reading it after an early return died exactly when
+  cleanup mattered most.
+
+- **`core-doctor` was silently blind to twelve tools Core already detects.** `00-tools.zsh`
+  probes 38 binaries into `HAVE_*` flags, but the health report only ever knew about 29 —
+  **`ast-grep`, `difft`, `gping`, `hyperfine`, `jj`, `jnv`, `ouch`, `shellcheck`, `shfmt`,
+  `tldr`, `uv`, `viddy`** were detected and then reported by neither the human report nor
+  `--json`. Every one of them had been adopted without touching the doctor, over several
+  releases, and nothing caught it. All twelve are now reported.
+
+  **The two inventories are one inventory.** `groups` (human) and `alltools` (`--json`) were
+  hand-synced literals; both now derive from a single `_CORE_DOCTOR_GROUPS` definition, so
+  they cannot disagree by construction. The parity test is kept as the guard against a
+  second literal reappearing. A new test closes the gap parity structurally cannot see — it
+  reads the `_have` lines out of `zsh/00-tools.zsh` and requires the inventory to cover
+  them, so a future adoption that skips the doctor fails the suite by name. (Direction is
+  one-way on purpose: `op` has no `HAVE_OP`, and `fd`/`bat` are set from `FD_BIN`/`BAT_BIN`
+  after resolving `fdfind`/`batcat`.) The group definition now carries the membership rule,
+  so additions land somewhere defensible instead of at the end.
+
+  **The legend was scoped to what is true.** It read `✗ falls back to classic`, which held
+  when the report was mostly command replacements. Most of the inventory is now opt-in
+  tooling that shadows nothing — there is no classic `ast-grep` or `jj` — so it now reads
+  `✗ absent; the replacements below fall back to the classic command`. The terminal browser
+  stays deliberately absent from the report: `BROWSER_BIN` picks from w3m/lynx/links2/links/
+  elinks, so a fixed `w3m` row would read ✗ on a box running lynx perfectly well.
+  (`zsh/30-functions.zsh`, `scripts/test-core.sh`)
+
+- **`core-doctor`'s install hint advertised a paste-ready command that could not run.** It
+  printed `<manager> <every missing tool>` as one line — `sudo dnf install rg lnav …`. But
+  apt/dnf/zypper/pacman all abort the **whole transaction** on a single unresolvable name,
+  and unresolvable names are the common case here, not the edge: these are **command**
+  names, while the package is frequently called something else (`rg`=`ripgrep`,
+  `delta`=`git-delta`, `fd`=`fd-find` on Debian, `dust`=`du-dust`, `yq`=`go-yq`,
+  `op`=`1password-cli`), and several tools are not packaged at all on some targets (`sesh`
+  anywhere, `watchexec` on Fedora/Kali, `carapace` and `yazi` on Kali). So one bad entry
+  silently blocked the good ones — `sudo dnf install rg` alone already failed.
+
+  At least 12 of the inventory names break the line on some box, which is why this is not
+  fixed with an exclusion list; and the alternative, a per-distro command→package map, is a
+  rot-prone duplicate of `PORTING-MATRIX.md`. The hint now prints the missing tools **as
+  names**, states that they are command names and that packages differ, gives the manager
+  verb as a per-tool template (`sudo dnf install <pkg>`), and points at the matrix for the
+  authoritative name. A new test asserts the template form is present and that the verb is
+  never followed by a real tool name, so the batch form cannot come back.
+  (`zsh/30-functions.zsh`, `scripts/test-core.sh`)
+
+- **`core-doctor -v` printed `_v=0.26.1` garbage instead of version annotations — the flag
+  never worked.** `local _v` sat inside the per-tool loop in `_core_doctor_render`, and zsh
+  prints `name=value` when `local` re-declares a parameter that already holds one
+  (`TYPESET_SILENT` is off, including under `emulate -L zsh`). So the first tool annotated
+  its `✓` correctly and **every tool after it emitted a bare `_v=…` line into the report**,
+  which is why the leak needs two present tools to show up at all. Declaring `_v` once
+  alongside `gi`/`tool`/`line` fixes it; the assignment inside the loop is unchanged.
+
+  This shipped broken and survived because **nothing drove the `-v` path** — the suite only
+  asserted that the default render emits a group heading and that `--json` carries its
+  top-level keys. There is now a hermetic case that stubs `_core_have` plus two shadowing
+  tool functions and asserts both that versions render and that no `_v=` line appears. It
+  uses **two** tools deliberately: a single-tool version of the same test passes against the
+  unfixed code and would have guarded nothing. (`zsh/30-functions.zsh`,
+  `scripts/test-core.sh`)
+
+- **A timed-out package probe was logged as "0 upgradable" — an up-to-date box — instead of
+  "unknown"** (`dotgibson/dotfiles-core#380`). Every arm of the maint runner's upgradable-count
+  chain was `count=$(_to "$MAINT_PKGCOUNT_TIMEOUT" <mgr> | grep -c …)`, and that shape cannot
+  tell the two apart: when `timeout` SIGTERMs a stalled manager there is no output, `grep -c`
+  prints `0`, and grep's non-zero status — the pipeline's, since it is the last stage — is
+  discarded by the assignment. So the `count=-1` "we don't know" sentinel was bypassed on
+  precisely the failure the timeout had been added to survive (a mirror that accepts the
+  connection and then stalls), and the daily log asserted the box was current when nothing
+  had been measured. Counting now goes through a `_pkgcount` helper that captures first and
+  gates on **how the probe died** — 124, the GNU/`gtimeout` expiry status, or `>=128`, killed
+  by a signal — rather than on the manager's status. That second arm is not belt-and-braces:
+  **BusyBox `timeout` reports its SIGTERM as 143, not as 124**, so a 124-only gate was green
+  on every leg of the CI matrix except Alpine, where it still logged a stalled manager as `0`.
+  Gating on the manager's status instead would have been wrong in the other direction, because
+  these managers use exit status to mean things: `dnf check-update` exits 100 when updates
+  **exist**, `pacman -Qu` and `checkupdates` exit non-zero when there are **none**, so a general
+  non-zero gate would have reported "unknown" on the healthy path. The `pacman -Qu` arm stays
+  unwrapped and counted directly: it reads the local DB, cannot stall, and its `0` is real. The
+  log line now says `count UNAVAILABLE` with the bound that was exceeded, instead of printing
+  the sentinel as `-1 upgradable`. The nudge was never affected either way — it needs a positive
+  count — so this was a log-and-cache honesty defect, which is the whole reason the sentinel
+  exists. Two new tests cover it: one drives the real `timeout` against a manager that stalls
+  (the pre-existing case stubs `_to` away by design) and reports the observed status, and one
+  pins the BusyBox spelling on every host rather than only on the Alpine leg.
+
+- **The `up` nudge's cache could still be written malformed by the shell that claims the
+  throttle slot** (`dotgibson/dotfiles-core#380`). The writer-side normalisation added with the
+  reader-side quoting set `count` to **empty** on a fresh box, and the claim-slot write then
+  persisted that empty value — producing exactly the `"\n<epoch>"` file the fix was supposed to
+  prevent, whose unquoted `(f)` split slides the epoch into the count slot and prints
+  "1786128391 updates available". Only the quoted `"${(@f)…}"` read was actually holding the
+  line. It now normalises to the `-1` sentinel, so the cache is well-formed at rest: it reads
+  back cleanly, `_pkgup_notice`'s `<1->` gate rejects it, and the nudge stays silent until the
+  backgrounded refresh lands a real number. The comments claiming the race was closed from both
+  ends now describe what the code does.
+
+- **`ux_spin` could take down a `set -euo pipefail` caller after its animation loop, and went
+  silent when its busy-spin guard fired** (`dotgibson/dotfiles-core#380`). The loop body was
+  normalised (`|| :`) on the ground that this library is _sourced_ — `bootstrap.sh` runs under
+  `set -euo pipefail` — but every statement after `done` was still bare. A failed cursor-restore
+  `printf` therefore aborted the caller with the cursor still hidden and the wrapped child still
+  running: the identical end state documented for the unnormalised `sleep`. A failure in either
+  result branch aborted between `wait` and `rm -f`, leaking the mktemp file. All of them are
+  normalised now; `rc` is captured and returned explicitly, so nothing the caller sees changed.
+  Separately, both spinners now leave one **static `(still running…)` frame** when the busy-spin
+  guard trips. `ux_spin` cleared the line before the blocking `wait`, so a long command on a box
+  with a broken pacing primitive showed _nothing at all_ for the rest of the run —
+  indistinguishable from the hang the elapsed-time readout exists to rule out — while
+  `_core_spin` left a frozen glyph, which reads as "wedged". The wording, not the glyph, is what
+  distinguishes "the animation gave up" from "the command did"; the glyph itself comes from the
+  existing frame set, so the non-UTF-8 fallback is honoured rather than a hardcoded braille cell.
+  The two mirrors agree again.
+
+- **`bench-atuin-daemon.sh` started the daemon with a spelling the shipped unit deliberately
+  probes for** (`dotgibson/dotfiles-core#380`). Both starters ran `atuin daemon start`
+  unconditionally, while `examples/atuin-daemon.service` goes to real trouble to ask the binary
+  which spelling it has, because the subcommand does not exist on older builds. The bench failed
+  closed there — socket never appears, ON arm dropped, no wrong number printed — but the
+  diagnostic blamed the daemon rather than the spelling, on exactly the machines most likely to
+  hit it. The bench now runs the same probe once at startup and reuses the answer in both the
+  plain and `--systemd` paths. `daemon stop` in the teardown is left alone on purpose: it is
+  already best-effort and the `kill` below it is what actually stops the process.
+
+- **The weekly `fleet-drift` sweep reported the fleet's ordinary state as a failure.** The
+  sweep anchors to the latest **released** Core tag — deliberately, to avoid a false
+  "BEHIND by N" on every unreleased commit — but `make sync` has never fanned out from a tag:
+  `sync-core.sh` resolves `git ls-remote <remote> main` and vendors the branch **tip**, which
+  is why the `core_tag` it stamps looks like `v4.9.3-56-g44a44fc`. Those two facts contradict
+  each other on every day between releases. `_classify` treated anything not byte-identical to
+  the reference as drift, so a single sync in an unreleased week put all eight Unix repos at
+  "AHEAD by N", exit 1, a red run and a filed issue — while printing "run `make sync`", the
+  one action guaranteed to push them further ahead. Green was only ever the accident of the
+  fleet happening to sit exactly on a tag commit.
+
+  A recorded commit ahead of the reference **and** an ancestor of `origin/main` (falling back
+  to `main`) now reads as current: it carries newer Core off the released lineage, the
+  opposite of the staleness this dashboard exists to find. The tolerance is deliberately
+  narrow — ahead but **not** on main means the repo was synced from something that is not
+  Core's release lineage, and still fails, as do behind, diverged, and a marker this clone
+  cannot measure. With no mainline ref resolvable at all it fails closed and says so rather
+  than green-lighting a lineage it could not check. This is the same false positive `dd4f529`
+  fixed for `dotfiles-Windows` in `_classify_subtree`; the Unix repos had carried it since.
+
+  Two things that made the red run hard to read are fixed with it. The header printed the
+  reference's **sha** beside the **current branch** — `Fleet drift vs Core f95fc2b88218
+  (main)` — so a sweep anchored to `v4.9.3` looked like a comparison against main's tip; it
+  now names what was actually resolved. And `make sync` is advised only for repos that
+  genuinely lag, since it would overwrite an off-lineage marker rather than reconcile it.
+  `scripts/test-core.sh` now drives the classifier hermetically against a throwaway Core —
+  a tag, commits past it, and an off-main commit — pinning every verdict, including that real
+  staleness still fails.
+
+  Green is not the same as finished, so ahead-on-main rows get their **own** verdict rather
+  than a plain `✓`: a yellow `•`, plus a closing `N repo(s) carrying UNRELEASED Core` tally
+  that prints even under `--quiet`. That tally — not the exit code — is now where "the fleet
+  is running Core newer than any release" lives. It is a state that is fine to run and wrong
+  to leave indefinitely, and flattening it into the same green as a properly pinned fleet
+  would have traded one bad signal for a missing one. The fix it names is a release, not a
+  sync.
+
+- **`--strict` printed a red row and still exited 0.** It is documented — in the header and
+  in `Exit:` — to turn a not-checked-out repo from a skip into a failure, and it did bump the
+  counter and print red, but it never set the drift flag, so the script returned success and
+  every caller read the run as clean. A repo that was never cloned is now drift; it is
+  deliberately **not** counted as stale, because `make sync` cannot repair a repo that isn't
+  there, and the closing advice no longer offers a recipe that would not work.
+
+- **An unresolvable `--ref` was silently answered with a different question.** `--ref
+  nosuchref` fell through the resolution ladder to `origin/main` and reported against it,
+  while the banner still named `nosuchref` — the same class of mislabel as the header bug
+  above, and worse, because the caller had been explicit. The fallback ladder exists for the
+  _default_ path (no tags yet, or a clone too shallow to reach one); an explicit ref that
+  does not resolve is now a usage error (exit 2).
+
+- **Six documents still described a bot deleted a month earlier — including the routine whose
+  job is to watch it.** Core retired `.github/dependabot.yml` when the fleet moved to the
+  shared Renovate preset in v3.2.0, but the prose never followed.
+  `.claude/commands/freshness-triage.md` told the triage routine to expect `dependabot.yml`
+  PRs, while `scripts/freshness-dashboard.sh` was already counting `author:app/renovate` — so
+  the routine was briefed to hunt for an author that can never appear, in the same repo whose
+  dashboard knew better. `CONTRIBUTING.md` sent contributors to `dependabot.yml` for the
+  commit-prefix convention, a file that has not existed since v3.2.0. The rest were comments
+  in `freshness.yml`, `claude-routines.yml`, and `update-plugins.sh` explaining the freshness
+  bot's reason for existing by contrast with the wrong bot. All six now name Renovate, and
+  those that pointed at a config file point at `renovate.json`; the triage brief — the one
+  document that has to act on the answer — additionally carries the `ci(deps):` prefix and the
+  `app/renovate` author signature a run should look for, which the passing mentions elsewhere
+  do not need. The routine brief additionally gains what #377's own caveat exposed: Renovate
+  parks bumps on a **Dependency Dashboard** issue that opens no PR, so an empty PR queue is
+  not an empty bump queue — and since reading it needs `gh issue list`, outside this command's
+  `allowed-tools`, the brief now says to report the dashboard as unchecked rather than
+  conclude "nothing to triage".
+
+  `Makefile`'s `update-hooks` help was corrected differently, by **deletion**: it justified
+  the target with "dependabot has no pre-commit ecosystem", and Renovate _does_ ship a
+  `pre-commit` manager. The dependency dashboard (#186) settles it — Renovate detects only
+  `devcontainer`, `github-actions`, `mise`, and `renovate-config` here, so the target is still
+  load-bearing — but that is a fact about the org preset's current configuration, living in
+  `dotgibson/.github`, and encoding it in a help string is how the previous claim rotted. The
+  line now states what the target does and nothing about which bot doesn't do it.
+
+  Historical `CHANGELOG.md` entries are left alone — they were true when written.
 
 - **A shell that outlived atuin's daemon recorded nothing, silently, for the rest of its
   life.** `_core_atuin_daemon_guard` was a startup probe: one `zsocket` connect at the first
@@ -185,7 +740,7 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   This is not a presentational fix: **it puts the far-tail conclusion back in question.** The
   recorded finding that the daemon trades frequent small waits for rarer, larger stalls comes
   entirely from pair-timed runs, while the one measurement that timed only the blocking call
-  (real Fedora hardware, systemd unit) found p99 improving 49–69%. `end` is precisely where
+  (Fedora 44 under WSL2, systemd unit) found p99 improving 49–69%. `end` is precisely where
   the two would diverge — with the daemon off it is the slower call, and with it on they
   equalise. `atuin/config.toml` and `zsh/00-tools.zsh` now relabel their figures as total
   write work and mark the tail question **open in both directions** rather than settled
@@ -412,7 +967,189 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   entry, leaving the pointer aimed at an empty section. Now names `[v4.9.3]` — the hazard of
   referring to `[Unreleased]` from a dated section at all.
 
+- **Core told you it fans out to nine OS repos. It fans out to eight.** `scripts/os-repos.txt`
+  has been the canonical fleet — and has documented `dotfiles-Windows` and `dotfiles-Debian` as
+  deliberately absent — for several releases, but five comments still asserted the old count:
+  `.github/workflows/release.yml`, `.github/workflows/ci.yml`, `scripts/update-nvim-plugins.sh`,
+  `scripts/test-core.sh`, and `scripts/audit-core.sh`. `ARCHITECTURE.md` is deliberately
+  **unchanged**: "one Core plus nine machine repos" counts machine repos _including_ Windows and
+  is correct — the two numbers are both right in their own sentence, which is exactly why a
+  find-and-replace would have broken it. (`.github/workflows/release.yml`,
+  `.github/workflows/ci.yml`, `scripts/update-nvim-plugins.sh`, `scripts/test-core.sh`,
+  `scripts/audit-core.sh`)
+
+- **`gsync` was documented as an alias in a file deleted in v4.** It is a _function_ —
+  `zsh/20-aliases.zsh` says so two lines above the definition, and explains why (a dotfiles path
+  containing whitespace must stay one word). Three places carried the stale `zsh/aliases.zsh`
+  path, a filename that has not existed since the v4 `NN-name.zsh` renumbering.
+  (`core.manifest`, `zsh/completions/_gsync`, `.bin/sync-upstream.sh`)
+
+- **`blib_link_core`'s own comments under-sold what it links.** The doc header omitted lazygit,
+  jujutsu and the seeded sesh config; the `tools` group banner omitted jujutsu and atuin —
+  both of which the code directly beneath it links. The complete enumeration already existed at
+  the top of the file, so both now point at it as the canonical list. (`lib/bootstrap-lib.sh`)
+
+- **Pre-v4 module names in comments that describe _current_ behaviour.** `tools.zsh`,
+  `options.zsh`, `ui.zsh` and `maint.zsh` have been `00-tools.zsh`, `10-options.zsh`,
+  `05-ui.zsh` and `55-maint.zsh` since v4. Note `blib_migrate_v4` deliberately **keeps** the
+  unnumbered names — it exists to delete stale pre-v4 symlinks, so there the old spelling is
+  the correct one. (`core.manifest`, `lib/bootstrap-lib.sh`)
+
+- **`PORTING-MATRIX.md` promised bootstrap installs that do not exist.** The `³` marker means
+  "bootstrap.sh installs it best-effort", but six cells carried it with no installer behind
+  them — `ouch` and `jujutsu` on Gentoo and Kali, `ast-grep` and `shfmt` on Gentoo — verified
+  against each repo's `bootstrap.sh` and `install/packages.txt`. Kali _does_ install `ast-grep`,
+  so that cell keeps its `³`. A new `²¹` marker records the honest state, reusing the
+  detect-only shape `jnv`¹⁷ and `gping`¹⁹ already established: **available, not installed**.
+  It also covers four rows that are macOS-Brewfile-only in practice (`hyperfine`, `shellcheck`,
+  `shfmt`, `ouch` — no Linux repo installs any of them), and `lazygit` on Kali, the sharpest
+  case: every other Linux repo installs it, Kali installs it nowhere, and Core ships
+  `alias lg='lazygit'` regardless. This is the same overclaim already corrected once for
+  openSUSE. Alpine's `ouch` cell also gains the `¹⁴` testing-repo footnote every comparable
+  cell already had. (`PORTING-MATRIX.md`)
+
+- **The atuin-daemon table read as shipped state when it is mostly a recipe.** The exports are
+  wired on two of the seven Core-vendoring machines the table covers (Fedora, Alpine) — now
+  marked `✔`, with the other five labelled as the documented recipe and `Windows` called out as
+  neither, being out of scope. The marker is per machine rather than per row, since the systemd
+  row holds a wired Fedora next to four unwired ones. `Defense` is dropped from the systemd row:
+  that row tells
+  you to put exports in `os/<os>.zsh`, and Defense is distro-agnostic with no `os/` layer, as
+  the same file says under "Repo status". The `Built:` list also omitted `Defense` entirely.
+  (`PORTING-MATRIX.md`)
+
+- **`dotfiles-Defense` is now recorded as the documented scaffold exception.** `core.manifest`
+  claimed `lib/bootstrap-lib.sh` is sourced by _each_ OS repo's `bootstrap.sh`; Defense
+  hand-rolls its own `link()` and `.zshrc` heredoc instead. That is deliberate — Defense is a
+  role layer stacking onto an already-provisioned host, where the OS repo underneath has
+  already run the scaffold — so the claim is narrowed rather than the code changed.
+  (`core.manifest`, `PORTING-MATRIX.md`)
+
+- **`README.md` billed `aliases.md` as the "full" cheat sheet.** It omits the function verbs
+  `core help` indexes (`fif`, `fbr`, `maint-*`, `op*`). `core help` is the complete index and
+  now says so; `aliases.md` is described as the curated companion. (`README.md`)
+
+- **`/doc-audit` compared a release-pinned mirror against `main`, and reported a false
+  positive.** `dotfiles-web`'s `porting-matrix.md` is diffed by its own CI against Core at
+  `releases/latest` — the newest **release tag**, not `main`. The routine had no such
+  carve-out, so it measured the page against `main` and called it "a pre-correction
+  snapshot". It was not: it was byte-identical to Core at `v4.9.3` and its check was green.
+  Acting on that report re-mirrored `main` into a file whose contract is the tag and turned a
+  passing check red, which is how it was caught. The routine now states the reference frame
+  explicitly, and that a mirror lagging `main` while matching the newest release is
+  **correct, not drift**. (`.claude/commands/doc-audit.md`)
+
+- **The `refresh` row implied Arch has a refresh alias. It deliberately does not.**
+  `sudo pacman -Sy` was listed with no note, while `dotfiles-Arch`'s `os/arch.zsh` explains at
+  length that there is no `-Sy` alias **on purpose** — refresh-then-install is the
+  partial-upgrade footgun, so it ships `pacu` (full `-Syu`) and `pacout` (`checkupdates`,
+  which never touches the sync DB). New footnote `²³` records that the cell is completeness,
+  not a recommendation. (`PORTING-MATRIX.md`)
+
 ### Changed
+
+- **`fleet-drift` now says how far behind main's tip an unreleased row still is**
+  (`dotgibson/dotfiles-core#381`). `_classify` measured the recorded sha against the release
+  **tag** only, and `git merge-base --is-ancestor` is reflexive at both ends — so "on
+  `origin/main`" was equally true of a repo synced this morning and one synced five weeks
+  ago, and both printed the identical `current (ahead of vX.Y.Z by N, on origin/main)`. A
+  **stalled fan-out was therefore invisible inside a green sweep**: at the time of writing the
+  whole fleet sat 56 commits past `v4.9.3` while main had moved 111 past it, and nothing in
+  the report named the 55 unvendored commits. The ahead-on-main row now appends
+  `, N behind its tip` when that distance is non-zero.
+
+  **Report-only, and deliberately so.** The `current` prefix, the `•` third state, the
+  `UNRELEASED` tally, `DRIFT`/`STALE`/`OFFLINEAGE` and every exit code are unchanged — a green
+  run stays green. The previous entry in this file taught readers that a fleet-drift wording
+  change implied a verdict change; this one does not. Re-reddening the sweep once the fleet
+  drifts far enough from main was considered and rejected: that is exactly the #371 failure
+  mode where the fleet's ordinary between-release state pages a human, and the threshold would
+  be unjustifiable. The two numbers now read as a pair — _ahead of the tag_ says a release is
+  owed, _behind its tip_ says a `make sync` is owed.
+
+  Zero omits the clause entirely rather than printing `0 behind its tip`, which keeps an
+  at-tip row byte-identical to its old wording — and makes the suite's existing `…, on main)`
+  regex a live oracle for that case. `_classify_subtree` (dotfiles-Windows) deliberately gets
+  nothing: its marker is re-stamped only when `nvim/` changes, so a behind-main count there
+  would report a lag for every Core commit that touched anything else — the exact false-BEHIND
+  that the subtree path exists to eliminate.
+
+- **`/drift-triage` can run the sweep it is built to interpret** (`dotgibson/dotfiles-core#381`).
+  The routine's own step 1 told it to run `scripts/fleet-drift.sh` — without the leading `./`
+  that `Bash(./scripts/fleet-drift.sh:*)` matches, so every invocation was **denied** — and to
+  pass the sibling fleet "via `--add-dir`", a Claude Code flag the script's parser rejects with
+  a usage error. Neither is needed: `--root` already defaults to this repo's parent, which is
+  where the fleet is checked out in CI too. The command is now spelled out literally as
+  `./scripts/fleet-drift.sh --color never`.
+
+  The consequence was not a missing section but a **wrong report**: blocked from its primary
+  tool, the routine reconstructed `_classify`'s logic by hand from the `core.lock` markers,
+  reached the opposite verdict from the script (red, when the sweep exits 0), and shipped it
+  without a hedge. The command now forbids that explicitly — an unrun sweep is a finding to
+  report, not a gap to fill in — and documents the three row states with the remediation each
+  one actually takes, since a `•` unreleased row is fixed by **cutting a release**, never by
+  the `make sync` the old text prescribed for everything.
+
+- **The atuin latency question is closed, and the part that will never be measured is now
+  recorded as a decision rather than a backlog** (`dotgibson/dotfiles-core#352`). The
+  measurable half is measured — see the `bench-atuin-daemon.sh` entries under **Added**. The
+  remaining four rows (musl on real
+  hardware, a real NFS/SMB home, bare metal, a real multi-pane session) need machines this
+  project does not have and will not get, so `atuin/config.toml` now states plainly that
+  their rationale stays **borrowed from upstream** on purpose. The mechanism is measured;
+  what is borrowed is its magnitude on hardware nobody here runs. An open issue promising
+  numbers that cannot arrive is worse than a documented decision not to chase them.
+
+  Also corrects an overclaim this changelog and `atuin/config.toml` both carried: the earlier
+  systemd-unit run was described as a second, independent Fedora host corroborating the new
+  figures. It is the **same machine** — Fedora 44 / kernel 6.18.33.2 (WSL2) — measured days
+  apart. That is reproducibility over time, not independent corroboration, and every figure
+  in the record comes from one WSL2 host. Overstating corroboration is precisely the failure
+  #352 was filed to catch, so it is fixed at every site that made the claim: `atuin/config.toml`,
+  `scripts/bench-atuin-daemon.sh`'s header, and **both** unreleased entries in this file — the
+  one above and the earlier `bench(fix)` entry, which described the same run as "real Fedora
+  hardware" too. That fourth site was missed on the first pass because the check that was
+  supposed to prove the claim filtered CHANGELOG line numbers by a guessed section boundary
+  instead of the actual `## [Unreleased]` extent, and so excluded the line it needed to catch.
+
+- **`sd` silently stopped matching across newlines, and its `--version` won't tell you.**
+  Upstream 1.1.0 made **line-by-line** processing the default and moved the old whole-file
+  behaviour behind `--across` / `-A`. Nothing in Core breaks — `sd` is detect-only
+  (`HAVE_SD`) and deliberately un-aliased, and no Core code shells out to it — but a
+  multiline pattern in muscle memory or in a role script now matches nothing, leaves the
+  input untouched, and **still exits 0**, so the caller carries on as if it had rewritten
+  the file. Verified behaviourally rather than read off the release notes:
+  `sd 'alpha\nbeta' X` on two-line input returns rc=0 with the input unchanged, and
+  `sd --across` matches.
+
+  This earns a `PORTING-MATRIX.md` footnote (²²) rather than a detection change for two
+  separate reasons. **Core needs no runtime change**: nothing here calls `sd`, so there is
+  nothing to gate. And **the version string could not carry a gate anyway** — the Homebrew
+  **1.1.0** build self-reports `sd 1.0.0`, so `HAVE_SD` could never have keyed off it.
+  Consumers that genuinely must know — a role script targeting both builds — **feature**-detect
+  instead, with `sd --help | grep -q -- --across`, and add `-A` only when the probe says the
+  flag exists; hard-coding it breaks the pre-1.1.0 builds this matrix tracks, which already
+  match whole-file. Same class of footnote as `batcat` (⁴) and the mikefarah-vs-kislyuk `yq`
+  split (⁶): the command is not quite what its name implies. Found by the weekly
+  `/tool-scout` scan (#376).
+
+- **`pre-commit` moved off a known-broken patch: `4.6.1 → 4.6.2`.** 4.6.2's sole content is a
+  fix for a 4.6.1 regression in `language: node` hooks whose `package.json` declares a
+  `scripts.build` key, under npm 11.x (pre-commit#3737). It is **not** fixing a live failure
+  here — markdownlint-cli2 is Core's only node hook, and v0.23.2's manifest carries
+  `build-docker-image` and friends but no plain `build`, so it misses the trigger condition.
+  Taken anyway, on the principle that sitting on a patch upstream has already superseded is a
+  bet the next hook addition doesn't collect. One line in `scripts/tool-versions.env`; the
+  three consumers (`ci.yml`, `scripts/setup.sh`, `.devcontainer/devcontainer.json`) all read
+  the variable, so no literal moved with it. **No checksum refresh applies** — `PRECOMMIT` is a
+  pip install, not a raw release download, so it carries no `*_SHA256` and is absent from both
+  `scripts/update-tool-checksums.sh` and the audit's section 9b. No `.pre-commit-config.yaml`
+  change either: the audit's version-consistency section gates `PRECOMMIT_HOOKS_VERSION` (the
+  hook repo's `rev:`), never the pre-commit binary. Of the nine remaining pins, the eight gate
+  tools were checked against upstream in the same pass and are current; `CLAUDE_CODE_VERSION`
+  is the one exception, deliberately left at `2.1.222` with `2.1.227` available — it changes
+  the scheduled routine bots' behavior, and moving it alongside an unrelated fix would make a
+  later routine regression ambiguous to bisect. It moves on its own.
 
 - **The daemon's contention claim now has a musl number.** Measured in an Alpine 3.21
   container (real Alpine userland, real musl, no systemd) against a glibc control on the same
@@ -442,6 +1179,14 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   autostart path's first command additionally pays ~+41 ms for the spawn. Still unmeasured
   and still needing hardware nobody has to hand: musl, the systemd-unit path, and a network
   home — where the claim is strongest and least tested.
+
+- **Plugin pins rolled forward.** Routine freshness sweep, landed by the bot and previously
+  unrecorded here. Six Neovim plugins in `nvim/lazy-lock.json` (`fzf-lua`, `nvim-lspconfig`,
+  `nvim-tree.lua`, `nvim-treesitter`, `package-info.nvim`, `schemastore.nvim`) and the zsh
+  `zsh-syntax-highlighting` pin in `zsh/45-plugins.zsh`. Pins are what stop plugins floating
+  silently into eight repos, so every roll is a change those repos receive on their next sync
+  — `CONTRIBUTING.md` requires it in the changelog, and there is no carve-out for automation.
+  (`nvim/lazy-lock.json`, `zsh/45-plugins.zsh`)
 
 ## [v4.9.3] - 2026-08-06
 

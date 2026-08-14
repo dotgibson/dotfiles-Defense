@@ -165,7 +165,7 @@
 	cm = commit -m
 	ca = commit --amend
 	can = commit --amend --no-edit
-	fix = commit --fixup           # pairs with rebase.autosquash above
+	fix = commit --fixup           # pairs with rebase.autosquash above (git-absorb, when installed, picks the target commit for you)
 	wip = !git add -A && git commit -m 'wip'
 	unwip = reset HEAD~1
 	# reset / undo

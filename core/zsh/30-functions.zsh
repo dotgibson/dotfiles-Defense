@@ -116,19 +116,55 @@ _core_wired() {
   esac
 }
 
+# ── The doctor's tool inventory — ONE definition, read by BOTH renderers ──────────────
+# Flat label/list pairs. zsh arrays are 1-based, so the ODD indices (1, 3, …) hold the group
+# labels and the EVEN ones (2, 4, …) hold that group's space-separated tools — which is why
+# the human report walks it from 1 and the --json flattener walks it from 2, both stepping 2.
+# The report iterates it directly; _core_doctor_json flattens it. It used to be TWO hand-synced
+# literals, and they drifted in both directions at once: twelve tools that 00-tools.zsh
+# detects — ast-grep, difft, gping, hyperfine, jj, jnv, ouch, shellcheck, shfmt, tldr, uv,
+# viddy — were reported by neither, while the pair could also disagree with each other with
+# nothing to catch it. One source removes the second failure by construction; the parity
+# test in scripts/test-core.sh now guards against a second literal being reintroduced.
+#
+# Membership rule, so additions land somewhere defensible rather than at the end:
+#   modern CLI   — replaces a classic Unix command (ls, cat, du, ps, top, df, watch, man)
+#   integrations — wires into the shell itself: prompt, hooks, widgets, completion, sessions
+#   data / net   — reads/transforms data, or talks to the network
+#   dev / repo   — writing and versioning code: lint, format, benchmark, search, diff, VCS
+# fd/bat appear under their CANONICAL names; 00-tools.zsh resolves fdfind/batcat into
+# FD_BIN/BAT_BIN and the "resolved" line at the bottom of the report shows which one won.
+# The terminal browser is deliberately absent: BROWSER_BIN picks from w3m/lynx/links2/links/
+# elinks, so there is no single name to probe — a fixed `w3m` row would read ✗ on a box
+# that has lynx and is working fine.
+typeset -ga _CORE_DOCTOR_GROUPS=(
+  "modern CLI"   "eza bat fd rg fzf zoxide delta dust duf procs btop yazi viddy tldr ouch"
+  "integrations" "starship atuin mise carapace gum sesh"
+  "data / net"   "jq yq jnv gron sd xh doggo gping glow lnav op"
+  "dev / repo"   "ast-grep shellcheck shfmt hyperfine watchexec uv jj difft git-absorb"
+)
+
 # _core_doctor_json — machine-readable health (B12). The gate scripts emit --json; the
 # RUNTIME health verb did not, so a statusline/editor/CI could not consume it. One object
 # on stdout, never paged: {version, tools{name:bool}, wired{name:bool},
 # atuin_daemon{degraded:bool, was_up:bool}, resolved{…}}.
-# Pure zsh (no python): tool names are fixed identifiers, so no escaping is needed.
+# Pure zsh (no python): tool names are a fixed list of literals with no quotes, backslashes
+# or control characters in them, so no escaping is needed. They are NOT all bare identifiers
+# — `git-absorb` has a hyphen. The key is emitted quoted, so the JSON is valid and any real
+# parser is fine; only jq's dot shorthand isn't, because it reads `.tools.git-absorb` as a
+# subtraction. Consumers write `.tools["git-absorb"]`.
 _core_doctor_json() {
   emulate -L zsh
   local ver="unknown"
   [[ -r "$_CORE_VERSION_FILE" ]] && ver="$(<"$_CORE_VERSION_FILE")"
-  local -a alltools=(
-    eza bat fd rg fzf zoxide delta dust duf procs btop yazi
-    starship atuin mise carapace gum sesh jq yq gron sd xh doggo glow op
-  )
+  # Flattened from _CORE_DOCTOR_GROUPS rather than restated, so this object and the human
+  # report cannot disagree. Group order is preserved, which keeps the key order stable for
+  # anything diffing successive --json runs.
+  local -a alltools=()
+  local _gi
+  for ((_gi = 2; _gi <= ${#_CORE_DOCTOR_GROUPS}; _gi += 2)); do
+    alltools+=(${=_CORE_DOCTOR_GROUPS[_gi]})
+  done
   local -a wir=(starship atuin mise zoxide carapace)
   local t first=1
   print -rn -- "{\"version\":\"${ver}\",\"tools\":{"
@@ -197,16 +233,23 @@ _core_doctor_render() {
   fi
   local ver="unknown"
   [[ -r "$_CORE_VERSION_FILE" ]] && ver="$(<"$_CORE_VERSION_FILE")"
-  print -r -- "${c}dotfiles-core ${ver}${r} ${d}— core-doctor (✓ present · ✗ falls back to classic)${r}"
+  # Legend scoped to what is actually true. "✗ falls back to classic" held when the report
+  # was mostly command replacements, but most of the inventory is now opt-in tooling that
+  # shadows nothing — there is no classic `ast-grep` or `jj` to degrade to, so a blanket
+  # promise of a fallback misread every ✗ outside the first group.
+  print -r -- "${c}dotfiles-core ${ver}${r} ${d}— core-doctor (✓ present · ✗ absent; the replacements below fall back to the classic command)${r}"
 
-  # Grouped tool report: "group label" then a space-separated tool list. A tool is
-  # ✓ when it resolves on PATH, ✗ (dimmed) when Core degrades to the classic command.
-  local -a groups=(
-    "modern CLI"   "eza bat fd rg fzf zoxide delta dust duf procs btop yazi"
-    "integrations" "starship atuin mise carapace gum sesh"
-    "data / net"   "jq yq gron sd xh doggo glow op"
-  )
-  local gi tool line
+  # Grouped tool report, straight off the one inventory defined above _core_doctor_json.
+  # A tool is ✓ when it resolves on PATH, ✗ (dimmed) when it is absent — which for the
+  # replacements in "modern CLI" means Core degrades to the classic command, and for the
+  # opt-in tools elsewhere simply means the verb is unavailable.
+  local -a groups=("${_CORE_DOCTOR_GROUPS[@]}")
+  # _v is declared HERE, not at its use site inside the loop below. zsh prints `name=value`
+  # when `local` re-declares a parameter that already holds one (TYPESET_SILENT is off under
+  # `emulate -L zsh`), so a `local _v` inside the loop dumped a literal `_v=0.26.1` line into
+  # the report on every iteration after the first — `core-doctor -v` rendered garbage instead
+  # of versions. Nothing caught it because no test drove the -v path.
+  local gi tool line _v
   local -a missing=()
   for ((gi = 1; gi <= ${#groups}; gi += 2)); do
     print -r -- "${c}${groups[gi]}${r}"
@@ -215,8 +258,8 @@ _core_doctor_render() {
       if _core_have "$tool"; then
         if ((show_versions)); then
           # Best-effort, like setup.sh's _doctor: pull the first semver-ish token from
-          # the tool's own --version. Unparseable → just the ✓ (never an error).
-          local _v
+          # the tool's own --version. Unparseable → just the ✓ (never an error). Assigned,
+          # never re-declared: see the `local … _v` note above the loop.
           _v="$("$tool" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
           line+="  ${g}✓${r} ${tool}${_v:+ ${d}${_v}${r}}"
         else
@@ -227,24 +270,31 @@ _core_doctor_render() {
     print -r -- " $line"
   done
 
-  # Actionable: turn the ✗'d tools into a copy-pasteable install line for THIS box's
-  # package manager (U2), instead of leaving the reader to look each one up. Best-effort
-  # — gated on 60-update.zsh's _pkgup_mgr being loaded (it isn't in the unit harness, which
-  # sources ui+functions alone) and on a known manager. Two honesty caveats, because a
-  # blanket `pkg install <all>` misleads: (1) package NAMES can differ from the command
-  # (rg=ripgrep); (2) not every modern-CLI tool is PACKAGED on every distro — some are
-  # binary-distributed and the right method varies per tool AND distro (a distro package,
-  # `mise use -g`, `go install`, `cargo install`, or a vendor repo — e.g. `op`). Rather
-  # than embed a rot-prone per-distro table here (that is exactly what PORTING-MATRIX.md
-  # is), point the reader at the matrix for the authoritative per-tool install path.
+  # Name the ✗'d tools and give THIS box's install verb (U2), so the reader is not left
+  # looking each one up. Gated on 60-update.zsh's _pkgup_mgr being loaded (it isn't in the
+  # unit harness, which sources ui+functions alone) and on a known manager.
+  #
+  # What this deliberately does NOT print is `<prefix> <every missing tool>` as one line.
+  # That read as paste-ready and was not: apt/dnf/zypper/pacman all abort the WHOLE
+  # transaction on a single unresolvable name, so one bad entry blocked the good ones too.
+  # And bad entries are the common case, not the edge — these are COMMAND names, while the
+  # package is often called something else (rg=ripgrep, delta=git-delta, fd=fd-find on
+  # Debian, dust=du-dust, yq=go-yq, op=1password-cli), and several tools are not packaged
+  # at all on some targets (sesh anywhere, watchexec on Fedora/Kali, carapace and yazi on
+  # Kali). At least 12 of the names in `groups` above break the line on some box, so an
+  # exclusion list cannot rescue it — and the alternative, a command→package map per
+  # distro, is a rot-prone duplicate of PORTING-MATRIX.md, which is where that data lives.
+  # So: print the names as names, the verb as a template, and point at the matrix.
   if ((${#missing})) && (($+functions[_pkgup_mgr])); then
     local _mgr _pfx
     _mgr="$(_pkgup_mgr)"
     if _pfx="$(_core_install_prefix "$_mgr")"; then
       print -r -- "${c}install missing${r}"
-      print -r -- "  ${d}${_pfx} ${missing[*]}${r}"
-      print -r -- "  ${d}names differ per distro (rg=ripgrep, delta=git-delta), and some aren't packaged${r}"
-      print -r -- "  ${d}on every distro — see core/PORTING-MATRIX.md for the per-tool install path${r}"
+      print -r -- "  ${d}${missing[*]}${r}"
+      print -r -- "  ${d}those are command names — the package is often called something else${r}"
+      print -r -- "  ${d}(rg=ripgrep, delta=git-delta) and some aren't packaged on every distro,${r}"
+      print -r -- "  ${d}so install per tool: ${_pfx} <pkg>${r}"
+      print -r -- "  ${d}see core/PORTING-MATRIX.md for the per-tool name and install path${r}"
     fi
   fi
 

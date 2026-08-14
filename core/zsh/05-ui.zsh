@@ -417,7 +417,18 @@ _core_spin() {
     # to the blocking wait, which costs no CPU and returns the same status. 200 iterations
     # inside 5s is only reachable when the tick is broken (a working 100ms nap needs ~20s to
     # get there), so a merely slow command never trips it.
-    if ((i > 200 && SECONDS < 5)); then break; fi
+    #
+    # Leave ONE static frame behind on the way out. Breaking with the last animated frame
+    # frozen on screen is not enough: a stopped spinner and a wedged spinner look identical,
+    # and the rest of the run — possibly minutes — would show a glyph that says "hung" while
+    # the command is fine. "(still running…)" says which of the two it is. lib/ux.sh's
+    # ux_spin leaves the same line (these two are deliberate mirrors); there it also has to
+    # suppress the line-clear it would otherwise do before `wait`. The glyph comes from $fr,
+    # so the non-UTF-8 fallback set is honoured rather than a hardcoded braille cell.
+    if ((i > 200 && SECONDS < 5)); then
+      printf '\r\e[K%s %s %s(still running…)%s' "${fr[$((i % nfr + 1))]}" "$title" "$_d" "$_x" >&2
+      break
+    fi
   done
   wait "$pid"
   local rc=$?

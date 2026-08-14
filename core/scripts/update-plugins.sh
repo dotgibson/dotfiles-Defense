@@ -19,8 +19,9 @@
 #                                            stale — the freshness GATE the weekly
 #                                            .github/workflows/freshness.yml runs so a
 #                                            rotting pin is surfaced proactively (the
-#                                            runtime-plugin analog of dependabot, which
-#                                            only watches the github-actions ecosystem).
+#                                            runtime-plugin analog of Renovate, which
+#                                            watches the github-actions ecosystem but
+#                                            not these pins).
 # ──────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
