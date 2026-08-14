@@ -80,7 +80,7 @@ rc=0
 if [ "${#missing[@]}" -gt 0 ]; then
   echo "::error::${#missing[@]} fixture(s) are used by a manifest but have no provenance row:"
   for m in "${missing[@]}"; do echo "  $m"; done
-  echo "  fix: add '<fixture>\\t<captured|vendor-documented|unverified>\\t<note>' to $ledger"
+  printf "  fix: add '<fixture>\\t<captured|vendor-documented|unverified>\\t<note>' to %s\n" "$ledger"
   rc=1
 fi
 
