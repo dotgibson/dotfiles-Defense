@@ -72,15 +72,68 @@ if [[ -n "$ONLY_CSV" ]]; then blib_select --only "$ONLY_CSV"; fi
 if [[ -n "$SKIP_CSV" ]]; then blib_select --skip "$SKIP_CSV"; fi
 
 # ── Host-tool / docker probe (report only — never installs) ──────────────────
+# `command -v` answers "is this on $PATH", which is NOT the question "is this tool on
+# the box". Several of the tools below are routinely installed somewhere $PATH never
+# sees, and calling those "missing" sends you to reinstall something you already have:
+#
+#   • zeek   — installs under its own prefix, /opt/zeek/bin, which upstream does not
+#              add to $PATH (the tarball and the official packages both do this)
+#   • vol    — volatility3 is commonly run out of a checkout's venv, or shipped under
+#              its script name vol.py rather than vol
+#
+# The opposite error would be just as wrong: defense.zsh invokes these by bare name
+# (`zeek -r …`, `vol -f …`), so a tool that is present but off $PATH is still unusable
+# by this layer. So report three states, not two — on PATH, present-but-unreachable
+# (with the one-line fix), and genuinely absent — and count only the last as missing.
+#
+# _probe_offpath <tool> — echo an executable path for <tool> found OFF $PATH, else fail.
+# Deliberately a short, general list: tool-owned prefixes, unpacked release trees and snap.
+# It does not go hunting through $HOME — a probe that guesses at arbitrary checkout
+# locations would be slow and would still miss.
+_probe_offpath() {
+  local t="$1" p
+  for p in "/opt/$t/bin/$t" "/usr/local/$t/bin/$t" "$HOME/.local/share/$t/$t" "/snap/bin/$t"; do
+    [ -x "$p" ] && {
+      printf '%s\n' "$p"
+      return 0
+    }
+  done
+  return 1
+}
+
+# _probe_altname <tool> — echo an alternate command name for <tool> that IS on $PATH.
+# Same idea as Core's fd->fdfind / bat->batcat resolution: one capability, several names
+# depending on how it was packaged.
+_probe_altname() {
+  local t="$1" a
+  case "$t" in
+  vol) set -- vol.py volatility3 ;;
+  *) return 1 ;;
+  esac
+  for a in "$@"; do
+    command -v "$a" >/dev/null 2>&1 && {
+      printf '%s\n' "$a"
+      return 0
+    }
+  done
+  return 1
+}
+
 check_tools() {
   blib_say "checking host tools (install missing ones via your OS layer — see install/README.md)"
-  local t missing=0
+  local t missing=0 unreachable=0 found=""
   # zsh leads the list deliberately: it is the shell this entire layer runs in, so its
   # absence is categorically worse than a missing forensics tool. The end-of-run guard
   # says so loudly — this line just makes it visible in the probe alongside the rest.
   for t in zsh docker jq tshark zeek suricata chainsaw hayabusa sigma yara velociraptor vol log2timeline.py; do
     if command -v "$t" >/dev/null 2>&1; then
       blib_ok "found: $t"
+    elif found="$(_probe_altname "$t")"; then
+      blib_ok "found: $t (as \`$found\`)"
+    elif found="$(_probe_offpath "$t")"; then
+      blib_warn "unreachable: $t is installed at $found but is not on \$PATH"
+      blib_warn "  defense.zsh calls it by bare name — fix with:  ln -s $found ~/.local/bin/$t"
+      unreachable=$((unreachable + 1))
     else
       blib_warn "missing: $t"
       missing=$((missing + 1))
@@ -91,9 +144,17 @@ check_tools() {
       blib_ok "docker compose available — \`siemup\` will work"
     else blib_warn "docker present but compose plugin missing — siemup needs it"; fi
   fi
-  if ((missing == 0)); then
+  if ((missing == 0 && unreachable == 0)); then
     blib_ok "all probed tools present"
-  else blib_warn "$missing tool(s) missing — the forensics tools are optional; zsh is not"; fi
+  else
+    ((missing > 0)) &&
+      blib_warn "$missing tool(s) missing — the forensics tools are optional; zsh is not"
+    ((unreachable > 0)) &&
+      blib_warn "$unreachable tool(s) installed but off \$PATH — symlink them (see above) or this layer cannot call them"
+  fi
+  # Report-only, like the rest of this probe: an unreachable tool is a warning, never a
+  # non-zero exit. Callers that want to gate on it read the counts above.
+  return 0
 }
 
 # ── the DEFENSE role stage (band 85) ─────────────────────────────────────────
