@@ -235,6 +235,24 @@ contains "siemup without docker exits non-zero" "$out" "rc=1"
 out="$(zdef "$S" 'unset HAVE_DOCKER; siemdown; echo "rc=$?"')"
 contains "siemdown without docker exits non-zero" "$out" "rc=1"
 
+# siemup must create the OpenSearch bind-mount target BEFORE compose runs. Where it does
+# not exist, Docker creates it ROOT-owned and the node dies with
+# "AccessDeniedException: /usr/share/opensearch/data/nodes" — a first-boot-only failure,
+# which is why a lab that has run once never shows it. Found by lab-smoke.sh's first run.
+SIEMD="$TMPROOT/siemdir"
+mkdir -p "$SIEMD/docker"
+cp "$REPO/docker/detection-lab.compose.yml" "$SIEMD/docker/"
+CASES_DIR="$SIEMD/cases" DEFENSE_DIR="$SIEMD" EDITOR=true HOME="$SIEMD" \
+  zsh -f -i -c "source '$REPO/defense/defense.zsh' >/dev/null 2>&1
+    DEFENSE_DIR='$SIEMD'; HAVE_DOCKER=1
+    _compose() { :; }
+    siemup >/dev/null 2>&1" 2>/dev/null
+if [ -d "$SIEMD/docker/detection-lab/data/opensearch" ]; then
+  ok "siemup creates the OpenSearch data dir before compose can"
+else
+  no "siemup creates the OpenSearch data dir before compose can" "directory was not created"
+fi
+
 # ─────────────────────────────────────────────────────────────────────────────
 group "install/tools.lst — the single source for the probe list"
 
@@ -523,6 +541,50 @@ contains "unbackticked prose is not treated as a citation" "$out" "| resolved as
 empty_out="$(bash "$VRR" "$TMPROOT/empty.md" "$REPO" 2>&1)"
 is "an empty report exits 0" "0" "$?"
 contains "an empty report is reported as such" "$empty_out" "nothing to verify"
+
+# ─────────────────────────────────────────────────────────────────────────────
+group "lab-smoke.sh — guards (the boot itself is proven in CI)"
+
+# The boot needs ~3 GB and pulls ~1 GB of images, so it belongs in CI, not in a suite that
+# has to stay fast and hermetic. What IS tested here is everything that can hurt a
+# developer: clobbering a real credential file, or leaving a minted one behind.
+LSM="$REPO/docker/validation/lab-smoke.sh"
+[ -x "$LSM" ] && ok "lab smoke script is executable" || no "lab smoke script is executable"
+
+out="$("$LSM" --help 2>&1)"
+contains "--help explains itself" "$out" "prove the detection lab actually boots"
+"$LSM" --nonsense >/dev/null 2>&1
+is "an unknown argument exits non-zero" "1" "$?"
+
+# Run it against a throwaway copy with docker/curl stubbed, so the credential handling is
+# exercised without starting anything.
+LABT="$TMPROOT/lab"
+mkdir -p "$LABT/docker/validation" "$LABT/stub"
+cp "$REPO/docker/detection-lab.compose.yml" "$REPO/docker/detection-lab.env.example" "$LABT/docker/"
+cp "$LSM" "$LABT/docker/validation/"
+printf '#!/bin/sh\nexit 0\n' >"$LABT/stub/docker"
+printf '#!/bin/sh\nexit 1\n' >"$LABT/stub/curl"
+chmod +x "$LABT/stub/docker" "$LABT/stub/curl"
+
+# A minted credential must not outlive the run.
+(cd "$LABT" && PATH="$LABT/stub:$PATH" ./docker/validation/lab-smoke.sh >/dev/null 2>&1)
+if [ -e "$LABT/docker/.env" ]; then
+  no "a minted .env is removed afterwards" "it was left on disk"
+else
+  ok "a minted .env is removed afterwards"
+fi
+
+# An EXISTING .env is a real local secret — it must survive byte-identical.
+printf 'OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyRealPassw0rd!\n' >"$LABT/docker/.env"
+env_before="$(cksum <"$LABT/docker/.env")"
+(cd "$LABT" && PATH="$LABT/stub:$PATH" ./docker/validation/lab-smoke.sh >/dev/null 2>&1)
+is "an existing .env is never overwritten" "$env_before" "$(cksum <"$LABT/docker/.env")"
+
+# The example's deliberately-invalid sentinel must be refused, not passed to OpenSearch —
+# which would fail as a confusing container error rather than a clear message.
+printf 'OPENSEARCH_INITIAL_ADMIN_PASSWORD=SET_ME\n' >"$LABT/docker/.env"
+out="$(cd "$LABT" && PATH="$LABT/stub:$PATH" ./docker/validation/lab-smoke.sh 2>&1)"
+contains "the SET_ME sentinel is refused with a clear message" "$out" "no usable OPENSEARCH_INITIAL_ADMIN_PASSWORD"
 
 # ─────────────────────────────────────────────────────────────────────────────
 group "check-rule-coverage.sh — every rule validated, every filter proven"
