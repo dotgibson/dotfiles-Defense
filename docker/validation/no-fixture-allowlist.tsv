@@ -1,0 +1,8 @@
+# no-fixture-allowlist.tsv — rules deliberately not fixtured, with a reason.
+#
+# Format: <rule path><TAB><reason>
+#
+# EMPTY ON PURPOSE. The corpus is fully covered, and check-rule-coverage.sh enforces
+# that. A rule that genuinely cannot be fixtured is a real thing — see the cloud-plane
+# notes in README.md for the shape of that argument — but it belongs here in writing,
+# argued for, rather than achieved by leaving it out of a manifest where nothing notices.
