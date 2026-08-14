@@ -383,6 +383,71 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+group "verify-routine-report.sh — the routine filing gate"
+
+VRR="$REPO/.github/workflows/verify-routine-report.sh"
+[ -x "$VRR" ] || [ -r "$VRR" ] && ok "verifier exists" || no "verifier exists"
+
+# vrr <markdown> — run the verifier over a throwaway report, echo "rc=<n>" then the body.
+vrr() {
+  local f="$TMPROOT/vrr.md"
+  printf '%s\n' "$1" >"$f"
+  local out rc
+  out="$(bash "$VRR" "$f" "$REPO" 2>&1)"
+  rc=$?
+  printf 'rc=%s\n%s\n---BODY---\n%s\n' "$rc" "$out" "$(cat "$f")"
+}
+
+# A path cited exactly as it exists.
+out="$(vrr 'The rule `detections/sigma/registry/harbor_artifact_deleted.yml` is fine.')"
+contains "an exact path resolves" "$out" "rc=0"
+contains "resolved citations are counted" "$out" "| resolved | 1 |"
+
+# Cited relative to a subtree — the common, CORRECT form in these reports. Treating this
+# as an error is what would make the gate cry wolf: 16 of 17 such citations in a real
+# report were relative, and only one was genuinely wrong.
+out="$(vrr 'See `registry/harbor_artifact_deleted.yml` for the pattern.')"
+contains "a subtree-relative path resolves" "$out" "rc=0"
+
+# THE gate condition: the file exists, but not where the report says. This is the real
+# defect found in detection-review #123, which cited harbor/ for a rule that lives in
+# registry/ — mechanically checkable, and previously unchecked.
+out="$(vrr 'The rule `harbor/harbor_artifact_deleted.yml` is under-scoped.')"
+contains "a wrong path fails the gate" "$out" "rc=1"
+contains "the wrong path is named" "$out" "harbor/harbor_artifact_deleted.yml"
+contains "the real location is given" "$out" "detections/sigma/registry/harbor_artifact_deleted.yml"
+contains "the issue body carries a warning" "$out" "[!WARNING]"
+
+# Proposals are not claims about the tree. These reports propose files by path, and last
+# week's proposal is this week's file — holding them to existence would fail every good
+# report that suggests new coverage.
+out="$(vrr '**Proposed change:** Author `detections/sigma/cloud/does_not_exist_yet.yml`.')"
+contains "a proposal does not fail the gate" "$out" "rc=0"
+contains "a proposal is counted separately" "$out" "| proposed (new files, not expected to exist) | 1 |"
+
+# An unmatched path with no proposal wording is ambiguous, so it is surfaced, not fatal.
+out="$(vrr 'The rule `detections/sigma/nope/invented.yml` is broken.')"
+contains "an unmatched path is not fatal" "$out" "rc=0"
+contains "an unmatched path is listed" "$out" "| unmatched | 1 |"
+
+# Ground truth is stamped in every report, so a stale corpus size is visible rather than
+# implied — the real #123 opened with "all 89 rules" against a tree that has more.
+out="$(vrr 'Reviewed the whole corpus.')"
+contains "ground-truth rule count is stamped" "$out" "Sigma rules"
+sigma_now="$(find "$REPO/detections/sigma" -name '*.yml' -type f | wc -l | tr -d ' ')"
+contains "the stamped count is the measured one" "$out" "**$sigma_now**"
+
+# Prose must not be mistaken for citations — only backticked tokens count.
+out="$(vrr 'The sigma corpus and its yaml files are healthy.')"
+contains "unbackticked prose is not treated as a citation" "$out" "| resolved | 0 |"
+
+# An empty report is a routine failure, not a verification failure — say so and move on.
+: >"$TMPROOT/empty.md"
+empty_out="$(bash "$VRR" "$TMPROOT/empty.md" "$REPO" 2>&1)"
+is "an empty report exits 0" "0" "$?"
+contains "an empty report is reported as such" "$empty_out" "nothing to verify"
+
+# ─────────────────────────────────────────────────────────────────────────────
 group "bootstrap.sh — dry run is inert"
 
 DRYHOME="$TMPROOT/dryhome"
