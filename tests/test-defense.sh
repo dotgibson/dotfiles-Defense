@@ -525,6 +525,48 @@ is "an empty report exits 0" "0" "$?"
 contains "an empty report is reported as such" "$empty_out" "nothing to verify"
 
 # ─────────────────────────────────────────────────────────────────────────────
+group "check-rule-coverage.sh — every rule validated, every filter proven"
+
+CRC="$REPO/docker/validation/check-rule-coverage.sh"
+[ -x "$CRC" ] && ok "coverage gate is executable" || no "coverage gate is executable"
+
+crc_out="$("$CRC" "$REPO" 2>&1)"
+crc_rc=$?
+is "the corpus passes today" "0" "$crc_rc"
+contains "it reports the coverage it measured" "$crc_out" "rules validated"
+
+# The two manifests use DIFFERENT column layouts (rule is col 4 host, col 2 cloud). Reading
+# one layout for both reports the entire corpus as uncovered — which is exactly the bug the
+# first draft of this checker had, so the passing count is asserted against a count derived
+# independently here.
+rule_total="$(find "$REPO/detections/sigma" -name '*.yml' -type f | wc -l | tr -d ' ')"
+contains "every rule in the corpus is accounted for" "$crc_out" "$rule_total/$rule_total"
+
+# A gate that cannot fail is decoration. Both failure modes are exercised against real
+# files in a throwaway copy of the repo, never the working tree.
+CRCTMP="$TMPROOT/crc"
+mkdir -p "$CRCTMP"
+cp -r "$REPO/detections" "$REPO/docker" "$CRCTMP/" 2>/dev/null
+cp "$REPO/docker/validation/check-rule-coverage.sh" "$CRCTMP/docker/validation/"
+
+cp "$CRCTMP/detections/sigma/impact/service_stop_burst.yml" \
+  "$CRCTMP/detections/sigma/impact/_unlisted.yml"
+out="$(bash "$CRCTMP/docker/validation/check-rule-coverage.sh" "$CRCTMP" 2>&1)"
+rc=$?
+is "an unlisted rule fails the gate" "1" "$rc"
+contains "the unlisted rule is named" "$out" "_unlisted.yml"
+contains "the fix is spelled out" "$out" "add a row to"
+rm -f "$CRCTMP/detections/sigma/impact/_unlisted.yml"
+
+# Blank the first true-negative fixture: a filtered rule whose exclusion is no longer proven.
+awk -F'\t' 'BEGIN{OFS="\t"} !/^#/ && NF>=6 && $6!="-" && !d {$6="-"; d=1} {print}' \
+  "$REPO/docker/validation/sigma-manifest.tsv" >"$CRCTMP/docker/validation/sigma-manifest.tsv"
+out="$(bash "$CRCTMP/docker/validation/check-rule-coverage.sh" "$CRCTMP" 2>&1)"
+rc=$?
+is "a filter with no true negative fails the gate" "1" "$rc"
+contains "the reason is stated, not just the rule" "$out" "nothing proves the exclusion still excludes"
+
+# ─────────────────────────────────────────────────────────────────────────────
 group "lint-shell.sh — CI-identical shell lint"
 
 LS="$REPO/tests/lint-shell.sh"
