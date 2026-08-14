@@ -68,12 +68,21 @@ done <"$recorded"
 bad_value=()
 while IFS=$'\t' read -r fx prov _rest; do
   case "$fx" in '#'* | '') continue ;; esac
-  [ -n "$prov" ] || continue
+  # An EMPTY provenance is malformed, not exempt. Skipping it would let
+  # `fixture<TAB><TAB>note` satisfy a check whose whole point is that every row states a
+  # value — the gate would report the row as accounted for while it says nothing.
   case "$prov" in
   captured | vendor-documented | unverified) ;;
+  '') bad_value+=("$fx -> '<empty>'") ;;
   *) bad_value+=("$fx -> '$prov'") ;;
   esac
-done < <(grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$ledger")
+done < <(
+  # awk, not a bare `read` over the raw line: tab is an IFS whitespace character, so
+  # `read fx prov rest` COLLAPSES `path<TAB><TAB>note` and slides the note into $prov.
+  # A malformed row would then be judged on the wrong field. awk indexes fields exactly,
+  # so an empty column 2 arrives empty and is caught for what it is.
+  awk -F'\t' '!/^[[:space:]]*#/ && NF>=1 && $1!="" {printf "%s\t%s\n", $1, $2}' "$ledger"
+)
 
 rc=0
 
@@ -92,10 +101,21 @@ if [ "${#bad_value[@]}" -gt 0 ]; then
 fi
 
 if [ "$rc" -eq 0 ]; then
+  # Counted over the REFERENCED fixtures only, not the whole ledger. The summary says
+  # "N referenced", so counting stale rows into it would make the numbers — and the
+  # all-unverified test below — quietly disagree with their own label.
+  count_prov() {
+    awk -F'\t' -v want="$1" '
+      NR == FNR { ref[$0] = 1; next }
+      /^[[:space:]]*#/ || NF < 2 { next }
+      ($1 in ref) && $2 == want { n++ }
+      END { print n + 0 }
+    ' "$referenced" "$ledger"
+  }
   total=$(wc -l <"$referenced" | tr -d ' ')
-  cap=$(awk -F'\t' '!/^[[:space:]]*#/ && $2=="captured"' "$ledger" | wc -l | tr -d ' ')
-  doc=$(awk -F'\t' '!/^[[:space:]]*#/ && $2=="vendor-documented"' "$ledger" | wc -l | tr -d ' ')
-  unv=$(awk -F'\t' '!/^[[:space:]]*#/ && $2=="unverified"' "$ledger" | wc -l | tr -d ' ')
+  cap=$(count_prov captured)
+  doc=$(count_prov vendor-documented)
+  unv=$(count_prov unverified)
   printf 'fixture provenance: %s referenced — %s captured, %s vendor-documented, %s unverified' \
     "$total" "$cap" "$doc" "$unv"
   [ "$stale" -gt 0 ] && printf ' (%s stale row(s) in the ledger)' "$stale"

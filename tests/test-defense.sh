@@ -675,6 +675,29 @@ sed -i '0,/\tunverified\t/{s/\tunverified\t/\tcaptured\t/}' \
 out="$(bash "$PROV3/docker/validation/check-fixture-provenance.sh" "$PROV3" 2>&1)"
 contains "upgrading a row to captured is counted" "$out" "1 captured"
 
+# An EMPTY provenance is malformed, not exempt. Reported as <empty> specifically, which
+# also pins that the parser reads column 2 exactly: tab is an IFS whitespace character, so
+# a bare `read` collapses `path<TAB><TAB>note` and judges the NOTE as the provenance.
+PROV4="$TMPROOT/prov4"
+mkdir -p "$PROV4"
+cp -r "$REPO/docker" "$PROV4/"
+sed -i '0,/\tunverified\t/{s/\tunverified\t/\t\t/}' "$PROV4/docker/validation/fixture-provenance.tsv"
+out="$(bash "$PROV4/docker/validation/check-fixture-provenance.sh" "$PROV4" 2>&1)"
+rc=$?
+is "an empty provenance fails" "1" "$rc"
+contains "an empty provenance is named as empty, not as the note" "$out" "<empty>"
+
+# A stale row (fixture no manifest uses) must not be counted into a summary that says
+# "N referenced" — the label and the numbers have to agree.
+PROV5="$TMPROOT/prov5"
+mkdir -p "$PROV5"
+cp -r "$REPO/docker" "$PROV5/"
+printf 'docker/validation/sigma-fixtures/_gone.jsonl\tcaptured\tstale\n' \
+  >>"$PROV5/docker/validation/fixture-provenance.tsv"
+out="$(bash "$PROV5/docker/validation/check-fixture-provenance.sh" "$PROV5" 2>&1)"
+contains "a stale captured row is not counted as referenced" "$out" "0 captured"
+contains "but the stale row is reported" "$out" "stale row"
+
 # The two rules #149 is about must carry their caveat, so the ledger points at the doubt
 # rather than merely recording a value.
 contains "the npm fixtures carry the #149 caveat" \
