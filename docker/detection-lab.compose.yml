@@ -53,8 +53,23 @@ services:
     container_name: detection-lab-dashboards
     environment:
       - 'OPENSEARCH_HOSTS=["https://opensearch:9200"]'
-      - OPENSEARCH_USERNAME=admin
-      - OPENSEARCH_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD:?set it in docker/.env}
+      # kibanaserver, NOT admin. This is the SERVICE account Dashboards uses to talk to
+      # OpenSearch on its own behalf — not the account you log in as, which is still admin
+      # with the password from docker/.env. The security plugin grants kibanaserver the
+      # privileges Dashboards needs for its own bookkeeping; admin, despite being more
+      # powerful, is not mapped to them, so running as admin produced a permanent
+      #   Authorization Exception :: {"path":"/_plugins/_security/tenantinfo","statusCode":403}
+      # on every boot and left overall status short of "available". Caught the first time
+      # anything actually started this stack (lab-smoke.sh).
+      #
+      # The credentials are the demo ones baked into the image, verified against
+      # opensearchproject/opensearch:2.19.0's own config/opensearch-security/internal_users.yml
+      # rather than assumed. They are not a secret and are not user-specific: unlike admin,
+      # kibanaserver's password is not settable via OPENSEARCH_INITIAL_ADMIN_PASSWORD, so
+      # hard-coding it here is correct rather than sloppy. A lab that ships its own demo
+      # security config has no other value to use.
+      - OPENSEARCH_USERNAME=kibanaserver
+      - OPENSEARCH_PASSWORD=kibanaserver
       # OpenSearch's demo TLS is a self-signed cert; skip verification for this local
       # lab so Dashboards can connect (it would otherwise fail TLS validation).
       - OPENSEARCH_SSL_VERIFICATIONMODE=none

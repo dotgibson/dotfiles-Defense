@@ -10,11 +10,8 @@
 #
 # This starts it for real and asserts the two things that make it useful:
 #   1. OpenSearch reaches cluster health green|yellow (the compose healthcheck's own bar)
-#   2. Dashboards serves an AUTHENTICATED status document — proving the container started,
-#      the port is reachable, and the credentials in docker/.env actually work
-#
-# (2) deliberately stops short of demanding status "available"; see the long note at that
-# check for the stack defect that would otherwise keep this job permanently red.
+#   2. Dashboards reaches overall green/available — which also proves it authenticated to
+#      OpenSearch, so it is the check that exercises the credential wiring end to end
 #
 # `compose up --wait` does the first for us: it blocks on the healthcheck, and Dashboards
 # declares `depends_on: {opensearch: {condition: service_healthy}}`, so a stack that never
@@ -174,42 +171,31 @@ status=""
 for _ in $(seq 1 30); do
   status="$(curl -s --max-time 5 -u "admin:${admin_pw}" http://localhost:5601/api/status 2>/dev/null)"
   case "$status" in
-  *'"version"'*) break ;; # a real status document, whatever level it reports
+  *'"state":"green"'* | *'"level":"available"'*) break ;;
   esac
   sleep 5
 done
 
 case "$status" in
-*'"version"'*)
-  # Dashboards 2.x reports status.overall.state ("green"/"yellow"/"red"); older/other
-  # builds use .level. Try both, and say so plainly when neither parses rather than
-  # printing a confident-looking blank.
-  level="$(printf '%s' "$status" | grep -oE '"(state|level)":"[a-z]+"' | head -n1 | cut -d'"' -f4)"
-  echo ":: dashboards responding and authenticated (overall: ${level:-unparsed})"
+*'"state":"green"'* | *'"level":"available"'*)
+  echo ":: dashboards available (and authenticated to opensearch)"
   ;;
 *)
-  echo "::error::dashboards never served a status document within 150s: $(printf '%s' "${status:-<no response>}" | head -c 300)"
+  echo "::error::dashboards did not reach overall green/available within 150s: $(printf '%s' "${status:-<no response>}" | head -c 300)"
   exit 1
   ;;
 esac
 
-# WHY THIS ASSERTS "RESPONDS AND AUTHENTICATES" RATHER THAN "AVAILABLE".
-# Booting the lab for the first time surfaced a real configuration defect: the compose
-# authenticates Dashboards as `admin`, but OpenSearch's security plugin expects the
-# dedicated `kibanaserver` service account for the Dashboards backend. As `admin`, the
-# securityDashboards plugin gets 403 on /_plugins/_security/tenantinfo:
+# Both spellings are accepted because Dashboards 2.x reports status.overall.state
+# ("green") while other builds report .level ("available"); pinning to one would make this
+# fail on a version bump for no real reason.
 #
-#   Authorization Exception :: {"path":"/_plugins/_security/tenantinfo","statusCode":403}
-#
-# so overall status never reaches "available" even though Dashboards is up, reachable and
-# authenticated. Demanding "available" would gate this job on a defect in the stack rather
-# than on whether the stack boots — and would stay red until the compose is fixed.
-#
-# So the bar here is the honest one: Dashboards serves an authenticated status document,
-# which still proves the container started, the port is reachable and the credentials in
-# docker/.env work. The level it reports is printed rather than asserted, so a degradation
-# is visible without being fatal. Fixing the service account is tracked separately; when it
-# lands, this can tighten back to "available".
+# This asserts the FULL bar again. It was briefly relaxed to "serves an authenticated
+# status document", because the compose authenticated Dashboards as `admin` and the
+# security plugin then 403'"'"'d on /_plugins/_security/tenantinfo, so overall status never
+# went green. That was a defect in the stack rather than in the check, and it is now fixed
+# at the source: the compose uses the `kibanaserver` service account the plugin actually
+# grants those privileges to.
 
 echo
-echo "detection lab smoke test passed: opensearch healthy, dashboards serving"
+echo "detection lab smoke test passed: opensearch healthy, dashboards available"
