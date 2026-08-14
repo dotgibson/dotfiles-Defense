@@ -1,6 +1,6 @@
-# Case: **CASE**
+# Case: __CASE__
 
-- **Created:** **CREATED**
+- **Created:** __CREATED__
 - **Analyst:**
 - **Authorization / ticket ref:** <!-- who asked, what's the mandate -->
 - **Scope (hosts / accounts / time window):**
