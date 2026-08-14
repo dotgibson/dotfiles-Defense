@@ -243,9 +243,10 @@ things just get nicer where they can.
 | `du` / `df` | `dust` / `duf` | dust, duf |
 | `vim` | `nvim` | always |
 
-Run `core help` (aliased `cheat`) for the built-in index of every command, or browse the
-full [alias cheat sheet](aliases.md) — including the OMZ-compatible git suite (`gst`,
-`gcb`, `glog`, `gpf`, …).
+Run `core help` (aliased `cheat`) for the built-in index of every command — it is the
+complete one. The [alias cheat sheet](aliases.md) is the curated companion, covering the
+aliases and the OMZ-compatible git suite (`gst`, `gcb`, `glog`, `gpf`, …); a handful of
+function verbs (`fif`, `fbr`, `maint-*`, `op*`) live only in `core help`.
 
 _For more, see the [Documentation][docs]._
 

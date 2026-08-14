@@ -173,7 +173,12 @@ _zplugin_load jeffreytse zsh-vi-mode
 #   • TRANSIENT_PROMPT_TRANSIENT_RPROMPT='' — drop the right prompt on past lines (P3).
 #   • Live prompt stays starship's: its precmd re-sets PROMPT/RPROMPT every render.
 if [[ -n ${HAVE_STARSHIP:-} ]]; then
-  typeset -g TRANSIENT_PROMPT_TRANSIENT_PROMPT='%(?.%F{#9ece6a}.%F{#f7768e})❖%f '
+  # $_CORE_OSC133_MARK (00-tools.zsh) is the zero-width OSC 133 A mark, and it must be
+  # HERE as well as in the live PROMPT: collapsing a finished prompt REDRAWS that line,
+  # which clears tmux's prompt flag on it, and scrollback is exactly what previous-prompt
+  # jumps THROUGH — so without this every past prompt loses its jump target the moment its
+  # command finished. Empty (and inert) wherever 00-tools stood the marks down.
+  typeset -g TRANSIENT_PROMPT_TRANSIENT_PROMPT="${_CORE_OSC133_MARK:-}"'%(?.%F{#9ece6a}.%F{#f7768e})❖%f '
   typeset -g TRANSIENT_PROMPT_TRANSIENT_RPROMPT=''
   _zplugin_load olets zsh-transient-prompt transient-prompt.plugin.zsh
 fi

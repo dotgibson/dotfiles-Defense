@@ -152,7 +152,7 @@ trap 'rm -rf "$SANDBOX"' EXIT
 
 # ── C. clipboard detection ladder (bin/clip / bin/clip-paste) ─────────────────
 # bin/clip is the single highest-fan-out runtime artifact in Core — used by zsh
-# (pbcopy alias), tmux (copy-pipe), AND nvim (clipboard provider), across all 9 OS
+# (pbcopy alias), tmux (copy-pipe), AND nvim (clipboard provider), across all 8 OS
 # repos — yet its WSL→macOS→Wayland→X11 ladder had no test, only `bash -n`. We drive
 # the ladder HERMETICALLY: PATH is pointed at a fake bin holding a stub `uname` that
 # reports the OS we want, a stub `grep` that answers the /proc/version probe, and
@@ -1338,6 +1338,154 @@ if [ "$_fd_deg_rc" -eq 0 ] && grep -q 'Unavailable in this run' <<<"$_fd_degrade
   pass "dashboard: degrades to the 'unavailable' note without gh/token"
 else fail "dashboard: GH_OK=0 degradation path broken (rc=$_fd_deg_rc)"; fi
 
+# ── F5. fleet drift classifier (scripts/fleet-drift.sh) ───────────────────────
+# The sweep's verdict function had never been driven by a test. It flagged ANY recorded
+# commit that wasn't byte-identical to the reference — but the reference DEFAULTS to the
+# latest release tag while `make sync` fans out main's TIP, so every repo synced between
+# releases was reported "AHEAD by N" and the sweep advised `make sync`, the one action that
+# would push it further ahead (#371). The fix — ahead-of-tag but on main's lineage is
+# CURRENT, ahead but off it is still drift — is pure git-reachability logic that shellcheck
+# cannot see and that the real checkout cannot exercise (it needs a tag, commits past it, and
+# an off-main commit, none of which may be created here). So build a throwaway Core: copy the
+# script plus the two libs it sources into a sandbox repo root, git init a small history, and
+# drive one fixture OS repo through every verdict by rewriting its core.lock.
+if have git; then
+  hdr "fleet drift classifier (scripts/fleet-drift.sh)"
+  FDC="$SANDBOX/fdcore"    # the throwaway "Core" ($HERE, as fleet-drift.sh computes it)
+  FDF="$SANDBOX/fdriftfleet"   # its fleet root (--root)
+  rm -rf "$FDC" "$FDF"
+  mkdir -p "$FDC/scripts/lib" "$FDC/lib" "$FDF/dotfiles-Test"
+  cp "$HERE/scripts/fleet-drift.sh" "$FDC/scripts/"
+  cp "$HERE/scripts/lib/common.sh" "$FDC/scripts/lib/"
+  cp "$HERE/lib/ux.sh" "$FDC/lib/" # common.sh sources ../../lib/ux.sh
+  printf 'dotfiles-Test\n' >"$FDC/scripts/os-repos.txt" # a one-repo fleet
+  # Neutralise host git config: a global commit.gpgsign or init.defaultBranch must not reach
+  # into the fixture (signing would block the commits; the branch name is load-bearing here).
+  _fdg() { git -C "$FDC" -c commit.gpgsign=false -c user.email=t@example.com -c user.name=t "$@"; }
+  _fdc() { _fdg commit -q --allow-empty -m "$1"; }
+  _fdg init -q >/dev/null 2>&1
+  _fdg symbolic-ref HEAD refs/heads/main # not `init -b main` (needs git >= 2.28)
+  _fdc c0; FD_OLD="$(_fdg rev-parse HEAD)"  # before the tag → genuinely stale
+  _fdc c1; _fdg tag -a v1.0.0 -m v1.0.0     # ← becomes the default reference
+  FD_REL="$(_fdg rev-parse 'v1.0.0^{commit}')"
+  # FD_MID: on main and ahead of the tag, but NOT at main's tip — the stalled-fan-out shape,
+  # which _classify rendered identically to FD_TIP before the behind-main clause existed.
+  # Only the sha differs between the two rows, so together they isolate that clause alone.
+  _fdc c2; FD_MID="$(_fdg rev-parse HEAD)"          # main, 1 past the tag, 1 behind the tip
+  _fdc c3; FD_TIP="$(_fdg rev-parse HEAD)"          # main, 2 past the tag
+  _fdg checkout -q -b feat v1.0.0
+  _fdc f1; FD_OFF="$(_fdg rev-parse HEAD)"  # ahead of the tag but NOT on main
+  _fdg checkout -q -b side "$FD_OLD"
+  _fdc g1; FD_DIV="$(_fdg rev-parse HEAD)"  # behind AND ahead → diverged
+  _fdg checkout -q main
+
+  _fdd_lock() { printf '%s\n' "$@" >"$FDF/dotfiles-Test/core.lock"; }
+  _fdd_run() { bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --color never 2>&1; }
+  _fdd_is() { # _fdd_is <label> <want-rc> <status-regex>
+    local out rc row
+    out="$(_fdd_run)"; rc=$?
+    row="$(grep 'dotfiles-Test' <<<"$out" | head -n1)"
+    if [[ "$rc" == "$2" ]] && grep -qE "$3" <<<"$row"; then pass "$1"
+    else fail "$1 (rc=$rc want=$2; row='$row')"; fi
+  }
+
+  _fdd_lock "core_sha=$FD_REL"
+  _fdd_is "drift: sha identical to the reference tag is current" 0 'current *$'
+  _fdd_lock "core_sha=$FD_OLD"
+  # THE guard on the fix: tolerating AHEAD must not have tolerated real staleness.
+  _fdd_is "drift: a sha behind the reference still FAILS" 1 'BEHIND by 1 commit'
+  _fdd_lock "core_sha=$FD_TIP"
+  # #371 itself — the fleet's ordinary between-releases state must be green.
+  _fdd_is "drift: ahead of the tag but on main is current (#371)" 0 'current \(ahead of v1.0.0 by 2 commit\(s\), on main\)'
+  # ...and the row must say how far it still is from main's TIP. `--is-ancestor` is reflexive
+  # at both ends, so "on main" alone read identically for a repo synced this morning and one
+  # synced five weeks ago — a stalled fan-out hid inside a green sweep (#381). REPORT-ONLY, so
+  # the rc stays 0: this must add a number, never a verdict.
+  _fdd_lock "core_sha=$FD_MID"
+  _fdd_is "drift: ahead-of-tag but behind main's tip reports the lag and stays green" 0 \
+    'current \(ahead of v1\.0\.0 by 1 commit\(s\), on main, 1 behind its tip\)'
+  # At the tip the clause must VANISH, not read "0 behind its tip". The assertion above for
+  # FD_TIP already enforces it (its regex ends `on main\)`), but only incidentally — name the
+  # invariant, because it is the sole reason a finished row keeps its pre-#381 wording.
+  _fdd_lock "core_sha=$FD_TIP"
+  if ! grep -q 'behind its tip' <<<"$(_fdd_run)"; then
+    pass "drift: a repo AT main's tip omits the behind-main clause"
+  else fail "drift: behind-main clause printed for a repo already at main's tip"; fi
+  _fdd_lock "core_sha=$FD_OFF"
+  # ...and the tolerance must stay narrow: ahead off the released lineage is still drift.
+  _fdd_is "drift: ahead of the tag but OFF main still FAILS" 1 'OFF-LINEAGE'
+  _fdd_lock "core_sha=$FD_DIV"
+  _fdd_is "drift: a diverged sha still FAILS" 1 'DIVERGED \(behind 1, ahead 1\)'
+  _fdd_lock "core_tag=v1.0.0" # marker present, but no core_sha key
+  _fdd_is "drift: a marker with no recorded sha FAILS" 1 'no provenance recorded'
+  _fdd_lock "core_sha=$(printf '0%.0s' {1..40})" # a sha this clone has never seen
+  _fdd_is "drift: an unknown sha degrades to DIFFERS, not a crash" 1 'DIFFERS'
+  rm -f "$FDF/dotfiles-Test/core.lock"
+  _fdd_is "drift: a missing core.lock FAILS" 1 'missing core.lock'
+
+  # The header must name the RESOLVED REFERENCE (a tag), not the checkout's branch: the old
+  # form printed "(main)" beside the tag's sha, which read as a comparison against main's tip.
+  _fdd_lock "core_sha=$FD_REL"
+  _fdd_hdr="$(_fdd_run | grep 'Fleet drift vs Core')"
+  if [[ "$_fdd_hdr" == *"v1.0.0 (${FD_REL:0:12})"* ]]; then
+    pass "drift: header names the resolved reference tag, not the current branch"
+  else fail "drift: header is '$_fdd_hdr'"; fi
+
+  # The closing advice must fit the verdict. `make sync` brings a LAGGING repo forward; it
+  # would overwrite an off-lineage marker rather than reconcile it, so it must not be offered.
+  _fdd_lock "core_sha=$FD_OLD"; _fdd_behind="$(_fdd_run)"
+  _fdd_lock "core_sha=$FD_OFF"; _fdd_off="$(_fdd_run)"
+  if grep -q "make sync" <<<"$_fdd_behind" && ! grep -q "make sync" <<<"$_fdd_off"; then
+    pass "drift: 'make sync' is advised only for repos that actually lag"
+  else fail "drift: remediation text does not match the verdict"; fi
+  # An unstamped repo IS sync-fixable — but its branch returns before the verdict arm that
+  # buckets the rest, so it needs its own assertion or the advice silently regresses.
+  rm -f "$FDF/dotfiles-Test/core.lock"
+  if grep -q "make sync" <<<"$(_fdd_run)"; then
+    pass "drift: a missing marker is advised to re-sync"
+  else fail "drift: a missing core.lock did not advise 'make sync'"; fi
+
+  # The ahead-on-main state is GREEN but not FINISHED, so it must not render as a plain ✓ —
+  # the whole reason it stopped being a failure is that the tally now carries the signal.
+  _fdd_lock "core_sha=$FD_TIP"; _fdd_ahead="$(_fdd_run)"
+  if grep -qE '^•.*current \(ahead of v1\.0\.0' <<<"$_fdd_ahead" &&
+    grep -q '1 repo(s) carrying UNRELEASED Core' <<<"$_fdd_ahead"; then
+    pass "drift: unreleased-Core rows render as a third state and are tallied"
+  else fail "drift: third state not distinguished from a plain pass"; fi
+  # ...and the tally must stay silent when the fleet really is pinned, or it becomes noise.
+  _fdd_lock "core_sha=$FD_REL"
+  if ! grep -q 'UNRELEASED Core' <<<"$(_fdd_run)"; then
+    pass "drift: a fleet pinned to the tag reports no unreleased Core"
+  else fail "drift: unreleased tally fired on a pinned fleet"; fi
+
+  # An explicit --ref that doesn't resolve must be a usage error, not a silent fallback to
+  # origin/main — the banner would otherwise name a ref that was never compared against.
+  bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --ref nosuchref --color never >/dev/null 2>&1
+  if [[ $? -eq 2 ]]; then pass "drift: an unresolvable --ref exits 2 instead of falling back"
+  else fail "drift: unresolvable --ref did not exit 2"; fi
+
+  # --strict is documented to FAIL on a repo that isn't checked out. It printed red but
+  # returned 0, so every caller read the run as clean. The root must EXIST and merely be
+  # empty — a missing root is a separate usage error (exit 2) and would mask the regression.
+  mkdir -p "$SANDBOX/fdempty"
+  bash "$FDC/scripts/fleet-drift.sh" --root "$SANDBOX/fdempty" --strict --color never >/dev/null 2>&1
+  _fdd_strict=$?
+  bash "$FDC/scripts/fleet-drift.sh" --root "$SANDBOX/fdempty" --color never >/dev/null 2>&1
+  _fdd_plain=$?
+  if [[ $_fdd_strict -eq 1 && $_fdd_plain -eq 0 ]]; then
+    pass "drift: --strict fails on a not-checked-out repo, plain mode still skips"
+  else fail "drift: --strict exit code wrong (strict=$_fdd_strict plain=$_fdd_plain)"; fi
+
+  # Fail-CLOSED leg: with no mainline ref at all, an ahead-only marker is unverifiable and
+  # must NOT be waved through as current. Last — it deletes the branch the fixture rides on.
+  _fdg checkout -q --detach main
+  _fdg branch -D main >/dev/null 2>&1
+  _fdd_lock "core_sha=$FD_TIP"
+  _fdd_is "drift: ahead with no mainline ref fails closed" 1 'no mainline ref'
+else
+  skip "fleet drift classifier (git unavailable)"
+fi
+
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
 # Track B's --only/--skip gate. blib_select VALIDATES a comma-separated selector and
 # records BLIB_ONLY/BLIB_SKIP; blib_want is the allowlist/skiplist predicate the link
@@ -1642,14 +1790,16 @@ else
   }
 
   # 1. --help documents the new surface. This is what stops a flag landing undocumented, and
-  #    — more to the point — stops the UNVALIDATED marker being dropped from the USER-VISIBLE
-  #    surface while surviving only in a source comment.
+  #    — more to the point — stops the SCOPE CAVEAT being dropped from the USER-VISIBLE surface
+  #    while surviving only in a source comment. It pinned the UNVALIDATED marker until the
+  #    seven runs that retired it; "not real hardware" is the caveat that outlives those runs,
+  #    since a synthetic container/WSL2 figure is still not a real multi-pane box.
   _b_run -- --help
   if ((_brc == 0)) && [[ "$_bout" == *"--systemd"* && "$_bout" == *"CORE_ATBENCH_BASE"* &&
-    "$_bout" == *"UNVALIDATED-SYSTEMD"* ]]; then
-    pass "atuin bench: --help documents --systemd, CORE_ATBENCH_BASE and the UNVALIDATED marker"
+    "$_bout" == *"not real hardware"* ]]; then
+    pass "atuin bench: --help documents --systemd, CORE_ATBENCH_BASE and the scope caveat"
   else
-    fail "atuin bench: --help is missing one of --systemd / CORE_ATBENCH_BASE / UNVALIDATED-SYSTEMD (rc=$_brc)"
+    fail "atuin bench: --help is missing one of --systemd / CORE_ATBENCH_BASE / 'not real hardware' (rc=$_brc)"
   fi
 
   # 2. The fail-closed arg contract still holds now that a flag exists which does not exit.
@@ -1714,11 +1864,13 @@ else
   fi
 
   # 6. EXECUTE the row-count SQL rather than pattern-match it — Section J's philosophy applied
-  #    to the standing rule. Extract ROWCOUNT_PY from the script (failing loudly if the
-  #    extraction comes back empty, exactly as Section J does for ExecStart) and run it against
-  #    a synthetic history table. This pins both predicates the rule rests on: the total, and
-  #    the `duration >= 0` FINISHED count that catches a silently-discarded `history end`.
-  _rcpy="$(sed -n "/^ROWCOUNT_PY='/,/^'$/p" "$_BENCH" | sed -e "1s/^ROWCOUNT_PY='//" -e '$d')"
+  #    to the standing rule. Extract ROWCOUNT_PY (failing loudly if the extraction comes back
+  #    empty, exactly as Section J does for ExecStart) and run it against a synthetic history
+  #    table. This pins both predicates the rule rests on: the total, and the `duration >= 0`
+  #    FINISHED count that catches a silently-discarded `history end`.
+  #    The SQL now lives in scripts/lib/atuin-db.sh, shared with scripts/verify-atuin-guard.sh
+  #    — so this one assertion covers BOTH atuin gates, which is the point of the extraction.
+  _rcpy="$(sed -n "/^ROWCOUNT_PY='/,/^'$/p" "$HERE/scripts/lib/atuin-db.sh" | sed -e "1s/^ROWCOUNT_PY='//" -e '$d')"
   if [[ -z "$_rcpy" ]]; then
     fail "atuin bench: could not extract ROWCOUNT_PY from the script (format changed?)"
   elif ! have python3; then
@@ -1789,6 +1941,1152 @@ con.commit(); con.close()' "$_rcdb"
       fail "atuin bench: a malformed sample line must refuse the arm, not be coerced"
     fi
   fi
+fi
+
+# ── J3. the atuin-guard premise detector (scripts/verify-atuin-guard.sh) ──────
+# The detector answers ONE question — does the upstream fact _core_atuin_daemon_guard is
+# premised on still hold? — and the whole reason it exists in this shape is that the
+# previous answer to that question could LIE. The copy-paste recipe it replaces seeded its
+# DB through the unreachable-daemon path, so on a build that discards, the DB was never
+# created, every row count fell back to 0, and it printed the premise-holds signature from
+# an apparatus that had never written a row. Right by luck.
+#
+# So the assertions below are mostly about the THIRD verdict. `holds` and `moved` are the
+# easy half; `unmeasurable` is the one that keeps a broken detector from reading as good
+# news, and it is the one a well-meant future simplification would delete.
+#
+# Hermetic: a stub `atuin` supplies every shape, so this needs no atuin, no daemon and no
+# network — the same stubbing idiom Section J uses on the example unit's ExecStart.
+_VERIFY="$HERE/scripts/verify-atuin-guard.sh"
+if [[ ! -x "$_VERIFY" ]]; then
+  skip "atuin guard detector (scripts/verify-atuin-guard.sh absent or not executable)"
+elif ! have python3; then
+  skip "atuin guard detector (python3 not installed)"
+else
+  hdr "atuin guard premise detector (scripts/verify-atuin-guard.sh, hermetic)"
+  _vstub="$(mktemp -d "$SANDBOX/vstub.XXXXXX")"
+
+  # _mkstub <name> <writes?> [version] — a fake atuin. `writes=yes` inserts a row on EVERY
+  # invocation (an upstream that no longer discards); `writes=off-only` inserts one only
+  # when the daemon is off (today's real 18.19.0 behaviour); `writes=no` never writes at
+  # all (a broken apparatus — the case that used to read as "holds"); `writes=stops` writes
+  # on the daemon-off path only until the DB exists and the opening control has run, then
+  # stops for good (an apparatus that dies MID-run); `writes=replay` discards nothing — it
+  # SPOOLS the daemon-on entries and flushes them on the next daemon-off write, the upstream
+  # shape that would invert the guard's one-way degrade.
+  #
+  # _w is a COUNT, not a flag: `replay` has to land more than one row in a single call, and
+  # every other mode simply leaves it at 1.
+  _mkstub() {
+    local name="$1" mode="$2" ver="${3:-18.19.0}"
+    cat >"$_vstub/$name" <<STUB
+#!/usr/bin/env bash
+case "\$1" in --version) echo "atuin $ver"; exit 0 ;; esac
+_w=0
+_spool="\${XDG_DATA_HOME}/stub-spool"
+case "$mode" in
+  yes) _w=1 ;;
+  off-only|badid|corrupt) [[ "\${ATUIN_DAEMON__ENABLED:-false}" == true ]] || _w=1 ;;
+  stops)
+    # Two daemon-off writes are allowed: the seed (which creates the DB) and the opening
+    # control arm. After that this apparatus is dead — but it still READS fine, which is
+    # exactly why the closing control arm has to exist.
+    _n=\$(cat "\${XDG_DATA_HOME}/stub-writes" 2>/dev/null || echo 0)
+    if [[ "\${ATUIN_DAEMON__ENABLED:-false}" != true ]] && ((_n < 2)); then
+      _w=1
+      mkdir -p "\${XDG_DATA_HOME}"; echo \$((_n + 1)) >"\${XDG_DATA_HOME}/stub-writes"
+    fi
+    ;;
+  replay)
+    if [[ "\${ATUIN_DAEMON__ENABLED:-false}" == true ]]; then
+      mkdir -p "\${XDG_DATA_HOME}"; echo q >>"\$_spool"   # buffered, not discarded
+    else
+      _w=\$((1 + \$(wc -l <"\$_spool" 2>/dev/null || echo 0)))
+      : >"\$_spool"
+    fi
+    ;;
+esac
+if (( _w )); then
+  db="\${XDG_DATA_HOME}/atuin/history.db"; mkdir -p "\$(dirname "\$db")"
+  python3 - "\$db" "\$_w" <<'PY'
+import sqlite3,sys
+c=sqlite3.connect(sys.argv[1])
+c.execute("create table if not exists history (id text, duration integer)")
+for _ in range(int(sys.argv[2])):
+    c.execute("insert into history values ('x', -1)")
+c.commit(); c.close()
+PY
+fi
+# corrupt: after the daemon-on call, leave the DB unreadable — the shape that made an
+# apparatus failure read as a MOVED verdict (a negative delta) before the readok sentinel.
+# NOTE: no backticks anywhere in this heredoc body. The delimiter is unquoted (so \$mode and
+# \$ver interpolate), which means a backtick here is COMMAND SUBSTITUTION at stub-generation
+# time, not decoration.
+if [ "$mode" = corrupt ] && [ "\${ATUIN_DAEMON__ENABLED:-false}" = true ]; then
+  printf 'this is not a sqlite database' >"\${XDG_DATA_HOME}/atuin/history.db"
+fi
+# badid: exit 0, write nothing, and print something that is NOT a 32-hex history id —
+# a deprecation notice on stdout is the realistic shape.
+if [ "$mode" = badid ]; then
+  echo "warning: atuin history start is deprecated"
+else
+  echo "0192deadbeefcafe0000000000000000"
+fi
+STUB
+    chmod +x "$_vstub/$name"
+  }
+
+  _v_run() { # _v_run <stub> [extra args...] → sets _vout/_vrc
+    local stub="$1"
+    shift
+    _vout="$(CORE_COLOR=never "$_VERIFY" --atuin "$_vstub/$stub" "$@" 2>&1)"
+    _vrc=$?
+  }
+  _v_verdict() { printf '%s' "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["verdict"])' 2>/dev/null; }
+
+  # ── apparatus-FREE assertions. These hold on any box, because none of them needs the
+  #    stub to be able to write a row — so a platform where the apparatus cannot run still
+  #    pins the script's contract surface.
+  #
+  # A. A bare box must not be able to produce a green "holds". This is the one place the
+  #    repo's skip-and-exit-0 idiom is deliberately broken, so it is pinned.
+  _vout="$(CORE_COLOR=never "$_VERIFY" --atuin /nonexistent/atuin --json 2>&1)"
+  _vrc=$?
+  if ((_vrc == 3)) && [[ "$(_v_verdict "$_vout")" == unmeasurable ]]; then
+    pass "atuin verify: a missing atuin exits 3 (unmeasurable), NOT 0 — exit 0 asserts something about upstream"
+  else
+    fail "atuin verify: a missing atuin must exit 3, got rc$_vrc"
+  fi
+
+  # B. Usage errors stay distinct from verdicts: 2 is the caller's fault, 1 and 3 are
+  #    findings. A workflow that conflated them would file an issue about a typo.
+  CORE_COLOR=never "$_VERIFY" --definitely-not-a-flag >/dev/null 2>&1
+  _vrc=$?
+  CORE_COLOR=never "$_VERIFY" --atuin >/dev/null 2>&1
+  _vrc2=$?
+  if ((_vrc == 2)) && ((_vrc2 == 2)); then
+    pass "atuin verify: an unknown flag and a flag missing its value both exit 2 (usage, not a finding)"
+  else
+    fail "atuin verify: usage errors must exit 2 (unknown=$_vrc missing-value=$_vrc2)"
+  fi
+
+  # C. --unmeasurable renders through the SAME one path as a real run, so the workflow
+  #    never hand-rolls prose at the call site and the two cannot drift.
+  _vout="$(CORE_COLOR=never "$_VERIFY" --unmeasurable "download failed" --json 2>&1)"
+  _vrc=$?
+  if ((_vrc == 3)) && [[ "$(_v_verdict "$_vout")" == unmeasurable ]] && [[ "$_vout" == *"download failed"* ]]; then
+    pass "atuin verify: --unmeasurable emits a well-formed verdict without measuring (rc 3)"
+  else
+    fail "atuin verify: --unmeasurable must render a real unmeasurable verdict, got rc$_vrc"
+  fi
+
+  # D. The --json object carries every field a consumer reads (the workflow parses
+  #    `verdict`; a human reads the rest). Asserted by SHAPE, not by grep, and on the
+  #    apparatus-free path so it holds everywhere.
+  if printf '%s' "$_vout" | python3 -c '
+import json,sys
+d = json.load(sys.stdin)
+need = {"premise","verdict","reason","atuin_version","host","anchor","anchor_relation","control_delta","drain_delta","bounded","arms"}
+assert need <= set(d), sorted(need - set(d))
+assert isinstance(d["arms"], dict), type(d["arms"])
+# `premise` defaults to discard and the workflow ASSERTS it per leg: the two legs differ by
+# one flag, and a copy-paste that dropped it would file a silent-discard measurement under
+# the autostart title. A default that silently changed would defeat that check.
+assert d["premise"] == "discard", d["premise"]
+' 2>/dev/null; then
+    pass "atuin verify: --json carries premise/verdict/reason/versions/host/deltas/bounded/arms"
+  else
+    fail "atuin verify: --json shape is missing fields consumers depend on"
+  fi
+
+  # ── APPARATUS SELF-CHECK. Everything below drives a stub that must actually write a row
+  #    into a real SQLite file and be measured through it. A box where that cannot work —
+  #    a python3 built without the sqlite3 module, a coreutils that cannot bound a call,
+  #    a busybox whose tools differ — would fail every assertion below for a reason that
+  #    has nothing to do with the code under test. So prove the apparatus FIRST and SKIP
+  #    if it cannot be built, which is the same contract check_dep applies to a missing
+  #    binary. The skip carries the verdict AND the reason, because a skip that does not
+  #    say why is how a platform-specific breakage stays invisible.
+  _mkstub atuin-discards off-only
+  _v_run atuin-discards --json
+  _vapp="$(_v_verdict "$_vout")"
+  if [[ "$_vapp" != holds ]]; then
+    _vwhy="$(printf '%s' "$_vout" | python3 -c 'import json,sys; print(json.load(sys.stdin)["reason"][:160])' 2>/dev/null)"
+    skip "atuin guard detector: measurement assertions (apparatus unusable here — verdict=${_vapp:-<unparseable>}: ${_vwhy:-no reason parsed})"
+  else
+    # 1. HOLDS — the control arm writes, both unreachable shapes discard. rc 0.
+    _v_run atuin-discards --json
+    if [[ "$(_v_verdict "$_vout")" == holds ]] && ((_vrc == 0)); then
+      pass "atuin verify: an atuin that still discards on an unreachable socket → holds (rc 0)"
+    else
+      fail "atuin verify: expected holds/rc0, got $(_v_verdict "$_vout")/rc$_vrc"
+    fi
+
+    # 2. The control arm is REPORTED, not merely run. `holds` without a proven-working
+    #    apparatus is exactly the old recipe's failure, so the number is in the output.
+    if [[ "$_vout" == *'"control_delta":1'* ]]; then
+      pass "atuin verify: holds is reported alongside a control arm that actually wrote"
+    else
+      fail "atuin verify: a holds verdict must carry control_delta 1 (got: $_vout)"
+    fi
+
+    # 3. MOVED — an atuin that writes on the unreachable path. rc 1, and the reason names
+    #    WHICH property changed (a bare "it changed" is not actionable).
+    _mkstub atuin-fixed yes 19.0.0
+    _v_run atuin-fixed --json
+    if [[ "$(_v_verdict "$_vout")" == moved ]] && ((_vrc == 1)) && [[ "$_vout" == *"no longer discards"* ]]; then
+      pass "atuin verify: an atuin that writes on an unreachable socket → moved (rc 1), naming the change"
+    else
+      fail "atuin verify: expected moved/rc1 naming the change, got $(_v_verdict "$_vout")/rc$_vrc"
+    fi
+
+    # 4. A newer atuin than the anchor is REPORTED as such — the signal /tool-scout cannot
+    #    compute for itself and the issue body leads with.
+    if [[ "$_vout" == *'"anchor_relation":"newer"'* ]]; then
+      pass "atuin verify: an atuin newer than the anchor reports anchor_relation=newer"
+    else
+      fail "atuin verify: anchor_relation must say 'newer' when the measured atuin outranks the anchor"
+    fi
+
+    # 5. THE LOAD-BEARING ONE. An apparatus that cannot write at all must be UNMEASURABLE,
+    #    never holds. Both produce "the row count did not go up"; only one of them means the
+    #    premise held. Deleting this assertion is how the fail-open bug comes back.
+    _mkstub atuin-dead no
+    _v_run atuin-dead --json
+    if [[ "$(_v_verdict "$_vout")" == unmeasurable ]] && ((_vrc == 3)); then
+      pass "atuin verify: an atuin that never writes is UNMEASURABLE (rc 3), never holds"
+    else
+      fail "atuin verify: a non-writing apparatus must be unmeasurable/rc3, got $(_v_verdict "$_vout")/rc$_vrc"
+    fi
+
+    # 6. The anchor is read from ONE machine-readable line, and a file that disagrees with
+    #    itself (or has lost the line) is unmeasurable rather than defaulted. Driven from a
+    #    sandbox repo whose zsh/00-tools.zsh is doctored.
+    _vrepo="$(mktemp -d "$SANDBOX/vrepo.XXXXXX")"
+    # lib/ux.sh too: scripts/lib/common.sh sources it as ../../lib/ux.sh, and without it the
+    # script dies under `set -u` before it ever reads the anchor — which would make this
+    # assertion pass for the wrong reason (a crash, not a refusal).
+    mkdir -p "$_vrepo/scripts/lib" "$_vrepo/lib" "$_vrepo/zsh" "$_vrepo/atuin"
+    cp "$_VERIFY" "$_vrepo/scripts/"
+    cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/atuin-db.sh" "$_vrepo/scripts/lib/"
+    cp "$HERE/lib/ux.sh" "$_vrepo/lib/"
+    cp "$HERE/atuin/config.toml" "$_vrepo/atuin/"
+    for _case in none dupe; do
+      if [[ "$_case" == none ]]; then
+        printf '# no anchor here\n' >"$_vrepo/zsh/00-tools.zsh"
+      else
+        printf '# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0\n# CORE_ATUIN_GUARD_VERIFIED_AGAINST=19.0.0\n' \
+          >"$_vrepo/zsh/00-tools.zsh"
+      fi
+      _vout="$(CORE_COLOR=never "$_vrepo/scripts/verify-atuin-guard.sh" --atuin "$_vstub/atuin-discards" --json 2>&1)"
+      _vrc=$?
+      if ((_vrc == 3)) && [[ "$_vout" == *"anchor"* ]]; then
+        pass "atuin verify: a $_case anchor in zsh/00-tools.zsh is unmeasurable, not a default"
+      else
+        fail "atuin verify: a $_case anchor must be unmeasurable (rc3), got rc$_vrc"
+      fi
+    done
+
+    # 7. The report is issue-ready: no title heading (file-routine-issue.sh supplies one),
+    #    and its prose AGREES WITH THE MATRIX THAT RAN. The blind spots it must still name —
+    #    musl, autostart, #3382 — are pinned as before, but the coverage half is checked for
+    #    COHERENCE rather than for keywords, because keywords are what let the last bug
+    #    through: the scope paragraph went on saying "`--hook` is not exercised" after the
+    #    matrix was widened to four arms, and the assertion that should have caught it grepped
+    #    for two nouns the false sentence also contained.
+    #
+    #    Both renderers run from ONE invocation — emit_report runs before emit_json — so the
+    #    two can never be compared across different runs. The comparison targets the DERIVED
+    #    coverage sentence SPECIFICALLY, and that precision is the whole assertion: the
+    #    per-arm table already lists every arm, so a check that merely looks for arm names
+    #    somewhere in the report is satisfied by the table alone and never reads the claim.
+    _vrep="$SANDBOX/atverify-report.md"
+    _vrepjson="$SANDBOX/atverify-report.json"
+    CORE_COLOR=never "$_VERIFY" --atuin "$_vstub/atuin-discards" --report "$_vrep" --json \
+      >"$_vrepjson" 2>/dev/null
+    if [[ -s "$_vrep" ]] && [[ "$(head -c 1 "$_vrep")" != "#" ]] &&
+      grep -qi 'musl' "$_vrep" && grep -qi 'autostart' "$_vrep" && grep -q '3382' "$_vrep" &&
+      python3 - "$_vrep" "$_vrepjson" <<'PY' 2>/dev/null; then
+import json, re, sys
+rep = open(sys.argv[1]).read()
+arms = set(json.load(open(sys.argv[2]))["arms"])
+
+# The coverage claim, parsed and compared as a SET. emit_report renders "absent_hook" as
+# "absent / hook", so the claim is mapped back rather than the arms mapped forward.
+m = re.search(r"^\*\*Measured here:\*\* (.+)\.$", rep, re.M)
+assert m, "the report states no coverage claim at all"
+if arms:
+    claimed = {a.strip().replace(" / ", "_") for a in m.group(1).split(",")}
+    assert claimed == arms, sorted(claimed ^ arms)
+else:
+    assert m.group(1).startswith("nothing"), m.group(1)
+
+# The scope section is BY CONSTRUCTION about what was not measured, so it may name neither an
+# arm nor either hook mode — every arm is measured in both. That is the general form of the
+# bug that shipped, where "`--hook` is not exercised" sat here while four hook arms ran; the
+# previous exact-wording ban would have missed any reworded version of the same claim.
+scope = rep.rsplit("\n---\n", 1)[-1]
+named = [a for a in arms if a.replace("_", " / ") in scope]
+assert not named, "the scope section names measured arms: %s" % named
+assert "hook" not in scope.lower(), "the scope section disclaims hook coverage the matrix has"
+PY
+      pass "atuin verify: --report is issue-ready, names its musl/autostart/#3382 blind spots, and its prose matches the arms that ran"
+    else
+      fail "atuin verify: --report must omit a title heading, name the coverage it lacks, and not disclaim an arm it measured"
+    fi
+
+    # 8. FOUR arms, and the hook ones by name. atuin's own `init zsh` emits
+    #    `atuin history start --hook -- "$1"`, so the plain form is a path no shell in the
+    #    fleet actually runs; a detector that measured only it could report `holds` while an
+    #    upstream change scoped to hook mode broke every prompt.
+    _v_run atuin-discards --json
+    if printf '%s' "$_vout" | python3 -c '
+import json,sys
+a = json.load(sys.stdin)["arms"]
+want = {"absent_hook","absent_plain","stale_hook","stale_plain"}
+assert want == set(a), sorted(set(a) ^ want)
+for name, arm in a.items():
+    assert {"rc","delta","stderr_empty","id_wellformed"} <= set(arm), name
+' 2>/dev/null; then
+      pass "atuin verify: all four arms are measured — absent/stale x hook/plain"
+    else
+      fail "atuin verify: --json must carry absent/stale x hook/plain arms (got: $_vout)"
+    fi
+
+    # 9. A malformed id is a FINDING, not a pass. "stdout was non-empty" is not the premise —
+    #    the shell hands that id to `history end`, and 18.16.1's empty id is what crashed it.
+    _mkstub atuin-badid badid
+    _v_run atuin-badid --json
+    if [[ "$(_v_verdict "$_vout")" == moved ]] && [[ "$_vout" == *"well-formed history id"* ]]; then
+      pass "atuin verify: stdout that is not a 32-hex id is moved, not holds"
+    else
+      fail "atuin verify: a malformed history id must be a finding, got $(_v_verdict "$_vout")"
+    fi
+
+    # 10. THE OTHER HALF OF THE CENTRAL RULE. An unreadable DB must be `unmeasurable`, never
+    #     `moved`. atuin_db_rows returns -1 on a failed read, and `after - before` then goes
+    #     NEGATIVE — which the verdict block reads as "the row count changed". That renders an
+    #     apparatus failure as a finding about upstream: the same conflation the control arm
+    #     exists to prevent, pointing the other way.
+    _mkstub atuin-corrupt corrupt
+    _v_run atuin-corrupt --json
+    if [[ "$(_v_verdict "$_vout")" == unmeasurable ]] && ((_vrc == 3)); then
+      pass "atuin verify: an unreadable DB mid-run is unmeasurable (rc 3), never moved"
+    else
+      fail "atuin verify: an unreadable DB must be unmeasurable, got $(_v_verdict "$_vout")/rc$_vrc"
+    fi
+
+    # 11. THE SAME RULE, ONE STEP LATER IN THE RUN. #10 covers a DB that stops being
+    #     READABLE; this covers one that stops being WRITABLE, which the -1 sentinel cannot
+    #     see at all — the reads keep succeeding, so all four arms report an honest-looking
+    #     delta of 0 and the run would report `holds` from an apparatus that died after the
+    #     opening control. Only the CLOSING control arm can tell those apart. Deleting this
+    #     assertion is how that fail-open comes back, the same way #5 guards the first one.
+    _mkstub atuin-stops stops
+    _v_run atuin-stops --json
+    if [[ "$(_v_verdict "$_vout")" == unmeasurable ]] && ((_vrc == 3)) && [[ "$_vout" == *CLOSING* ]]; then
+      pass "atuin verify: an apparatus that stops writing mid-run is unmeasurable (rc 3), never holds"
+    else
+      fail "atuin verify: a mid-run write failure must be unmeasurable naming the closing arm, got $(_v_verdict "$_vout")/rc$_vrc"
+    fi
+
+    # 12. BUFFER-AND-REPLAY IS A FINDING, and it is invisible to the four arms: a spooled
+    #     entry and a discarded one both leave the row count at 0 while the socket is
+    #     unreachable. It matters because the guard degrades a shell PERMANENTLY on the first
+    #     failed connect, and that is only correct while atuin is discarding — an atuin that
+    #     replays inverts the reasoning (dotgibson/dotfiles-core#383). The stub spools its
+    #     four daemon-on entries and flushes them with the next daemon-off write, so the
+    #     closing arm lands 5 rows instead of 1.
+    _mkstub atuin-replay replay
+    _v_run atuin-replay --json
+    if [[ "$(_v_verdict "$_vout")" == moved ]] && ((_vrc == 1)) &&
+      [[ "$_vout" == *'"drain_delta":5'* ]] && [[ "$_vout" == *BUFFERS* ]]; then
+      pass "atuin verify: an atuin that spools and replays is moved (rc 1), naming the inverted premise"
+    else
+      fail "atuin verify: buffer-and-replay must be moved/rc1 with drain_delta 5, got $(_v_verdict "$_vout")/rc$_vrc"
+    fi
+  fi
+fi
+
+# ── J4. the AUTOSTART premise of the same detector (--premise autostart) ──────
+# The other premise _core_atuin_daemon_guard rests on: under ATUIN_DAEMON__AUTOSTART the guard
+# stands DOWN entirely — unhooks itself, never probes — because atuin is supposed to supervise
+# its own daemon. That covers Alpine and macOS, and on those two it is the ONLY mitigation
+# (dotgibson/dotfiles-core#402).
+#
+# WHAT THIS SECTION IS REALLY FOR. §J3's assertions are mostly about the third verdict, and so
+# are these — but the conflation is sharper here, because this premise cannot be measured by
+# observing: something has to be SPAWNED. "autostart did not start a daemon" and "this box
+# cannot host a daemon" are the same observation, and only one of them is a fact about
+# upstream. The manual-spawn control is what separates them, and case 9 below is the assertion
+# that it actually does. A future simplification that deletes it would turn every CI sandbox
+# problem into an issue titled "the autostart self-healing premise has MOVED".
+#
+# Hermetic, and genuinely so: the stub runs a REAL bindable AF_UNIX daemon (python3, exec'd so
+# the process is signal-addressable), but no atuin, no systemd and no network are involved.
+_DVERIFY="$HERE/scripts/verify-atuin-guard.sh"
+if [[ ! -x "$_DVERIFY" ]]; then
+  skip "atuin autostart premise (scripts/verify-atuin-guard.sh absent or not executable)"
+elif ! have python3; then
+  skip "atuin autostart premise (python3 not installed)"
+else
+  hdr "atuin autostart self-healing premise (--premise autostart, hermetic)"
+  _dstub="$(mktemp -d "$SANDBOX/dstub.XXXXXX")"
+  # Section-local reaping. Every stub daemon writes its pid where the stub can find it, but a
+  # test that fails midway can leave one behind — and unlike the script under test, this
+  # harness has no EXIT trap of its own for them. The SANDBOX trap removes the files; this
+  # removes the processes, which the files cannot do.
+  _dreap() {
+    local pf
+    for pf in "$_dstub"/*.pid; do
+      [[ -f "$pf" ]] || continue
+      kill -9 "$(cat "$pf" 2>/dev/null)" 2>/dev/null
+      rm -f "$pf"
+    done
+    for pf in "$_dstub"/*.forked; do
+      [[ -f "$pf" ]] || continue
+      while read -r _dp; do
+        [[ -n "$_dp" ]] && kill -9 "$_dp" 2>/dev/null
+      done <"$pf"
+      rm -f "$pf"
+    done
+    rm -f "$_dstub"/*.spawned "$_dstub"/*.calls
+    return 0
+  }
+
+  # _mkdstub <name> <mode> [version] — a fake atuin whose daemon really binds and really
+  # answers, so prove_reachable's connect(2) has something to succeed against. Modes:
+  #   heals                    everything works. Mirrors real 18.19.0 exactly, INCLUDING that
+  #                            `daemon start` refuses over a stale inode while the autostart
+  #                            CLIENT unlinks it first — measured, not assumed.
+  #   never-spawns             manual works, autostart never spawns.            → moved
+  #   heals-absent-not-stale   spawns on a clear path, not over a crashed daemon's leftover
+  #                            inode. THE headline regression this premise exists to catch.
+  #   spawns-but-discards      daemon comes up, entry never lands.              → moved
+  #   manual-spawn-impossible  nothing can host a daemon here.                  → unmeasurable
+  #   end-hangs                `history end` wedges on the autostart path only, so the manual
+  #                            control still passes and the arms are reached — the bound then
+  #                            expires on the half that carries the row.
+  #   stop-unlinks-only        `daemon stop` removes the SOCKET and leaves the process alive
+  #                            and holding the DB — atuin unlinks early in shutdown, so
+  #                            "nothing answers" is not "the daemon exited".
+  #   stop-noop                `daemon stop` accepts and does nothing — the teardown
+  #                            escalation must still leave nothing running.
+  #   no-daemon-subcommand     no `daemon start`.                               → unmeasurable
+  #   no-stop-subcommand       no `daemon stop`.                                → unmeasurable
+  #   fork-hang                autostart forks a child that NEVER binds and never exits —
+  #                            invisible to every socket-based teardown path there is.
+  #   manual-fork-nobind       `daemon start` forks a child that never binds and then EXITS,
+  #                            so MANUAL_DAEMON_PID names a corpse and the socket never
+  #                            answers — the manual control's version of fork-hang.
+  #   fork-hang-end            the same, but the fork happens on `history end` rather than on
+  #                            `history start`. atuin reaches its daemon through the same
+  #                            autostarting path from both, so tracking only the opening half
+  #                            of the pair would leave this one untracked.
+  #
+  # Every invocation is appended to stub-calls, which is how the "discard never spawns" and
+  # "refused builds are never spawned on" assertions are made by CONSTRUCTION rather than by
+  # trusting a comment.
+  #
+  # NOTE, as in §J3: the delimiter is unquoted so $mode and $ver interpolate, which means no
+  # backticks may appear in this body and every runtime $ must be escaped.
+  _mkdstub() {
+    local name="$1" mode="$2" ver="${3:-18.19.0}"
+    cat >"$_dstub/$name" <<STUB
+#!/usr/bin/env bash
+MODE="$mode"
+DH="\${XDG_DATA_HOME:-/nonexistent}"
+# LOG and PIDF live in the STUB dir, not the sandbox: verify-atuin-guard.sh removes its
+# sandbox on the way out, so a log kept in there is gone by the time an assertion reads it —
+# and "grep found no spawn" would pass for a deleted file exactly as it does for a real
+# absence. Interpolated at generation time; only SOCK and DB belong to the measured tree.
+LOG="$_dstub/$name.calls"
+SPAWNMARK="$_dstub/$name.spawned"
+FORKMARK="$_dstub/$name.forked"
+SOCK="\$DH/atuin/atuin.sock"
+PIDF="$_dstub/$name.pid"
+DB="\$DH/atuin/history.db"
+mkdir -p "\$DH/atuin" 2>/dev/null
+printf '%s\n' "\$*" >>"\$LOG" 2>/dev/null
+
+row() {
+  python3 - "\$DB" <<'PY'
+import sqlite3,sys
+c=sqlite3.connect(sys.argv[1])
+c.execute("create table if not exists history (id text, duration integer)")
+c.execute("insert into history values ('x',-1)")
+c.commit(); c.close()
+PY
+}
+
+# EXEC, not a child: MANUAL_DAEMON_PID and socket_owner_pid both have to be able to signal
+# this process, and a bash wrapper holding a python child would swallow the SIGKILL the
+# teardown escalation depends on. The daemon then setsid()s below, so it leaves our process
+# group the way a real one does. Binds in the FOREGROUND so a failure is immediate — and
+# refuses over an existing inode, which is what 18.19.0 really does:
+#   Error: Address already in use (os error 48)  crates/atuin-daemon/src/server.rs:72
+serve_fg() {
+  exec python3 - "\$SOCK" "\$PIDF" "\$MODE" "\$DB" <<'PY'
+import socket, sys, os, sqlite3
+sock, pidf, mode, db = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+try:
+    s.bind(sock)
+except OSError:
+    sys.stderr.write("Error: Address already in use (os error 48)\n")
+    sys.exit(98)
+s.listen(8)
+# DETACH, exactly as a real atuin daemon does. Measured on 18.19.0: the arm ran in process
+# group 88291 and the daemon it spawned landed in 88299. A stub that stayed in the group
+# would be reachable by the group reap and every teardown assertion here would pass for a
+# reason that does not apply to atuin -- the stub has to be at least as hard to kill as the
+# thing it stands in for.
+try:
+    os.setsid()
+except OSError:
+    pass
+open(pidf, "w").write(str(os.getpid()))
+s.settimeout(0.3)
+while True:
+    try:
+        c, _ = s.accept()
+        c.close()
+    except socket.timeout:
+        # stop-unlinks-only: once the socket is gone this daemon KEEPS COMMITTING. That is
+        # what makes "nothing answers" different from "the daemon exited" — and it is only
+        # observable because the extra rows land in arms that come after the fake stop.
+        if mode == "stop-unlinks-only" and not os.path.exists(sock):
+            try:
+                con = sqlite3.connect(db, timeout=5)
+                con.execute("insert into history values ('zombie',-1)")
+                con.commit()
+                con.close()
+            except Exception:
+                pass
+    except Exception:
+        pass
+PY
+}
+
+daemon_up() {
+  [[ -S "\$SOCK" ]] || return 1
+  python3 -c "
+import socket,sys
+s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM); s.settimeout(2)
+try: s.connect('\$SOCK')
+except OSError: sys.exit(1)
+s.close()" 2>/dev/null
+}
+
+# What the autostart CLIENT does. stderr is silenced but STDOUT IS DELIBERATELY INHERITED:
+# a spawned daemon holding the caller's fd 1 open is exactly the shape that used to hang
+# run_one's \$( ) capture forever, so every autostart arm here regression-tests that fix
+# instead of merely trusting it.
+spawn_bg() {
+  # The marker is the assertion's real subject. A call-log check only ever proved the CLI
+  # spelling "daemon start" was not used -- and in this stub, as in atuin, the autostart
+  # spawn happens INSIDE "history start", so a regression that turned autostart on in the
+  # default premise would fork a daemon, log no "daemon start", and pass. Recorded outside
+  # the sandbox, which the script deletes before any assertion runs. (No backticks here: the
+  # heredoc delimiter is unquoted, so one would be command substitution at generation time.)
+  printf 'spawn\n' >>"\$SPAWNMARK" 2>/dev/null
+  ( serve_fg 2>/dev/null ) &
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    daemon_up && return 0
+    sleep 0.05
+  done
+  return 1
+}
+
+case "\$1" in
+--version) echo "atuin $ver"; exit 0 ;;
+daemon)
+  case "\$2" in
+  start)
+    if [[ "\$3" == --help ]]; then
+      [[ "\$MODE" == no-daemon-subcommand ]] && exit 1
+      echo "usage: atuin daemon start"; exit 0
+    fi
+    [[ "\$MODE" == manual-spawn-impossible ]] && { echo "Error: no" >&2; exit 1; }
+    if [[ "\$MODE" == manual-fork-nobind ]]; then
+      # Forks a child that never binds, then EXITS 0. The pid the caller recorded is dead a
+      # moment later, nothing ever answers the socket, and no inode exists to resolve an
+      # owner from -- only the process group knows about the survivor.
+      sleep 300 &
+      printf '%s\n' "\$!" >>"\$FORKMARK" 2>/dev/null
+      exit 0
+    fi
+    serve_fg
+    ;;
+  stop)
+    if [[ "\$3" == --help ]]; then
+      [[ "\$MODE" == no-stop-subcommand ]] && exit 1
+      echo "usage: atuin daemon stop"; exit 0
+    fi
+    # stop-noop ACCEPTS and does nothing, which is the realistic bad shape: a stop whose exit
+    # status says yes while the process lives on. Proof-not-exit-status is why it is caught.
+    [[ "\$MODE" == stop-noop ]] && exit 0
+    # Unlink the socket and leave the daemon running -- it then starts committing rows. A
+    # socket-only stop proof accepts this as stopped, after which every later arm measures
+    # against a daemon it did not start and whose writes it will attribute to upstream.
+    [[ "\$MODE" == stop-unlinks-only ]] && { rm -f "\$SOCK"; exit 0; }
+    [[ -f "\$PIDF" ]] && kill "\$(cat "\$PIDF")" 2>/dev/null
+    rm -f "\$SOCK" "\$PIDF"
+    exit 0
+    ;;
+  esac
+  exit 1
+  ;;
+history)
+  case "\$2" in
+  start)
+    if [[ "\${ATUIN_DAEMON__ENABLED:-false}" != true ]]; then
+      row   # daemon OFF: the row lands on start, and history end updates it in place
+      echo "0192deadbeefcafe0000000000000000"; exit 0
+    fi
+    if [[ "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]] && ! daemon_up; then
+      case "\$MODE" in
+      never-spawns) : ;;
+      fork-hang)
+        # Forks a child that never binds and never exits. This is the shape the socket-based
+        # teardown structurally cannot see: nothing ever answers, so the stop proof succeeds
+        # instantly and socket_owner_pid has no inode to resolve a pid from. Only the arm's
+        # process group knows about it. The pid is recorded so the test can check it died.
+        sleep 300 &
+        printf '%s\n' "\$!" >>"\$FORKMARK" 2>/dev/null
+        ;;
+      heals-absent-not-stale)
+        # Spawns only onto a CLEAR path. A crashed daemon's leftover inode defeats it — the
+        # silent net-loss on Alpine and macOS, and invisible to an absent-socket-only test.
+        [[ -e "\$SOCK" ]] || spawn_bg
+        ;;
+      *)
+        # heals and fork-hang-end both take this path: a real daemon must come up, or the arm
+        # never gets a well-formed id and "history end" is never called.
+        rm -f "\$SOCK"   # the real client clears a stale inode before spawning
+        spawn_bg
+        ;;
+      esac
+    fi
+    echo "0192deadbeefcafe0000000000000000"; exit 0
+    ;;
+  end)
+    # end-hangs: wedge the CLOSING half only, and only on the autostart path. Keyed that way
+    # so the manual-spawn control (which does not set AUTOSTART) still passes and the run
+    # actually reaches the arms, where the bound is supposed to fire.
+    if [[ "\$MODE" == end-hangs && "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]]; then
+      sleep 300
+    fi
+    # fork-hang-end: the closing half of the pair forks its own never-binding child. Recorded
+    # in the same marker file, so one assertion covers however many halves forked.
+    if [[ "\$MODE" == fork-hang-end && "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]]; then
+      sleep 300 &
+      printf '%s\n' "\$!" >>"\$FORKMARK" 2>/dev/null
+    fi
+    # With a daemon serving, the row lands on END, not on start. Measured on 18.19.0.
+    if [[ "\${ATUIN_DAEMON__ENABLED:-false}" == true ]] && daemon_up; then
+      # Keyed on AUTOSTART, not on the mode alone: the manual-spawn control writes through a
+      # hand-started daemon, and if THAT is broken too the run is honestly unmeasurable rather
+      # than a finding. This models the narrower, real shape — the daemon works, but entries
+      # issued down the autostart path are dropped.
+      if [[ "\$MODE" == spawns-but-discards && "\${ATUIN_DAEMON__AUTOSTART:-false}" == true ]]; then :; else row; fi
+    fi
+    exit 0
+    ;;
+  esac
+  exit 1
+  ;;
+esac
+exit 1
+STUB
+    chmod +x "$_dstub/$name"
+  }
+
+  # POLL very low on purpose, and only here. Every stub writes its row, binds its socket and
+  # unlinks it SYNCHRONOUSLY before the call returns, so a positive case is satisfied on the
+  # first tick and the bound is pure waiting for the cases that are SUPPOSED never to write —
+  # of which there are several, four arms each. 3 ticks is therefore not a flakiness risk
+  # here, and it is the difference between J4 costing seconds and costing minutes. Lowering it
+  # against a REAL atuin manufactures findings; see the knob's own comment in
+  # verify-atuin-guard.sh.
+  _d_run() { # _d_run <stub> [extra args...] → sets _dout (stdout) / _dstderr / _drc
+    local stub="$1"
+    shift
+    # STDOUT AND STDERR KEPT SEPARATE, unlike §J3's helper. Every case here passes --json and
+    # the JSON is on stdout, so merging the two means any stray line — a busybox timeout
+    # notice, a shell job-control message — lands inside the text being parsed and the
+    # assertion fails for a reason that has nothing to do with the behaviour under test. That
+    # is exactly how this first went red on Alpine: the exit code was a correct 3 and the
+    # verdict came back empty, because something musl-side wrote to stderr and json.load then
+    # choked on it. stderr is still captured, so a genuine crash still reaches the message.
+    _dstderr=""
+    _dout="$(CORE_COLOR=never CORE_ATVERIFY_POLL=3 "$_DVERIFY" --atuin "$_dstub/$stub" "$@" 2>"$SANDBOX/derr.txt")"
+    _drc=$?
+    _dstderr="$(head -c 400 "$SANDBOX/derr.txt" 2>/dev/null | tr '\n' ' ')"
+  }
+  _d_get() { printf '%s' "$1" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"$2\"])" 2>/dev/null; }
+  # _d_calls <stub> — every invocation that stub received. Read from the stub dir, which
+  # outlives the sandbox, so "no spawn was attempted" is a real absence rather than a
+  # deleted file.
+  _d_calls() { cat "$_dstub/$1.calls" 2>/dev/null; }
+  # Did this stub ever FORK a daemon, by any route? Survives the sandbox, and unlike the call
+  # log it is about the thing that matters rather than the command that usually causes it.
+  _d_spawned() { [[ -s "$_dstub/$1.spawned" ]]; }
+  # _d_forks_alive <stub> — how many of the children that stub forked are STILL running.
+  _d_forks_alive() {
+    local n=0 pid
+    while read -r pid; do
+      [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && n=$((n + 1))
+    done <"$_dstub/$1.forked" 2>/dev/null
+    printf '%s' "$n"
+  }
+
+  # ── apparatus-free: the flag contract, assertable with no daemon anywhere ──
+  # 1. An unknown premise is a USAGE error, not a measurement. The --color lesson applied to
+  #    the one flag that selects which upstream fact is being asserted: a typo that fell
+  #    through would measure the default premise and report it under the caller's title.
+  CORE_COLOR=never "$_DVERIFY" --premise banana >/dev/null 2>&1
+  _drc=$?
+  CORE_COLOR=never "$_DVERIFY" --premise >/dev/null 2>&1
+  _drc2=$?
+  if ((_drc == 2 && _drc2 == 2)); then
+    pass "atuin autostart: an unknown --premise and a --premise with no value both exit 2 (usage, not a finding)"
+  else
+    fail "atuin autostart: --premise must exit 2 on a bad value (got rc$_drc) and on a missing one (got rc$_drc2)"
+  fi
+
+  # 2. The premise travels in the JSON. The workflow's two legs differ by ONE flag and both
+  #    file issues under different titles, so it asserts this field rather than trusting the
+  #    flag reached the script — this is the assertion that makes that check meaningful.
+  _d_run nonexistent-stub --premise autostart --json
+  if [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] && ((_drc == 3)) &&
+    [[ "$(_d_get "$_dout" premise)" == autostart ]]; then
+    pass "atuin autostart: --premise autostart is carried in --json, and a missing atuin is still rc 3"
+  else
+    fail "atuin autostart: expected unmeasurable/rc3/premise=autostart, got $(_d_get "$_dout" verdict)/rc$_drc/$(_d_get "$_dout" premise)"
+  fi
+
+  # 3. THE DEFAULT TARGET MUST STAY LAPTOP-SAFE. `make verify-atuin-guard` starts no
+  #    background process today, and adding one silently would change what that target costs
+  #    on a developer's machine. Asserted by CONSTRUCTION — the stub logs every invocation it
+  #    receives, so this reads the log rather than believing a comment.
+  _mkdstub atuin-heals heals
+  _d_run atuin-heals --json >/dev/null 2>&1
+  if _d_calls atuin-heals | grep -qE '^daemon start( |$)' || _d_spawned atuin-heals; then
+    fail "atuin autostart: --premise discard started a daemon — the default target must spawn nothing, by any route"
+  else
+    pass "atuin autostart: --premise discard forks no daemon at all (not via 'daemon start', not via autostart inside 'history start')"
+  fi
+  _dreap
+
+  # ── APPARATUS SELF-CHECK — and deliberately NOT through the subject under test.
+  #    The obvious form of this gate ("run the known-good stub; skip everything if it does not
+  #    say holds") uses the code under test as its own apparatus check, so ANY regression that
+  #    made the healthy stub report `moved` or `unmeasurable` would skip every assertion below
+  #    and leave the audit GREEN — the regression suite going blind to exactly the failures it
+  #    exists to catch. So the box is proven FIRST, with python3 alone: bind an AF_UNIX socket
+  #    under /tmp and connect to it, which is the only capability these cases need that an
+  #    ordinary box might lack. Only if THAT fails is a skip honest.
+  if ! python3 - "/tmp/j4probe.$$.sock" <<'J4PROBE' 2>/dev/null
+import socket, sys, os
+p = sys.argv[1]
+try:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.bind(p)
+    s.listen(1)
+    c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    c.settimeout(2)
+    c.connect(p)
+    c.close()
+    s.close()
+    os.unlink(p)
+except Exception:
+    sys.exit(1)
+J4PROBE
+  then
+    rm -f "/tmp/j4probe.$$.sock"
+    skip "atuin autostart: measurement assertions (this box cannot bind and connect an AF_UNIX socket under /tmp)"
+  else
+    rm -f "/tmp/j4probe.$$.sock"
+    # The apparatus is established WITHOUT the subject's help, so a known-good stub that does
+    # not report `holds` is a regression in the detector — a FAILURE, never a skip.
+    _d_run atuin-heals --premise autostart --json
+    _dapp="$(_d_get "$_dout" verdict)"
+    _dreap
+    if [[ "$_dapp" != holds ]]; then
+      fail "atuin autostart: this box can bind AF_UNIX sockets, yet the known-good stub reported ${_dapp:-<unparseable>} rather than holds — that is a regression in verify-atuin-guard.sh, not an unusable apparatus: $(_d_get "$_dout" reason)"
+    else
+
+    # 4. The happy path, and the shape real 18.19.0 has: all four arms spawn and land a row.
+    if ((_drc == 0)) && [[ "$_dout" == *'"spawned":"no"'* ]]; then
+      fail "atuin autostart: a healing atuin reported an arm that did not spawn"
+    elif ((_drc == 0)); then
+      pass "atuin autostart: an atuin that self-heals its daemon → holds (rc 0), every arm spawned"
+    else
+      fail "atuin autostart: expected holds/rc0 for a healing atuin, got rc$_drc"
+    fi
+
+    # 5. Expected delta is 1 here and 0 under discard, on arms with IDENTICAL names. Without
+    #    expected_delta in the JSON a reader has no way to tell a healthy autostart arm from a
+    #    discard arm that just broke.
+    if [[ "$_dout" == *'"expected_delta":1'* ]] && [[ "$_dout" != *'"expected_delta":0'* ]]; then
+      pass "atuin autostart: every arm records expected_delta 1, so an identically-named discard arm cannot be misread"
+    else
+      fail "atuin autostart: arms must carry expected_delta 1 under this premise"
+    fi
+
+    # 6. An atuin that never spawns is a FINDING, and the reason must say so in the words the
+    #    remedy depends on — "no daemon became reachable", not merely "the row count changed".
+    _mkdstub atuin-nospawn never-spawns
+    _d_run atuin-nospawn --premise autostart --json
+    _dreap
+    if [[ "$(_d_get "$_dout" verdict)" == moved ]] && ((_drc == 1)) &&
+      [[ "$_dout" == *"no daemon became reachable"* ]]; then
+      pass "atuin autostart: an atuin that never spawns a daemon → moved (rc 1), naming the absent spawn"
+    else
+      fail "atuin autostart: expected moved/rc1 naming the absent spawn, got $(_d_get "$_dout" verdict)/rc$_drc"
+    fi
+
+    # 7. THE HEADLINE SHAPE. Spawns onto a clear path, not over a crashed daemon's leftover
+    #    inode. Every `atuin history start` is a fresh process, so this is what
+    #    "fire-and-forget" can actually mean — and an absent-socket-only detector would call
+    #    it healthy while Alpine and macOS quietly lost their net.
+    _mkdstub atuin-halfheal heals-absent-not-stale
+    _d_run atuin-halfheal --premise autostart --json
+    _dreap
+    if [[ "$(_d_get "$_dout" verdict)" == moved ]] && ((_drc == 1)) &&
+      [[ "$_dout" == *'"stale_hook":{"rc":0,"delta":0'* ]] &&
+      [[ "$_dout" == *'"absent_hook":{"rc":0,"delta":1'* ]]; then
+      pass "atuin autostart: spawning on an absent socket but NOT over a stale one is moved — the stale arm is why it is measured"
+    else
+      fail "atuin autostart: half-healing must be moved with stale arms failing and absent arms passing, got $(_d_get "$_dout" verdict)/rc$_drc"
+    fi
+
+    # 8. A daemon that comes up and drops the entry is a DIFFERENT finding from one that never
+    #    came up, and both leave delta 0 — which is exactly why `spawned` is recorded per arm
+    #    rather than inferred from the row count.
+    _mkdstub atuin-nowrite spawns-but-discards
+    _d_run atuin-nowrite --premise autostart --json
+    _dreap
+    if [[ "$(_d_get "$_dout" verdict)" == moved ]] && ((_drc == 1)) &&
+      [[ "$_dout" == *'"spawned":"yes"'* ]] && [[ "$_dout" == *"did not land"* ]]; then
+      pass "atuin autostart: a daemon that spawns but drops the entry is moved, and is distinguished from one that never spawned"
+    else
+      fail "atuin autostart: spawn-but-discard must be moved naming the unlanded entry, got $(_d_get "$_dout" verdict)/rc$_drc"
+    fi
+
+    # 9. THE LOAD-BEARING ONE, and §J3 case 5's counterpart. A box that cannot host a daemon
+    #    AT ALL must be `unmeasurable` — never a finding about upstream. This is the whole
+    #    reason the manual-spawn control exists, and the assertion a future simplification
+    #    that deletes it would trip.
+    _mkdstub atuin-nodaemon manual-spawn-impossible
+    _d_run atuin-nodaemon --premise autostart --json
+    _dreap
+    if [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] && ((_drc == 3)) &&
+      [[ "$_dout" == *"cannot host a daemon"* ]]; then
+      pass "atuin autostart: a box where NO daemon can start is unmeasurable (rc 3), never a finding about upstream"
+    else
+      fail "atuin autostart: a failed spawn CONTROL must be unmeasurable/rc3, got $(_d_get "$_dout" verdict)/rc$_drc — an apparatus limit was rendered as an upstream finding"
+    fi
+
+    # 10. A build this script cannot cleanly stop is one it must not start. atuin has moved
+    #     the daemon subcommand spelling before (#380), and unlike the bench — which holds a
+    #     PID to kill — an autostart daemon's PID is never handed to us. Refusing costs an
+    #     unmeasurable run; spawning anyway costs a process writing into a deleted tree.
+    for _dcase in no-daemon-subcommand no-stop-subcommand; do
+      _mkdstub "atuin-$_dcase" "$_dcase"
+      _d_run "atuin-$_dcase" --premise autostart --json
+      # REAP AFTER THE ASSERTION, not before: _dreap deletes the .calls and .spawned markers,
+      # and reading them afterwards is reading files that are already gone — both checks would
+      # then pass for a build that DID spawn.
+      if [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] && ((_drc == 3)) &&
+        ! _d_calls "atuin-$_dcase" | grep -qE '^daemon start$' && ! _d_spawned "atuin-$_dcase"; then
+        pass "atuin autostart: $_dcase is unmeasurable (rc 3) and nothing was spawned on it"
+      else
+        fail "atuin autostart: $_dcase must be unmeasurable/rc3 with no spawn attempted, got $(_d_get "$_dout" verdict)/rc$_drc"
+      fi
+      _dreap
+    done
+
+    # 11. TEARDOWN IS THE KNOWN-HARD PART. A `daemon stop` that returns 0 and does nothing is
+    #     the realistic bad shape — which is why the stop is PROVEN by a connect rather than
+    #     believed from an exit status. The escalation must still leave nothing running and
+    #     nothing behind, or the next arm measures a daemon it did not start and the EXIT
+    #     trap rm -rf's a tree a live process is writing into.
+    #
+    #     WHAT THIS DOES NOT COVER, stated so the gap is not mistaken for coverage: the branch
+    #     where the stop can never be proven at all, which PRESERVES the sandbox and prints its
+    #     path. No portable stub can reach it — a process that survives SIGKILL does not exist,
+    #     and the escalation's PID lookup is what would have to fail instead (/proc on Linux,
+    #     lsof on macOS), which is platform-specific rather than something a stub can arrange.
+    #     It was verified by hand on macOS by running this same stub with lsof off PATH:
+    #     verdict `unmeasurable`, sandbox kept, and the exact `rm -rf` printed to stderr.
+    _mkdstub atuin-stopnoop stop-noop
+    _d_run atuin-stopnoop --premise autostart --json
+    _dleft=0
+    _dpf="$_dstub/atuin-stopnoop.pid"
+    if [[ -f "$_dpf" ]] && kill -0 "$(cat "$_dpf" 2>/dev/null)" 2>/dev/null; then
+      _dleft=1
+    fi
+    _dreap
+    if ((_dleft == 0)) && [[ -n "$(_d_get "$_dout" verdict)" ]]; then
+      pass "atuin autostart: a 'daemon stop' that lies still leaves no daemon running — the stop is proven, not believed"
+    else
+      fail "atuin autostart: a no-op 'daemon stop' left a daemon alive; teardown escalation did not work"
+    fi
+
+    # 12. THE CHILD NO SOCKET CAN SEE. autostart may fork a daemon that hangs or dies before
+    #     it ever binds: nothing answers, so the stop proof succeeds instantly and
+    #     socket_owner_pid has no inode to resolve a pid from. The arm's PROCESS GROUP is the
+    #     only handle on it, which is why the arms run under `set -m` — and why run_one returns
+    #     its record in a global rather than on stdout, since a command substitution would run
+    #     the whole function in a subshell and discard the group id before cleanup ever saw it.
+    _mkdstub atuin-forkhang fork-hang
+    _d_run atuin-forkhang --premise autostart --json
+    _dalive="$(_d_forks_alive atuin-forkhang)"
+    _dforked="$(grep -c . "$_dstub/atuin-forkhang.forked" 2>/dev/null || echo 0)"
+    _dreap
+    if ((_dforked > 0)) && ((_dalive == 0)); then
+      pass "atuin autostart: a child that forks and never binds is still reaped ($_dforked forked, 0 alive) — the process group catches what the socket cannot"
+    elif ((_dforked == 0)); then
+      fail "atuin autostart: the fork-hang stub never forked, so the reaping assertion proved nothing"
+    else
+      fail "atuin autostart: $_dalive of $_dforked never-bound children survived the run — cleanup deleted the sandbox around a live process"
+    fi
+
+    # (There is no case here for a child that DETACHES and never binds. The handle that
+    #  covered it — matching processes by the sandbox path in their environment — was removed
+    #  deliberately: exact only on Linux, a different mechanism on macOS, and in two
+    #  consecutive reviews the source of fail-open defects of its own. The residual is
+    #  documented at daemon_stop_proven and in the report's scope note rather than half-tested
+    #  here.)
+
+    # 13. THE SAME HOLE IN THE CLOSING HALF OF THE PAIR. Tracking only `history start` would
+    #     pass case 12 while leaving an `end`-spawned child untracked, and `end` runs with the
+    #     same AUTOSTART env down the same autostarting path — so it is asserted separately
+    #     rather than assumed to be covered by its sibling.
+    _mkdstub atuin-forkhangend fork-hang-end
+    _d_run atuin-forkhangend --premise autostart --json
+    _dalive="$(_d_forks_alive atuin-forkhangend)"
+    _dforked="$(grep -c . "$_dstub/atuin-forkhangend.forked" 2>/dev/null || echo 0)"
+    _dreap
+    if ((_dforked > 0)) && ((_dalive == 0)); then
+      pass "atuin autostart: a child forked by the CLOSING half of the pair is reaped too ($_dforked forked, 0 alive)"
+    elif ((_dforked == 0)); then
+      fail "atuin autostart: the fork-hang-end stub never forked on 'history end', so the assertion proved nothing"
+    else
+      fail "atuin autostart: $_dalive of $_dforked children forked by 'history end' survived — only the opening half of the pair is tracked"
+    fi
+
+    # 14. THE MANUAL CONTROL HAS THE SAME HOLE, and it was the last untracked spawn here. If
+    #     `daemon start` forks a child that never binds and its parent exits, the recorded pid
+    #     is a corpse, wait_reachable fails, cleanup sees an absent socket and calls it
+    #     stopped, and reap_manual has nothing left to kill. The verdict must still be
+    #     `unmeasurable` (this box could not host a daemon -- never a finding about upstream),
+    #     AND the survivor must be reaped.
+    _mkdstub atuin-manualfork manual-fork-nobind
+    _d_run atuin-manualfork --premise autostart --json
+    _dalive="$(_d_forks_alive atuin-manualfork)"
+    _dforked="$(grep -c . "$_dstub/atuin-manualfork.forked" 2>/dev/null || echo 0)"
+    _dv="$(_d_get "$_dout" verdict)"
+    _dreap
+    if [[ "$_dv" == unmeasurable ]] && ((_drc == 3)) && ((_dforked > 0)) && ((_dalive == 0)); then
+      pass "atuin autostart: a manual spawn that forks without binding is unmeasurable AND its orphan is reaped ($_dforked forked, 0 alive)"
+    elif ((_dforked == 0)); then
+      fail "atuin autostart: the manual-fork-nobind stub never forked, so the assertion proved nothing"
+    else
+      fail "atuin autostart: manual-fork-nobind gave $_dv/rc$_drc with $_dalive of $_dforked orphans alive — the manual control is not process-group tracked"
+    fi
+
+    # 15. A BOUND THAT EXPIRES ON THE CLOSING HALF IS STILL AN APPARATUS LIMIT. The row lands
+    #     on `history end` when a daemon is serving, so `end` is the verdict-bearing call —
+    #     and its status used to be discarded, leaving a timed-out `end` looking like a
+    #     successful `start` with a missing row, which the verdict block reported as
+    #     "the entry did not land". A finding about upstream, manufactured by this run's own
+    #     timeout. The wedge is on the autostart path only, so the manual control passes and
+    #     the arms are actually reached.
+    # GUARDED ON A TIMEOUT UTILITY, because this case's whole mechanism is the bound. Where
+    # neither timeout(1) nor gtimeout(1) exists the verifier deliberately measures UNBOUNDED
+    # and discloses it — which is right for a real run and fatal here: TIMEOUT_CMD is empty, so
+    # nothing cuts the stub's four 300-second wedges and the suite runs to the job timeout
+    # instead of failing. A stock macOS box has neither utility, and the macOS audit leg runs
+    # this section.
+    if ! have timeout && ! have gtimeout; then
+      skip "atuin autostart: wedged 'history end' (no timeout(1)/gtimeout(1) here, so the verifier measures unbounded by design and the case's own wedge would never be cut)"
+    else
+    _mkdstub atuin-endhangs end-hangs
+    CORE_ATVERIFY_TIMEOUT=2 _d_run atuin-endhangs --premise autostart --json
+    _dv="$(_d_get "$_dout" verdict)"
+    _dwhy="$(_d_get "$_dout" reason)"
+    _dreap
+    if [[ "$_dv" == unmeasurable ]] && ((_drc == 3)) && [[ "$_dwhy" == *"did not return within"* ]]; then
+      pass "atuin autostart: a 'history end' that wedges is unmeasurable (rc 3), never a finding that the entry did not land"
+    else
+      fail "atuin autostart: a wedged 'history end' must be unmeasurable/rc3 naming the bound, got ${_dv:-<unparseable>}/rc$_drc${_dstderr:+ (stderr: $_dstderr)}"
+    fi
+    fi
+
+    # 16. "NOTHING ANSWERS" IS NOT "THE DAEMON EXITED". atuin unlinks its socket early in
+    #     shutdown and `daemon stop` can return while teardown is still running, so a
+    #     socket-only proof accepts a daemon that is gone from the socket and still HOLDING
+    #     THE DB. The harm is not a leak — cleanup's group reap would catch that — it is
+    #     CONTAMINATION: every later arm then measures against a daemon it did not start, and
+    #     attributes that daemon's writes to upstream. This stub's zombie keeps committing
+    #     once its socket is unlinked, so a socket-only proof yields extra rows and a FALSE
+    #     `moved`; the group half of the proof kills it at the inter-arm stop and the run
+    #     stays clean. Asserted on the VERDICT, because that is where the damage would show.
+    _mkdstub atuin-stopunlink stop-unlinks-only
+    _d_run atuin-stopunlink --premise autostart --json
+    _dv="$(_d_get "$_dout" verdict)"
+    _dleft=0
+    _dpf="$_dstub/atuin-stopunlink.pid"
+    if [[ -f "$_dpf" ]] && kill -0 "$(cat "$_dpf" 2>/dev/null)" 2>/dev/null; then
+      _dleft=1
+    fi
+    _dreap
+    if [[ "$_dv" == holds ]] && ((_dleft == 0)); then
+      pass "atuin autostart: a daemon that outlives its own socket is stopped before the next arm — it cannot write rows the run would blame on upstream"
+    else
+      fail "atuin autostart: a socket-only stop let a zombie daemon keep committing into later arms (verdict=$_dv, survived=$_dleft) — its writes would be reported as an upstream finding"
+    fi
+
+    # 17. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
+    #     of /tmp. The verifier DELIBERATELY preserves a sandbox when a stop cannot be proven,
+    #     so a tree left by an earlier run, a hand-run, or a concurrent one would otherwise
+    #     fail this for a run that cleaned up perfectly. Only paths this run created count.
+    #
+    #     THE SELF-CHECK IS NOT OPTIONAL. A delta over a directory listing that silently
+    #     returns nothing passes for every run, forever — and that is precisely what the first
+    #     version of this did: on macOS /tmp is a symlink to private/tmp and `find /tmp`
+    #     without -L does not descend it, so both snapshots were empty and the assertion was
+    #     vacuous on a third of the fleet. Prove the snapshot can see a directory before
+    #     trusting it to notice one. (The fault there was the unfollowed symlink, not a
+    #     missing -maxdepth.)
+    # The shell's own one-level glob, not find(1) and not ls(1). BSD find on macOS does
+    # support -maxdepth (checked against /usr/bin/find, which is what the macOS CI leg runs),
+    # so the earlier version was not broken for that reason — but a glob needs no portability
+    # argument at all, and this check has already been silently blind once.
+    _dsnap() {
+      local d
+      local -a out=()
+      for d in /tmp/atverify.*; do [[ -d "$d" ]] && out+=("$d"); done
+      ((${#out[@]})) && printf '%s\n' "${out[@]}" | sort
+      return 0
+    }
+    mkdir -p "/tmp/atverify.selfcheck$$"
+    if ! _dsnap | grep -q "atverify.selfcheck$$"; then
+      rmdir "/tmp/atverify.selfcheck$$" 2>/dev/null
+      fail "atuin autostart: the sandbox-leak check cannot enumerate /tmp — it would pass vacuously, so it is reported as broken rather than green"
+    else
+      rmdir "/tmp/atverify.selfcheck$$" 2>/dev/null
+      _dpre="$(_dsnap)"
+      _d_run atuin-heals --premise autostart --json
+      _dreap
+      _dpost="$(_dsnap)"
+      _dnew="$(comm -13 <(printf '%s\n' "$_dpre" | grep -v '^$') \
+        <(printf '%s\n' "$_dpost" | grep -v '^$') | grep -c . || true)"
+      if ((_dnew == 0)); then
+        pass "atuin autostart: a completed run leaves no NEW sandbox behind, daemon stopped first"
+      else
+        fail "atuin autostart: a completed run leaked $_dnew new sandbox dir(s) under /tmp"
+      fi
+    fi
+
+    # 18. A MALFORMED ANCHOR IS NOT AN ABSENT ONE. Absence is legitimate for THIS premise —
+    #     nobody has written the line until a human measures it — which is exactly why the two
+    #     must not be conflated: `=18.19`, or a valid value with a trailing token, would
+    #     otherwise sail through as `unanchored` and the run would report a verdict against
+    #     nothing. Cheap to assert: read_anchor runs before the sandbox is built, so no daemon
+    #     is spawned on this path.
+    _dvrepo="$(mktemp -d "$SANDBOX/dvrepo.XXXXXX")"
+    mkdir -p "$_dvrepo/zsh" "$_dvrepo/scripts/lib" "$_dvrepo/lib" "$_dvrepo/atuin"
+    cp "$_DVERIFY" "$_dvrepo/scripts/"
+    cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/atuin-db.sh" "$_dvrepo/scripts/lib/"
+    cp "$HERE/lib/ux.sh" "$_dvrepo/lib/" 2>/dev/null || true
+    cp "$HERE/atuin/config.toml" "$_dvrepo/atuin/"
+    _dbad=0
+    for _dcase in "18.19" "18.19.0 EXTRA"; do
+      {
+        echo "# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0"
+        echo "# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=$_dcase"
+      } >"$_dvrepo/zsh/00-tools.zsh"
+      _dout="$(cd "$_dvrepo" && CORE_COLOR=never "./scripts/verify-atuin-guard.sh" \
+        --premise autostart --atuin "$_dstub/atuin-heals" --json 2>/dev/null)"
+      [[ "$(_d_get "$_dout" verdict)" == unmeasurable ]] || _dbad=1
+    done
+    # Absence, by contrast, must still be allowed through as unanchored.
+    echo "# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0" >"$_dvrepo/zsh/00-tools.zsh"
+    _dout="$(cd "$_dvrepo" && CORE_COLOR=never CORE_ATVERIFY_POLL=3 "./scripts/verify-atuin-guard.sh" \
+      --premise autostart --atuin "$_dstub/atuin-heals" --json 2>/dev/null)"
+    [[ "$(_d_get "$_dout" anchor_relation)" == unanchored ]] || _dbad=1
+    _dreap
+    if ((_dbad == 0)); then
+      pass "atuin autostart: a malformed anchor is unmeasurable while an ABSENT one is still unanchored — the two are not conflated"
+    else
+      fail "atuin autostart: a malformed autostart anchor was treated as absent, so the run reported a verdict against nothing"
+    fi
+
+    # 19. THE LIBC MARKER MUST SURVIVE musl's EXIT STATUS. musl's ldd prints its banner and
+    #     then exits NON-ZERO, and this script runs under `set -o pipefail` — so the obvious
+    #     `ldd --version | grep -qi musl` is false even when grep matched, and every musl run
+    #     loses the one marker that says which half of the fleet it spoke for. This repo has
+    #     already paid for that exact mistake once (see CHANGELOG and bench-atuin-daemon.sh),
+    #     which is why it is pinned here rather than left to a comment.
+    _dshim="$(mktemp -d "$SANDBOX/dshim.XXXXXX")"
+    for _dt in bash sh python3 sed grep awk tr cut head sleep mktemp rm cat kill ls chmod mkdir printf env find sort wc dirname basename readlink cp comm; do
+      _dp="$(command -v "$_dt" 2>/dev/null)" && ln -sf "$_dp" "$_dshim/$_dt" 2>/dev/null
+    done
+    printf '#!/bin/sh\necho "musl libc (x86_64)" >&2\nexit 1\n' >"$_dshim/ldd"
+    printf '#!/bin/sh\ncase "$1" in -m) echo x86_64 ;; *) echo Linux ;; esac\n' >"$_dshim/uname"
+    chmod +x "$_dshim/ldd" "$_dshim/uname"
+    _dout="$(PATH="$_dshim" CORE_COLOR=never "$_DVERIFY" --unmeasurable probe --json 2>/dev/null)"
+    if [[ "$(_d_get "$_dout" host)" == *musl* ]]; then
+      pass "atuin autostart: musl is detected even though its ldd exits non-zero (the pipefail trap this repo has hit before)"
+    else
+      fail "atuin autostart: a musl host reported host='$(_d_get "$_dout" host)' — the libc marker was lost to pipefail"
+    fi
+
+    # 20. Report coherence, §J3 case 7's counterpart with this premise's claims. The scope
+      #   paragraph must NOT still say the autostart premise is unmeasured — that sentence was
+      #   true until this mode existed and is exactly the kind of prose that rots — and must
+      #   name the machines a green run here does and does not speak for.
+    _drep="$SANDBOX/atverify-auto.md"
+    _d_run atuin-heals --premise autostart --report "$_drep" --json
+    _dreap
+    if [[ -s "$_drep" ]] && printf '%s' "$_dout" | python3 -c '
+import json,re,sys
+d = json.load(sys.stdin)
+rep = open(sys.argv[1]).read()
+arms = set(d["arms"])
+m = re.search(r"^\*\*Measured here:\*\* (.+)\.$", rep, re.M)
+assert m, "no derived coverage sentence"
+claimed = {a.strip().replace(" / ", "_") for a in m.group(1).split(",")}
+assert claimed == arms, sorted(claimed ^ arms)
+assert "premise: `autostart`" in rep, "the report does not say which premise it measured"
+scope = rep.split("---\n\n", 1)[1]
+# The claim this whole section retires. If it survives here, the report is telling a reader
+# that nothing measures the thing the report is a measurement of.
+assert "stand-down** is unmeasured" not in scope, "the autostart report still claims the premise is unmeasured"
+for want in ("musl", "macOS", "3382", "--premise discard"):
+    assert want in scope, want
+# The teardown residual must be described as what it IS. An earlier version of this note
+# claimed the run "preserves its sandbox rather than deleting one it could not account for"
+# for a case NOTHING DETECTS — every check passes, the stop is accepted, and the tree is
+# deleted around a live child. A scope note that promises a safety behaviour the code does not
+# perform is the exact defect this section exists to catch, so the honest wording is pinned.
+assert "undetected leak" in scope, "the scope note no longer names the teardown residual as undetected"
+assert "preserving its sandbox rather than deleting" not in scope, "the scope note has re-acquired the preservation claim for a case nothing detects"
+named = [a for a in arms if a.replace("_", " / ") in scope]
+assert not named, "the scope section names measured arms: %s" % named
+' "$_drep" 2>/dev/null; then
+      pass "atuin autostart: --report names this premise, matches the arms that ran, and no longer calls autostart unmeasured"
+    else
+      fail "atuin autostart: the autostart report's prose does not match what it measured"
+    fi
+    fi  # known-good stub held
+  fi    # apparatus probe
+  _dreap
 fi
 
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
@@ -2123,8 +3421,35 @@ check "core-version --help returns 0 (not mis-read)" \
   'out=$(core-version --help); (( $? == 0 )) && [[ $out == *"usage: core-version"* ]]'
 # core-doctor (#9): the shell-side health report. Must render and return 0 even on a
 # bare box (every tool ✗) — it's read-only diagnostics, never a hard failure.
+# Every group label must render, and a tool must land under the group it was filed in. The
+# parity check below compares tool NAMES between the two inventories, so deleting a whole
+# group — label and members, from both — slips past it; and the render test underneath only
+# greps for "modern CLI", which predates the `data / net` and `dev / repo` groups. Assert all
+# four labels, then that watchexec renders AFTER the `dev / repo` heading rather than merely
+# somewhere in the report. (Parity then carries this to --json: render set == tools keys.)
+check "core-doctor renders every group label and files watchexec under dev / repo" \
+  '_core_have() { return 1; }
+   out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
+     && [[ $out == *"modern CLI"* && $out == *"integrations"* ]] \
+     && [[ $out == *"data / net"* && $out == *"dev / repo"* ]] \
+     && [[ ${out#*"dev / repo"} == *watchexec* ]]'
 check "core-doctor renders a health report and returns 0" \
   'out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) && [[ $out == *dotfiles-core* && $out == *"modern CLI"* ]]'
+# core-doctor -v (#9): the version readout. Regression guard for a leak that made the whole
+# flag useless — `local _v` sat INSIDE the per-tool loop, and zsh prints `name=value` when
+# `local` re-declares a parameter that already holds one (TYPESET_SILENT is off under
+# `emulate -L zsh`), so every tool after the first emitted a bare `_v=0.26.1` line into the
+# report instead of annotating the ✓. Nothing drove -v, so it shipped broken. Hermetic: stub
+# _core_have to admit specific tools and shadow those tools with functions (zsh resolves them
+# for the `"$tool" --version` probe), so this asserts real rendering rather than whatever is
+# on PATH. TWO tools, deliberately: the leak only fires on the SECOND re-declaration, so a
+# single-tool version of this test passes against the unfixed code and guards nothing.
+check "core-doctor -v annotates versions and leaks no _v= lines" \
+  '_core_have() { [[ "$1" == (eza|bat) ]]; }
+   eza() { print -r -- "eza 9.9.9"; }
+   bat() { print -r -- "bat 8.8.8"; }
+   out=$(NO_COLOR=1 core-doctor -v 2>&1); (( $? == 0 )) \
+     && [[ $out == *"✓ eza 9.9.9"* ]] && [[ $out == *"✓ bat 8.8.8"* ]] && [[ $out != *"_v="* ]]'
 check "core-doctor --help returns 0 (not mis-read)" \
   'out=$(core-doctor --help); (( $? == 0 )) && [[ $out == *"usage: core-doctor"* ]]'
 # core-doctor --json (B12): a machine-readable object on stdout that actually parses and
@@ -2134,6 +3459,61 @@ check "core-doctor --help returns 0 (not mis-read)" \
 # booleans to keep meaning what they say.
 check "core-doctor --json emits parseable JSON with tools/wired/atuin_daemon/resolved" \
   'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"wired\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"])"'
+# The human report and --json now BOTH derive from _CORE_DOCTOR_GROUPS, so they agree by
+# construction and this assertion should be tautological. It is kept precisely for that
+# reason: it is the guard that stays red if someone reintroduces a second literal — which is
+# how these two lived before, and they did silently desync. Treat a failure here as "the
+# single source was forked", not as a missing tool. Assert the two NAME SETS are equal.
+# _core_have is stubbed false so the render is deterministic:
+# every tool prints as a plain ✗ (no --version forks), the "integrations wired" block skips
+# every entry, and "resolved" carries no ✓/✗ markers — leaving the group lists as the only
+# thing the regex can match. Skips rather than fails without python3, like the linters above.
+check_dep "core-doctor's rendered tool set == --json tools (the two inventories can't drift)" python3 \
+  '_core_have() { return 1; }
+   _r=$(NO_COLOR=1 core-doctor 2>&1); _j=$(core-doctor --json)
+   _CD_R="$_r" _CD_J="$_j" python3 -c "
+import json, os, re
+body  = os.environ[\"_CD_R\"].split(chr(10), 1)[1]   # drop line 1: the header legend, not tools
+shown = set(re.findall(r\"[✓✗] ([A-Za-z0-9_.-]+)\", body))
+keys  = set(json.loads(os.environ[\"_CD_J\"])[\"tools\"])
+assert shown, \"parsed no tools out of the rendered report\"
+assert shown == keys, \"render-only: %s | json-only: %s\" % (sorted(shown - keys), sorted(keys - shown))
+"'
+# The invariant that would have caught the drift this backfill fixed: every binary
+# 00-tools.zsh probes must be REPORTED by the doctor. Twelve were not — ast-grep, difft,
+# gping, hyperfine, jj, jnv, ouch, shellcheck, shfmt, tldr, uv, viddy were detected into
+# HAVE_* flags and appeared in neither renderer, silently, for releases. Parity (above) only
+# compares the doctor against itself, so it can never see this; the two lists agreed
+# perfectly about a tool neither of them mentioned. Read the probe list straight out of the
+# source file and require the inventory to cover it.
+# Direction is deliberately one-way: probed ⊆ reported. The reverse would fail on `op` (no
+# HAVE_OP — the doctor probes it live) and on `fd`/`bat`, which 00-tools.zsh sets from
+# FD_BIN/BAT_BIN after resolving fdfind/batcat rather than with a bare `_have` line.
+check_dep "core-doctor reports every tool 00-tools.zsh probes (no silently undetected tools)" python3 \
+  '_TOOLS_SRC="'"$HERE"'/zsh/00-tools.zsh" _CD_J="$(core-doctor --json)" python3 -c "
+import json, os, re
+probed   = set(re.findall(r\"(?m)^_have ([A-Za-z0-9_.-]+)\", open(os.environ[\"_TOOLS_SRC\"]).read()))
+reported = set(json.loads(os.environ[\"_CD_J\"])[\"tools\"])
+missing  = sorted(probed - reported)
+assert probed, \"parsed no _have lines out of 00-tools.zsh\"
+assert not missing, \"detected by 00-tools.zsh but absent from core-doctor: %s\" % missing
+"'
+# git-absorb is the first --json tools key that is NOT a bare identifier, and the JSON is
+# hand-rolled by _core_doctor_json rather than produced by a serialiser — so the hyphen has
+# to survive quoting on its own merit. The set-equality check above cannot see this: it
+# compares the render against the JSON, so dropping the tool from BOTH literals still passes,
+# and it never exercises a `true` value. Pin the key by name AND by value, with _core_have
+# stubbed to match only git-absorb so one tool is true and the rest false — that also proves
+# the emitter tracks detection per tool instead of painting the whole object one way.
+check_dep "core-doctor --json emits the hyphenated git-absorb key and tracks its detection" python3 \
+  '_core_have() { [[ "$1" == git-absorb ]]; }
+   _CD_J="$(core-doctor --json)" python3 -c "
+import json, os
+tools = json.loads(os.environ[\"_CD_J\"])[\"tools\"]
+assert \"git-absorb\" in tools, sorted(tools)
+assert tools[\"git-absorb\"] is True, tools[\"git-absorb\"]
+assert tools[\"eza\"] is False, tools[\"eza\"]
+"'
 # core-doctor "install missing" hint: the block is gated on _pkgup_mgr (from update.zsh,
 # absent in this ui+functions harness) so the default render never reaches it. Stub the
 # manager + force every tool ✗ (missing), then assert the copy-paste line renders AND the
@@ -2144,6 +3524,19 @@ check "core-doctor 'install missing' hint points to PORTING-MATRIX.md for unpack
    _core_have() { return 1; }
    out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
      && [[ $out == *"install missing"* && $out == *"sudo apt install"* && $out == *"PORTING-MATRIX.md"* ]]'
+# ...and the hint must NOT concatenate the manager verb with the tool list. That form read as
+# paste-ready but never was: apt/dnf/zypper/pacman abort the whole transaction on one
+# unresolvable name, and most of the inventory carries a package name that differs from the
+# command (rg=ripgrep) or is unpackaged on some target. With _core_have false every tool is
+# missing, so the old shape would render `sudo apt install eza bat …` — assert the verb is
+# only ever followed by the <pkg> placeholder, and that the first tool name never trails it.
+check "core-doctor's install hint offers a per-tool template, not a paste-ready batch command" \
+  '_pkgup_mgr() { print -r -- apt; }
+   _core_have() { return 1; }
+   out=$(NO_COLOR=1 core-doctor 2>&1); (( $? == 0 )) \
+     && [[ $out == *"sudo apt install <pkg>"* ]] \
+     && [[ $out != *"sudo apt install eza"* ]] \
+     && [[ $out == *"command names"* ]]'
 # _core_wired (U1): presence != wired. The probe is true ONLY when the integration's hook
 # function is actually defined in this shell, and false for an idle/unknown one — that gap
 # is exactly what the doctor's "integrations wired" line surfaces.
@@ -2310,6 +3703,10 @@ ucheck "ui: _core_spin propagates the wrapped command's exit code" \
 # this went unnoticed. The command must also be a FUNCTION: with gum installed _core_spin
 # delegates real binaries to `gum spin` and the hand-rolled loop is skipped.
 #
+# Also asserted: the guard leaves a STATIC "(still running…)" frame on its way out. Giving
+# up on the animation must not mean going silent for the rest of the run — a stopped spinner
+# and a wedged one look identical, and the wrapped command here still has seconds to go.
+#
 # Asserted on the ITERATION COUNT, not on CPU%: deterministic and CI-safe. With the guard,
 # the loop stops animating just past 200; without it a broken nap runs six figures of
 # iterations in the same window.
@@ -2339,14 +3736,20 @@ else:
 txt = out.decode(errors="replace")
 rc = re.findall(r"RC=(\d+)", txt)
 naps = re.findall(r"NAPS=(\d+)", txt)
-print("%s %s" % (rc[-1] if rc else "x", naps[-1] if naps else "x"))
+print("%s %s %s" % (rc[-1] if rc else "x", naps[-1] if naps else "x",
+                    "STILL" if "still running" in txt else "SILENT"))
 PYSPIN
   )"
-  _srrc="${_spinout%% *}" _srnaps="${_spinout##* }"
+  read -r _srrc _srnaps _srstill <<<"$_spinout"
   if [[ "$_srrc" == 7 && "$_srnaps" =~ ^[0-9]+$ ]] && ((_srnaps <= 250)); then
     pass "ui: _core_spin stops animating instead of busy-spinning when _core_nap cannot pace (naps=$_srnaps, rc=$_srrc)"
   else
     fail "ui: _core_spin busy-spins when _core_nap cannot pace (rc=$_srrc naps=$_srnaps; want rc=7 and naps<=250)"
+  fi
+  if [[ "$_srstill" == STILL ]]; then
+    pass "ui: _core_spin leaves a '(still running…)' frame when the busy-spin guard fires"
+  else
+    fail "ui: _core_spin goes silent after the busy-spin guard fires (want a static '(still running…)' frame)"
   fi
 else
   skip "_core_spin busy-loop guard (python3 absent — needs a pty to reach the animation loop)"
@@ -2396,13 +3799,70 @@ else:
     os.kill(pid, 9)
 txt = out.decode(errors="replace")
 rc = re.findall(r"UXRC=(\d+)", txt)
-print("%s %s" % (rc[-1] if rc else "x", "END" if "UXEND" in txt else "NOEND"))
+print("%s %s %s" % (rc[-1] if rc else "x", "END" if "UXEND" in txt else "NOEND",
+                    "STILL" if "still running" in txt else "SILENT"))
 PYUX
   )"
-  if [[ "$_uxout" == "0 END" ]]; then
+  read -r _uxrc _uxend _uxstill <<<"$_uxout"
+  if [[ "$_uxrc $_uxend" == "0 END" ]]; then
     pass "ux: ux_spin survives a failing pacing primitive under a 'set -e' sourcer"
   else
-    fail "ux: a failing pacing primitive kills a 'set -e' caller of ux_spin (got '${_uxout}', want '0 END')"
+    fail "ux: a failing pacing primitive kills a 'set -e' caller of ux_spin (got '${_uxrc} ${_uxend}', want '0 END')"
+  fi
+  # Same guard-trip, same requirement as _core_spin's mirror above: ux_spin CLEARS the line
+  # before `wait`, so without a static frame it shows nothing at all for the rest of the run
+  # — the hang it cannot distinguish itself from. This is the stricter of the two cases.
+  if [[ "$_uxstill" == STILL ]]; then
+    pass "ux: ux_spin leaves a '(still running…)' frame when the busy-spin guard fires"
+  else
+    fail "ux: ux_spin goes silent after the busy-spin guard fires (want a static '(still running…)' frame)"
+  fi
+
+  # …and the COMMON path — a working `sleep`, guard never trips — must survive `set -e` too.
+  # The case above only ever exercises the degraded branch, so every post-loop statement on
+  # the happy path (cursor restore, the guard's own test, the ✓ frame, `rm -f`) was untested
+  # under the very discipline this file is written for. That gap is not theoretical: an
+  # arithmetic guard written as `((_degraded)) && { … }` returns 1 whenever _degraded is 0,
+  # which is the normal case, and a future edit that moves it out of &&-list position (into a
+  # bare statement, or a `local x=$((…))`) kills the caller on every successful spin.
+  if have python3; then
+    _uxok="$(python3 - "$HERE/lib/ux.sh" <<'PYUXOK' 2>/dev/null
+import pty, os, sys, select, time, re
+ux = sys.argv[1]
+script = (
+    "set -euo pipefail\n"
+    "source %s\n"
+    "fn() { command sleep 1; return 0; }\n"   # real sleep: the guard must NOT trip
+    "ux_spin lbl fn\n"                        # BARE: set -e stays in force
+    "echo UXRC=$?\n"
+    "echo UXEND\n"
+) % ux
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp("bash", ["bash", "-c", script]); os._exit(1)
+out, start = b"", time.time()
+while time.time() - start < 60:
+    r, _, _ = select.select([fd], [], [], 0.01)
+    if r:
+        try: d = os.read(fd, 262144)
+        except OSError: break
+        if not d: break
+        out += d
+    p, _st = os.waitpid(pid, os.WNOHANG)
+    if p: break
+else:
+    os.kill(pid, 9)
+txt = out.decode(errors="replace")
+rc = re.findall(r"UXRC=(\d+)", txt)
+print("%s %s %s" % (rc[-1] if rc else "x", "END" if "UXEND" in txt else "NOEND",
+                    "STILL" if "still running" in txt else "QUIET"))
+PYUXOK
+    )"
+    if [[ "$_uxok" == "0 END QUIET" ]]; then
+      pass "ux: a normal ux_spin run survives 'set -e' and prints no degraded frame"
+    else
+      fail "ux: a normal ux_spin run under 'set -e' (got '${_uxok}', want '0 END QUIET')"
+    fi
   fi
 else
   skip "ux_spin set -e normalisation (python3 absent — needs a pty to reach the animation loop)"
@@ -2434,6 +3894,44 @@ _pm_only ""
 ucheck "update: _pkgup_mgr reports none on a bare PATH" \
   "source '$UPD'; [[ \$(_pkgup_mgr) == none ]]" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+# The startup hook's CLAIM-SLOT write must leave a POSITIONALLY WELL-FORMED cache, i.e.
+# "-1\n<epoch>" and never "\n<epoch>". The hook persists whatever $count holds, and on the
+# first shell of a fresh box there is no cache at all, so an unnormalised (or normalised-to-
+# empty) count wrote a file whose first line was blank — the exact shape that, read back
+# with an UNQUOTED (f) split, slides the epoch into the count slot and prints "1786128391
+# updates available". The reader-side quoting is one half of the fix; this asserts the other.
+#
+# Deterministic against the refresh the hook backgrounds a line later: the stub `brew` sleeps,
+# and _pkgup_count calls it twice, so the claim write is what is on disk when we look. The
+# stub dir is PREPENDED to the real PATH (not isolated to it) because the hook needs `mkdir`;
+# brew is first in _pkgup_mgr's ladder, so the stub still wins on any host.
+#
+# NOT ucheck, deliberately — this is the one update.zsh case that leaves the startup hook
+# ENABLED, so it is the only one that forks the refresh. ucheck captures with `$(…)`, and a
+# command substitution reads until the pipe's LAST writer closes: the disowned `&|` refresh
+# inherits that pipe, so bash would sit there for as long as the stub sleeps even though the
+# assertion finished in microseconds. Measured: 60.0s via ucheck, 8ms redirected to a file,
+# same verdict — and it would have been paid on every leg of the CI matrix. Redirecting to a
+# file means the parent waits only for the zsh it actually started. The stub's sleep is now
+# just "comfortably longer than the assertion window", not a cost.
+_PKGUPT="$SANDBOX/pkgup-claim"
+rm -rf "$_PKGUPT"
+mkdir -p "$_PKGUPT/bin" "$_PKGUPT/cache/zsh"
+printf '#!/bin/sh\nsleep 10\n' >"$_PKGUPT/bin/brew"
+chmod +x "$_PKGUPT/bin/brew"
+if HOME="$SANDBOX" env PATH="$_PKGUPT/bin:$PATH" XDG_CACHE_HOME="$_PKGUPT/cache" CORE_WELCOME=0 \
+  "$_real_zsh" -fic "source '$UPD'
+   c=\$XDG_CACHE_HOME/zsh/pkg-updates
+   [[ -r \$c ]] || { print -u2 'no cache written'; exit 1 }
+   local -a l; l=(\"\${(@f)\$(<\$c)}\")
+   [[ \${l[1]} == -1 ]] || { print -u2 \"count slot is '\${l[1]}', want -1\"; exit 1 }
+   [[ \${l[2]} == <-> ]] || { print -u2 \"epoch slot is '\${l[2]}'\"; exit 1 }
+   [[ -z \$(_pkgup_notice) ]]" >"$_PKGUPT/out" 2>&1; then
+  pass "update: the claim-slot write leaves a well-formed cache (-1, not an empty count)"
+else
+  fail "update: the claim-slot write leaves a well-formed cache (-1, not an empty count)"
+  [[ -s "$_PKGUPT/out" ]] && sed 's/^/    /' "$_PKGUPT/out" >&2
+fi
 # up --help must print usage and return 0 WITHOUT attempting an update — the bug the
 # help guard fixes (it used to fall through, not being -y, and run the upgrade). Run
 # on a bare PATH so a regressed guard reaching _pkgup_mgr → none → returns 1, failing
@@ -2678,6 +4176,102 @@ ucheck "browser: a GUI \$DISPLAY keeps web but leaves \$BROWSER unset" \
 ucheck "browser: macOS (OSTYPE=darwin) leaves \$BROWSER unset even with no DISPLAY" \
   "DISPLAY=''; WAYLAND_DISPLAY=''; OSTYPE=darwin24; source '$TOOLS_FILE'; source '$ALIASES_FILE'; (( \$+aliases[web] )) && [[ -z \${BROWSER:-} ]]" \
   PATH="$BRBIN"
+
+# ── OSC 133 prompt marks + the command-block rule (00-tools.zsh) ─────────────
+# The marks are what tmux's next-prompt/previous-prompt (bound to ] / [ in
+# tmux.reset.conf) read, so a regression here silently costs the keybinding its meaning
+# with nothing to see on screen — precisely the shape a behavioral gate must catch. The
+# hooks also moved OUT of the HAVE_STARSHIP gate (the marks must work on a bare box and
+# over SSH, where the rule is starship-only), which is what cases (h)/(i) below pin.
+#
+# MECHANICS. Capture by REDIRECTING TO A FILE, never `$(…)`: the exit-code cases need $?
+# to reach the hook intact, and a file redirect leaves it untouched with no subshell
+# question to reason about. `(exit 7)` sets that status with no external binary, so the
+# cases stay valid under an isolated PATH. TERM and TMUX are passed EXPLICITLY wherever
+# they matter — this suite may itself be running inside tmux, under any terminal, and
+# `env` would otherwise leak the real values into the assertion.
+OSCOUT="$SANDBOX/osc133.out"
+OSCEMPTY="$SANDBOX/oscempty" # an EMPTY PATH: no starship, so the rule cannot be drawn
+mkdir -p "$OSCEMPTY"
+# (a) THE A MARK IS IN $PROMPT, and it is there because a hook-emitted one does not
+#     survive: zsh's prompt preamble ends in ED (\e[J) over the line the mark was just
+#     written to, and tmux drops that line's prompt flag when it is cleared — measured on
+#     3.7b, previous-prompt would not move at all. Zero-width %{…%}, or every prompt's
+#     width math is off by the length of an escape sequence.
+ucheck "osc133: the A mark is carried in \$PROMPT as a zero-width %{…%} escape" \
+  "source '$TOOLS_FILE'; _core_osc133_prompt; [[ \$PROMPT == '%{'*']133;A'*'%}'* ]]" \
+  TERM=xterm-256color TMUX=
+# (a2) IDEMPOTENT — starship re-sets PROMPT every precmd, but on a box WITHOUT starship it
+#      is static, so a hook that prepended unconditionally would grow a mark per prompt.
+ucheck "osc133: re-marking an already-marked PROMPT does not stack marks" \
+  "source '$TOOLS_FILE'; repeat 3 _core_osc133_prompt; p=\${PROMPT/']133;A'/}; [[ \$p != *']133;A'* ]]" \
+  TERM=xterm-256color TMUX= PATH="$OSCEMPTY"
+# (a3) APPENDED, not prepended: starship_precmd re-sets PROMPT wholesale, so a mark applied
+#      before it would be discarded again on every prompt. The contract is RELATIVE — after
+#      starship — not "last": the atuin guard appends itself after us at the end of this
+#      file, and an OS (80) or host (99) fragment may append more. A stand-in starship_precmd
+#      is seeded before sourcing (PATH has no real starship, so nothing else registers one),
+#      which is what makes the ordering assertable at all on a box without the binary.
+ucheck "osc133: the PROMPT hook is ordered AFTER starship_precmd (which re-sets PROMPT)" \
+  "starship_precmd() { : }; precmd_functions=(starship_precmd); source '$TOOLS_FILE'; [[ -n \${precmd_functions[(r)_core_osc133_prompt]} ]] && (( \$precmd_functions[(i)_core_osc133_prompt] > \$precmd_functions[(i)starship_precmd] ))" \
+  TERM=xterm-256color TMUX= PATH="$OSCEMPTY"
+# (a4) …and it must be transparent to \$?, since it now sits between the command and any
+#      hook an OS (80) or host (99) fragment appends after it.
+ucheck "osc133: the PROMPT hook preserves \$? for later precmd hooks" \
+  "source '$TOOLS_FILE'; (exit 7); _core_osc133_prompt; (( \$? == 7 ))" \
+  TERM=xterm-256color TMUX=
+# (a5) The transient prompt is the other half: collapsing a finished prompt REDRAWS that
+#      line and clears its flag, and scrollback is what previous-prompt jumps THROUGH.
+check "osc133: the transient prompt carries the mark too (scrollback stays jumpable)" \
+  "grep -q 'TRANSIENT_PROMPT_TRANSIENT_PROMPT=\"\${_CORE_OSC133_MARK:-}\"' '$HERE/zsh/45-plugins.zsh'"
+# (b) D carries the REAL exit code — the mark non-tmux OSC 133 consumers read for status.
+ucheck "osc133: the D mark carries the real exit code (]133;D;7)" \
+  "source '$TOOLS_FILE'; _CMD_BLOCK_RAN=1; (exit 7); _cmd_block_precmd >'$OSCOUT'; [[ \"\$(<'$OSCOUT')\" == *']133;D;7'* ]]" \
+  TERM=xterm-256color TMUX=
+# (c) The hook must RESTORE \$? — every later precmd (starship_precmd included) reads it,
+#     and emitting a status mark makes that correctness load-bearing rather than cosmetic.
+ucheck "osc133: _cmd_block_precmd returns the command's exit code, not its own" \
+  "source '$TOOLS_FILE'; _CMD_BLOCK_RAN=1; (exit 7); _cmd_block_precmd >/dev/null; (( \$? == 7 ))" \
+  TERM=xterm-256color TMUX=
+# (b2) C is emitted at COMMAND START — the mark tmux's `-o` "jump to the output" variant
+#      reads. Same -rn discipline: it must not open a line of its own.
+ucheck "osc133: preexec emits the command-output mark (]133;C) and nothing else" \
+  "source '$TOOLS_FILE'; _cmd_block_preexec >'$OSCOUT'; [[ \"\$(<'$OSCOUT')\" == *']133;C'* ]] && (( \$(wc -l <'$OSCOUT') == 0 ))" \
+  TERM=xterm-256color TMUX=
+# (d) A bare Enter: NO D and NO rule (both describe a command that ran) — the A mark is in
+#     PROMPT, so an idle prompt is still a jump target without emitting anything. Pins the
+#     _CMD_BLOCK_RAN gating the restructure moved. Empty PATH ⇒ no starship ⇒ the "no rule"
+#     half is deterministic on any CI box.
+ucheck "osc133: a bare prompt emits nothing — no D mark, no rule" \
+  "source '$TOOLS_FILE'; _CMD_BLOCK_RAN=0; _cmd_block_precmd >'$OSCOUT'; [[ ! -s '$OSCOUT' ]]" \
+  TERM=xterm-256color TMUX= PATH="$OSCEMPTY"
+# (e) Ghostty injects its OWN prompt marking, so outside tmux Core stands down rather than
+#     double-mark: no mark in PROMPT, and no C/D on the wire either.
+ucheck "osc133: stands down under Ghostty's own shell integration (outside tmux)" \
+  "source '$TOOLS_FILE'; _CMD_BLOCK_RAN=1; _cmd_block_precmd >'$OSCOUT'; [[ -z \$_CORE_OSC133_MARK && \$PROMPT != *']133;'* && \"\$(<'$OSCOUT')\" != *']133;'* ]]" \
+  TERM=xterm-256color TMUX= GHOSTTY_SHELL_FEATURES=cursor,title
+# (f) …but GHOSTTY_SHELL_FEATURES is EXPORTED and reaches the tmux server, while Ghostty
+#     injects into the INITIAL shell only. Inside tmux Core is the only emitter — and tmux
+#     copy mode is where the marks are actually spent — so it must NOT stand down there.
+ucheck "osc133: still marks inside tmux under Ghostty (its integration isn't in the pane)" \
+  "source '$TOOLS_FILE'; _core_osc133_prompt; [[ \$PROMPT == *']133;A'* ]]" \
+  TERM=xterm-256color TMUX=/tmp/tmux-0/default,1,0 GHOSTTY_SHELL_FEATURES=cursor,title
+# (g) A consumer that does not parse OSC (Emacs M-x shell) would render the sequence as
+#     literal garbage in the prompt and above every command's output.
+ucheck "osc133: stands down on TERM=dumb (no literal escape garbage)" \
+  "source '$TOOLS_FILE'; _CMD_BLOCK_RAN=1; _cmd_block_precmd >'$OSCOUT'; [[ -z \$_CORE_OSC133_MARK && \$PROMPT != *']133;'* && \"\$(<'$OSCOUT')\" != *']133;'* ]]" \
+  TERM=dumb TMUX=
+# (h) THE HOIST: on a box with no starship the hooks must still be registered (marks are
+#     not a prompt cosmetic) — and _cmd_block_precmd stays FIRST, so the rule and the D mark
+#     land above whatever a later hook prints instead of interleaved with it.
+ucheck "osc133: hooks registered without starship, and precmd stays first (output order)" \
+  "source '$TOOLS_FILE'; [[ -z \${HAVE_STARSHIP:-} && \$precmd_functions[1] == _cmd_block_precmd && -n \${preexec_functions[(r)_cmd_block_preexec]} ]]" \
+  TERM=xterm-256color TMUX= PATH="$OSCEMPTY"
+# (i) The other side of that gate: marks stood down AND no starship means neither hook has
+#     any work at all, so a shell must not carry either of them for the life of the session.
+ucheck "osc133: no hooks at all when the marks stand down and starship is absent" \
+  "source '$TOOLS_FILE'; [[ -z \${precmd_functions[(r)_cmd_block_precmd]} && -z \${preexec_functions[(r)_cmd_block_preexec]} && -z \${precmd_functions[(r)_core_osc133_prompt]} ]]" \
+  TERM=dumb TMUX= PATH="$OSCEMPTY"
 
 # ── atuin: ATUIN_NOBIND + the OPT-IN daemon guard (00-tools.zsh) ──────────────
 # Two things were ungated here. (1) ATUIN_NOBIND=true is what keeps atuin from grabbing
@@ -3021,10 +4615,17 @@ fi
 # because a declined import is never persisted).
 printf '#!/bin/sh\nprintf "Import key? [y/N]: "\nread -r a\nprintf "pkg-alpha 1.0 updates\\n"\n' >"$_MRT/bin/stubmgr"
 chmod +x "$_MRT/bin/stubmgr"
-if sed -n '/^count=-1$/,/^fi/p' "$_MAINT_SH" >"$_MRT/count.bash" && [[ -s "$_MRT/count.bash" ]]; then
+#
+# The chain's arms now go through _pkgcount, so that helper is extracted alongside the chain
+# (same block-boundary rule as step()). _to stays STUBBED here — this case is about stdin,
+# and the real timeout is exercised by the separate case below.
+sed -n '/^_pkgcount() {/,/^}/p' "$_MAINT_SH" >"$_MRT/pkgcount.bash"
+if sed -n '/^count=-1$/,/^fi/p' "$_MAINT_SH" >"$_MRT/count.bash" &&
+  [[ -s "$_MRT/count.bash" && -s "$_MRT/pkgcount.bash" ]]; then
   if out="$(printf 'sentinel\n' | bash -c '
       have() { [ "$1" = brew ] && return 1; command -v "$1" >/dev/null 2>&1; }
       _to() { shift; "$@"; }
+      . "'"$_MRT/pkgcount.bash"'"
       MAINT_PKGCOUNT_TIMEOUT=30
       PATH="'"$_MRT/bin"'":$PATH
       # Shadow every manager arm onto the prompting stub so the chain is deterministic
@@ -3043,6 +4644,84 @@ if sed -n '/^count=-1$/,/^fi/p' "$_MAINT_SH" >"$_MRT/count.bash" && [[ -s "$_MRT
 else
   fail "maint: could not extract the package-count chain from ${_MAINT_SH##*/}"
 fi
+
+# A package probe that TIMES OUT must leave the -1 "we don't know" sentinel, not 0.
+# The old chain was `count=$(_to … <mgr> | grep -c …)`: when timeout SIGTERMs a stalled
+# manager there is no output, grep prints 0, and grep's non-zero status — the pipeline's —
+# is discarded by the assignment. So the daily log asserted "0 upgradable" (an up-to-date
+# box) on exactly the failure the timeout was added to survive, and the sentinel two lines
+# above the chain could never fire. This drives the REAL _to and _pkgcount (no stubs — the
+# whole point is the status `timeout` itself reports) against a manager that stalls forever,
+# with the bound turned down to 1s so the case costs about a second.
+#
+# That status is NOT one number across the fleet, which is why the observed rc is carried
+# into the failure message: GNU coreutils reports expiry as 124, while BUSYBOX reports its
+# SIGTERM as 143. A 124-only gate passed everywhere except Alpine, where this case caught it
+# reporting a stalled manager as 0 — so if a future userland picks a third spelling, the
+# failure here names it instead of just saying "want -1".
+#
+# The stall stub is a REAL EXECUTABLE named `brew`, not a shell function like the stdin case
+# above: `timeout` execs its argument, so it cannot run a function (it would fail 127 and the
+# case would pass for the wrong reason). `exec sleep` so the stub process IS the sleep and
+# takes the SIGTERM directly instead of orphaning a 30s child. brew is first in the chain,
+# and the stub dir is prepended, so this arm wins on any host — and it is an arm that goes
+# through _to (the pacman arm deliberately does not).
+if have timeout; then
+  printf '#!/bin/sh\nexec sleep 30\n' >"$_MRT/bin/brew"
+  chmod +x "$_MRT/bin/brew"
+  sed -n '/^_to() {/,/^}/p' "$_MAINT_SH" >"$_MRT/to.bash"
+  if [[ -s "$_MRT/to.bash" && -s "$_MRT/pkgcount.bash" && -s "$_MRT/count.bash" ]]; then
+    if out="$(bash -c '
+        PATH="'"$_MRT/bin"'":$PATH
+        have() { command -v "$1" >/dev/null 2>&1; }
+        . "'"$_MRT/to.bash"'"
+        . "'"$_MRT/pkgcount.bash"'"
+        MAINT_PKGCOUNT_TIMEOUT=1
+        . "'"$_MRT/count.bash"'" >/dev/null 2>&1
+        # The raw status too, so a userland whose timeout reports neither 124 nor 128+n is
+        # named by the failure rather than merely disagreeing with it.
+        _to 1 brew >/dev/null 2>&1
+        printf "%s %s\n" "$count" "$?"
+      ' 2>/dev/null)" && [[ "${out%% *}" == -1 ]]; then
+      pass "maint: a timed-out package probe reports the -1 sentinel, not 0 upgradable (timeout rc=${out##* })"
+    else
+      fail "maint: a timed-out package probe reports count='${out%% *}' at timeout rc=${out##* } (want count -1 — 0 would log the box as up to date)"
+    fi
+  else
+    fail "maint: could not extract _to/_pkgcount from ${_MAINT_SH##*/}"
+  fi
+else
+  skip "maint timed-out package probe (no \`timeout\` — _to runs the command unbounded)"
+fi
+
+# …and pin the BUSYBOX spelling on EVERY host, not just the Alpine leg of the matrix. The
+# case above asserts whatever the local timeout happens to report, so on a GNU box it only
+# ever proves the 124 arm — which is exactly how a 124-only gate reached CI green here and
+# red on Alpine. A fake `timeout` that exits 143 (128+SIGTERM, busybox's spelling) makes the
+# other arm deterministic and instant: no sleeping, and `brew` succeeds immediately, so the
+# ONLY thing that can produce -1 is _pkgcount reading the wrapper's status.
+printf '#!/bin/sh\nexit 143\n' >"$_MRT/bin/timeout"
+printf '#!/bin/sh\nexit 0\n' >"$_MRT/bin/brew"
+chmod +x "$_MRT/bin/timeout" "$_MRT/bin/brew"
+sed -n '/^_to() {/,/^}/p' "$_MAINT_SH" >"$_MRT/to.bash"
+if [[ -s "$_MRT/to.bash" && -s "$_MRT/pkgcount.bash" && -s "$_MRT/count.bash" ]]; then
+  if out="$(bash -c '
+      PATH="'"$_MRT/bin"'":$PATH
+      have() { command -v "$1" >/dev/null 2>&1; }
+      . "'"$_MRT/to.bash"'"
+      . "'"$_MRT/pkgcount.bash"'"
+      MAINT_PKGCOUNT_TIMEOUT=1
+      . "'"$_MRT/count.bash"'" >/dev/null 2>&1
+      printf "%s\n" "$count"
+    ' 2>/dev/null)" && [[ "$out" == -1 ]]; then
+    pass "maint: a busybox-style timeout (143, not 124) also reports the -1 sentinel"
+  else
+    fail "maint: a busybox-style timeout (143) reports '${out:-}' (want -1 — this is the Alpine regression)"
+  fi
+else
+  fail "maint: could not extract _to/_pkgcount from ${_MAINT_SH##*/}"
+fi
+rm -f "$_MRT/bin/timeout" "$_MRT/bin/brew"
 
 # update.zsh: the first-run welcome (U2 — the cheat-sheet discoverability hint) must
 # greet EXACTLY ONCE per machine. Drive _core_welcome directly (the TTY gate lives at

@@ -325,7 +325,7 @@ jobs:
   # contributors who ran `pre-commit install`; without this job a push carrying
   # trailing whitespace, a missing final newline, a stray `<<<<<<<` conflict marker,
   # or a shebang script that isn't +x sails through green and subtree-syncs into all
-  # 9 repos. The audit job deliberately does NOT replicate these file-hygiene hooks
+  # 8 repos. The audit job deliberately does NOT replicate these file-hygiene hooks
   # (audit-core.sh owns manifest/lint/behavioral), so run the SAME config here —
   # author-time == CI, one source of truth, zero drift. SKIP the three hooks the
   # audit job already owns so nothing runs twice and this stays the fast lane.

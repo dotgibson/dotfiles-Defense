@@ -32,6 +32,15 @@ banned_patterns:
   # for it buys a few months and then browns out — ban the dead end rather than let
   # a future bump-dodge land on it.
   - "ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION"
+  # The checkout input that restores fork-PR checkout under pull_request_target /
+  # workflow_run. actions/checkout v7 (2026-06-18) began refusing a `repository:`, `ref:`
+  # or head SHA that resolves to the fork — the "pwn request" shape, where untrusted fork
+  # code runs with the base repo's token; enforcement was backported 2026-07-20 to
+  # v3.7.0/v4.4.0/v5.1.0/v6.1.0/v7.0.1. GitHub named the opt-out to be greppable in code
+  # review, so grep for it. A job that genuinely needs fork code should use the
+  # untrusted-input pattern (build in `pull_request`, consume the artifact from a
+  # privileged `workflow_run`) rather than re-enable the unsafe fetch.
+  - "allow-unsafe-pr-checkout"
 
 # 2) End-of-life runner labels that must not be used — pick a supported image.
 banned_runners:
@@ -42,8 +51,9 @@ banned_runners:
   # Full-line comments only — check-modern.sh's list parser does NOT strip an inline
   # `# …`, so a trailing comment would become part of the banned string and the ban
   # would silently never match. Rationale for the four below: macos-13 retired
-  # 2025-12-04; windows-2019 unsupported since 2025-06-30; ubuntu-22.04 deprecation
-  # opens 2026-09-17 (pre-emptive — the fleet rides ubuntu-latest, so it's free to ban);
+  # 2025-12-04; windows-2019 unsupported since 2025-06-30; ubuntu-22.04 deprecation opens
+  # 2026-09-17, brownouts 2027-03-23/03-30/04-06/04-13, fully unsupported 2027-04-17
+  # (pre-emptive — the fleet rides ubuntu-latest, so it's free to ban);
   # macos-14 deprecation opened 2026-07-06, fully unsupported 2026-11-02 (pre-emptive —
   # the fleet rides macos-latest, so it's free to ban).
   - macos-13

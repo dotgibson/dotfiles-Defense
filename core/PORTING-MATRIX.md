@@ -22,7 +22,7 @@ _Repo status_ at the bottom).
 
 | Action    | Arch                     | openSUSE                                         | Alpine                    | Gentoo                          | Kali (apt)                   |
 | --------- | ------------------------ | ------------------------------------------------ | ------------------------- | ------------------------------- | ---------------------------- |
-| refresh   | `sudo pacman -Sy`        | `sudo zypper refresh`                            | `doas apk update`         | `sudo emerge --sync`            | `sudo apt-get update`        |
+| refresh   | `sudo pacman -Sy`²³      | `sudo zypper refresh`                            | `doas apk update`         | `sudo emerge --sync`            | `sudo apt-get update`        |
 | upgrade   | `sudo pacman -Syu`       | Leap: `zypper up` · **Tumbleweed: `zypper dup`** | `doas apk upgrade`        | `sudo emerge -uDN @world`       | `sudo apt-get full-upgrade`  |
 | install   | `sudo pacman -S <pkg>`   | `sudo zypper in <pkg>`                           | `doas apk add <pkg>`      | `sudo emerge <atom>`            | `sudo apt-get install <pkg>` |
 | remove    | `sudo pacman -Rns <pkg>` | `sudo zypper rm <pkg>`                           | `doas apk del <pkg>`      | `sudo emerge --depclean <atom>` | `sudo apt-get remove <pkg>`  |
@@ -43,7 +43,7 @@ _Repo status_ at the bottom).
 | btop             | `btop`            | `btop`       | `btop`            | `sys-process/btop`         | `btop`            |
 | tldr             | `tealdeer`        | `tealdeer`¹  | cargo³            | `app-misc/tealdeer`¹²      | `tealdeer`        |
 | neovim           | `neovim`          | `neovim`     | `neovim`          | `app-editors/neovim`       | `neovim`          |
-| lazygit          | `lazygit`         | `lazygit`    | `lazygit`         | `dev-vcs/lazygit`¹²        | `lazygit`         |
+| lazygit          | `lazygit`         | `lazygit`    | `lazygit`         | `dev-vcs/lazygit`¹²        | `lazygit`²¹       |
 | zsh              | `zsh`             | `zsh`        | `zsh`²            | `app-shells/zsh`           | `zsh`             |
 | tmux             | `tmux`            | `tmux`       | `tmux`            | `app-misc/tmux`            | `tmux`            |
 | starship         | `starship`        | `starship`¹⁸ | `starship`        | `app-shells/starship`      | script³           |
@@ -56,9 +56,10 @@ _Repo status_ at the bottom).
 | dust             | `dust`            | `dust`       | `dust`            | `sys-block/dust`           | `du-dust`⁴        |
 | procs            | `procs`           | `procs`      | `procs`           | `sys-process/procs`        | `procs`           |
 | viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸    | `viddy`           | cargo³                     | cargo³            |
-| sd               | `sd`              | `sd`         | `sd`              | `sys-apps/sd`¹²            | `sd`              |
+| sd²²             | `sd`              | `sd`         | `sd`              | `sys-apps/sd`¹²            | `sd`              |
 | gron             | `gron`            | `gron`       | `gron`            | go³                        | `gron`            |
 | jnv¹⁷            | AUR               | cargo        | cargo             | cargo                      | cargo             |
+| lnav²¹ ²⁴        | `lnav`            | `lnav`       | `lnav`            | `app-admin/lnav`²⁴         | `lnav`²⁴          |
 | glow             | `glow`            | `glow`       | testing¹⁴         | `app-misc/glow`¹²          | `glow`¹⁵          |
 | gum              | `gum`             | `gum`        | `gum`             | `app-misc/gum`¹²           | `gum`¹⁵           |
 | xh               | `xh`              | `xh`         | `xh`              | `net-misc/xh`¹²            | `xh`              |
@@ -66,14 +67,16 @@ _Repo status_ at the bottom).
 | gping¹⁹          | `gping`           | `gping`¹⁹    | `gping`           | GURU¹⁹                     | `gping`¹⁹         |
 | carapace         | AUR³              | go³          | `carapace`        | `app-shells/carapace`¹²    | go³               |
 | op (1Password)¹³ | AUR               | vendor rpm   | vendor apk        | GURU¹²                     | vendor apt        |
-| hyperfine        | `hyperfine`       | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`       |
-| shellcheck       | `shellcheck`      | `ShellCheck` | `shellcheck`      | `dev-util/shellcheck`      | `shellcheck`      |
-| shfmt⁷           | `shfmt`           | `shfmt`      | `shfmt`           | go³                        | `shfmt`⁷          |
-| ouch             | `ouch`            | `ouch`¹⁸     | testing           | cargo³                     | cargo³            |
-| jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`    | `jujutsu`         | cargo³                     | cargo³            |
+| hyperfine²¹      | `hyperfine`       | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`       |
+| watchexec²¹ ²⁵   | `watchexec`       | `watchexec`  | `watchexec`       | GURU²⁵                     | cargo²⁵           |
+| shellcheck²¹     | `shellcheck`      | `ShellCheck` | `shellcheck`      | `dev-util/shellcheck`      | `shellcheck`      |
+| shfmt⁷ ²¹        | `shfmt`           | `shfmt`      | `shfmt`           | go²¹                       | `shfmt`⁷          |
+| ouch²¹           | `ouch`            | `ouch`¹⁸     | testing¹⁴         | cargo²¹                    | cargo²¹           |
+| jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`    | `jujutsu`         | cargo²¹                    | cargo²¹           |
 | sesh⁹            | AUR⁹              | go⁹          | go⁹               | go⁹                        | go⁹               |
 | difftastic¹⁰     | `difftastic`      | `difftastic` | `difftastic`      | `dev-util/difftastic`      | `difftastic`      |
-| ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸ | `ast-grep`        | cargo³                     | cargo³            |
+| git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb` | `git-absorb`      | `dev-vcs/git-absorb`       | `git-absorb`      |
+| ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸ | `ast-grep`        | cargo²¹                    | cargo³            |
 | w3m              | `w3m`             | `w3m`        | `w3m`             | `www-client/w3m`           | `w3m`             |
 
 ¹ openSUSE: in Tumbleweed main OSS as `tealdeer` (also Leap 15.6); on older Leap, `cargo install tealdeer`.
@@ -101,8 +104,8 @@ only ships from a personal OBS repo), so `dotfiles-openSUSE` go-installs the
 mikefarah build in `bootstrap.sh` (`go³`) rather than packaging the wrong `yq`.
 ⁷ shfmt: not always in stable apt (Debian/Kali), and **not packaged on Gentoo** —
 absent from `::gentoo` and from GURU (third-party overlays carry it as
-`dev-util/shfmt`; there is no `dev-go/shfmt` atom), so Gentoo takes the `go³`
-path. If the package is missing, `mise use -g shfmt` or
+`dev-util/shfmt`; there is no `dev-go/shfmt` atom), so Gentoo takes the `go²¹`
+path — by hand: no `bootstrap.sh` installs it. If the package is missing, `mise use -g shfmt` or
 `go install mvdan.cc/sh/v3/cmd/shfmt@latest`. (These mid-2026 rows are
 best-effort — verify the exact package on first stamp of each distro.)
 ⁸ jujutsu (jj): OPT-IN, additive git companion — never replaces git, so a box
@@ -157,7 +160,7 @@ which differs per family: dnf/rpm repo (Fedora/openSUSE), apt repo (Debian/Kali)
 (Alpine — a native musl build, so it's fine on the musl outlier), the AUR `1password-cli`
 (Arch), and the GURU `app-misc/1password-cli` (Gentoo). A vendor repo, **not** the OS repo;
 the apt/rpm setup is rollback-safe (a failed install removes the added repo entry).
-¹⁴ Alpine **testing** repo (`duf`, `glow`): musl-fine Go tools that live in `testing` (never
+¹⁴ Alpine **testing** repo (`duf`, `glow`, `ouch`): musl-fine tools that live in `testing` (never
 promoted to `community` on stable, incl. 3.24), which isn't enabled by default on a stable
 release. bootstrap.sh `go install`s them instead (static, musl-safe) rather than force-enabling
 `testing`; they stay in `packages.txt` only as a best-effort that `apk add` skips.
@@ -185,7 +188,7 @@ unfamiliar API/JSON response" verb, complementing `jq` (transform), `gron` (grep
 once you install it yourself. macOS is the exception: the `Brewfile` carries it.** The cells above name where each platform gets it when you opt in —
 macOS `brew install jnv`, Arch `paru -S jnv` (AUR), Nix, or elsewhere `cargo install --locked
 jnv` (musl-safe on Alpine) — not an automatic install. Wiring it into the per-repo bootstrap
-(the ³ best-effort path viddy/yazi/ouch use) is a tracked follow-up in the OS repos; there is
+(the ³ best-effort path viddy/yazi use) is a tracked follow-up in the OS repos; there is
 no confirmed Gentoo GURU atom yet either, so verify on the next Gentoo stamp.
 
 ¹⁸ openSUSE **Tumbleweed** now ships these first-class in the main OSS **binary** repo
@@ -229,8 +232,8 @@ differs per machine is how the daemon gets **launched**, so that half lives in t
 
 | Machine                                                      | How the daemon runs                                                                                                                                                                                                              | What the OS layer exports                                     |
 | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Fedora · Arch · openSUSE · Gentoo (systemd) · Kali · Defense | `systemd --user` unit — copy `examples/atuin-daemon.service` into `~/.config/systemd/user/`, then `systemctl --user enable --now atuin-daemon` (and `loginctl enable-linger $USER` if you want it alive outside a login session) | `ATUIN_DAEMON__ENABLED=true`                                  |
-| Alpine (musl, no systemd)                                    | atuin supervises its own daemon — no unit, no service manager, nothing to install                                                                                                                                                | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
+| Fedora✔ · Arch · openSUSE · Gentoo (systemd) · Kali          | `systemd --user` unit — copy `examples/atuin-daemon.service` into `~/.config/systemd/user/`, then `systemctl --user enable --now atuin-daemon` (and `loginctl enable-linger $USER` if you want it alive outside a login session) | `ATUIN_DAEMON__ENABLED=true`                                  |
+| Alpine✔ (musl, no systemd)                                   | atuin supervises its own daemon — no unit, no service manager, nothing to install                                                                                                                                                | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
 | macOS                                                        | same as Alpine: `autostart` beats hand-writing a launchd plist, and `XDG_RUNTIME_DIR` is unset there so the socket lands in the data dir — which atuin resolves itself                                                           | `ATUIN_DAEMON__ENABLED=true` + `ATUIN_DAEMON__AUTOSTART=true` |
 | Windows                                                      | out of scope — `dotfiles-Windows` vendors no `core/` and replicates its host config in PowerShell                                                                                                                                | —                                                             |
 
@@ -238,6 +241,18 @@ The exports belong in that repo's `os/<os>.zsh` (loader fragment 80), **never** 
 config: Core is vendored identically to every repo, so a per-machine value there would be
 wrong on the other seven. `autostart` is mutually exclusive with `systemd_socket = true` —
 pick the unit or pick autostart, not both.
+
+**✔ marks the machines where the exports are actually wired today — Fedora and Alpine, two
+of the seven Core-vendoring machines this table covers.** The marker is per **machine**, not
+per row: the systemd row holds a wired Fedora alongside four unwired ones. For the other
+five — Arch, openSUSE, Gentoo and Kali (sharing that row with Fedora) plus macOS — the cell
+is the documented recipe, not a shipped state, so follow the rollout order below (Fedora
+first as the template, Alpine second as the design's real constraint, then the rest) rather
+than assuming your repo already does this. The `Windows` row is neither wired nor pending:
+it is out of scope, vendoring no `core/` at all. **`Defense` has no row here by design** —
+it is distro-agnostic and carries no `os/` layer, so its atuin exports come from whichever
+OS repo is underneath it (see "Repo status"). Seven machines + `Defense` = the eight
+Core-vendoring repos in `scripts/os-repos.txt`.
 
 **For those exports to work at all, `atuin/config.toml` must leave `enabled` and `autostart`
 unset** — and it does. atuin builds its config as defaults → environment → config **file**,
@@ -272,7 +287,26 @@ the daemon back up until you start a shell from a clean parent.
 rows above, so on two of the eight machines this safety net is not the thing keeping you out
 of trouble. It stands down because an absent socket is then the client's _cue to start one_,
 not a fault; disabling the daemon there would permanently defeat the only launcher those
-machines have. atuin's own health-checking is what covers them.
+machines have. atuin's own health-checking is what covers them — and that is now **measured
+rather than assumed** (`dotgibson/dotfiles-core#402`). It is a second premise with its own
+mode, its own anchor line in `zsh/00-tools.zsh` and its own issue title:
+`scripts/verify-atuin-guard.sh --premise autostart` (or `make verify-atuin-guard-autostart`)
+spawns a real daemon, checks that one appears and that the entry lands from each unreachable
+shape, and proves the teardown before deleting anything. The weekly workflow runs it as a
+separate job from the silent-discard one.
+
+Two things that measurement established on 18.19.0, both worth knowing before you touch these
+rows. The **stale-socket shape is the load-bearing one** — every `atuin history start` is a
+fresh process, so "fire-and-forget" can only mean that a crashed daemon's leftover inode
+defeats the spawn, and a check that only tried an absent socket would miss it. And the healing
+lives in the **client**: `atuin daemon start` on its own refuses over a stale inode with
+`Address already in use`, while the autostart path unlinks it first.
+
+Still not covered, so the default `--premise discard` caveats are not the only ones: the
+scheduled job runs on glibc Linux, which is neither of the two machines this premise protects,
+and a run that is green there is the weakest evidence in the whole arrangement for these rows.
+Running `make verify-atuin-guard-autostart` on the Alpine or macOS box itself is what actually
+speaks for it.
 
 The probe's limit, because it decides which unit you should install: it cannot tell an
 **accept-but-silent** socket from a healthy one. systemd **socket activation** produces
@@ -280,6 +314,165 @@ exactly that state when the daemon behind the socket is dead — the socket keep
 the client waits, and that is the indefinite freeze in `atuinsh/atuin#3382`. Prefer the plain
 always-running service above; if you do use a `.socket` unit with `systemd_socket = true`,
 you are outside what Core can protect.
+
+²¹ **Available, not installed** — the same detect-only shape as `jnv`¹⁷ and `gping`¹⁹, and
+the counterpart to ³. These cells name where the tool comes from **when you opt in**; no
+Linux repo's `install/packages.txt` carries it and no `bootstrap.sh` installs it, so Core
+lights the `HAVE_*` probe only once you install it yourself.
+
+- `hyperfine`, `shellcheck`, `shfmt`, `ouch`, `lnav`²⁴, `git-absorb`²⁶ are **macOS-only in
+  practice**: the MacBook `Brewfile` carries them; **no** Linux repo does. The packaged
+  names in their rows are what you would install by hand, not what a bootstrap gives you.
+  (Deliberately not a counted list — "all four" went stale the first time this family grew.)
+- The cells that previously showed **³** here — `ouch` and `jujutsu` on Gentoo **and** Kali,
+  `ast-grep` and `shfmt` on Gentoo, `lazygit` on Kali — promised a best-effort bootstrap
+  install that **does not exist**, verified against each repo's `bootstrap.sh` and
+  `install/packages.txt`. `lazygit` is the sharpest case: every other Linux repo installs it,
+  Kali installs it nowhere, and Core ships `alias lg='lazygit'` regardless.
+- Kali **does** install `ast-grep` (`bootstrap.sh`, cargo best-effort), which is why that one
+  cell keeps its ³ while its Gentoo neighbour does not.
+
+This is the same overclaim already corrected once for openSUSE (`ouch`/`ast-grep`): ³ means
+"bootstrap.sh installs it best-effort", so a ³ with no installer behind it reads as "you
+have this" when you do not.
+
+²² sd **changed its default in 1.1.0**: it now processes input **line by line**, and the old
+whole-file behaviour moved behind `--across` / `-A`. The failure mode is **silent** — a pattern
+that spans a newline (`sd 'foo\nbar' baz`) matches nothing, leaves the input unchanged, and
+still **exits 0**, so a script carries on as though it had rewritten the file. Confirmed
+behaviourally here rather than taken from the release notes. Worse, **`sd --version` cannot
+tell you which behaviour you have** — the Homebrew 1.1.0 build self-reports `sd 1.0.0` — so
+version sniffing is useless and a `HAVE_SD` version gate is not an option. Probe the flag
+instead: `sd --help | grep -q -- --across`. Core itself is **unaffected**: `sd` is detect-only
+(`HAVE_SD` in `zsh/00-tools.zsh`) with deliberately no alias (`zsh/20-aliases.zsh` — never
+shadow `sed` in scripts), and nothing in Core shells out to it. This is a warning for muscle
+memory and for the role layers.
+
+Do **not** blanket-add `-A` to role scripts. The flag does not exist before 1.1.0, and this
+matrix exists precisely because distros lag (Gentoo takes `sd` from the GURU overlay), so a
+script that hard-codes it **breaks on the older build** — which already matches whole-file
+and needs no flag. A script that must run against both feature-detects and builds the flag
+list, rather than assuming either default:
+
+```sh
+sd_across=(); sd --help 2>/dev/null | grep -q -- --across && sd_across=(-A)
+sd "${sd_across[@]}" 'foo\nbar' baz file
+```
+
+²³ Arch `refresh` (the **Package-manager commands** table above) is listed for
+completeness — **`dotfiles-Arch` deliberately ships no alias for it.** A bare
+`pacman -Sy` is safe on its own, but refreshing the sync DB and then installing is
+the partial-upgrade footgun, so `os/arch.zsh` provides only `pacu` (a full `-Syu`)
+and `pacout` (`checkupdates`, which lists updates without touching the sync DB at
+all). There is no `-Sy <pkg>` alias **on purpose** — see "Distro quirks" below. Do
+not "helpfully" add one.
+
+²⁴ lnav: OPT-IN log reader — the verb Core had no tool for. `bat`/`rg` read a log as
+**lines**, `jq`/`gron`/`jnv` read it as **JSON**, `glow` as markdown; `lnav` reads it as a
+**log**: it autodetects common formats, merges several files into one timeline ordered by
+timestamp, follows like `tail -f`, and exposes the parsed records to SQL. Its own command
+(no alias, like `jq`/`gron`/`jnv`), `HAVE_LNAV`-guarded in `zsh/00-tools.zsh`, inert
+without the binary. A **C++** CLI, so it has no `cargo`/`go install` escape hatch like the
+Rust/Go tools above — but it does not need one: upstream publishes **static musl binaries**
+per release (`lnav-0.14.0-linux-musl-x86_64.zip`, and an `arm64` twin), so the fallback on
+an unpackaged or lagging box is "unzip the official build", not "compile it". That is also
+the cleanest way to get 0.14.0 onto Gentoo or Debian/Kali without waiting for the package.
+**Detect-only on Linux, like `jnv`¹⁷ and `gping`¹⁹**: it is in no Linux repo's
+`install/packages.txt` and no `bootstrap.sh` installs it, so Core lights `HAVE_LNAV` only
+once you install it yourself. **macOS is the exception — the MacBook `Brewfile` carries
+it** (added 2026-07-15), which puts `lnav` squarely in ²¹'s "macOS-only in practice" family
+rather than jnv's "barely packaged anywhere" one: every distro in the table above ships it,
+none of them installs it for you.
+
+Versions **verified against each distro's own package pages** on 2026-08-12, not taken from
+a repology snapshot. Upstream is 0.14.0 (2026-04-12). Rolling targets get one query each,
+because that query is the complete answer; **Fedora is versioned, so every supported stable
+release is named separately** rather than collapsed into one unqualified ✓:
+
+| Target | Release | lnav |
+| --- | --- | --- |
+| Arch | `extra` (rolling) | 0.14.0-1 |
+| openSUSE | Tumbleweed (rolling) | 0.14.0 |
+| Alpine | `edge/community` — **native musl build** | 0.14.0-r0 |
+| Homebrew | rolling | 0.14.0 |
+| **Fedora** | **Rawhide / F45** | **0.14.0-3.fc45** |
+| **Fedora** | **F44** | **0.13.2-2.fc44** |
+| **Fedora** | **F43** | **0.12.4-2.fc43** |
+| **Kali/Debian** | rolling / sid | **0.13.2** |
+| **Gentoo** | `app-admin/lnav` | **0.11.2** |
+
+So "Fedora has it" is true but "Fedora is current" is only true on F45/Rawhide — F44 and F43
+track one and two minors back respectively. Two targets lag enough to be worth naming:
+
+- **Gentoo `app-admin/lnav` is 0.11.2** — the only version in the tree, stable on amd64/x86,
+  and the package is flagged as **needing a new maintainer**, so do not expect it to close
+  the gap on its own. Three minor releases behind. Re-check on the next Gentoo stamp.
+- **Kali/Debian `lnav` is 0.13.2** — one minor behind, the smaller gap of the two.
+
+On either, the upstream static musl zip above is the way to 0.14.0 without waiting.
+
+²⁵ watchexec: OPT-IN **event**-driven repetition — the third corner of a triangle Core
+already had two of. `viddy` re-runs on a **timer** (`watch`), `hyperfine` re-runs a fixed
+**count** and measures; `watchexec` re-runs when **files change** (`watchexec -e py --
+pytest`). Its own command, `HAVE_WATCHEXEC`-guarded in `zsh/00-tools.zsh`, inert without
+the binary. Deliberately **not** aliased to `watch` — `zsh/20-aliases.zsh` already points
+`watch` at `viddy`, and collapsing "re-run on a timer" into "re-run on a change" would
+silently hand you the wrong one.
+
+**The only tool in this table that nothing in the fleet installs — including macOS.**
+Unlike `lnav`²⁴ and the rest of ²¹'s "macOS-only in practice" bullet, the MacBook
+`Brewfile` does not carry `watchexec` either, so every machine is opt-in. Availability,
+verified 2026-08-12:
+
+- **Arch `extra`, openSUSE Tumbleweed, Homebrew, nixpkgs** — 2.5.1, current.
+- **Alpine `community`** — 2.5.1-r0, a native musl build.
+- **Gentoo: GURU only**, at 2.5.0 — there is no `::gentoo` atom. Note this is **not** in
+  ¹²'s GURU list on purpose: that footnote enumerates what `dotfiles-Gentoo`'s
+  `guru_install` pass actually installs, and it does not install this. Same shape as
+  `gping`¹⁹'s `GURU¹⁹` cell.
+- **Fedora and Debian/Kali do not package it at all** (confirmed: Fedora's package search
+  returns no results across F43/44/45/Rawhide/EPEL). Those two take
+  `cargo install --locked watchexec-cli` — note the crate is **`watchexec-cli`**; plain
+  `watchexec` on crates.io is the library, and installing that gives you no binary.
+
+Do **not** read the `cargo` cells as a `³`: no `bootstrap.sh` installs this, and
+`maint/dotfiles-maint.sh` runs `rustup update` but has no `cargo install-update` step, so
+a hand-`cargo`-installed `watchexec` is never refreshed by the maintenance job. That is
+already true of `ouch`/`jj`/`ast-grep` — a documentation gap this footnote records rather
+than a new one.
+
+²⁶ git-absorb: OPT-IN — works out which earlier commit each **staged hunk** belongs to and
+writes the `fixup!` commits for you; `git rebase -i --autosquash` then folds them in, and
+`git/gitconfig` already sets `rebase.autosquash = true`, so the second half is automatic.
+It is the **automatic** counterpart to `git fix` (`commit --fixup`, `git/gitconfig`'s
+`[alias]` block), which is the **manual** form: with `git fix <sha>` you name the target
+commit yourself, and `git absorb` works one out per hunk. Reach for `git fix` when you know
+where a change belongs and `git absorb` when you would otherwise go looking.
+
+**The house-style ideal for a new tool: it needs no alias at all.** git-absorb installs as
+`git-absorb` on `PATH`, which git dispatches as the `git absorb` subcommand — so it shadows
+nothing classic and `zsh/20-aliases.zsh` gains no entry, only a note saying why.
+`HAVE_GIT_ABSORB` exists purely so `core-doctor` can report it. One detection caveat: the
+probe is `command -v git-absorb`, so a distro that installs the binary into git's
+`libexec/git-core` rather than a `PATH` directory would give you a working `git absorb` and
+an unset flag. No mainstream package does this — the distro packages (Arch, Debian/Kali,
+Alpine, Gentoo) land it in `/usr/bin`, and Homebrew links it into its own prefix `bin`
+(`/opt/homebrew/bin` on Apple silicon, `/usr/local/bin` on Intel), which is a different
+directory but equally on `PATH`. Probing `git absorb --version` instead would add a `git`
+fork to every interactive shell — which `zsh/00-tools.zsh` exists to avoid.
+
+**Detect-only on Linux**, and packaged essentially everywhere — the ²¹ shape, not `jnv`¹⁷'s.
+The MacBook `Brewfile` carries it; no Linux `install/packages.txt` does. Verified 2026-08-12
+against each distro's own package pages:
+
+- **Arch `extra`** 0.9.0-2, **Alpine `community`** 0.9.0-r0, **Gentoo `dev-vcs/git-absorb`**
+  0.9.0 (**stable on amd64**, in the main tree — no GURU needed), **Homebrew** 0.9.0.
+- **Debian/Kali `git-absorb`** 0.9.0-2. Note repology reports the **source** package as
+  `rust-git-absorb`; the **binary** package you install is `git-absorb`, confirmed on
+  packages.debian.org. Fedora is the same shape (`rust-git-absorb` source, `git-absorb`
+  binary).
+- **openSUSE Tumbleweed is the one laggard, at 0.6.17** — the gap #394 flagged, confirmed
+  here rather than left as a repology snapshot. Re-check on the next openSUSE stamp.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 
@@ -339,7 +532,9 @@ engagement data in `~/engagements` (outside the repo); the repo ships a paranoid
 ### Repo status
 
 - **Built:** `core`, `Fedora` (template), `MacBook`, `Arch`, `openSUSE`,
-  `Alpine`, `Gentoo`, `Kali`.
+  `Alpine`, `Gentoo`, `Kali`, `Defense`. That is the eight Core-vendoring repos
+  (`scripts/os-repos.txt`) plus `core` itself; `Windows` vendors no `core/` and is
+  tracked separately.
 - **Stamp-pending (this doc):** none — all four template stamps are complete.
 - `Kali` (apt + offensive layer) and `MacBook` (Homebrew) are their own lineages,
   built directly rather than stamped from Fedora. `Windows` is tracked separately
@@ -348,6 +543,11 @@ engagement data in `~/engagements` (outside the repo); the repo ships a paranoid
   Core, but only `Kali` carries an OS-native layer (Debian/apt). `Defense` is
   **distro-agnostic** — it stacks its blue-team stage on whatever OS-native layer is
   underneath — so it has no row in this OS-stamp matrix by design, not by omission.
+  For the same reason `Defense` is the **one documented exception** to the shared
+  bootstrap scaffold: its `bootstrap.sh` does not source `lib/bootstrap-lib.sh`'s
+  `blib_link_core` (the other seven do). It layers onto an already-provisioned host,
+  where the OS repo underneath has already run the scaffold, so it hand-rolls the
+  partial re-link it needs. Deliberate, not drift — `core.manifest` records it too.
 
 ### Stamping order (all complete — kept as the recommended sequence for reference)
 

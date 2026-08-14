@@ -1,5 +1,5 @@
 #compdef gsync
-# Completion for Core's `gsync` (zsh/aliases.zsh → .bin/sync-upstream.sh): pushes the
+# Completion for Core's `gsync` (zsh/20-aliases.zsh → .bin/sync-upstream.sh): pushes the
 # vendored core/ subtree back upstream to dotfiles-core. It takes no arguments, so say
 # so explicitly rather than fall back to file completion.
 _message 'gsync takes no arguments (pushes the vendored core/ subtree upstream to dotfiles-core)'

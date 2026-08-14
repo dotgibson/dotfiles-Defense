@@ -29,7 +29,7 @@ zsh/00-tools.zsh       # detection + the single init point (zoxide/starship/atui
 zsh/05-ui.zsh          # terminal-UX primitives (_core_err/warn/ok/hint/confirm/spin) — gum-aware
 zsh/10-options.zsh     # setopts + completion system (compinit, cached) + zstyles
 zsh/15-history.zsh     # HISTFILE/HISTSIZE/SAVEHIST + history setopts + secret-ignore
-zsh/20-aliases.zsh     # modern-CLI aliases, each guarded by tools.zsh detection
+zsh/20-aliases.zsh     # modern-CLI aliases, each guarded by 00-tools.zsh detection
 zsh/25-git.zsh         # curated OMZ-style git aliases + git_main_branch/current_branch helpers
 zsh/30-functions.zsh   # cross-OS shell functions (mkcd, extract, serve, genpw, ...)
 zsh/35-fzf.zsh         # fzf env + zle widgets (Ctrl-T/R, Alt-Z, Ctrl-G) + fif/fbr
@@ -38,7 +38,7 @@ zsh/45-plugins.zsh     # lightweight plugin loader (zsh-defer, carapace, fzf-tab
 zsh/50-op.zsh          # 1Password CLI helpers (macOS agent socket -> os layer)
 zsh/55-maint.zsh       # daily-maintenance control surface (maint-install/run/log/...)
 zsh/60-update.zsh      # `up` updater + once/day "updates available" nudge
-# autoloaded completions for Core's own verbs — fpath-added by options.zsh, not symlinked.
+# autoloaded completions for Core's own verbs — fpath-added by 10-options.zsh, not symlinked.
 # Listed PER-FILE (not as `zsh/completions/`) so the offline audit catches an ADDED or
 # REMOVED completion, not just a deleted directory (B10): a new Core verb must register its
 # completion here deliberately, and an orphaned one is flagged without needing the
@@ -83,11 +83,15 @@ lazygit/config.yml
 bin/clip
 bin/clip-paste
 # ── shared BASH UX lib — palette/glyphs/spinner; SOURCED by each OS repo's
-#    bootstrap.sh (the pre-shell installer can't source the zsh ui.zsh) ─────────
+#    bootstrap.sh (the pre-shell installer can't source the zsh 05-ui.zsh) ──────
 lib/ux.sh
 # ── shared BASH provisioning scaffold — link/read_pkgs/WSL-detect/Core-symlink/
-#    .zshrc-loader/login-shell helpers; SOURCED by each OS repo's bootstrap.sh so
-#    the shared half of the bootstrap stops being hand-forked across the fleet ───
+#    .zshrc-loader/login-shell helpers; SOURCED by every OS repo's bootstrap.sh so
+#    the shared half of the bootstrap stops being hand-forked across the fleet.
+#    EXCEPTION: dotfiles-Defense does NOT source it — it is a role layer that
+#    stacks onto an already-provisioned host (the OS repo underneath has already
+#    run this scaffold), so it hand-rolls the partial re-link it needs. That is
+#    deliberate, not drift; see PORTING-MATRIX.md's "Repo status" note. ─────────
 lib/bootstrap-lib.sh
 # ── jujutsu (jj) — OPT-IN colocated git companion; symlinked to ~/.config/jj/config.toml.
 #    Additive — never replaces git. Inert without the jj binary; zsh aliases are HAVE_JJ-gated.
@@ -117,10 +121,10 @@ tmux/scripts/tmux-menu.sh
 tmux/scripts/tmux-netinfo.sh
 tmux/scripts/tmux-scratch.sh
 tmux/scripts/tmux-sesh.sh
-# ── maintenance runner (invoked by the scheduler maint.zsh installs) ──────────
+# ── maintenance runner (invoked by the scheduler 55-maint.zsh installs) ───────
 maint/dotfiles-maint.sh
-# ── upstream-sync runner (invoked by the `gsync` alias in zsh/aliases.zsh, which
-#    resolves this path relative to itself — like maint/ above) ────────────────
+# ── upstream-sync runner (invoked by the `gsync` function in zsh/20-aliases.zsh,
+#    which resolves this path relative to itself — like maint/ above) ──────────
 .bin/sync-upstream.sh
 # ── git — portable config; credential/identity split to OS+local ──────────────
 git/gitconfig

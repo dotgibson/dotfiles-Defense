@@ -86,41 +86,73 @@ update_check = false
 # being opened is a behaviour change, so it is off here and stays off until a machine
 # asks for it.
 #
-# WHAT IS ACTUALLY MEASURED, AND WHAT IS STILL BORROWED. That rationale came from
-# upstream and went unmeasured here. scripts/bench-atuin-daemon.sh now puts numbers on
-# the part that can be measured without special hardware: a container reproducing the
-# TOPOLOGY of the Alpine path (no systemd, XDG_RUNTIME_DIR unset, so the socket falls
-# back to the data dir). 8 concurrent writers, one 20k-row DB, 1600 samples per arm,
-# timing `history start` + `history end` TOGETHER:
+# WHICH METRIC A FIGURE IS, because it decides what the figure may be quoted for. atuin's
+# `_atuin_precmd` fires `history end` into a detached background subshell — `(atuin history
+# end ... &)` — so only `history start`, taken in a command substitution by `_atuin_preexec`,
+# is on the path a human waits on. PROMPT LATENCY times `start` alone and is the only thing
+# quotable as "what a command costs the user"; TOTAL WRITE WORK times the pair and is real
+# load on the box that nobody waits for. Every table below says which it is.
+#
+# THE SYSTEMD PATH, MEASURED (dotgibson/dotfiles-core#352). Fedora 44 under WSL2 — a real
+# systemd user manager, a real transient unit (`systemd-run --user`), glibc 2.43, atuin
+# 18.19.0 — via `scripts/bench-atuin-daemon.sh --systemd`. 8 concurrent writers, one 20k-row
+# DB, 1600 samples per arm. PROMPT LATENCY, three runs with the sandbox on a local ext4 home:
+#
+#     p50    8.5-8.9 ms -> ~5.5 ms   1.55x / 1.55x / 1.60x faster
+#     p95    16-19 ms -> 7.0-8.6 ms  2.50x / 2.33x / 2.17x faster
+#     p99    28-34 ms -> 8.6-25 ms   2.91x / 3.25x / 1.35x faster
+#
+# So on the blocking call, on the systemd path, on real storage: the daemon wins at the median
+# AND at the tail — every run, in the same direction. Note what is and is not steady there.
+# p50 and p95 are tight enough to quote as figures; the p99 SIGN is stable but its MAGNITUDE
+# is not (a third run gave 1.35x where the first two gave ~3x, on the same host and settings),
+# so quote the tail as "faster in every run, 1.4-3.3x" and not as a number. That is the
+# adoption rationale, measured rather than borrowed — for this path. Same runs, TOTAL WRITE
+# WORK: p50 1.85x / 1.82x / 1.89x and p95 2.17x / 1.80x / 1.23x faster, but p99 1.45x faster,
+# 1.09x SLOWER, 1.14x faster — direction unresolved, exactly as expected, because `end` is
+# where the two metrics diverge (with the daemon off it is the slower call, the UPDATE costing
+# more than the INSERT, and with it on they equalise).
+# Do not quote a total-write-work figure as latency; that mislabelling is what left this
+# repo's own records contradicting each other on the tail.
+#
+# One earlier measurement agrees in DIRECTION: a systemd-unit run timing only the blocking
+# call found p99 improving 49-69%, with spread collapsing from 2.86x to 1.28x at 16 writers.
+# It is the SAME MACHINE, days apart — Fedora 44 / kernel 6.18.33.2 (WSL2) is this host, and
+# an earlier revision of this block called it a second one. That is reproducibility over
+# time, NOT independent corroboration, and the distinction is the whole point of the block
+# below: every figure here comes from one WSL2 host. It also timed `history start --hook`,
+# the form atuin's zsh hook actually runs, where the figures above time the plain form —
+# adjacent, not identical (scripts/verify-atuin-guard.sh measures both since #389).
+#
+# STORAGE BACKING IS THE CONFOUNDER, and it is the most useful thing these runs turned up.
+# The SAME harness, same host, same day, PROMPT LATENCY p99, daemon off -> on:
+#
+#     tmpfs (/tmp — the harness default)    2.23x SLOWER / 1.48x / 2.04x faster  (3 runs)
+#     ext4 local disk                       1.35x - 3.25x faster                 (3 runs)
+#     9p, a high-latency non-local fs       43.4x / 26.2x faster                 (2 runs)
+#
+# On tmpfs the SIGN itself flips; on durable storage every run agrees on the sign and only the
+# magnitude moves. That difference is the finding. Give the DB a real fsync and the daemon-off
+# tail blows out — p99 28-34 ms on ext4, 0.8-1.1 SECONDS on 9p — while the daemon-on arm stays
+# far below it (8.6-25 ms, ~27 ms). The mechanism upstream describes
+# is visible precisely where storage is slow enough for lock hold time to matter. This is
+# also the likeliest explanation for the contradictory older figures below, whose storage was
+# never recorded — likeliest, not established: nobody went back and re-ran them. The harness
+# now prints the sandbox filesystem on every run so this can never be ambiguous again.
+#
+# THE OLDER PAIR-TIMED FIGURES, kept because they are what the earlier claims rest on. A
+# container reproducing the TOPOLOGY of the Alpine path (no systemd, XDG_RUNTIME_DIR unset,
+# so the socket falls back to the data dir), timing `start` + `end` TOGETHER — TOTAL WRITE
+# WORK, on storage that was not recorded:
 #
 #     p50    ~43 ms -> ~31 ms       ~1.4x faster      (steady across runs)
 #     p95    ~57 ms -> ~46 ms       1.2-1.3x faster   (steady across runs)
 #     p99    ~65 ms -> 57-106 ms    FLIPS SIGN run to run — unresolved
 #     max    ~77 ms -> 140-180 ms   consistently WORSE with the daemon
 #
-# WHICH METRIC THOSE ARE, because it decides what they can be quoted for. Timing the two
-# calls together measures TOTAL WRITE WORK, not prompt latency: atuin's `_atuin_precmd`
-# fires `history end` into a detached background subshell — `(atuin history end ... &)` —
-# so only `history start`, taken in a command substitution by `_atuin_preexec`, is on the
-# path a human waits on. The numbers above are real load; they are not what a command
-# costs the user.
-#
-# THE TAIL QUESTION IS THEREFORE OPEN, not settled. The median and p95 win is solid and
-# holds on every host tried. But the far-tail reading — that the daemon trades frequent
-# small waits for rarer, larger stalls — comes entirely from pair-timed runs, and the one
-# measurement that timed ONLY the blocking call (real Fedora hardware, systemd unit) found
-# the opposite: p99 improving 49-69%, with spread collapsing from 2.86x to 1.28x at 16
-# writers. `end` is exactly where the two would diverge — with the daemon off it is the
-# slower call (the UPDATE costs more than the INSERT) and with it on they equalise. So do
-# not repeat either the "removes tail latency" pitch or its rebuttal as established.
-# bench-atuin-daemon.sh now reports the two metrics separately; the re-measurement it
-# enables is what should settle this. On the autostart path the FIRST command of a fresh
-# shell additionally pays ~+41 ms for the daemon spawn (p50, steady across runs).
-#
-# MUSL, measured since — in an Alpine 3.21 CONTAINER (real Alpine userland, real musl,
-# no systemd), against a glibc control on the SAME host, atuin 18.19.0, two runs each.
-# Compare the RATIOS, not the milliseconds: absolute figures move with the host, and
-# these were taken on different hardware from the block above.
+# MUSL, from an Alpine 3.21 CONTAINER (real Alpine userland, real musl, no systemd) against a
+# glibc control on the SAME host, atuin 18.19.0, two runs each. Compare the RATIOS, not the
+# milliseconds. Pair-timed, and storage unrecorded, like the block above:
 #
 #                     musl (2 runs)              glibc control (2 runs)
 #     p50     1.43x / 1.46x faster        1.46x / 1.42x faster
@@ -128,19 +160,37 @@ update_check = false
 #     p99     1.23x / 1.70x SLOWER        1.31x / 1.07x faster  (magnitude unstable)
 #     max     consistently WORSE          flips run to run
 #
-# So the p50 win is the one result that has held on every host tried so far. The far tail
-# is where musl and glibc appear to DIVERGE: on musl the p99 was worse with the daemon on
-# BOTH runs — a stable sign, not the coin-flip glibc gives. Note the same caveat as above,
-# though: these are pair-timed too, so the divergence is in total write work, and whether
-# it survives on the blocking call alone is untested. Do not cite it as a latency result.
-# The autostart spawn cost reproduced at ~+45 ms (p50).
+# The p50 win has now held on every host tried, on both metrics. The far-tail reading from
+# that table — that musl DIVERGES from glibc, p99 worse with the daemon on both runs — is
+# doubly unsafe to cite now: it is pair-timed AND of unknown storage, either of which alone
+# would account for the sign. Settling it is a specific, cheap re-run: the same Alpine
+# container with CORE_ATBENCH_BASE pointed at real disk, reading the prompt-latency table.
 #
-# Still unmeasured, still needing machines nobody has to hand: musl on REAL HARDWARE (the
-# above is a container, so it does not settle scheduling or storage behaviour on a real
-# Alpine box), the systemd-unit path, and a network home — which is where the contention
-# claim is strongest and least tested. `scripts/bench-atuin-daemon.sh --systemd` and its
-# CORE_ATBENCH_BASE knob now exist for the latter two, but --systemd has itself never run
-# against a real systemd user bus. This narrows the gap; it does not close it.
+# THE AUTOSTART SPAWN COST is the one figure that has reproduced everywhere: the FIRST
+# command in a fresh shell pays ~+41 ms (container), ~+45 ms (Alpine container) and +42.16 ms
+# (local ext4, prompt latency, p50) for the daemon spawn. It is unique to machines with no
+# service manager, and it is paid on the blocking call.
+#
+# WHAT WILL NEVER BE MEASURED HERE, AND WHY THAT IS A DECISION RATHER THAN A BACKLOG. The
+# rows below need machines this project does not have and is not going to get; WSL2 is the
+# closest it will ever come to a real box. So they are ACCEPTED from upstream rather than
+# pursued — a decision, not a promise. Stated as the decision itself and not as the state of
+# a tracker: an issue can be reopened, relabelled or migrated, and a config comment asserting
+# "this is closed" would then be quietly false. The reasoning, the numbers and the four rows
+# are recorded in dotgibson/dotfiles-core#352, which this supersedes rather than depends on:
+#
+#   musl on REAL HARDWARE     the musl figures are an Alpine container, which does not
+#                             settle scheduling or storage behaviour on a real Alpine box
+#   a real NFS/SMB home       the 9p figures are a high-latency non-local filesystem — a
+#                             proxy for a network home, not one, and this is the row where
+#                             upstream's contention claim is strongest
+#   bare metal                every figure above is one WSL2 host
+#   a real multi-pane session synthetic concurrent writers, not humans in tmux panes
+#
+# For those four, the rationale stays BORROWED from upstream, deliberately and on the record.
+# The mechanism itself is measured — that is what the tables above are — so what is borrowed
+# is its magnitude on hardware nobody here will run, not whether it exists. Anyone who does
+# have such a box can settle a row with `scripts/bench-atuin-daemon.sh`; nobody is waiting.
 #
 # HOW A MACHINE OPTS IN (the launcher is OS-native, so it lives in the OS repo, not here):
 #   systemd distros — install the user unit (examples/atuin-daemon.service),

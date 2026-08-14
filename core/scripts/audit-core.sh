@@ -497,7 +497,7 @@ else
   skip "yaml parse (python3 PyYAML not importable)"
 fi
 # JSON: nvim/lazy-lock.json pins every Neovim plugin's commit for a reproducible
-# editor across the 9 repos — a truncated/corrupt lock breaks `:Lazy restore` for
+# editor across the 8 repos — a truncated/corrupt lock breaks `:Lazy restore` for
 # all of them, and like the toml/yaml above it's valid *text* the other gates skip.
 # `*.json` (not `*.jsonc`) so the JSONC config files keep their comments. json is in
 # the stdlib, so this only needs python3 — no extra import gate like PyYAML.

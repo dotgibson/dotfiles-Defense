@@ -161,7 +161,7 @@ jobs:
 
   # The judgment half of the freshness bot (command already exists; this schedules it).
   # Runs an hour after tool-scout/doc-audit so no two Opus routines overlap. Reads the open
-  # bump PRs (freshness.yml + dependabot) and the `--check` scripts, then files a Merge/Hold
+  # bump PRs (freshness.yml + Renovate) and the `--check` scripts, then files a Merge/Hold
   # verdict per PR — report-first, edits nothing.
   freshness-triage:
     needs: preflight

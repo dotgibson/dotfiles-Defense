@@ -4,11 +4,12 @@ name: freshness
 # (zsh/45-plugins.zsh) and the Neovim lockfile (nvim/lazy-lock.json) are pinned so nothing
 # floats silently into the eight OS repos — but a pin, once set, also rots: a
 # pinned-and-forgotten plugin can sit on a known-vuln commit indefinitely across every
-# machine. dependabot only watches the github-actions ecosystem (see dependabot.yml), so
-# these were unmonitored. Weekly (and on demand) this rolls the pins forward and OPENS A
-# PR (B10) so the bump is reviewable in one click — instead of only a red "you should run
-# make update-plugins" nudge that a human still had to action by hand. The updater scripts
-# (--check) stay the source of truth for "is it behind"; this just automates the rest.
+# machine. Renovate (the shared org preset, see renovate.json) watches the github-actions
+# ecosystem, not these runtime pins, so they were unmonitored. Weekly (and on demand) this
+# rolls the pins forward and OPENS A PR (B10) so the bump is reviewable in one click —
+# instead of only a red "you should run make update-plugins" nudge that a human still had
+# to action by hand. The updater scripts (--check) stay the source of truth for "is it
+# behind"; this just automates the rest.
 #
 # Why it opens the PR as the fleet GitHub App, not GITHUB_TOKEN: GitHub deliberately does
 # NOT run workflows on events created by the default GITHUB_TOKEN (a recursion guard), so a
