@@ -4,11 +4,15 @@ No `packages.txt` here — the OS-native layer you run owns package installation
 and the heavy stack runs in `docker/`. This is the host-tool shopping list so
 `bootstrap.sh` can report what's missing without assuming a package manager.
 
-Tools probed: `docker` + compose, `jq`, `tshark`/`tcpdump`, `zeek`, `suricata`,
-`chainsaw`, `hayabusa`, `sigma-cli`, `yara`, `velociraptor`, `volatility3`,
-`plaso` (`log2timeline`). `bootstrap.sh` probes for these — it never installs
-them. If you later pin this repo to one base OS, this file becomes that
-distro's real `packages.txt`.
+The probed tools live in **[`tools.lst`](tools.lst)**, one per line with a note on
+each. That file is the single source: `bootstrap.sh` reads it to decide what to
+probe, so adding a line there adds it to the report — no code change, and nothing
+to keep in step. This README deliberately does **not** restate the list; it used
+to, and a prose copy alongside a literal in `bootstrap.sh` is exactly the pair
+that drifts.
+
+`bootstrap.sh` only ever *probes* — it never installs. If you later pin this repo
+to one base OS, `tools.lst` becomes that distro's real `packages.txt`.
 
 The probe reports **three** states, not two, because "not on `$PATH`" and "not
 on the box" are different problems with different fixes:
