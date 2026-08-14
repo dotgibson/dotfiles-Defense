@@ -236,6 +236,57 @@ out="$(zdef "$S" 'unset HAVE_DOCKER; siemdown; echo "rc=$?"')"
 contains "siemdown without docker exits non-zero" "$out" "rc=1"
 
 # ─────────────────────────────────────────────────────────────────────────────
+group "install/tools.lst — the single source for the probe list"
+
+[ -r "$REPO/install/tools.lst" ] && ok "tools.lst exists" || no "tools.lst exists"
+
+# Parse it the way bootstrap.sh does, then assert bootstrap's own parser agrees. This is
+# the assertion that keeps the list single-sourced: if _probe_list ever stops reading the
+# file (or starts filtering it differently), these two diverge and this fails.
+# Both sides are normalised the same way — newlines to spaces, then trailing space
+# trimmed — so the assertion compares the LISTS and not their final-newline handling.
+# Without the trim a semantically identical list could fail on whitespace alone.
+squash_ws() { tr '\n' ' ' | sed 's/[[:space:]]*$//'; }
+
+lst_direct="$(sed 's/#.*//' "$REPO/install/tools.lst" | awk 'NF { print $1 }' | squash_ws)"
+lst_bootstrap="$(
+  # Both of these ARE used — by the _probe_list body eval'd below, which the linter
+  # cannot see into. DOTFILES is what it resolves install/tools.lst against, and
+  # blib_warn is its error path. Stubbing the warn keeps a would-be failure quiet here
+  # so the assertion below reports the mismatch itself rather than the noise.
+  # SC2317 and SC2329 are the same complaint from different ShellCheck versions (0.9 vs
+  # the newer one CI pins), so both are named — dropping either makes this pass locally
+  # and fail in CI, or the reverse.
+  # shellcheck disable=SC2034
+  DOTFILES="$REPO"
+  # shellcheck disable=SC2317,SC2329
+  blib_warn() { :; }
+  eval "$(sed -n '/^_probe_list()/,/^}/p' "$REPO/bootstrap.sh")"
+  _probe_list | tr '\n' ' ' | sed 's/[[:space:]]*$//'
+)"
+is "bootstrap's parser agrees with the file" "$lst_direct" "$lst_bootstrap"
+isnt_empty "the list is not empty" "$lst_direct"
+
+# Comments and blank lines must not leak in as tool names — the file is heavily commented,
+# so a parser that mishandled them would try to probe '#' or a section heading.
+if printf '%s' "$lst_direct" | grep -q '#'; then
+  no "no comment text leaks into the list" "got: $lst_direct"
+else
+  ok "no comment text leaks into the list"
+fi
+
+# zsh leads, deliberately (bootstrap's end-of-run guard treats it as non-optional).
+is "zsh is first" "zsh" "$(printf '%s' "$lst_direct" | awk '{print $1}')"
+
+# The README must not restate the list — a prose copy is the drift this file removes.
+if grep -qE '^Tools probed:' "$REPO/install/README.md"; then
+  no "README does not restate the list" "install/README.md still enumerates the tools"
+else
+  ok "README does not restate the list"
+fi
+contains "README points at tools.lst" "$(cat "$REPO/install/README.md")" "tools.lst"
+
+# ─────────────────────────────────────────────────────────────────────────────
 group "bootstrap.sh — host-tool probe classification"
 
 # Drive check_tools in isolation with stubbed blib_* and a synthetic PATH, so the three
@@ -245,6 +296,14 @@ harness() { # harness <extra-shell-setup>
   {
     echo '#!/usr/bin/env bash'
     echo 'blib_say(){ echo ":: $*"; }; blib_ok(){ echo "+ $*"; }; blib_warn(){ echo "! $*"; }'
+    printf 'DOTFILES=%q\n' "$REPO"
+    sed -n '/^_probe_list()/,/^}/p' "$REPO/bootstrap.sh"
+    # Then override it with a fixed list. These cases narrow $PATH to a stub directory to
+    # control what is discoverable, which also puts sed/awk out of reach — and the real
+    # _probe_list shells out to both, so it would return nothing and every assertion below
+    # would vacuously "pass nothing". Parsing is covered by its own group against the real
+    # file; what these cases exercise is the found/alias/unreachable/missing classification.
+    printf '_probe_list(){ printf "%%s\\n" %s; }\n' "$PROBED"
     sed -n '/^_probe_offpath()/,/^}/p' "$REPO/bootstrap.sh"
     sed -n '/^_probe_altname()/,/^}/p' "$REPO/bootstrap.sh"
     sed -n '/^check_tools()/,/^}/p' "$REPO/bootstrap.sh"

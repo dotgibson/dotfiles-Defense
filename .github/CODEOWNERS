@@ -1,0 +1,26 @@
+# CODEOWNERS — mirrors dotfiles-core's: a single catch-all owner, because this is a
+# personal-but-public showcase system with one author. The paths listed after it resolve
+# to the same owner and change nothing today; they are here to mark the three areas whose
+# blast radius is bigger than the diff, so that if a second maintainer is ever added the
+# carve-outs already exist rather than needing to be reconstructed under time pressure.
+#
+# ADVISORY, not blocking: the branch ruleset does not currently set "require review from
+# Code Owners" (it requires a PR and four passing checks, with 0 approvals — a solo
+# maintainer cannot approve their own PR, so requiring one would wedge every merge). This
+# file therefore auto-REQUESTS review; it does not gate. Turn on the ruleset option to
+# make it binding once there is a second reviewer.
+
+* @gerrrt
+
+# Vendored Core. Never hand-edited here — fix upstream in dotfiles-core, then sync — and
+# the core-integrity gate blocks a PR that touches it. Owned explicitly so the intent is
+# visible in the review request itself, not only in CI's refusal.
+/core/ @gerrrt
+
+# CI is what enforces everything else in this repo, so a change here can quietly disable
+# the gates that protect the rest. auto-tag.yml additionally runs with `contents: write`.
+/.github/workflows/ @gerrrt
+
+# The detection content is the product. A bad rule does not break a build — it fails
+# silently in production by not firing, or floods an analyst by firing on everything.
+/detections/ @gerrrt

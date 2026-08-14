@@ -119,13 +119,31 @@ _probe_altname() {
   return 1
 }
 
+# _probe_list — the tools to probe, read from install/tools.lst (column 1, comments and
+# blanks stripped). Single source: the list used to be a literal here AND prose in
+# install/README.md, with nothing keeping the two in step. Now the file is the list, the
+# README points at it, and tests/test-defense.sh asserts this parser agrees with it.
+_probe_list() {
+  local f="$DOTFILES/install/tools.lst"
+  [ -r "$f" ] || {
+    blib_warn "install/tools.lst is missing or unreadable — cannot probe host tools"
+    return 1
+  }
+  sed 's/#.*//' "$f" | awk 'NF { print $1 }'
+}
+
 check_tools() {
   blib_say "checking host tools (install missing ones via your OS layer — see install/README.md)"
-  local t missing=0 unreachable=0 found=""
-  # zsh leads the list deliberately: it is the shell this entire layer runs in, so its
-  # absence is categorically worse than a missing forensics tool. The end-of-run guard
-  # says so loudly — this line just makes it visible in the probe alongside the rest.
-  for t in zsh docker jq tshark zeek suricata chainsaw hayabusa sigma yara velociraptor vol log2timeline.py; do
+  local t missing=0 unreachable=0 found="" tools=""
+  tools="$(_probe_list)" || return 0
+  [ -n "$tools" ] || {
+    blib_warn "install/tools.lst lists no tools — nothing probed"
+    return 0
+  }
+  # Order is the file's order, and zsh leads it deliberately: it is the shell this entire
+  # layer runs in, so its absence is categorically worse than a missing forensics tool.
+  # The end-of-run guard says so loudly — this just makes it visible alongside the rest.
+  for t in $tools; do
     if command -v "$t" >/dev/null 2>&1; then
       blib_ok "found: $t"
     elif found="$(_probe_altname "$t")"; then
