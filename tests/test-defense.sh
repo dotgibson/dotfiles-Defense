@@ -401,7 +401,7 @@ vrr() {
 # A path cited exactly as it exists.
 out="$(vrr 'The rule `detections/sigma/registry/harbor_artifact_deleted.yml` is fine.')"
 contains "an exact path resolves" "$out" "rc=0"
-contains "resolved citations are counted" "$out" "| resolved | 1 |"
+contains "resolved citations are counted" "$out" "| resolved as written | 1 |"
 
 # Cited relative to a subtree — the common, CORRECT form in these reports. Treating this
 # as an error is what would make the gate cry wolf: 16 of 17 such citations in a real
@@ -409,19 +409,35 @@ contains "resolved citations are counted" "$out" "| resolved | 1 |"
 out="$(vrr 'See `registry/harbor_artifact_deleted.yml` for the pattern.')"
 contains "a subtree-relative path resolves" "$out" "rc=0"
 
-# THE gate condition: the file exists, but not where the report says. This is the real
-# defect found in detection-review #123, which cited harbor/ for a rule that lives in
-# registry/ — mechanically checkable, and previously unchecked.
+# A wrong path for a real file is CORRECTED, not blocked. This is the actual defect in
+# detection-review #123, which cited harbor/ for a rule that lives in registry/. The
+# finding there was right; only its address was wrong, so suppressing the week's report
+# over it would have thrown away the expensive part.
 out="$(vrr 'The rule `harbor/harbor_artifact_deleted.yml` is under-scoped.')"
-contains "a wrong path fails the gate" "$out" "rc=1"
-contains "the wrong path is named" "$out" "harbor/harbor_artifact_deleted.yml"
-contains "the real location is given" "$out" "detections/sigma/registry/harbor_artifact_deleted.yml"
-contains "the report body carries a warning" "$out" "[!WARNING]"
-# The exit code is the gate: the workflow runs this as a plain step, so non-zero stops
-# the job and every step below it — including the filing — is skipped. Asserting the
-# blocking wording keeps the script's contract and the workflow's use of it in step.
-contains "the failure says it is blocking" "$out" "BLOCKING"
-contains "the body says the report was blocked" "$out" "blocked from filing"
+contains "a wrong path does not block" "$out" "rc=0"
+contains "the citation is rewritten in the body" "$out" \
+  'The rule `detections/sigma/registry/harbor_artifact_deleted.yml` is under-scoped.'
+if printf '%s' "$out" | sed -n '/---BODY---/,$p' | grep -q '`harbor/harbor_artifact_deleted.yml`'; then
+  no "the wrong path is gone from the prose" "the original citation is still in the body"
+else
+  ok "the wrong path is gone from the prose"
+fi
+contains "the correction is counted" "$out" "| **auto-corrected** | **1** |"
+contains "the substitution is recorded" "$out" "harbor/harbor_artifact_deleted.yml → detections/sigma/registry/harbor_artifact_deleted.yml"
+contains "the rewrite is disclosed, not silent" "$out" "[!NOTE]"
+
+# Rewriting is only safe when the basename is unique. 17 basenames are duplicated in this
+# tree, so guessing would swap a visibly wrong path for a confidently wrong one. Ambiguity
+# is the ONE thing that still blocks.
+out="$(vrr 'The setting in `somewhere/config.toml` is wrong.')"
+contains "an ambiguous citation blocks" "$out" "rc=1"
+contains "the block says why" "$out" "BLOCKING"
+contains "the candidates are listed" "$out" "candidates:"
+if printf '%s' "$out" | sed -n '/---BODY---/,$p' | grep -q '`somewhere/config.toml`'; then
+  ok "an ambiguous citation is left exactly as written"
+else
+  no "an ambiguous citation is left exactly as written" "the script guessed a rewrite"
+fi
 
 # Proposals are not claims about the tree. These reports propose files by path, and last
 # week's proposal is this week's file — holding them to existence would fail every good
@@ -444,7 +460,7 @@ contains "the stamped count is the measured one" "$out" "**$sigma_now**"
 
 # Prose must not be mistaken for citations — only backticked tokens count.
 out="$(vrr 'The sigma corpus and its yaml files are healthy.')"
-contains "unbackticked prose is not treated as a citation" "$out" "| resolved | 0 |"
+contains "unbackticked prose is not treated as a citation" "$out" "| resolved as written | 0 |"
 
 # An empty report is a routine failure, not a verification failure — say so and move on.
 : >"$TMPROOT/empty.md"

@@ -108,10 +108,16 @@ jobs:
             --permission-mode default \
             --allowedTools "Read,Grep,Glob,Bash,WebSearch,WebFetch" \
             --output-format text | tee "$RUNNER_TEMP/detection-review.md"
-      # HARD GATE. Fact-check the report against the tree, and let a failure stop the job:
-      # every step below is skipped, so nothing is filed. An issue that cites a rule at a
-      # path it does not occupy is worse than no issue — it reads as authoritative, and the
-      # first person to act on it loses the time instead of the bot.
+      # Fact-check the report against the tree, and FIX what can be fixed: a citation
+      # naming a real file at the wrong path is rewritten in place to the path that file
+      # actually occupies, with the substitution recorded in the report. The finding is
+      # usually right and only its address is wrong, so blocking the week's report over a
+      # typo would throw away the expensive part.
+      #
+      # It still blocks on the one thing that cannot be fixed safely — a basename that
+      # exists in several places, where a guess would swap a visibly wrong path for a
+      # confidently wrong one. Then this step fails, every step below is skipped, and
+      # nothing is filed.
       - name: Verify the report's citations (gate)
         run: bash .github/workflows/verify-routine-report.sh "$RUNNER_TEMP/detection-review.md" "$GITHUB_WORKSPACE"
       # Blocking must not destroy the work. On a gate failure the report — with its
@@ -123,9 +129,10 @@ jobs:
           {
             echo '## Report NOT filed — citation verification failed'
             echo
-            echo 'The routine ran and produced the report below, but it cites at least one'
-            echo 'path that does not exist. Correct the citations and file by hand, or let'
-            echo 'next week'"'"'s run supersede it.'
+            echo 'The routine ran and produced the report below, but it cites a filename'
+            echo 'that exists in more than one place, so it could not be corrected'
+            echo 'automatically. Disambiguate and file by hand, or let next week'"'"'s run'
+            echo 'supersede it.'
             echo
             cat "$RUNNER_TEMP/detection-review.md"
           } >>"$GITHUB_STEP_SUMMARY"
@@ -178,9 +185,10 @@ jobs:
             --permission-mode default \
             --allowedTools "Read,Grep,Glob,Bash,WebSearch,WebFetch" \
             --output-format text | tee "$RUNNER_TEMP/coverage-gap.md"
-      # Same hard gate as detection-review above. coverage-gap cites paths just as freely,
-      # and its entire value is being right about what is and isn't in the tree — a
-      # coverage report that misplaces a rule argues for writing one that already exists.
+      # Same gate as detection-review above: correct what can be corrected, block only on
+      # an ambiguous basename. coverage-gap cites paths just as freely, and its entire
+      # value is being right about what is and isn't in the tree — a coverage report that
+      # misplaces a rule argues for writing one that already exists.
       - name: Verify the report's citations (gate)
         run: bash .github/workflows/verify-routine-report.sh "$RUNNER_TEMP/coverage-gap.md" "$GITHUB_WORKSPACE"
       - name: Publish the unfiled report (gate failed)
@@ -189,9 +197,10 @@ jobs:
           {
             echo '## Report NOT filed — citation verification failed'
             echo
-            echo 'The routine ran and produced the report below, but it cites at least one'
-            echo 'path that does not exist. Correct the citations and file by hand, or let'
-            echo 'next week'"'"'s run supersede it.'
+            echo 'The routine ran and produced the report below, but it cites a filename'
+            echo 'that exists in more than one place, so it could not be corrected'
+            echo 'automatically. Disambiguate and file by hand, or let next week'"'"'s run'
+            echo 'supersede it.'
             echo
             cat "$RUNNER_TEMP/coverage-gap.md"
           } >>"$GITHUB_STEP_SUMMARY"

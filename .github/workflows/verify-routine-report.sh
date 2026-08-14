@@ -15,19 +15,29 @@
 #   • every backticked repo path the report cites, resolved against the git index
 #   • ground-truth corpus counts, stamped into the issue so a stale claim is visible
 #
+# WHAT IT DOES ABOUT A WRONG PATH. It fixes it. A citation naming a real file at the wrong
+# path is rewritten in place to the path that file actually occupies, and the substitution
+# is recorded in the appended block so the edit is visible rather than silent. Correcting
+# beats blocking here: the finding was usually right and only its address was wrong, so
+# suppressing the whole week's report over a typo throws away the expensive part.
+#
+# The rewrite is only safe when the basename is UNIQUE in the tree. 17 basenames are
+# duplicated in this repo (CLAUDE.md, config.toml, …), and picking one of several
+# candidates would replace a visibly wrong path with a confidently wrong one. Those are
+# left exactly as written, and they are the one thing that still blocks.
+#
 # WHAT IT DELIBERATELY DOES NOT DO. It does not judge the findings — that is the routine's
-# job and a human's. It also does not fail on ambiguity. A citation with no match anywhere
-# is usually a PROPOSED new rule (these reports propose files by path, and last week's
-# proposals are this week's files), so those are listed, not fatal. The gate fires only on
-# a citation that is provably wrong: the file exists, at a different path than claimed.
-# A gate that cried wolf on correct reports would be switched off within a month.
+# job and a human's. It does not fail on ambiguity of INTENT either: a citation with no
+# match anywhere is usually a PROPOSED new rule (these reports propose files by path, and
+# last week's proposals are this week's files), so those are listed, not fatal. A gate that
+# cried wolf on correct reports would be switched off within a month.
 #
 # Usage: verify-routine-report.sh <report-file> [repo-root]
-# Exit:  0 = nothing provably wrong (report may still carry listed warnings)
-#        1 = at least one citation is provably wrong. The caller treats this as a HARD
-#            GATE: the report is not filed at all. It is written to the run summary
-#            instead, so the routine's work survives a block and can be filed by hand
-#            once the citations are corrected.
+# Exit:  0 = filing may proceed. The report may have been REWRITTEN — corrections are
+#            listed in the appended block.
+#        1 = a citation names a file that exists in more than one place, so it cannot be
+#            corrected automatically. The caller treats this as a hard gate: the report is
+#            not filed, and goes to the run summary instead so the work survives.
 # ──────────────────────────────────────────────────────────────────────────────
 # shellcheck disable=SC2016
 # Single-quoted backticks are load-bearing here in two ways, and both must stay literal:
@@ -60,7 +70,8 @@ mapfile -t cites < <(
 
 verified=0
 proposed=()
-mislocated=()
+corrected=()
+ambiguous=()
 unresolved=()
 
 # A citation is "proposed" when its line reads as a proposal rather than a reference.
@@ -103,19 +114,50 @@ for p in "${cites[@]}"; do
     continue
   fi
 
-  # 5. the basename exists, but not where the report says. THIS is the provably-wrong
-  #    case, and the only one that fails the gate.
+  # 5. the basename exists, but not where the report says — a wrong path for a real file.
+  #    Correctable when the basename is UNIQUE in the tree, because then there is exactly
+  #    one thing it can have meant. This is the common shape: a report writes
+  #    `harbor/harbor_artifact_deleted.yml` for a rule that lives under `registry/`.
   base="${p##*/}"
   escb="$(printf '%s' "$base" | sed 's/[][\.*^$/]/\\&/g')"
-  actual="$(grep -E "(^|/)${escb}$" "$tracked" | head -n3 | tr '\n' ' ')"
-  if [ -n "$actual" ]; then
-    mislocated+=("$p → actually at: ${actual% }")
+  mapfile -t candidates < <(grep -E "(^|/)${escb}$" "$tracked")
+
+  if [ "${#candidates[@]}" -eq 1 ]; then
+    corrected+=("$p → ${candidates[0]}")
     continue
   fi
 
-  # 6. nothing by that name anywhere — probably an unlabelled proposal, possibly invented
+  # 6. several files share the basename, so there is no single right answer and guessing
+  #    would file a citation that is confidently wrong. 17 basenames are duplicated in
+  #    this tree (CLAUDE.md, config.toml, …), so this is a real case, not a theoretical
+  #    one. Left for a human — and it is the ONLY thing that still blocks.
+  if [ "${#candidates[@]}" -gt 1 ]; then
+    ambiguous+=("$p → ${#candidates[@]} candidates: $(printf '%s ' "${candidates[@]:0:3}")")
+    continue
+  fi
+
+  # 7. nothing by that name anywhere — probably an unlabelled proposal, possibly invented
   unresolved+=("$p")
 done
+
+# ── apply the corrections ─────────────────────────────────────────────────────
+# Rewrite each wrong citation to the path it must have meant, in place, BEFORE the
+# verification block is appended — so the block's own record of "old → new" survives
+# untouched and the reader can see exactly what was changed.
+#
+# bash literal replacement, not sed: the pattern is QUOTED inside the expansion, so a
+# path containing regex or glob metacharacters cannot misfire. Anchored on the backticks
+# so only code spans are rewritten and prose that happens to repeat the string is not.
+if [ "${#corrected[@]}" -gt 0 ]; then
+  bt='`'
+  body="$(cat "$report")"
+  for c in "${corrected[@]}"; do
+    old="${c%% → *}"
+    new="${c##* → }"
+    body="${body//"${bt}${old}${bt}"/"${bt}${new}${bt}"}"
+  done
+  printf '%s\n' "$body" >"$report"
+fi
 
 # ── ground truth ──────────────────────────────────────────────────────────────
 # Stamped into every issue. A report that opens "all 89 rules" against a 94-rule tree is
@@ -137,16 +179,27 @@ attack_ids=$(grep -rhoE 'T[0-9]{4}(\.[0-9]{3})?' detections/ 2>/dev/null | sort 
   printf '| Distinct ATT&CK technique IDs referenced | **%s** |\n\n' "$attack_ids"
 
   printf '| citations | count |\n| --- | --- |\n'
-  printf '| resolved | %s |\n' "$verified"
+  printf '| resolved as written | %s |\n' "$verified"
+  printf '| **auto-corrected** | **%s** |\n' "${#corrected[@]}"
   printf '| proposed (new files, not expected to exist) | %s |\n' "${#proposed[@]}"
-  printf '| **wrong path** | **%s** |\n' "${#mislocated[@]}"
+  printf '| **ambiguous — left alone** | **%s** |\n' "${#ambiguous[@]}"
   printf '| unmatched | %s |\n\n' "${#unresolved[@]}"
 
-  if [ "${#mislocated[@]}" -gt 0 ]; then
+  if [ "${#corrected[@]}" -gt 0 ]; then
+    printf '> [!NOTE]\n'
+    printf '> **%s citation(s) were rewritten above.** Each named a real file at the wrong\n' "${#corrected[@]}"
+    printf '> path, and the basename was unique in the tree, so there was exactly one thing\n'
+    printf '> it could have meant. The findings themselves are unreviewed.\n\n'
+    for c in "${corrected[@]}"; do printf -- '- `%s`\n' "$c"; done
+    printf '\n'
+  fi
+
+  if [ "${#ambiguous[@]}" -gt 0 ]; then
     printf '> [!WARNING]\n'
-    printf '> **%s citation(s) point at a path that does not exist, for a file that does.**\n' "${#mislocated[@]}"
-    printf '> The report was blocked from filing. Correct the paths and re-run, or file by hand.\n\n'
-    for m in "${mislocated[@]}"; do printf -- '- `%s`\n' "$m"; done
+    printf '> **%s citation(s) name a file that exists in more than one place.**\n' "${#ambiguous[@]}"
+    printf '> There is no single correct rewrite, so they were left as written and this\n'
+    printf '> report was blocked from filing. Disambiguate and re-run, or file by hand.\n\n'
+    for a in "${ambiguous[@]}"; do printf -- '- `%s`\n' "$a"; done
     printf '\n'
   fi
 
@@ -156,17 +209,22 @@ attack_ids=$(grep -rhoE 'T[0-9]{4}(\.[0-9]{3})?' detections/ 2>/dev/null | sort 
     printf '\n'
   fi
 
-  if [ "${#mislocated[@]}" -eq 0 ] && [ "${#unresolved[@]}" -eq 0 ]; then
-    printf 'Every cited path resolved.\n\n'
+  if [ "${#corrected[@]}" -eq 0 ] && [ "${#ambiguous[@]}" -eq 0 ] && [ "${#unresolved[@]}" -eq 0 ]; then
+    printf 'Every cited path resolved as written.\n\n'
   fi
 } >>"$report"
 
 # ── verdict ───────────────────────────────────────────────────────────────────
-if [ "${#mislocated[@]}" -gt 0 ]; then
-  echo "::error::${#mislocated[@]} citation(s) point at the wrong path — BLOCKING: the report will not be filed"
-  for m in "${mislocated[@]}"; do echo "  $m"; done
+if [ "${#corrected[@]}" -gt 0 ]; then
+  echo "::notice::auto-corrected ${#corrected[@]} citation(s) to the path each named file actually occupies"
+  for c in "${corrected[@]}"; do echo "  $c"; done
+fi
+
+if [ "${#ambiguous[@]}" -gt 0 ]; then
+  echo "::error::${#ambiguous[@]} citation(s) are ambiguous — BLOCKING: the report will not be filed"
+  for a in "${ambiguous[@]}"; do echo "  $a"; done
   exit 1
 fi
 
-echo "verification passed: $verified resolved, ${#proposed[@]} proposed, ${#unresolved[@]} unmatched"
+echo "verification passed: $verified resolved, ${#corrected[@]} auto-corrected, ${#proposed[@]} proposed, ${#unresolved[@]} unmatched"
 exit 0
