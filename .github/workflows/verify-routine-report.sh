@@ -74,17 +74,32 @@ git ls-files >"$tracked" 2>/dev/null || : >"$tracked"
 #
 # Glob is overridable so the suite can point at a fixture instead of the real sibling.
 : >"$siblings"
+_sib_report=""
 for _sib in ${ROUTINE_SIBLING_GLOB:-"$root"/../dotfiles-*}; do
   [ -d "$_sib" ] || continue
   _sib_abs="$(cd "$_sib" 2>/dev/null && pwd)" || continue
   [ "$_sib_abs" = "$root" ] && continue # never treat this repo as its own sibling
   _sib_name="${_sib_abs##*/}"
+  _before=$(wc -l <"$siblings")
   if [ -d "$_sib_abs/.git" ]; then
     git -C "$_sib_abs" ls-files 2>/dev/null
   else
     (cd "$_sib_abs" && find . -type f 2>/dev/null | sed 's|^\./||')
   fi | sed "s|^|${_sib_name}\t|" >>"$siblings"
+  _sib_report="${_sib_report}${_sib_report:+, }${_sib_name} ($(($(wc -l <"$siblings") - _before)) files)"
 done
+
+# Announce what was indexed, ALWAYS — including "none". Without this, a run where no
+# citation happened to need a sibling looks identical to a run where discovery silently
+# failed: both print "0 in a sibling repo". Two live routine runs proved that ambiguity is
+# not hypothetical — neither cited a cross-repo path, so neither could confirm the glob
+# resolves the real ../dotfiles-Kali clone in the runner's layout. One line makes every
+# future run self-evidencing regardless of what the report happens to cite.
+if [ -n "$_sib_report" ]; then
+  echo "::notice::indexed sibling repo(s): ${_sib_report}"
+else
+  echo "::notice::no sibling repos found (searched: ${ROUTINE_SIBLING_GLOB:-$root/../dotfiles-*})"
+fi
 
 # ── extract cited paths ───────────────────────────────────────────────────────
 # Backticked tokens that look like a repo path. Anchoring on backticks is what keeps this
