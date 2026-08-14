@@ -17,7 +17,17 @@ Target for this run: **$ARGUMENTS** (empty = all open automation PRs).
 - **`freshness.yml`** (weekly) — rolls the pinned zsh-plugin SHAs in
   `zsh/45-plugins.zsh` and refreshes `nvim/lazy-lock.json`, opening PRs on
   `automation/freshness-zsh-plugins` and `automation/freshness-nvim-plugins`.
-- **`dependabot.yml`** (weekly) — bumps GitHub Actions in `.github/workflows/`.
+- **Renovate** (weekly) — bumps third-party GitHub Actions in `.github/workflows/`.
+  Configured by the three-line `renovate.json`, which extends the shared org preset
+  `local>dotgibson/.github`; the policy lives there, not here. It groups third-party
+  action bumps into **one `ci(deps):` PR authored by `app/renovate`** (so look for that
+  author, not an `automation/*` branch), maintains the SHA pins rather than un-pinning
+  them, and deliberately leaves the fleet's own `dotgibson/**` reusable-workflow refs on
+  their moving `@v4` tag. Renovate also keeps a per-repo **Dependency Dashboard** issue, and
+  a bump parked there opens no PR — so an empty PR queue does **not** prove an empty bump
+  queue. Reading it needs `gh issue list`, which is deliberately outside this command's
+  `allowed-tools`; when the queue looks empty, say the dashboard went unchecked rather than
+  reporting "nothing to triage".
 
 For the zsh pins, `--check` is the source of truth for "is it behind" and is safe to run
 (it only `git ls-remote`s + `zsh -n` parses — no upstream code runs):
@@ -47,7 +57,7 @@ from the open `automation/freshness-nvim-plugins` PR the bot already opened — 
 ## CLI tool pins (`scripts/tool-versions.env`)
 
 The pinned gate binaries (shellcheck / actionlint / gitleaks / neovim / shfmt) are
-a **separate, manual bump class** — neither `freshness.yml` nor dependabot touches
+a **separate, manual bump class** — neither `freshness.yml` nor Renovate touches
 `tool-versions.env`, so these move by hand. Each one carries BOTH a `*_VERSION` and
 a verified `*_SHA256` that `.github/actions/setup-core-tools` checks before install.
 

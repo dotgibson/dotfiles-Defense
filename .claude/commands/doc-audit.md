@@ -47,6 +47,26 @@ Run these cross-checks (skip any out of the requested scope):
 6. **Cross-repo claims.** The repo count, the layer model, and install commands
    are repeated across many READMEs and `dotfiles-web`. Flag copies that disagree.
 
+   **Mind the reference frame.** Most of `dotfiles-web` documents Core's `main`, but
+   `src/content/docs/reference/porting-matrix.md` is a **release-pinned mirror**: its
+   CI (`.github/workflows/data-freshness.yml`) diffs it against Core's latest
+   **release tag**, not `main`. Resolve the tag first, then fetch the file at it —
+   two calls, because `releases/latest` is its own endpoint and is not a valid
+   `ref` value:
+
+   ```bash
+   tag=$(gh api repos/dotgibson/dotfiles-core/releases/latest --jq .tag_name)
+   gh api "repos/dotgibson/dotfiles-core/contents/PORTING-MATRIX.md?ref=${tag}" \
+     --jq .content | tr -d '\n' | base64 -d
+   ```
+
+   Compare the page against **that**. Diffing it against `main` reports every
+   unreleased Core change as web drift, and "fixing" it re-mirrors `main` into a file
+   whose contract is the tag, turning a green check red. That exact false positive
+   shipped in the 2026-08-11 sweep (#375, finding 5). The mirror is **correct when it
+   lags `main` but matches the newest release**; it is genuinely stale only once a
+   release Core has cut is not reflected in it.
+
 ## How to report
 
 Group findings by severity:

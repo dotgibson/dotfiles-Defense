@@ -80,8 +80,8 @@ itself at commit time. Two deliberate non-checks:
 ## Commit messages
 
 Use a [Conventional Commits](https://www.conventionalcommits.org/) prefix so the
-log reads as a changelog and tooling can group it (dependabot already commits with
-a `ci` prefix; see `dependabot.yml`):
+log reads as a changelog and tooling can group it (Renovate already commits with
+a `ci` prefix; see `renovate.json`):
 
 ```text
 type(scope): short imperative summary

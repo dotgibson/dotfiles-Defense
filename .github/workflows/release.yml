@@ -115,7 +115,7 @@ jobs:
   # best_effort is LOAD-BEARING, not caution: sync-fanout.yml triggers on this workflow's
   # `workflow_run` and gates on `conclusion == 'success'` — the WHOLE run's conclusion, not
   # publish's. Without it a transient curl/token blip here would mark the release run failed
-  # and silently skip fanning the published tag out to the nine OS repos, which is a far
+  # and silently skip fanning the published tag out to the eight OS repos, which is a far
   # worse outcome than a missed notification. (`continue-on-error` would be the obvious
   # lever, but a job that calls a reusable workflow with `uses` may not set it.) The dropped
   # notification is cheap by comparison: dotfiles-web polls hourly for exactly this case.

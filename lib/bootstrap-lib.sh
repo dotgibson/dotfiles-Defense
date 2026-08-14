@@ -263,16 +263,18 @@ blib_migrate_v4() {
   for m in tools ui options history aliases git functions fzf bindings plugins op maint update os; do
     [[ -L "$zdir/$m.zsh" ]] && rm -f "$zdir/$m.zsh" "$zdir/$m.zsh.zwc"
   done
-  # stale pre-v4 compdump in the config tree (options.zsh now writes it to $XDG_CACHE_HOME).
+  # stale pre-v4 compdump in the config tree (10-options.zsh now writes it to $XDG_CACHE_HOME).
   rm -f "$zdir/.zcompdump" "$zdir/.zcompdump.zwc"
 }
 
 # ── symlink the vendored Core surface ─────────────────────────────────────────
 # blib_link_core <dotfiles> <config> — link everything Core ships, identically on
-# every OS: the zsh modules, tmux base + reset + popup scripts, starship, nvim, mise,
-# atuin, git config (+ a once-seeded local identity), the cross-OS bin/clip* helpers,
-# the ssh client config, and a one-time tpm clone. OS-specific overlays (os/<os>.*) are
-# NOT here — call blib_link_os_layer for those.
+# every OS: the zsh modules, tmux base + reset + popup scripts, starship, nvim (+ the
+# core/vim/vimrc fallback), lazygit, mise, jujutsu, atuin, git config (+ a once-seeded
+# local identity), the cross-OS bin/clip* helpers, the ssh client config, a once-seeded
+# sesh config, and a one-time tpm clone. Keep this in step with the group list at the
+# top of this file — that is the canonical enumeration. OS-specific overlays
+# (os/<os>.*) are NOT here — call blib_link_os_layer for those.
 blib_link_core() {
   local dotfiles="$1" config="$2" f s
 
@@ -320,7 +322,7 @@ blib_link_core() {
     fi
   fi
 
-  # ── prompt — starship theme at the DEFAULT path (tools.zsh inits starship against
+  # ── prompt — starship theme at the DEFAULT path (00-tools.zsh inits starship against
   # ~/.config/starship.toml with no STARSHIP_CONFIG). ──────────────────────────
   if blib_want prompt; then
     [[ -f "$dotfiles/core/starship/starship.toml" ]] && blib_link "$dotfiles/core/starship/starship.toml" "$config/starship.toml"
@@ -335,7 +337,8 @@ blib_link_core() {
       "FILL IN your name & email"
   fi
 
-  # ── tools — lazygit, mise, the cross-OS bin/clip* helpers, ssh, the sesh config ─
+  # ── tools — lazygit, mise, jujutsu, atuin, the cross-OS bin/clip* helpers, ssh,
+  #    the seeded sesh config ───────────────────────────────────────────────────
   if blib_want tools; then
     # lazygit tokyonight theme — DEFAULT path (reached via the `lg` alias + the
     # `prefix + g` tmux popup). In core.manifest, so it wires like starship above.

@@ -201,25 +201,50 @@ ux_spin() {
   # dropped so a missing `sleep` cannot emit 200 "command not found" lines on the way there.
   # (The printf gets the same treatment: this animation is decoration, and decoration must
   # never take down its caller — a closed or dead terminal makes it fail the same way.)
-  local _spins=0
+  #
+  # EVERY statement after the loop is normalised for the same reason, not just the loop body.
+  # The argument does not stop at `done`: a bare printf that fails at the cursor-restore line
+  # below aborts the caller with the cursor still HIDDEN and the child still RUNNING — the
+  # identical end state described above for the unnormalised `sleep`. A bare printf (or `sed`)
+  # in the result branches aborts between `wait` and `rm -f "$out"`, leaking the mktemp file.
+  # `rc` is captured and returned explicitly, so `|| :` never changes what the caller sees.
+  local _spins=0 _degraded=0
   while kill -0 "$pid" 2>/dev/null; do
     printf '\r  %s%s%s %s %s(%ds)%s' "$UX_YEL" "${frames:i++%${#frames}:1}" "$UX_RST" "$label" "$UX_DIM" "$((SECONDS - _t0))" "$UX_RST" 2>/dev/null || :
     sleep 0.1 2>/dev/null || :
     _spins=$((_spins + 1))
-    if ((_spins > 200 && SECONDS - _t0 < 5)); then break; fi
+    if ((_spins > 200 && SECONDS - _t0 < 5)); then _degraded=1; break; fi
   done
-  printf '\e[?25h\r\033[K'           # restore cursor, column 0, clear line
+  printf '\e[?25h\r\033[K' 2>/dev/null || : # restore cursor, column 0, clear line
+  # A tripped busy-spin guard means there are no more frames for the REST of the run, which
+  # can be minutes. Clearing the line and going straight to `wait` would show nothing at all
+  # for that whole time — indistinguishable from the hang the elapsed-time readout exists to
+  # rule out (U1), and the very failure mode the guard is trying to survive gracefully. Leave
+  # ONE static frame behind instead. The wording, not the glyph, is what does the work: a
+  # frozen spinner still reads as "wedged", "(still running…)" reads as "the animation gave
+  # up, the command did not". _core_spin's mirror of this leaves the same line. The glyph
+  # comes from $frames — NOT a hardcoded braille cell — so the non-UTF-8 fallback set
+  # (UX_SPIN_FRAMES='-\|/') is honoured instead of printing mojibake on such a terminal.
+  # `if`, not `((_degraded)) && { … }`: an arithmetic test that evaluates to 0 RETURNS 1, so
+  # the &&-list as a whole fails on the common (non-degraded) path. Bash's set -e exempts
+  # &&-lists, so it does survive — but relying on that here, in the one function whose entire
+  # contract is "never take down a `set -e` caller", is the wrong place to be clever.
+  if ((_degraded)); then
+    printf '  %s%s%s %s %s(still running…)%s' "$UX_YEL" "${frames:0:1}" "$UX_RST" "$label" "$UX_DIM" "$UX_RST" 2>/dev/null || :
+  fi
   eval "${_prev_int:-trap - INT}"    # restore the caller's prior INT trap (or clear if none)
   eval "${_prev_term:-trap - TERM}"  # ditto for TERM
   _el=$((SECONDS - _t0))
+  # Both result frames lead with \r\033[K so they overwrite the static frame above when the
+  # guard fired (and are a harmless no-op at column 0 when it did not).
   if wait "$pid"; then
     rc=0
-    printf '  %s%s%s %s %s(%ds)%s\n' "$UX_GRN" "$UX_OK" "$UX_RST" "$label" "$UX_DIM" "$_el" "$UX_RST"
+    printf '\r\033[K  %s%s%s %s %s(%ds)%s\n' "$UX_GRN" "$UX_OK" "$UX_RST" "$label" "$UX_DIM" "$_el" "$UX_RST" 2>/dev/null || :
   else
     rc=$?
-    printf '  %s%s%s %s — failed (exit %d, %ds)\n' "$UX_RED" "$UX_ERR" "$UX_RST" "$label" "$rc" "$_el" >&2
-    sed 's/^/    /' "$out" >&2
+    printf '\r\033[K  %s%s%s %s — failed (exit %d, %ds)\n' "$UX_RED" "$UX_ERR" "$UX_RST" "$label" "$rc" "$_el" >&2 || :
+    sed 's/^/    /' "$out" >&2 || :
   fi
-  rm -f "$out"
+  rm -f "$out" || :
   return "$rc"
 }
