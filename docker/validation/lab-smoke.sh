@@ -10,8 +10,11 @@
 #
 # This starts it for real and asserts the two things that make it useful:
 #   1. OpenSearch reaches cluster health green|yellow (the compose healthcheck's own bar)
-#   2. Dashboards reports itself available, which also proves it authenticated to
-#      OpenSearch — it is the only check here that exercises the credential wiring
+#   2. Dashboards serves an AUTHENTICATED status document — proving the container started,
+#      the port is reachable, and the credentials in docker/.env actually work
+#
+# (2) deliberately stops short of demanding status "available"; see the long note at that
+# check for the stack defect that would otherwise keep this job permanently red.
 #
 # `compose up --wait` does the first for us: it blocks on the healthcheck, and Dashboards
 # declares `depends_on: {opensearch: {condition: service_healthy}}`, so a stack that never
@@ -178,8 +181,11 @@ done
 
 case "$status" in
 *'"version"'*)
-  level="$(printf '%s' "$status" | grep -oE '"overall":\{"[^}]*"level":"[a-z]+"' | grep -oE '"level":"[a-z]+"' | head -n1)"
-  echo ":: dashboards responding and authenticated (overall ${level:-level unknown})"
+  # Dashboards 2.x reports status.overall.state ("green"/"yellow"/"red"); older/other
+  # builds use .level. Try both, and say so plainly when neither parses rather than
+  # printing a confident-looking blank.
+  level="$(printf '%s' "$status" | grep -oE '"(state|level)":"[a-z]+"' | head -n1 | cut -d'"' -f4)"
+  echo ":: dashboards responding and authenticated (overall: ${level:-unparsed})"
   ;;
 *)
   echo "::error::dashboards never served a status document within 150s: $(printf '%s' "${status:-<no response>}" | head -c 300)"
@@ -206,4 +212,4 @@ esac
 # lands, this can tighten back to "available".
 
 echo
-echo "detection lab smoke test passed: opensearch healthy, dashboards available"
+echo "detection lab smoke test passed: opensearch healthy, dashboards serving"
