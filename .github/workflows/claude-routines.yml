@@ -108,12 +108,27 @@ jobs:
             --permission-mode default \
             --allowedTools "Read,Grep,Glob,Bash,WebSearch,WebFetch" \
             --output-format text | tee "$RUNNER_TEMP/detection-review.md"
+      # Fact-check the report against the tree BEFORE it is filed, appending a verification
+      # block to the body. Deliberately does not stop the filing: a report with one wrong
+      # path is still mostly useful, and dropping it would trade a wrong issue for no issue.
+      # The verdict is carried to the end of the job instead, so a provably-wrong citation
+      # turns the run red and the issue itself says which claims are unverified.
+      - name: Verify the report's citations
+        id: verify_dr
+        run: |
+          bash .github/workflows/verify-routine-report.sh "$RUNNER_TEMP/detection-review.md" "$GITHUB_WORKSPACE" \
+            || echo "failed=true" >>"$GITHUB_OUTPUT"
       - name: File the report as an issue
         # GH_TOKEN scoped to just this step (least privilege): it's only needed for the
         # final `gh` call, so it's not exposed to the `claude` routine run above.
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/detection-review.md"
+      - name: Fail if the report cited a wrong path
+        if: steps.verify_dr.outputs.failed == 'true'
+        run: |
+          echo "::error::report was filed, but it cites at least one path that does not exist"
+          exit 1
 
   # The quantitative half of the coverage story: reads the generated COVERAGE.md +
   # coverage-layer.json + gen-coverage.sh's 14-tactic table vs DEFENSE-METHODOLOGY.md,
@@ -157,7 +172,20 @@ jobs:
             --permission-mode default \
             --allowedTools "Read,Grep,Glob,Bash,WebSearch,WebFetch" \
             --output-format text | tee "$RUNNER_TEMP/coverage-gap.md"
+      # Same gate as detection-review above: verify, file regardless, redden the run if a
+      # citation is provably wrong. coverage-gap cites paths just as freely, and its whole
+      # value is being right about what is and isn't in the tree.
+      - name: Verify the report's citations
+        id: verify_cg
+        run: |
+          bash .github/workflows/verify-routine-report.sh "$RUNNER_TEMP/coverage-gap.md" "$GITHUB_WORKSPACE" \
+            || echo "failed=true" >>"$GITHUB_OUTPUT"
       - name: File the report as an issue
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/coverage-gap.md"
+      - name: Fail if the report cited a wrong path
+        if: steps.verify_cg.outputs.failed == 'true'
+        run: |
+          echo "::error::report was filed, but it cites at least one path that does not exist"
+          exit 1
