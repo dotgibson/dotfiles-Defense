@@ -2,8 +2,13 @@
 
 ## Reporting a vulnerability
 
-Use **[GitHub private vulnerability reporting](https://github.com/dotgibson/dotfiles-Defense/security/advisories/new)**
-— it is enabled on this repository. That keeps the report private until a fix exists.
+Use **GitHub private vulnerability reporting**, which is enabled here. That keeps the
+report private until a fix exists.
+
+From this repository: **Security** tab → **Report a vulnerability**. That path is the
+canonical one and stays correct in a fork or after a transfer, where a hard-coded URL
+would not. For convenience on the canonical repo, the form is at
+<https://github.com/dotgibson/dotfiles-Defense/security/advisories/new>.
 
 Please do **not** open a public issue for anything exploitable.
 

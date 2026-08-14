@@ -243,7 +243,12 @@ group "install/tools.lst — the single source for the probe list"
 # Parse it the way bootstrap.sh does, then assert bootstrap's own parser agrees. This is
 # the assertion that keeps the list single-sourced: if _probe_list ever stops reading the
 # file (or starts filtering it differently), these two diverge and this fails.
-lst_direct="$(sed 's/#.*//' "$REPO/install/tools.lst" | awk 'NF { print $1 }' | tr '\n' ' ')"
+# Both sides are normalised the same way — newlines to spaces, then trailing space
+# trimmed — so the assertion compares the LISTS and not their final-newline handling.
+# Without the trim a semantically identical list could fail on whitespace alone.
+squash_ws() { tr '\n' ' ' | sed 's/[[:space:]]*$//'; }
+
+lst_direct="$(sed 's/#.*//' "$REPO/install/tools.lst" | awk 'NF { print $1 }' | squash_ws)"
 lst_bootstrap="$(
   # Both of these ARE used — by the _probe_list body eval'd below, which the linter
   # cannot see into. DOTFILES is what it resolves install/tools.lst against, and
@@ -257,7 +262,7 @@ lst_bootstrap="$(
   # shellcheck disable=SC2317,SC2329
   blib_warn() { :; }
   eval "$(sed -n '/^_probe_list()/,/^}/p' "$REPO/bootstrap.sh")"
-  _probe_list | tr '\n' ' '
+  _probe_list | tr '\n' ' ' | sed 's/[[:space:]]*$//'
 )"
 is "bootstrap's parser agrees with the file" "$lst_direct" "$lst_bootstrap"
 isnt_empty "the list is not empty" "$lst_direct"
