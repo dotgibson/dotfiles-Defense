@@ -37,9 +37,19 @@ allowlist in `scripts/audit-core.sh` rather than the manifest.
 ## Run the audit before you push
 
 `scripts/audit-core.sh` is the test suite. It checks manifest↔filesystem drift,
-executable-bit invariants, shell syntax (`bash -n` / `zsh -n`), `luacheck`, and
-`shellcheck`. It degrades gracefully — a missing linter is skipped, not failed —
-so it runs on a bare box as well as in CI.
+executable-bit invariants, shell syntax (`bash -n` / `zsh -n`), `luacheck`, nvim
+module reachability (§4b), and `shellcheck`. It degrades gracefully — a missing
+linter is skipped, not failed — so it runs on a bare box as well as in CI.
+
+One section is worth knowing about when you touch `nvim/`: **§4b
+(`scripts/nvim-reachability.sh`)** fails on a lua module nothing can require.
+`core.manifest` lists `nvim/` as a _directory_, so the manifest↔filesystem check
+auto-lists every path under it and cannot see an orphan — §4b is the backstop
+instead. Adding a module under `lua/gerrrt/utils/` or at the top level means
+something must `require()` it by name; a new `servers/<name>.lua` must be added to
+the `servers` list in `servers/init.lua` (those are required dynamically, so that
+list is the only evidence a static check has). `plugins/` is exempt — lazy imports
+the whole directory.
 
 ```bash
 ./scripts/audit-core.sh           # full run
@@ -75,7 +85,14 @@ itself at commit time. Two deliberate non-checks:
   both, so a regression fails CI rather than reaching a machine.
 - **Indentation** is 2-space across the tree (`.editorconfig`).
 - **Keep OS-specific bits out.** Strip clipboard/paths/package-manager logic into
-  the OS repo; Core stays portable.
+  the OS repo; Core stays portable. **[`PORTABILITY.md`](PORTABILITY.md) is the how** —
+  the bash-3.2 floor, the BSD/busybox coreutils traps, and the shim pattern to reach an
+  OS capability without naming a path. Read it before your first Core change; the boundary
+  gate (`audit-core.sh` §5c) enforces it, and its scope is derived from `core.manifest`,
+  so a file you add is checked the moment you list it.
+- **Working in an OS repo instead?** [`VENDORING.md`](VENDORING.md) is the consumer-side
+  contract: what `core/` and `core.lock` mean, which number band your file may claim, and
+  how to send a fix back upstream.
 
 ## Commit messages
 

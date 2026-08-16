@@ -77,62 +77,84 @@ git checkout -b release/vX.Y.Z
 make release VERSION=X.Y.Z
 git diff                            # sanity-check: only core.version + CHANGELOG heading moved
 
-# 3. Commit + annotated tag locally (re-audits; does NOT push).
-#    Heads-up: this also force-moves your LOCAL `vN` alias onto this not-yet-merged commit
-#    (tag-release.sh does it in the same step). Until step 5 that alias disagrees with
-#    origin's, so any local read of `vN` reports a commit the remote does not have. Harmless
-#    if you finish the cut; see "Abandoning a cut" below if you do not.
+# 3. Commit the release (re-audits). Creates NO TAG — that is deliberate, see below.
 make tag
 
-# 4. Land the release COMMIT via a PR (merge commit, not squash).
-#    --no-follow-tags is LOAD-BEARING: step 3 just created the tag locally, and with
-#    `push.followTags = true` in your git config a plain push carries it along — landing the
-#    tag on the PRE-merge commit and firing release.yml + sync-fanout.yml immediately, which
-#    is exactly the state this ordering exists to avoid. The flag makes the recipe correct
-#    regardless of local config.
-git push --no-follow-tags origin release/vX.Y.Z
+# 4. Land the release COMMIT via a PR (squash — see "Why the tag comes last" below).
+#    No --no-follow-tags needed any more: step 3 creates no tag, so a plain push has
+#    nothing to carry. (The flag was load-bearing only while a pre-merge tag existed.)
+git push origin release/vX.Y.Z
 gh pr create --base main --head release/vX.Y.Z --title "release vX.Y.Z"
-#    ... review, let CI go green, then MERGE with a merge commit ...
+#    ... review, let CI go green, then "Squash and merge" ...
 
-# 5. After the PR merges, tag the MERGED tip and push the tags (keeps git describe clean).
-#    The `vN` line is the ONE step that differs by bump type — see the callout below.
+# 5. After the PR merges, publish the tags. `make publish` refuses unless origin/main
+#    actually carries this core.version, so it cannot tag a release that has not landed.
+#    It creates vX.Y.Z AT origin/main, force-moves the vN alias there, and pushes both.
 git checkout main && git pull --ff-only origin main
-git tag -fa vX.Y.Z origin/main -m vX.Y.Z
-git tag -f  vN     origin/main          # vN = the major alias, e.g. v3 (v4 on a MAJOR)
-git push origin vX.Y.Z ; git push -f origin vN   # ';' not '&&' — independent pushes
+make publish
 ```
+
+#### Why the tag comes last
+
+`make tag` used to commit **and** tag in one step, leaving a local `vX.Y.Z` on a commit
+that was not yet on `main`. That window is unsafe, and no amount of `--no-follow-tags`
+discipline closes it: the flag governs *your* push, while the tag lives in shared `.git`
+state that any other process can push.
+
+It happened. During the v4.11.0 cut a concurrent session pushed its own branch with
+`push.followTags` set, carried the release tag to origin, and fired `release.yml` +
+`sync-fanout.yml` against an unmerged commit — publishing a Release and opening eight
+vendor PRs across the fleet, all pointing at a commit that was never on `main`. Nothing
+merged (`sync-fanout` opens PRs and never merges them, which is what made it recoverable),
+but the version number had to be retired: release tags are immutable by ruleset, so
+`v4.11.0` could not be re-pointed and the next release became `v4.11.1`.
+
+So the invariant is structural now, not procedural:
+
+> a `vX.Y.Z` tag only ever exists on a commit that is already on `origin/main`.
+
+Phase 1 creates no tag, so there is nothing for a stray push to carry. Phase 2 proves
+`origin/main` carries the version before it tags anything. This also makes the merge
+method irrelevant to the tag — `make publish` tags `origin/main` whatever shape the merge
+took, which is why the squash question below is a non-issue.
 
 #### Abandoning a cut
 
 If you stage a release and then change the version (a bump reclassified from MINOR to PATCH,
 say), do **not** patch the branch in place — the branch name encodes the version and would
-then lie. Restage instead, and undo the two local-only artefacts step 3 created:
+then lie. Restage instead. Since step 3 no longer creates a tag, the only artefact to undo
+is the branch:
 
 ```bash
 git checkout main                    # already clean — step 1 kept the cut off main entirely
 git branch -D release/vX.Y.Z         # drop the staged release commit
-git tag -d vX.Y.Z vN                 # both are local-only until step 5
-git fetch --tags --force origin      # restores vN from origin — see below
 ```
 
-Delete `vN` explicitly rather than trusting the fetch to fix it. `--tags --force` only
-*updates* tags origin actually has: on a PATCH/MINOR that restores `v4` to origin's commit
-either way, but a MAJOR cut mints an alias origin has never seen (`v5`), and a fetch will
-happily leave that bogus local tag pointing at a commit you just deleted. Deleting first
-covers both — origin's `vN` comes back if it exists, and a never-published one stays gone.
+There is deliberately **no `git tag -d` step**. Before `make publish` no `vX.Y.Z` exists
+and `vN` still points where origin has it, so abandoning cannot leave a tag stranded on a
+commit you just dropped — the failure the old recipe had to warn about (a plain
+`git fetch --tags` only *updates* tags origin already knows, so a newly minted `vN` on a
+MAJOR survived the fetch, pointing at a dead commit).
 
-Nothing on origin needs unwinding as long as you have not reached step 5: `--no-follow-tags`
-kept every tag local, so no Release was published and no fan-out fired. Confirm with
+If the release branch was already pushed and a PR opened, close the PR and delete the
+remote branch too — `git push origin --delete release/vX.Y.Z`.
+
+Nothing on origin needs unwinding as long as you have not run `make publish`: phase 1
+creates no tag at all, so no Release was published and no fan-out fired. Confirm with
 `git ls-remote --tags origin 'refs/tags/vX.Y.Z'` — empty is what you want. The abandoned
 `release/vX.Y.Z` branch on origin is inert; delete it or leave it, the fleet ignores it.
 
-**If that check is *not* empty**, the tag reached origin — `make tag PUSH=1`, or a plain push
-with `push.followTags = true`. Then `release.yml` has already published a Release and
+**If that check is *not* empty**, the tag reached origin some other way — a hand-run
+`git push --tags`, or a concurrent session pushing from this checkout with
+`push.followTags = true` while a stray local tag existed. Then `release.yml` has already published a Release and
 `sync-fanout.yml` has opened `core.lock` PRs across the fleet, and abandoning is no longer a
-local matter: delete the remote tag (`git push origin :refs/tags/vX.Y.Z`), delete the
-published Release in the GitHub UI, and close the fan-out PRs. Cutting the intended version
-forward is usually less disruptive than unwinding a published one — prefer it unless the
-fleet has already merged the bad `core.lock`.
+local matter: close the fan-out PRs first (that is the live risk — a merged one vendors a
+bad commit), then retract the published Release.
+
+Note the tag itself is probably **not** deletable: the tag ruleset blocks deletion and
+force-push on `v*.*.*` with no bypass actors, which is the guarantee working as specified.
+So the realistic recovery is to **retire the number** — mark the Release retracted and
+de-list it, then cut the next patch version. That is what v4.11.0 → v4.11.1 was.
 
 #### Step 5, by bump type — the moving `@vN` major alias
 
@@ -155,11 +177,11 @@ hand; see the straggler note in §2. What you do with it depends on the bump you
   edit is the single intentional, reviewed change a MAJOR is meant to be, and it's tracked as
   part of rollout (§2), not this step.
 
-> The `make tag` shortcut path handles the alias itself, safely for either case:
-> `tag-release.sh` derives the alias from the version (`MAJOR="v${VERSION%%.*}"`), so a
-> `v5.0.0` cut force-moves **`v5`** (creating it) and never touches `v4`. It does **not**,
-> however, bump the fleet's callers from `@v4` to `@v5` — that hand edit is still yours on a
-> MAJOR.
+> `make publish` handles the alias itself, safely for either case: `tag-release.sh`
+> derives it from the version (`MAJOR="v${VERSION%%.*}"`), so a `v5.0.0` cut force-moves
+> **`v5`** (creating it) and never touches `v4`. Both refs go up in one `--atomic` push, so
+> the alias cannot be left stale behind a published `vX.Y.Z`. It does **not**, however, bump
+> the fleet's callers from `@v4` to `@v5` — that hand edit is still yours on a MAJOR.
 
 ### What happens automatically after the tag
 
@@ -173,9 +195,9 @@ hand; see the straggler note in §2. What you do with it depends on the bump you
 
 Then continue to section 2 to roll it out.
 
-> Shortcut: `make tag PUSH=1` tags and pushes in one step, but it tags the **pre-merge**
-> commit and then needs a re-point (it prints the recipe). The steps above avoid that —
-> prefer them.
+> There is no one-step shortcut, deliberately. `make tag PUSH=1` used to tag and push
+> together, but it tagged the **pre-merge** commit — the exact hazard the two-phase split
+> exists to remove — so the flag was withdrawn and now fails with a pointer to `make publish`.
 
 ---
 
@@ -401,7 +423,7 @@ This catches the auth-scope, argument, and resolve-path bugs that PR CI cannot s
 | fan-out fails `could not read Username for 'https://github.com'` | a git op reading a private repo without auth | the read must be authenticated (built-in token for own repo, `FLEET_SYNC_TOKEN` for cross-repo) |
 | fan-out aborts `core.lock differs ...` | an htpx sync touched Core | by design — htpx fan-out must never change `core.lock`; investigate the sync |
 | `make tag` refuses: `no '## [vX.Y.Z]' heading` | `make release` wasn't run | run `make release VERSION=X.Y.Z` first |
-| staged a release with `make release` but want to hold off (add more commits first) | changed your mind before committing | `make release` only edits two files (no commit, no tag), so `git checkout -- core.version CHANGELOG.md` fully undoes it — restoring the single `[Unreleased]` so later commits append to it. If you *also* ran `make tag`, use §1.1 ["Abandoning a cut"](#abandoning-a-cut) — it is the one recipe, and it clears the `vN` alias that `make tag` moved |
+| staged a release with `make release` but want to hold off (add more commits first) | changed your mind before committing | `make release` only edits two files (no commit, no tag), so `git checkout -- core.version CHANGELOG.md` fully undoes it — restoring the single `[Unreleased]` so later commits append to it. If you *also* ran `make tag`, use §1.1 ["Abandoning a cut"](#abandoning-a-cut) — dropping the branch is the whole recipe now, since phase 1 creates no tag |
 
 For the policy behind all of this — cadence, canary order, why only Core is versioned —
 see `RELEASE-STRATEGY.md`.

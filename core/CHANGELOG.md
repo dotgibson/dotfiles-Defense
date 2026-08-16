@@ -13,6 +13,842 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.12.0] - 2026-08-16
+
+### Added
+
+- **`audit-core.sh` §5d — a gate for the `pipefail` + SIGPIPE trap this repo keeps hitting.**
+  Under `set -o pipefail`, piping into a reader that exits early turns a success into a
+  failure: `grep -q` stops on its first match, `awk` on its `exit`, `head` after N lines, the
+  writer takes EPIPE and dies with 141, and pipefail reports the pipeline as failed even
+  though the reader matched.
+
+  Three occurrences so far. Two were found and fixed by hand — a 4000-line `git show` into
+  `grep -q` reporting "no heading" on a file that had one, and `ldd --version | grep -qi
+  musl` reading false on every musl box, whose assertion is still named "the pipefail trap
+  this repo has hit before". The third broke `main`: `nvim-reachability.sh` invented two
+  orphans because a visited module's lookup returned 141. Each fix included a sweep of the
+  tree, correct at the time and unable to cover code written afterwards.
+
+  The gate is scoped to a **shell-string** producer (`printf`/`echo`) feeding an
+  early-exiting reader, in files that actually `set -o pipefail`. That shape converts to a
+  herestring with no behavioural difference and no reason to prefer the pipe, so a finding
+  is never a judgement call. `sed <file> | head -n1` — a file producer, ~15 instances — is
+  deliberately out of scope: converting those is not free, and a gate that fires fifteen
+  times on working code is a gate someone turns off.
+
+  Four existing instances converted (`check-modern.sh`, `parity-check.sh`, `test-core.sh`
+  ×2). All fed small values and none was a live bug — which is precisely why a hand sweep
+  leaves them, and why the next author copies the shape somewhere the producer is large.
+
+  The scanner lives in `scripts/lib/common.sh` as `_core_pipefail_hits`, beside
+  `_core_fail_digest` and for the same reason: so `test-core.sh` can drive it on fixtures.
+  A gate for a bug that has recurred three times is only worth having if it demonstrably
+  fires, and probe-testing caught a defect in this one before it shipped — it used to scan
+  any file that merely _mentioned_ pipefail in a comment, which is the false-positive class
+  that gets a gate switched off. Eight assertions pin both halves: the three banned reader
+  forms are caught, and the herestring fix, a comment describing the hazard, a file with no
+  `pipefail`, a file producer, and the library's own definition are all left alone.
+
+- **`audit-core.sh` §4b — the nvim orphan backstop `core.manifest` claimed already existed.**
+  `core.manifest` lists `nvim/` as a directory rather than per-file, because a vendored
+  lazy.nvim tree churns wholesale and per-file listing would be noise. The stated
+  justification was that "verify-core.sh (byte-for-byte vs upstream) is the orphan backstop
+  here instead" — but **`verify-core.sh` has never existed in this repo**. So from the day
+  `nvim/` went directory-granular, §1's manifest⇄fs check auto-listed every new path under it
+  and nothing else looked: a lua module nothing loads could sit in the tree indefinitely and
+  fan out to all eight OS repos, silently. luacheck does not help — it lints the files it is
+  handed and does no reachability analysis.
+
+  §4b walks the load graph instead — a real traversal, not an "is this name mentioned
+  anywhere" scan. That distinction is the whole point: a mention-scan passes two dead modules
+  that require _each other_ (a disconnected cycle, non-zero indegree, reachable from nothing),
+  and passes a module named only in another file's comment. Both are exactly the orphan this
+  exists to catch. So it inventories every module, strips lua comments, reads each file's
+  edges, then walks outward from the roots and flags every module never visited.
+
+  Only real load expressions count as edges — the module name must be preceded by
+  `require` (covering `require("x")`, `require "x"`, and `pcall(require, "x")`) or by
+  lazy's `import =`. Matching every quoted `gerrrt.*` string would still be a mention scan:
+  `health.lua` deliberately peeks `package.loaded["gerrrt.servers"]` precisely so it does
+  _not_ load the registry, and counting that as an edge would let the whole `servers/` arm
+  look reachable from the health root even with every real `require("gerrrt.servers")`
+  deleted. Comment stripping handles `--[[ … ]]` blocks across lines too, since a
+  line-only stripper leaves the block interior searchable.
+
+  Two roots, both genuine entry points rather than exemptions: `nvim/init.lua`, and
+  `gerrrt.health` — which Neovim discovers by runtimepath for `:checkhealth`, so nothing
+  requires it and nothing should. Two edges cannot be read literally from source and are
+  resolved during the walk: a **directory import** (`gerrrt.plugins` names a directory, so a
+  target with no file expands to its `target.*` children, as lazy does), and
+  the **dynamic require** in `servers/init.lua`, which does
+  `pcall(require, "gerrrt.servers." .. name)` over its `servers` list — so visiting
+  `gerrrt.servers` expands to the listed names, that registry being the only static evidence
+  those modules are wanted.
+
+  The edge KIND is carried through the walk, because the two resolve differently at a
+  missing target: `import` expands to children, but a `require` with no module behind it is
+  a dangling require lua raises at runtime, and is reported. Treating every fileless target
+  as a directory import meant `require("gerrrt.utils")` silently marked every
+  `gerrrt.utils.*` child reachable.
+
+  The inventory itself is validated, since the walk is only as sound as its name→file map:
+  `.init` is stripped for a real `*/init.lua` path only (doing it on the module string let a
+  file named `foo.init.lua` masquerade as module `foo`), a dot inside a filename is reported
+  as unaddressable (lua resolves `gerrrt.a.b` through `a/b.lua`, never `a.b.lua`), and two
+  files claiming one module id fail — lua loads exactly one of them, so the other is dead
+  config that would otherwise ride on its twin's reachability.
+
+  The registry is also checked **both** ways, because a generic "unreachable" is a worse
+  message than the truth: a module in no list entry is dead config; a list entry with no module
+  file is a runtime load error `servers/init.lua` reports at startup. A missing **or**
+  unparseable registry fails closed — silently skipping it would disable the entire `servers/`
+  arm, which is how this class of gap starts in the first place.
+
+  Verified against planted fixtures for every class it claims to catch — orphaned `utils/`
+  module, stray top-level module, disconnected require cycle, comment-only mention, multiline
+  block comment, `package.loaded` peek, `require()` of a directory, lazy import matching
+  nothing, duplicate module id, unaddressable dotted filename, unlisted LSP module, registry
+  entry with no file, unparseable registry, missing registry — plus the
+  two exemptions (a false positive on `health.lua` or `plugins/` would make the gate
+  unusable). Each negative fixture asserts the finding text **and** exit status 1, so the
+  documented CLI contract is covered too. The real tree is clean: all **97 lua modules under
+  `nvim/lua/gerrrt/`** are reachable today. That module set is the gate's scope — `nvim/init.lua`
+  is the entry point it walks _from_ rather than a vertex, and `lazy-lock.json` and
+  `.luacheckrc` are not lua modules at all. bash 3.2 safe, so the macos-latest CI leg runs it. Closes the
+  `nvim/` half of #454.
+- **`lib/bootstrap-lib.sh` gains the privilege-escalation API a bootstrap needs in order to
+  stop hard-coding `sudo` — available for adoption; no caller yet.**
+  `blib_resolve_su [--require]` resolves the escalator **once** into `BLIB_SU`
+  (an explicitly set value always wins, _including_ an empty one; else root needs nothing,
+  else `sudo`, else `doas`), and `blib_priv` is the public way to run a privileged command.
+  Every OS bootstrap wrote `sudo` inline at roughly a dozen call sites, which is wrong on
+  precisely the machines a bootstrap meets first: `fedora:latest` and `alpine:3.20` ship
+  **no sudo**, and neither does a WSL distro's first boot (root, before `/etc/wsl.conf`
+  installs the default user) or a minimal Server image. Those runs died at the _first_
+  package-manager line with `sudo: command not found` — exit 127 under `set -e`, before
+  doing anything at all. It is also why `bootstrap-test.yml` can exercise only
+  `--links-only`, and must pass `BLIB_SU=` to manage even that. `--require` makes "not root
+  and no escalator" a hard error for a provisioning run, while a links-only run correctly
+  continues (wiring symlinks needs no privileges).
+
+- **`blib_sudo_keepalive_start` / `blib_sudo_keepalive_stop` — the API for keeping a sudo
+  timestamp warm, which greatly reduces the chance that an adopting bootstrap stalls on an
+  invisible password prompt.** A mitigation, not a guarantee: the background refresh
+  deliberately swallows its own failures rather than killing the run, and a sudoers with no
+  reusable timestamp (`timestamp_timeout=0`) cannot be kept warm at all. A bootstrap's privileged calls are interleaved with from-source `cargo`/`go`
+  builds that take minutes, comfortably outliving sudo's 5-minute timestamp. sudo writes
+  its prompt to **stderr** and reads from the TTY, so a later call whose stderr is
+  redirected (`>/dev/null 2>&1`, ubiquitous in these scripts) stopped dead at a prompt
+  nobody could see: no output, no progress, indistinguishable from a hang, and reproducible
+  only on a box slow enough to cross the timeout. Prime once up front, refresh in the
+  background, and return non-zero if that first authentication fails so the caller can
+  abort before half-provisioning. A no-op under `doas` (no refreshable timestamp) and as
+  root.
+
+- **`blib_user_bindirs_on_path` — the helper an adopting bootstrap calls to stop its
+  presence guards lying.** A bootstrap's
+  `command -v <tool>` guards decide whether to spend _minutes_ building from source, but
+  they are answered by the PATH of whatever shell launched the bootstrap — on a fresh box,
+  bash. `cargo install` writes `~/.cargo/bin` and `go install` writes `$GOBIN`
+  (`~/.local/bin` by convention here), while `~/.cargo/bin` reaches PATH only via the OS
+  zsh layer — i.e. only inside a Core shell that does not exist yet. So every guard
+  reported "missing" and every re-run rebuilt the entire from-source tool set. Adds only
+  directories that exist, and never twice.
+
+- **`blib_note_fail` / `blib_failed_count` / `blib_failures_report` — the tally an adopting
+  bootstrap uses so a half-provisioned box says so.** A bootstrap is full of steps that must not abort the run (a COPR that
+  is down, a rate-limited API, a crate that fails to build), so each is written `|| true` —
+  and the script then printed "bootstrap complete" and exited 0 regardless, making a box
+  that got none of its extra tooling indistinguishable from a good one, to CI and operator
+  alike. `blib_failures_report` returns non-zero when anything was recorded, which is the
+  contract a caller maps onto its own `--strict` flag.
+
+  **Scope:** these are new APIs, not yet wired into any bootstrap. Nothing in the fleet
+  changes behaviour from this release alone — each OS repo adopts them after the next
+  sync, starting with `dotfiles-Fedora` (whose `bootstrap.sh` currently carries
+  equivalent logic inline) as the reference implementation, then per `PORTING-MATRIX.md`.
+
+  All four are covered by a new hermetic section in `scripts/test-core.sh` (no package
+  manager, no network, no privileges), including the bash 3.2 `set -u` empty-array rule
+  that would otherwise crash the report on the _happy_ path.
+
+- **`PORTABILITY.md` — how to write Core that survives the fan-out.** The rules were
+  real and consistently followed, but recorded only in ~8 scattered code comments, so
+  they were unteachable to a new contributor and unenforced for new files. That is the
+  likely root cause of the Homebrew paths that sat in `maint/` and `tmux/scripts/`.
+  It documents the bash 3.2 floor (with the banned constructs and their portable forms),
+  the BSD/busybox coreutils traps, the shim pattern with the full inventory of shipped
+  shims, what to do when a capability genuinely cannot be probed, and why the `have()`
+  probe is redefined per loading context on purpose.
+
+- **`VENDORING.md` — the same contract from an OS repo's side.** Previously scattered
+  across `ARCHITECTURE.md`, `RELEASE-RUNBOOK.md` and a source comment, so a downstream
+  maintainer had no single answer to: which `core/` paths may I touch, what does
+  `core.lock` mean, which number band may I claim, how do I upstream a fix. Includes the
+  footgun that was documented only in `zsh/loader.zsh` — a fragment dropped in a **gap in
+  the Core band** (say `22-foo.zsh`) is gated as Core and silently vanishes under
+  `CORE_PROFILE=minimal`.
+
+- **`CODE_OF_CONDUCT.md`** — the one standard community-health file that was missing
+  while the README actively solicits contributions.
+
+- **Core now performs a real bootstrap link run in its own suite.** `bootstrap-test.yml`
+  asserts the symlink graph, but it is `workflow_call`-only and dotfiles-core ships no
+  `bootstrap.sh` — so it only ever runs from the eight OS repos. Core unit-tested the
+  `blib_*` helpers and never linked anything, which meant a `bootstrap-lib.sh` regression
+  was caught **downstream, in eight repos**, instead of here.
+
+  Seven assertions now link the actual Core tree into a sandbox `$HOME`/`$XDG_CONFIG_HOME`
+  and check the graph a consumer depends on: every numbered fragment lands flat in
+  `$ZSH_CFG` (the load-order contract `loader.zsh` globs), `loader.zsh` itself is linked,
+  `nvim/` resolves as a directory symlink, tmux/starship/lazygit/jj/gitconfig/vimrc land
+  at their promised destinations, `clip` and `clip-paste` are executable on
+  `~/.local/bin`, the **seeded** files (`local.gitconfig`, `sesh.toml`) are real copies
+  rather than symlinks — a symlink there would track a user's git identity back into
+  Core — and a second pass is a no-op that backs nothing up. Hermetic: the `tpm`
+  directory is pre-seeded so the one network call in the function is skipped.
+
+- **`scripts/sync-core.sh` has tests.** The highest-blast-radius script in the repo —
+  it gates on the audit, `git subtree pull`s into eight working trees, and stamps
+  `core.lock` — had **no coverage at all**. Its only proof was `sync-fanout.yml` running
+  it for real against the live fleet, i.e. the fleet was the test.
+
+  Twelve assertions on hermetic fixtures (a miniature of the real topology: a vendored
+  origin, a local checkout, and a throwaway fleet, with `audit-core.sh` stubbed so the
+  gate can be driven red and green in-process). Every case is a **refusal or an
+  idempotency property**, because that is how this script fails: a broken guard does not
+  throw, it fans a bad tree out to eight repos and reports success.
+
+  Covered: a red audit refuses the fan-out **and** refuses before mutating anything;
+  local `HEAD` ≠ remote tip refuses (what you audited is not what would vendor); an
+  uncloned repo and a `core/`-less repo are _skipped_, not failed; `dotfiles-Windows`
+  appears in neither the fleet file nor the fallback array; `--dry-run` prints the plan
+  and commits nothing; `core.lock` lands at the repo **root** with the full sha, version
+  and branch; the tree is clean afterwards so the next run is not self-blocked;
+  re-syncing an unchanged sha manufactures no commit; and a dirty target is refused,
+  counted failed, and does **not** abandon the repos after it.
+
+### Changed
+
+- **A release tag can no longer exist before its commit is on `main`.** `make tag` used
+  to commit _and_ tag in one step, leaving a local `vX.Y.Z` on a commit that was not yet
+  merged. That window is not closable by discipline: `--no-follow-tags` governs _your_
+  push, while the tag lives in shared `.git` state any other process can push.
+
+  It happened. During the v4.11.0 cut a concurrent session pushed its own branch with
+  `push.followTags` set, carried the release tag to origin, and fired `release.yml` and
+  `sync-fanout.yml` against an unmerged commit — publishing a Release and opening eight
+  vendor PRs across the fleet against a commit that was never on `main`. Nothing merged,
+  because `sync-fanout` opens PRs and never merges them, but the number had to be retired:
+  release tags are immutable by ruleset, so `v4.11.0` could not be re-pointed.
+
+  The invariant is structural now, not procedural — **a `vX.Y.Z` tag only ever exists on a
+  commit already on `origin/main`**. `make tag` commits and creates no tag at all, so a
+  stray push has nothing to carry. `make publish` runs after the PR merges and refuses
+  unless `origin/main` actually carries this `core.version`, then tags `origin/main` and
+  pushes. `--push` is withdrawn — its whole semantic was the hazard — and fails with a
+  pointer to `--publish`.
+
+  Phase 2 tags the **release commit**, not `origin/main`'s tip. `core.version` does not
+  change again until the next release, so "the tip carries this version" stays true for
+  every commit that lands afterwards — tagging the tip would sweep work still under
+  `[Unreleased]` into the release, and `release.yml` builds the Release body from the
+  `[vX.Y.Z]` section, so that work would ship undescribed. It resolves the commit that
+  _set_ `core.version` to this value and tags that, reporting when the tip has moved on.
+
+  It also validates that commit's `[vX.Y.Z]` section before creating any tag — that it
+  **exists and is non-empty**, using `release.yml`'s own `awk` so the two cannot disagree
+  about what empty means. `release.yml` builds the Release body from that section and
+  rejects an empty one, and `release.sh` will promote an empty `[Unreleased]` without
+  complaint; publishing first and discovering either afterwards leaves an immutable tag on
+  a release that cannot be published, burning the version for a reason knowable up front.
+
+  `make release`'s printed recipe is updated to match. It still ended with
+  `git tag -a` + `git push --tags`, so an operator following the output it generates would
+  have recreated exactly the pre-merge tag this change exists to eliminate.
+
+  Both refs go up in a single `--atomic` push, with a `--force-with-lease` on the `vN`
+  alias. Pushed separately they can half-land: `vX.Y.Z` published while `vN` is stale fires
+  the workflows against a stale alias, and a re-run then refuses because the immutable tag
+  already exists. The lease rejects the push if another publisher moved `vN` after this run read it, and an
+  **ancestry check** covers the gap before that read: whatever `vN` points at must be an
+  ancestor of the commit being tagged, so the alias can only ever move forward. Both are
+  needed — a publisher finishing _before_ the read is seen as this run's own expected
+  value, so the lease alone would be satisfied while `vN` rolled backward.
+
+  This also makes the merge method irrelevant to the tag. Eleven behavioural assertions
+  cover it — including that the tag does **not** follow a tip that advanced after the
+  release merged; the script previously had none, which is how the ordering survived.
+
+- **The audit now names the behavioural assertion that failed, in the failure line itself.**
+  It said `behavioral tests failed — run: ./scripts/test-core.sh`, which sends the operator
+  away to reproduce a result the run already had. For an _intermittent_ failure that is advice
+  that cannot be taken: the re-run passes and the evidence is gone. That is not hypothetical —
+  it cost two occurrences of an unattributed flake, both lost because the `✗` scrolled past far
+  above the summary and only the summary survived being piped through `tail`.
+
+  The suite's output is already buffered for the background run, so the names cost one `grep`
+  and travel wherever the fail line travels: the summary block, `--json`, the CI job log, a
+  truncated paste in an issue. Not a CI _annotation_ — `fail()` writes to stderr and `ci.yml`
+  runs `audit-core.sh` directly with nothing emitting `::error::`, and claiming a destination
+  this does not reach would be the same overclaim the digest exists to prevent. The names are
+  joined without rewriting the records, so a message containing a literal `|` (nine assertions
+  do, `'exec … || exec …' cannot fall back` among them) is not spaced out into false
+  boundaries — two failures reading as four is worse than terse in the one line someone has
+  when they cannot reproduce the failure. Up to three are named, then a count (`+N more`)
+  rather than a
+  silent truncation, because "one flaky assertion" and "the whole section is down" need telling
+  apart before deciding to re-run or investigate. A run that exits non-zero having printed no
+  `✗` at all — a crash, a kill, a timeout — now says _that_, instead of an empty list beside a
+  red line.
+
+  Matched after stripping SGR escapes rather than anchoring on a bare `✗`: `fail()` prefixes
+  the mark with `$c_red`, so an anchored match finds nothing whenever colour is on — a detector
+  that would go quiet in exactly the runs someone is watching. The serial path
+  (`CORE_AUDIT_SERIAL=1`) keeps the old line; its output is not captured, and piping it to
+  capture would cost the live colour output that mode exists to give.
+
+  The rendering lives in `scripts/lib/common.sh` as `_core_fail_digest` **so the suite can
+  test it**, which matters more here than usual: every branch of it fails _quietly_, producing
+  a plausible line that has silently lost the name — indistinguishable from the flake merely
+  not being nameable. Proving those by making a real gate fail would mean recursively invoking
+  the audit or hand-injecting a fault, and CI repeats neither, so five assertions drive it on
+  fixtures instead: a **coloured** `✗` is still extracted, five failures render as three names
+  plus a true total, exactly three grow no `(+0 more)` tail, a message carrying its own literal
+  `||` survives verbatim rather than gaining false boundaries, and both a marker-less log and
+  an unreadable file yield empty so a crash is never misreported as assertions. Confirmed as
+  real regression tests by mutation — dropping the escape-strip makes the coloured case yield
+  nothing, dropping the overflow notice reddens that case alone, and the pipe fixture fails
+  against the join this entry replaces.
+
+- **`ARCHITECTURE.md` now names Core's two deliberate exceptions** instead of leaving
+  them to be rediscovered as drift. `zsh/55-maint.zsh` was already excepted in writing at
+  the gate; `zsh/60-update.zsh` — ~480 lines of seven-package-manager logic, including a
+  Tumbleweed check to choose `zypper dup` over `zypper up` — was justified only in a code
+  comment. The reasoning is sound (one verb, N backends, exactly like `bin/clip`) and now
+  says so where the layering rule is stated.
+
+- **The maint runner no longer names an OS prefix; the scheduler unit supplies the PATH.**
+  A scheduler starts the runner with a stripped environment, which is why the Homebrew
+  prefixes were hardcoded. `maint-install` now captures the **live PATH** of the shell
+  installing it and bakes it into the unit — `Environment="PATH=…"` (systemd), an
+  `EnvironmentVariables` dict (launchd, XML-escaped), and an env-prefixed command
+  (cron, POSIX single-quoted and then `%`-escaped, in that order — cron hands its
+  command field to `/bin/sh`, so an unquoted or double-quoted value containing `$(…)`
+  or a backtick would be **evaluated on every scheduled run**). Whatever prefix this OS
+  uses is already correct in that
+  PATH, so the OS supplies the truth and Core hardcodes nothing. The brew step is now
+  gated on `have brew` alone.
+
+  **Action required on an existing schedule:** a unit written before this change carries
+  no PATH, so the runner falls back to the POSIX floor and the brew/mise steps skip
+  silently — the job still succeeds while doing less. Re-run `maint-install` once.
+  `maint-status` detects this and says so rather than leaving it to be noticed.
+
+- **`tmux-cheat.sh` discovers a brew prefix instead of naming one** — `$HOMEBREW_PREFIX`
+  (exported by `brew shellenv`, so the tmux server usually carries it), falling back to
+  `brew --prefix`. When neither resolves it adds nothing and takes the existing pager
+  fallback: a missing tool degrades visibly, where a wrong absolute path was a silent
+  lie on every non-brew machine.
+
+### Fixed
+
+- **A failing linter gate named itself and nothing else.** Five sections — luacheck,
+  shellcheck, markdownlint, actionlint, gitleaks — ran their tool with `>/dev/null 2>&1`
+  and reported a one-line verdict, so a red run said `✗ markdownlint reported issues` with
+  no rule, no file and no line. Each ended with a "run it yourself" hint, which is fine
+  locally and useless in CI — the one place the tool is installed, the finding is already
+  computed, and re-running it costs a push and a full CI cycle per guess. Diagnosing a
+  single MD049 violation this way took three round-trips.
+
+  Output is now captured and printed beneath the `✗`, via a shared `fail_detail` in
+  `scripts/lib/common.sh`: stderr (so `--json` keeps stdout parseable), indented (so it
+  reads as detail, not as further findings), and capped at `CORE_FAIL_DETAIL_LINES` (40)
+  so a pathological run cannot bury the summary it is meant to explain.
+
+  gitleaks also gains `-v --no-color`, without which it prints only `leaks found: N` and
+  the file/line/rule stay hidden — the same non-answer. Printing its report is safe
+  precisely because `--redact` is already in use: the value is replaced with `REDACTED`,
+  so the report names the file, line, rule and fingerprint without reproducing the secret.
+
+- **`core-doctor` reported `✗ bat` on Debian/Ubuntu/Kali for a tool that was installed and
+  fully wired** (#418). Those distros ship the binary as `batcat`; `00-tools.zsh` resolves
+  it into `$BAT_BIN`, and `cat`, `catp`, `MANPAGER`, the fzf file preview and `fif`'s preview
+  all ran on it. The report still called it absent — two lines above its own `resolved`
+  section printing `bat → batcat` — and listed `bat` under "install missing", advising an
+  install of something already present.
+
+  The cause was an asymmetry between the only two renamed tools. `20-aliases.zsh` gave `fd`
+  an alias under its canonical name and `bat` none, so `bat` was untypeable by the name its
+  README, man page and every upstream recipe use. `bat` now carries the matching
+  `alias bat="$BAT_BIN"` (a no-op `alias bat=bat` where the name is already canonical; zsh
+  does not re-expand an alias to its own name).
+
+  That alias is **not** what makes the report honest, though it looks like it would: zsh's
+  `command -v` resolves aliases, so `fd`'s `✓` had been coming from the alias rather than
+  from PATH all along. The doctor now resolves each row through a new `_core_doctor_bin` —
+  one definition shared by the human render and `--json`, so they cannot drift — which maps
+  `fd`/`bat` to `$FD_BIN`/`$BAT_BIN` and everything else to itself. Presence, the
+  install-missing list and the JSON `tools` object all follow the real binary; the JSON keys
+  stay canonical (`.tools.bat`, never `.tools.batcat`) for existing consumers.
+
+  Resolving there also fixed a second defect the alias could never have reached.
+  `core-doctor -v` forks `"$tool" --version`, and a **parameter** expansion is never
+  alias-expanded — so on Debian the probe ran `fd`, hit `command not found`, and had the
+  error swallowed by the pipeline: the row rendered as a bare, versionless `✓ fd`. Both rows
+  now fork the resolved binary and print their version. Five cases in `scripts/test-core.sh`
+  pin it against a stubbed PATH (Debian names, canonical names, neither), with the doctor
+  assertions deliberately run **without** `20-aliases.zsh` loaded so a `✓` can only come from
+  the resolver.
+
+- **`PORTING-MATRIX.md`'s `carapace = go³` cells named an install path that cannot be
+  followed on any platform.** Footnote ³ promises `go install` where a tool is unpackaged,
+  and the carapace row pointed openSUSE and Kali straight at it. That install cannot succeed
+  for **any published version**, for two independent reasons: `carapace-bin`'s `go.mod`
+  carries `replace` directives (`spf13/pflag`, `kevinburke/ssh_config`), and `go install
+  pkg@version` refuses any module that does; and the generated sources
+  (`pkg/{actions,conditions}/*_generated.go`) are not committed, so even a plain `go build`
+  on a clone fails until `cmd/carapace/main.go`'s `go:generate` lines have run. Checked
+  exhaustively rather than inferred from the current release: across all **184 tags** from
+  v0.0.3 (2020-08-31) to v1.7.3 (2026-06-30), 184 carry a `replace` directive and 0 commit
+  the generated sources. That scope is the operative part — `go install` takes any
+  `@version`, and pinning an older one fails identically. Nor is it a transient break to
+  wait out: upstream's own `.goreleaser.yml` runs `go generate ./cmd/...` as a pre-build
+  hook, and the AUR's from-source PKGBUILD does the same, so this is the intended build
+  shape.
+
+  The three cells now point at a new footnote ²⁷ carrying a route per target — the upstream
+  `.rpm` for openSUSE (the block `dotfiles-Fedora`'s `bootstrap.sh` already ships and has
+  proven), the `.deb` for Kali/Debian, and the AUR **`carapace-bin`** for Arch (the prebuilt
+  one; the AUR's bare `carapace` is a from-source, x86_64-only build). Alpine and Gentoo were
+  already correct and are now documented as verified rather than merely unmarked. ²⁷ also
+  records what the release-URL route costs — no repo is added, so nothing upgrades carapace
+  afterwards — the unsigned-artifact wrinkle that makes `zypper -n` stricter than dnf here,
+  and the source build as the escape hatch with its real binary size (81.6 MB released,
+  ~114 MB unstripped). Footnote ³ gained a pointer so the general `go install` promise is not
+  read back onto this row.
+
+  `dotfiles-Arch`, `dotfiles-Kali` and `dotfiles-openSUSE` still make the impossible call in
+  their `bootstrap.sh`, failing invisibly because `_dotfiles_go_install` discards the
+  explanation; each is tracked in its own repo against this footnote. (`PORTING-MATRIX.md`)
+- **The nvim reachability gate invented orphans on `main`.** The membership lookups piped
+  into an early-exiting reader — `printf '%s\n' "$visited" | grep -qxF "$m"` — while the
+  script runs under `set -o pipefail`. `grep -q` exits on its first match, the writer takes
+  EPIPE and dies with 141, and pipefail makes the pipeline non-zero **even though the reader
+  matched**: a module that _is_ visited reads as unvisited and is reported as an orphan, with
+  `printf: write error: Broken pipe` captured as a finding alongside it.
+
+  Timing-dependent — the writer must still be writing when the reader exits — so it passed
+  every PR run and failed on the push to `main`. Measured on a large input, the piped form
+  gave 20/20 false negatives and the herestring 0/20. Every lookup now feeds its input by
+  herestring, `awk … <<<"$mods"` included, since `awk`'s `exit` closes the pipe the same way.
+- **`blib_set_login_shell` could throw away a complete, correct wiring over its last,
+  purely cosmetic step.** It runs at the very end of `wire_links`, after every symlink is
+  already in place — but neither the `/etc/shells` append nor `chsh` tolerated failure, so
+  under the caller's `set -e` a host with a read-only `/etc` (a container), a restricted
+  `chsh`, or an LDAP/SSSD-backed account aborted the whole bootstrap. Worse, the operator
+  saw a bare `tee: /etc/shells: Permission denied` and no indication of what had or had not
+  been done. Both steps now warn and continue, naming the manual command to finish the job.
+
+- **`grep -q` on a large piped producer read a match as a failure under `pipefail`.** The
+  new `origin/main` CHANGELOG guard piped a 4000-line file into `grep -q`, which exits the
+  moment it matches — leaving `git show` to die of `SIGPIPE`, and `set -o pipefail` then
+  surfaced git's 141 rather than grep's 0. The check reported "no heading" on a file that
+  had one. Captured to a variable instead. Swept the rest of the tree for the same shape:
+  the other instances pipe small `printf`/`find` output that fits the pipe buffer, so they
+  never trip it, and the one borderline case in `test-core.sh` was made immune anyway.
+
+- **The atuin autostart apparatus gate now tells a slow box apart from a broken detector.**
+  The gate proves the box can bind and connect an AF_UNIX socket with python3 alone, then
+  runs a known-good stub and treats any verdict other than `holds` as a regression in
+  `verify-atuin-guard.sh` — deliberately, because the obvious "skip unless it holds" form
+  uses the code under test as its own apparatus check and would let a real regression skip
+  every assertion below while leaving the audit green.
+
+- **`core-doctor` no longer reports a false `○ (idle)` for starship and carapace.**
+  `_core_wired` probed only `starship_precmd` and `_carapace`, but both tools renamed the
+  functions their `init` emits — starship 1.24.2 emits `prompt_starship_precmd` and
+  carapace-bin 1.5.7 emits `_carapace_completer`, and neither emits the old name at all.
+  Since Core sources each tool's own init (`_cache_eval starship starship init zsh`), the
+  probe silently went stale as the tools moved, so every box on a current starship or
+  carapace saw `○ (idle)` for an integration that was demonstrably driving the prompt and
+  completion (measured: 1760 carapace-bridged commands, `PROMPT` set by starship). That is
+  the exact failure the probe exists to prevent, inverted — a misleading `○` instead of a
+  misleading `✓`. Both arms now accept the old **and** current names, so boxes pinned to
+  older releases keep reporting wired.
+
+- **The atuin autostart apparatus gate no longer reds when the box is merely slow.** The
+  gate proves the box can bind and connect an AF_UNIX socket with python3 alone, then runs a
+  known-good stub and treats any verdict other than `holds` as a regression in
+  `verify-atuin-guard.sh` — deliberately, because the obvious "skip unless it holds" form uses
+  the code under test as its own apparatus check, and would let a real regression skip every
+  assertion below while leaving the audit green.
+
+  The strictness was right; the **deadline** was not. §J4 runs at `CORE_ATVERIFY_POLL=3`,
+  chosen so the many negative cases do not idle away a long bound — but for the one stub that
+  is supposed to succeed at everything, that bound is not idle waiting, it is a deadline:
+  300ms for a spawned daemon to bind and answer. A loaded runner misses it, the verifier
+  declines with "a daemon started by hand … never answered" exactly as designed, and the gate
+  rendered that property of the box as a defect in the detector. It reddened an audit leg for
+  a change that had nothing to do with atuin.
+
+  The tempting repair — skip on `unmeasurable` — is wrong, and the reason is recorded in the
+  code because it is easy to re-derive incorrectly: that verdict is the verifier's fail-closed
+  answer for a family of causes, and most are deterministic and _are_ the detector (a renamed
+  or duplicated anchor, control-arm row accounting that no longer matches, and `internal: no
+  verdict was reached (this is a bug in verify-atuin-guard.sh)`). Skipping on it would silence
+  sixteen assertions while the subject announces its own bug, and no amount of retrying
+  separates those from slowness, since every one of them repeats.
+
+  So nothing skips. The known-good run simply gets a deadline with real headroom — 30 ticks
+  instead of 3, plus one retry — while every negative case keeps the tight bound. A transient
+  stall now has to land twice inside a 10x-wider window to be seen at all. Measured on the
+  repo's own fixture with all four arms holding: 10.9s at 3 ticks, 14.0s at 30, 23.4s at 100 —
+  so this costs about three seconds of wall clock, once per suite, and 30 rather than 100
+  because `--premise autostart` also spends the bound _proving unreachability_, which no
+  amount of promptness shortens. The gate keeps the property that matters: it cannot go quiet,
+  because every verdict other than `holds` still reddens it. The three failures are now told
+  apart — `moved` (miscategorising correct behaviour), `unmeasurable` (declining where it
+  should measure, carrying the verifier's own reason), and no parseable verdict at all (the
+  apparatus failing to report, carrying stderr — the Alpine shape where a stray line merged
+  into the JSON).
+
+- **The atuin autostart suite no longer reports an unmeasurable run as an upstream finding.**
+  `verify-atuin-guard.sh` has three verdicts on purpose — `holds`, `moved`, and
+  `unmeasurable` for "the apparatus could not be trusted, never a finding about upstream" —
+  but the socket-only-stop assertion in `scripts/test-core.sh` compared against `holds` and
+  swept everything else into a single `else`, so a declined run printed the exact claim the
+  third verdict exists to prevent: that a zombie daemon had kept committing into later arms.
+
+  It is the only arm in that section expecting the POSITIVE verdict from an otherwise
+  well-behaved stub, so it alone inherits every environmental way a run can honestly decline.
+  The section runs at `CORE_ATVERIFY_POLL=3` — 300ms for the manual-spawn control's daemon to
+  bind and answer — which a loaded box misses, yielding "a daemon started by hand never
+  answered … An apparatus limit, not a finding" with **nothing having survived**. That
+  reddened `audit-alpine` on an unrelated docs-only PR; a rerun of the identical commit went
+  green.
+
+  The three states are now distinguished: `holds` with no survivor passes, `unmeasurable`
+  skips with the verifier's own reason surfaced, and `moved` fails as the real finding. A
+  run that produces no parseable verdict at all is reported as its own outcome carrying
+  stderr, rather than being read as `moved` — that shape has a history here, being how §J4
+  first went red on Alpine when a stray musl-side line merged into the JSON. The
+  assertion does not go quiet in exchange — the survivor half is now checked unconditionally
+  and stays a failure under any verdict, because a live daemon is a leak whether or not the
+  run could measure. A contaminated control cannot hide behind the skip either: the opening
+  control runs before any daemon exists, the spawn control while the socket is still present,
+  and the closing drain control only after the owner pid is confirmed dead — so the zombie's
+  rows have no route to `unmeasurable`, only to `moved` or a survivor.
+
+- **A concurrent test run no longer fails the audit with a sandbox leak that never
+  happened.** `verify-atuin-guard.sh --premise autostart` built its sandbox at
+  `/tmp/atverify.XXXXXX`, and the `test-core.sh` assertion that a completed run leaves no
+  sandbox behind enumerated that prefix _globally_ — snapshot before, snapshot after,
+  anything new is a leak. `/tmp` has other writers, so a second suite running on the same
+  box during the window was counted as the first run's leak. Two worktrees, two agents, or
+  simply `make audit` in one terminal while `make tag` audits in another was enough.
+
+  It cost a real `make tag` — `leaked 1 new sandbox dir(s)` on the repo's most consequential
+  command, where the operator's natural next move is to re-run or reach for
+  `TAG_SKIP_AUDIT=1`. A release gate that teaches the operator to skip it is worse than no
+  gate.
+
+  Sandboxes now carry a per-run tag — `/tmp/atverify.<tag>.XXXXXX`, from the new
+  `CORE_ATVERIFY_TAG` — and the assertion globs only its own. The tag **defaults to the
+  script's pid**, so `make verify-atuin-guard` and `atuin-guard-verify.yml` pass nothing and
+  still get a prefix no concurrent run can collide with; two live processes cannot share a
+  pid. It is validated as 1-16 characters of `[A-Za-z0-9_-]` and rejected rather than
+  sanitized, because it becomes a path component and a caller that globs its own tag needs
+  the tag it passed. The cap is an AF_UNIX budget, not style: `sun_path` ends near 108 bytes
+  and the daemon socket sits inside the sandbox, which is the same reason `/tmp` is
+  hardcoded there instead of `$TMPDIR`.
+
+  An **empty** tag is rejected rather than defaulted, which is why the knob reads `${…-$$}`
+  and not the `${…:-…}` its two neighbours use. An empty value is not a caller asking for the
+  default — it is a caller whose tag expression came out empty — and accepting it would
+  sandbox under the pid while the caller globbed `/tmp/atverify..*`, matching nothing and
+  greening the leak assertion forever. That is the same vacuous pass the self-check exists to
+  catch, arriving by a different door.
+
+  The validation runs **in the C locale**, and this is a defect that was shipping rather than a
+  precaution: POSIX defines a range like `[A-Z]` by _collation_ rather than codepoint, and on
+  **glibc under `en_US.utf8` the unpinned pattern accepts `tág`** — measured on the Ubuntu CI
+  leg, not reasoned about, so the ASCII-only contract was not being enforced there at all. It is
+  invisible from macOS, where all 84 installed UTF-8 locales reject the same sample, which is
+  exactly why Core cannot take one userland's answer for the fleet's. The byte cap
+  is the same fault one step downstream: `{1,16}` counts _characters_, so sixteen multibyte ones
+  are up to 64 bytes and the limit stops being the AF_UNIX budget it exists to be. Downstream,
+  not separate — every character in `[A-Za-z0-9_-]` is single-byte ASCII, so the count can only
+  diverge from the byte length once collation has already leaked a non-ASCII character in.
+
+  The suite reports **how much of this it actually exercised**, rather than implying more. It
+  asks the box for its installed UTF-8 locales (`locale -a`, falling back to named candidates
+  on musl, which ships no such command) and looks for one under which the _unpinned_ pattern
+  really accepts a non-ASCII sample. Finding one, it names it and the case genuinely fails if
+  the pin is removed; finding none, the result states the count and says the pin is unexercised
+  there, asserted by contract only. Across the fleet that reads: Ubuntu **exercised under
+  `en_US.utf8`**, while macOS (84 installed), Arch (1 installed) and Alpine (7 candidates, since
+  musl ships no `locale`) report contract-only — so one leg proves the fix and the other three
+  say honestly that they cannot. The no-match case then runs
+  under `LC_ALL=C` rather than an empty `LC_ALL`, which is not "no locale" at all but a
+  fall-through to the caller's `LANG`: an unprobed locale that could be the very one that
+  accepts the sample, making the run exercise the pin while the line claimed it had not.
+
+  Two earlier drafts of this check were vacuous — one probed for multibyte _decoding_, which a
+  locale can do while still collating `á` outside `[A-Za-z]`, so it passed identically with the
+  pin removed. That is the shape this file already exists to refuse, and the coverage line is
+  now part of the assertion rather than a comment about it.
+
+  Two assertions, because narrowing a glob and blinding it look identical from a green run.
+  The leak check now plants a foreign-tagged sandbox _inside_ its own window and still
+  requires a clean delta; a companion case plants one foreign and one of its own and
+  requires the delta to name its own and only its own. The existing self-check — which fails
+  loudly when the glob cannot enumerate at all, after an unfollowed `/tmp` symlink once made
+  this pass vacuously on macOS — is unchanged, and matters more now: a tag that never reached
+  the script would empty both snapshots the same way.
+
+- **`maint-status` now reports a scheduler unit whose runner path no longer exists.**
+  `_maint_unit_needs_refresh` only ever asked whether the unit carried a PATH capture, so
+  the other way a scheduled job dies silently went unreported: move the consuming repo and
+  the scheduler keeps firing at the absolute runner path frozen into the unit at install
+  time. Found on a real machine, where a launchd agent had been pointing at a path that had
+  not existed for months.
+
+  Nothing surfaced it from any angle. `maint-status` printed the timer happily, `launchctl
+  list` showed exit status 0 because the job had not fired since the move, and `maint-run`
+  kept working — it resolves the runner relative to the live config rather than reading the
+  unit, which is exactly why the breakage stayed invisible.
+
+  The detector now also reads the runner back out of the unit — `ProgramArguments[1]` from
+  the launchd plist, the path after `ExecStart=/usr/bin/env bash` in the systemd service,
+  the command past cron's single-quoted `PATH=` prefix — and flags it when it does not
+  resolve. Both causes are fixed by re-running `maint-install`, so the hint now says _which_
+  happened: a stale unit predating the PATH capture is a snapshot to refresh, a dead runner
+  path usually means the repo moved.
+
+  Each arm matches the exact shape `maint-install` renders and stays quiet on anything
+  else, because a "close enough" parse turns a live job into a false death notice: the
+  systemd and cron arms read a _command_, not a path field, so a hand-edited
+  `… bash /runner --quiet` or `… bash /runner >>/log` must not be read as one long,
+  nonexistent path; and the launchd array must be `ProgramArguments`' own value rather
+  than the next array in the plist. A recorded path must also be absolute, which
+  `maint-install` always writes: a relative one would be resolved by `[[ -f ]]` against
+  whatever directory `maint-status` was invoked from, making the verdict a property of the
+  caller rather than of the unit. A box with no schedule installed stays quiet too.
+
+  Every token is located by _position_ rather than by appearance: launchd's `argv[0]` must
+  be the interpreter, and cron's `PATH=` value is consumed as a real single-quoted token, so
+  a command that merely contains text resembling the interpreter — inside the assignment, or
+  inside a later quoted argument — can never have its argument read back as our runner. On
+  the launchd side the encoded forms a plist may legally use (`&quot;`, `&apos;`) are decoded
+  so the hint names the real filename, and anything undecodable (a numeric character
+  reference, an unknown entity) is refused for the same reason the rest is: a filename that
+  cannot be reconstructed is not evidence of anything.
+
+  The two causes can coexist, and a unit predating the PATH capture is if anything the
+  likeliest to have been orphaned by a move as well — so the runner is inspected first and
+  `path` is the fallback. Reporting the milder cause there would tell the operator that some
+  steps will skip on a job that does not run at all.
+
+  A `%` in the recorded runner disqualifies it in both command-reading arms, because in
+  neither is the literal text what runs: systemd expands `%` specifiers in `ExecStart` — the
+  expansion `_maint_systemd_escape` already doubles against in `Environment=` — and cron
+  reads `%` as its newline metacharacter.
+
+  Thirty-one behavioral assertions — twelve scheduler states, four that a recorded path is
+  extracted correctly (two read back verbatim, plus escaped-quote scanning and `&apos;`
+  decoding), twelve that an extended command, a displaced array, a relative path, a
+  spliced-in program, a quoted look-alike, an undecodable reference, or a `%`-bearing value
+  is refused rather than mis-parsed, and three that a dead runner outranks a stale PATH. The healthy fixtures point
+  at a runner that really exists, or the whole section would pass vacuously.
+
+- **The release cut no longer tells the operator to do something the repo forbids.**
+  `RELEASE-RUNBOOK.md` §1.1 step 4 said "merge commit, not squash", and `tag-release.sh`
+  printed the same hint twice. Merge commits are disabled — `mergeCommitAllowed` and
+  `rebaseMergeAllowed` are false, and `main`'s ruleset pins
+  `allowed_merge_methods: ["squash"]` — so the instruction was impossible to follow, and it
+  was printed at the worst possible moment: mid-cut, by the repo's highest-stakes command,
+  where the natural reaction is to assume the _ruleset_ is misconfigured and go change it.
+  v4.10.0 had already shipped as a squash (`cd4278e`, one parent) in silent contradiction.
+
+  The "not squash" clause was never load-bearing. It was descriptive — added in #106 (first
+  shipped in v2.1.1) to record how releases merged then, since #95, the v2.0.0 release, had
+  landed as a real merge commit back when merge commits were still enabled — and left behind
+  when they were turned off. What makes the recipe correct is step 5 tagging `origin/main`,
+  the post-merge tip, so
+  `release.yml`'s `core.version`-at-the-tagged-commit guard, `git describe`, and the `vN`
+  alias are all satisfied by a squashed tip. `RELEASE-RUNBOOK.md` now records that reasoning
+  under §"Why squash is fine", including the instruction to trust the repo over the docs if
+  they ever disagree again.
+
+  `tag-release.sh` now names **no** merge method rather than swapping one hardcoded claim
+  for another. Deriving the wording from the live setting would need `gh` and a network
+  call, which its offline-safe next-steps output cannot take, and there is no
+  settings-as-code file to read instead. Naming a method was never actionable anyway —
+  GitHub only offers the methods a repo enables, so the operator cannot pick a disallowed
+  one. The hints now state the property that actually matters (step 2 tags `origin/main`,
+  so the merge method cannot affect the tag), which has no way to go stale.
+
+- **The boundary scan no longer strips comments at all.** Stripping was a false-negative
+  machine: `#` is a comment in shell and TOML but the **length operator** in Lua, so
+  `local p = t[#t] .. "<prefix>/bin"` was truncated and passed; a delimiter inside a string
+  is code, so `export P="#<prefix>/bin"` was truncated too; and a line inside a heredoc or
+  a Lua long-bracket string is runtime data however it starts. Each fix uncovered the next,
+  because getting it right needs a parser for all five grammars the gate now scans.
+
+  The rule is flat instead: a manifested Core file must not contain an OS-absolute path
+  **anywhere, prose included** — name the prefix rather than spelling it. Two comments in
+  `maint/` and `tmux/scripts/` were reworded to comply. That costs a wording choice and
+  buys a gate with no hiding places.
+
+  The one sanctioned exemption is now **redacted rather than dropped**. Removing the whole
+  `LaunchAgents` line exempted everything else on it, so a second literal riding along on a
+  legitimate assignment evaded the gate; only the sanctioned segment is replaced now, and
+  the rest of the line is scanned normally. Verified against the old filter: with
+  `_x="<prefix>/bin"` appended to a `LaunchAgents` line, the line-drop passed it and the
+  redaction catches it.
+
+- **`V4-PROPOSAL.md` no longer claims v4 is unreleased.** Its status block said
+  _"IMPLEMENTED … pending the v4.0.0 release cut"_ and described the work as sitting on a
+  branch — ten minor releases after v4.0.0 shipped. It is now marked as the historical
+  design record it is, pointing at `ARCHITECTURE.md` / `PORTABILITY.md` / `VENDORING.md`
+  for how the shipped system actually behaves.
+
+- **The Core⇄OS boundary gate was green while two Core files carried Homebrew paths.**
+  `audit-core.sh` §5c rejects OS-absolute paths in portable Core, but its file list
+  stopped at `zsh/*.zsh` plus the symlinked configs — so `bin/`, `maint/`, and
+  `tmux/scripts/`, all manifested Core that ships to eight repos, were never scanned.
+  They were not clean: `maint/dotfiles-maint.sh` hardcoded `/opt/homebrew/{bin,sbin}`
+  and `/home/linuxbrew/.linuxbrew/bin` in its PATH _and_ probed both by absolute path
+  to run `brew shellenv`, and `tmux/scripts/tmux-cheat.sh` did the same in its pop-up
+  PATH. The rule was documented, believed enforced, and was not — on seven of the eight
+  target machines those paths do not exist.
+
+  The gate's scope is now **derived from `core.manifest`** rather than hand-kept. That
+  list had fallen behind three separate times — first the symlinked configs, then the
+  `bin/`/`maint/`/`tmux/scripts/` executables, and even then it still omitted
+  `zsh/completions/*`, `lib/ux.sh`, `lib/bootstrap-lib.sh` and `.bin/sync-upstream.sh`.
+  Every omission was the same bug, so the fix is structural: the manifest already _is_
+  the definition of "what is Core", and a file added to it is scanned automatically. The
+  blind spot cannot silently reopen, because reopening it would mean the file is not Core
+  at all — which the manifest gate already fails on. Coverage went from 19 files to 167
+  (including the vendored `nvim/` tree).
+
+  The gate is also unconditional now: it used to be `SCOPE_SHELL`-gated, but it is pure
+  `sed`+`grep` and cross-cutting, so a narrowed `--scope` run must not be able to skip a
+  fan-out-correctness check.
+
+  The one exemption — `zsh/55-maint.zsh`, whose launchd arm legitimately writes
+  `~/Library/LaunchAgents` — is now **per-line rather than per-file**. Skipping the whole
+  module would have re-opened the blind spot _inside_ it: an accidental `/opt/homebrew`
+  added to `maint-install`, or to any other function there, would have sailed through.
+  Only the `LaunchAgents` lines are dropped; everything else in the file is scanned.
+
+  Verified the way a gate change has to be: the previous tree is **red** under the new
+  scope and green under the old one, which is the only evidence that the widening bites.
+
+- **`maint-install` now escapes the runner path it writes into every scheduler unit.** The
+  write-side half of the `%` problem the entry above only closed on the read side: the
+  captured PATH was already escaped three different ways, one per scheduler grammar — but
+  the runner alongside it went in **raw**, and it is no more of a constant: it is wherever
+  the consuming repo happens to have been cloned. A single metacharacter in that path
+  produced a broken schedule, and all three failures were silent or nearly so:
+
+  - **systemd** expands `%` **specifiers** in `ExecStart=` (`%h` = home directory, `%i` =
+    instance, …), so a repo under `…/a%h/…` ran a different path entirely — or the unit
+    refused to load outright on an unknown one. It substitutes **variables** there too, so
+    a component literally named `${HOME}` was equally not the path that ran. The
+    `Environment=` line one row above was already protected against the specifiers — and
+    performs no variable substitution at all, which is why `$` needs its own pass rather
+    than a wider shared helper. The argument was also unquoted, so `systemd` split the
+    runner on whitespace, and a `"` or `\` in the name carried unit-file syntax rather than
+    being part of the filename.
+  - **cron** treats `%` as its **newline** metacharacter: the command was truncated there
+    and the remainder handed to it as stdin, so the job simply stopped running.
+    `maint-install` already escaped `%` in the PATH portion and not in the runner. The
+    runner was unquoted besides, so a space split the command and a `$(…)` or a backtick in
+    the path was _code_, evaluated on every scheduled run.
+  - **launchd** got `&`, `<` or `>` straight into `ProgramArguments`, yielding a malformed
+    plist that `launchctl load` rejects. The PATH value two lines below was already escaped.
+
+  Each field now goes through the escape its own grammar needs: the systemd runner is
+  written **quoted**, through the `Environment=` helper plus a command-line-only `$` → `$$`
+  pass (quoting is what reduces whitespace, `"` and `\` to the same substitutions `%` and
+  `$` already needed), the cron runner through the same single-quote-then-escape-`%` pair as
+  the cron PATH, and the launchd runner — along with the two log paths, which had the same
+  hole — through the plist's XML escape.
+
+  The crontab entry is also emitted with `print -r` rather than `echo`. `maint-install` runs
+  under `emulate -L zsh`, where the `echo` builtin **interprets backslash escapes** — so two
+  characters in a directory name were enough to corrupt the table that the careful quoting
+  above had just produced: `\n` split the entry across two lines and `\c` truncated it
+  outright, leaving a schedule that silently was not the one anyone asked for.
+
+  `_maint_unit_runner` decodes each new encoding symmetrically, so `maint-status` keeps
+  naming the real filename. It stays as strict as it was, and the strictness is the same
+  rule in three places: a value the reader cannot _reconstruct_ is not evidence of anything,
+  so it is refused rather than guessed at. The systemd arm therefore refuses a closing quote
+  with argv after it, a surviving `%` specifier, and a surviving `$VAR` reference — the text
+  in the file is then not the path systemd runs, and resolving either would mean
+  reimplementing systemd's specifier table and reading the unit's environment block. The
+  cron arm refuses a **bare** `%` — one that is not our own `\%` — because sh quoting is no
+  defence there: cron translates the field before `sh` ever sees it, so the command is
+  truncated at that `%` whatever the quotes say. That test has to run _before_ the `\%`
+  decode, which would otherwise destroy the evidence of which kind of `%` it was. The
+  launchd arm already applied the same rule to an undecodable entity reference.
+
+  The older unquoted shapes still parse, because a unit on disk is only rewritten when the
+  operator re-runs `maint-install` — and a `%` in one of those is still refused outright by
+  `_maint_lone_arg`, which remains the right answer there: nothing escaped it, so the
+  recorded text genuinely is not the path that runs.
+
+  Twelve further assertions: one round-trip per scheduler through a runner path holding
+  `% $ ${} & < > " \ '`, a space, and the two-character sequences `\n` and `\c` — installed,
+  read back verbatim, and reported as _current_ rather than as a dead runner — one per
+  scheduler confirming the same artifact through a party that is not this codebase
+  (`/bin/sh` parses the cron command back after applying cron's own `\%` pass, `plistlib`
+  parses the plist, and the systemd `ExecStart` is pinned against a literal expectation),
+  one that the crontab entry is a single **marker-terminated** line, and five refusals for
+  the quoted shapes. That one is stated as a pair deliberately: with this fixture the two
+  `echo` corruptions cancel in the line count — `\n` adds a newline and `\c` removes the
+  final one — so a bare "is it one line" check reads green on a table that is one wrapped
+  fragment plus one unterminated one. Reaching the marker is what truncation cannot fake.
+  A round-trip through our own reader alone would pass a matched pair of wrong escapes, and
+  a fixture whose backslash pair is not a recognized escape passes the `echo` hazard without
+  ever exercising it — the first revision of this one used `\g` and did exactly that. The
+  whole block skips, rather than passing vacuously, on a filesystem that will not take `"`
+  or `\` in a name. The pre-existing cron render assertion now anchors on the runner's
+  closing quote, so dropping the quoting fails there rather than on the one box whose path
+  has a space.
+
+### Security
+
+- **Caller-supplied workflow inputs no longer reach a `run:` body as code.**
+  `auto-tag-call.yml` spliced `${{ inputs.bump }}` straight into its script in a job
+  holding `contents: write` **and** `persist-credentials: true`, so a caller passing
+  `bump: 'patch"; …; #'` could run arbitrary code with the tag-push token. It was the
+  one place the fleet broke the rule `notify-web-call.yml` states outright — _"a
+  caller-supplied string must not be able to write shell"_.
+
+  Both `bump` and `release` now arrive through `env:`, and `bump` is checked against a
+  `patch|minor|major` allowlist at runtime — `workflow_call` inputs cannot be
+  `type: choice` (that is `workflow_dispatch`-only), so the type system will not do it.
+  A typo now fails with the valid set instead of reaching `auto-tag.sh`'s arg parser.
+
+  `claude-routines-call.yml` had the same shape with `${{ inputs.distro }}` in a job
+  holding `CLAUDE_CODE_OAUTH_TOKEN`; it now goes through `env:` too, and is likewise
+  allowlisted to the six distro names its own input contract already documents — `env:`
+  makes the value shell-safe, but the Claude prompt is an _instruction_ channel, so an
+  arbitrary string there remains a prompt-injection vector. No `run:` body in any
+  workflow interpolates an expression any more.
+
+  Neither rejection path echoes the raw value back. The runner parses stdout line by
+  line, so a multiline input can open a new `::…::` command on the following line and
+  forge or suppress annotations no matter how well it is shell-quoted; both paths strip
+  `CR`/`LF`/`%`/`:` and truncate first, mirroring how `atuin-guard-verify.yml` already
+  handles upstream-derived text.
+
 ## [v4.10.0] - 2026-08-13
 
 ### Added

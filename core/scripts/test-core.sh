@@ -831,6 +831,204 @@ fi
 # the __ALL__ sentinel runs everything, and — the regression that matters — an
 # UNRECOGNISED top-level path FAILS CLOSED to the full run instead of silently skipping
 # a gate on the 9-repo fan-out. Pure bash, so it runs even where zsh/nvim are absent.
+# ── failing-gate detail (scripts/lib/common.sh :: fail_detail) ────────────────
+# WHY THIS IS TESTED. The audit used to discard every linter's own report, so a red CI run
+# named a gate and nothing else — "✗ markdownlint reported issues", no rule, no file, no
+# line — and CI is exactly where you cannot re-run the tool by hand (#456). fail_detail is
+# what closes that, which makes its two easy-to-break properties worth pinning: it must go
+# to STDERR (stdout carries the --json summary object, and polluting it would trade one
+# broken output for another), and it must CAP, or a pathological run buries the summary it
+# is meant to explain. The herestrings inside it are the #459 SIGPIPE trap; a "tidy-up"
+# back to `printf | head` reintroduces it, so the cap assertion doubles as that guard.
+hdr "failing-gate detail (fail_detail)"
+_fdt_out="$(fail_detail "one
+two" 2>/dev/null)"
+if [[ -z "$_fdt_out" ]]; then pass "fail_detail: writes nothing to stdout (--json stays parseable)"; else fail "fail_detail: leaked to stdout: $_fdt_out"; fi
+
+_fdt_err="$(fail_detail "alpha
+beta" 2>&1 >/dev/null)"
+if grep -q '^    alpha$' <<<"$_fdt_err" && grep -q '^    beta$' <<<"$_fdt_err"; then
+  pass "fail_detail: writes the tool's report to stderr, indented"
+else fail "fail_detail: stderr was [$_fdt_err]"; fi
+
+_fdt_err="$(fail_detail "" 2>&1 >/dev/null)"
+if [[ -z "$_fdt_err" ]]; then pass "fail_detail: empty output is a no-op"; else fail "fail_detail: emitted [$_fdt_err] for empty input"; fi
+
+# cap: 60 lines with a limit of 5 → 5 shown plus one "… N more" line, and the count right
+_fdt_many="$(seq 1 60)"
+_fdt_err="$(CORE_FAIL_DETAIL_LINES=5 fail_detail "$_fdt_many" 2>&1 >/dev/null)"
+_fdt_n="$(wc -l <<<"$_fdt_err" | tr -d ' ')"
+if [[ "$_fdt_n" == 6 ]] && grep -q '… 55 more line' <<<"$_fdt_err"; then
+  pass "fail_detail: caps at CORE_FAIL_DETAIL_LINES and reports the remainder"
+else fail "fail_detail: cap produced $_fdt_n line(s): $(head -3 <<<"$_fdt_err")"; fi
+
+# ── pipefail SIGPIPE scanner (scripts/lib/common.sh :: _core_pipefail_hits) ───
+# WHY THIS IS TESTED. audit-core.sh §5d exists because this repo has hit the pipefail +
+# SIGPIPE trap three times — a 4000-line `git show` into `grep -q`, `ldd --version |
+# grep -qi musl`, and nvim-reachability.sh inventing orphans on main (#458, #459). A gate
+# for a bug that has recurred that often is only worth having if it actually fires, and
+# probe-testing this one already caught a real defect: it used to scan any file that merely
+# MENTIONED pipefail in a comment, which is the false-positive class that gets a gate
+# switched off. Both halves are pinned below — what it catches AND what it must ignore.
+if have git; then
+  hdr "pipefail SIGPIPE scanner (_core_pipefail_hits)"
+  _pfd="$SANDBOX/pipefail"
+  mkdir -p "$_pfd"
+  _pf_write() { printf '%s\n' "$2" >"$_pfd/$1"; }   # _pf_write <name> <body>
+  # THE PIPE IS ASSEMBLED, NOT WRITTEN LITERALLY. This file sets `pipefail`, so §5d scans
+  # it — and a file whose job is to TEST the banned shape necessarily contains it, which
+  # made the gate flag its own fixtures on the first run. Keeping the literal out of this
+  # source is the honest fix: the fixture written to disk is byte-identical to the real
+  # hazard, so the assertions still exercise the true pattern. The alternative — an
+  # inline "allow" marker in the scanner — was rejected as an escape hatch that invites
+  # silencing a real finding, on a gate that exists because this bug keeps coming back.
+  _pf_p='|'
+
+  _pf_write grepq.sh "set -euo pipefail
+printf '%s' \"\$big\" $_pf_p grep -q needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/grepq.sh")" == 2 ]]; then pass "pipefail scan: catches a printf piped into grep -q"; else fail "pipefail scan: missed a printf piped into grep -q"; fi
+
+  _pf_write head.sh "set -euo pipefail
+echo \"\$v\" $_pf_p head -n1"
+  if [[ "$(_core_pipefail_hits "$_pfd/head.sh")" == 2 ]]; then pass "pipefail scan: catches an echo piped into head"; else fail "pipefail scan: missed an echo piped into head"; fi
+
+  _pf_write awkexit.sh "set -euo pipefail
+printf '%s' \"\$v\" $_pf_p awk '/x/ { print; exit }'"
+  if [[ "$(_core_pipefail_hits "$_pfd/awkexit.sh")" == 2 ]]; then pass "pipefail scan: catches a printf piped into awk with exit"; else fail "pipefail scan: missed a printf piped into awk with exit"; fi
+
+  # the herestring form is the FIX — it must never be flagged, or the gate punishes the cure
+  _pf_write safe.sh 'set -euo pipefail
+grep -q needle <<<"$big"'
+  if [[ -z "$(_core_pipefail_hits "$_pfd/safe.sh")" ]]; then pass "pipefail scan: a herestring is not a finding"; else fail "pipefail scan: flagged the herestring fix"; fi
+
+  # writing ABOUT the hazard must not trip it — this very repo documents it in comments
+  _pf_write comment.sh "set -euo pipefail
+# printf '%s' \"\$x\" $_pf_p grep -q foo is the trap this gate exists to catch
+grep -q foo <<<\"\$x\""
+  if [[ -z "$(_core_pipefail_hits "$_pfd/comment.sh")" ]]; then pass "pipefail scan: a comment describing the hazard is not a finding"; else fail "pipefail scan: flagged a comment"; fi
+
+  # no pipefail set → the shape is harmless, and flagging it is the false positive that
+  # gets a gate disabled. (The word appearing in prose must not count as enabling it.)
+  _pf_write nopipefail.sh "set -eu
+# this file only mentions pipefail in a comment
+printf '%s' \"\$v\" $_pf_p grep -q needle"
+  if [[ -z "$(_core_pipefail_hits "$_pfd/nopipefail.sh")" ]]; then pass "pipefail scan: a file that never enables pipefail is not a finding"; else fail "pipefail scan: flagged a file that never enables pipefail"; fi
+
+  # pipefail enabled in a SPLIT form — an earlier version anchored on the first option
+  # token and skipped these entirely, so the gate silently permitted the hazard
+  _pf_write splitset.sh "set -e -o pipefail
+printf '%s' \"\$v\" $_pf_p grep -q needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/splitset.sh")" == 2 ]]; then pass "pipefail scan: sees set -e -o pipefail"; else fail "pipefail scan: missed the split set form"; fi
+
+  _pf_write longset.sh "set -o errexit -o pipefail
+printf '%s' \"\$v\" $_pf_p grep -q needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/longset.sh")" == 2 ]]; then pass "pipefail scan: sees set -o errexit -o pipefail"; else fail "pipefail scan: missed the long-option set form"; fi
+
+  # quiet grep has more spellings than -q
+  _pf_write grepeq.sh "set -euo pipefail
+printf '%s' \"\$v\" $_pf_p grep -E -q needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/grepeq.sh")" == 2 ]]; then pass "pipefail scan: catches a separated quiet flag"; else fail "pipefail scan: missed grep -E -q"; fi
+
+  _pf_write grepquiet.sh "set -euo pipefail
+printf '%s' \"\$v\" $_pf_p grep --quiet needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/grepquiet.sh")" == 2 ]]; then pass "pipefail scan: catches --quiet"; else fail "pipefail scan: missed grep --quiet"; fi
+
+  # awk that merely PRINTS the word exit does not exit early — flagging it would be an
+  # invented finding, the other way this gate loses trust
+  _pf_write awkstring.sh "set -euo pipefail
+printf '%s' \"\$v\" $_pf_p awk '{ print \"exit\" }'"
+  if [[ -z "$(_core_pipefail_hits "$_pfd/awkstring.sh")" ]]; then pass "pipefail scan: awk printing the word exit is not a finding"; else fail "pipefail scan: flagged awk that never exits"; fi
+
+  # a file producer is deliberately out of scope (~15 legitimate instances in-tree)
+  _pf_write fileproducer.sh 'set -euo pipefail
+sed -n "s/^x=//p" "$f" | head -n1'
+  if [[ -z "$(_core_pipefail_hits "$_pfd/fileproducer.sh")" ]]; then pass "pipefail scan: a file producer stays out of scope"; else fail "pipefail scan: flagged sed <file> | head"; fi
+
+  # and the gate must not flag the library that defines it
+  if [[ -z "$(_core_pipefail_hits "$HERE/scripts/lib/common.sh")" ]]; then pass "pipefail scan: does not flag its own definition"; else fail "pipefail scan: flagged common.sh itself"; fi
+fi
+
+# ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
+# WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
+# whole reason for existing is that an INTERMITTENT failure is unreproducible by the time the
+# operator is told to re-run — so the one line that names it has to be right on the FIRST
+# occurrence. Every branch below is a QUIET failure: it renders a plausible line and loses the
+# name, which is indistinguishable from the flake simply not being nameable. Driven straight on
+# fixtures because the alternative — making a real gate fail — means recursively invoking the
+# audit or hand-injecting a fault, and CI repeats neither.
+hdr "nested-gate failure digest (_core_fail_digest)"
+_fdg="$SANDBOX/faildigest"
+mkdir -p "$_fdg"
+_fdesc="$(printf '\033')"
+
+# 1. COLOUR IS THE ONE THAT WOULD GO QUIET UNNOTICED. fail() prefixes ✗ with $c_red, so an
+#    anchored ^✗ finds nothing whenever colour is forced — and the runs where a human forces
+#    colour are exactly the runs a human is watching. Fixture carries the real SGR bytes.
+{
+  printf 'preamble noise\n'
+  printf '%s✗%s atuin autostart: the sandbox leaked\n' "${_fdesc}[31m" "${_fdesc}[0m"
+  printf '%s✓%s something fine\n' "${_fdesc}[32m" "${_fdesc}[0m"
+} >"$_fdg/coloured.txt"
+_fdout="$(_core_fail_digest "$_fdg/coloured.txt")"
+if [[ "$_fdout" == "1: atuin autostart: the sandbox leaked" ]]; then
+  pass "fail digest: a COLOURED ✗ is still extracted (an anchored match would report nothing here)"
+else
+  fail "fail digest: colour hid the failure — got '$_fdout', want '1: atuin autostart: the sandbox leaked'"
+fi
+
+# 2. The count is the TRUE total while only three are named; "+N more" is what keeps that from
+#    being a silent truncation. This is the line that tells one flaky assertion apart from a
+#    section that is wholly down, which is what decides re-run versus investigate.
+: >"$_fdg/many.txt"
+for _fdi in alpha beta gamma delta epsilon; do printf '✗ case %s failed\n' "$_fdi" >>"$_fdg/many.txt"; done
+_fdout="$(_core_fail_digest "$_fdg/many.txt")"
+if [[ "$_fdout" == "5: case alpha failed | case beta failed | case gamma failed (+2 more)" ]]; then
+  pass "fail digest: five failures render as three names + a true total (+2 more), not a silent cut"
+else
+  fail "fail digest: overflow rendering wrong — got '$_fdout'"
+fi
+
+# 3. EXACTLY three must not grow a "(+0 more)" tail — an off-by-one here is the kind of wart
+#    that gets copied into the next renderer because it looks deliberate.
+: >"$_fdg/three.txt"
+for _fdi in one two three; do printf '✗ %s\n' "$_fdi" >>"$_fdg/three.txt"; done
+_fdout="$(_core_fail_digest "$_fdg/three.txt")"
+if [[ "$_fdout" == "3: one | two | three" ]]; then
+  pass "fail digest: exactly three names render with no '(+0 more)' tail"
+else
+  fail "fail digest: boundary at three is wrong — got '$_fdout'"
+fi
+
+# 3b. A RECORD IS NOT REWRITTEN TO FIT THE SEPARATOR. The first implementation joined with
+#     `tr '\n' '|' | sed 's/|/ | /g'`, which also spaced out every literal `|` INSIDE a
+#     message — and nine assertions in this very file contain one, `'exec … || exec …' cannot
+#     fall back` among them. Two failures then rendered with four apparent boundaries while
+#     the count said 2, inventing structure in the one line someone has when they cannot
+#     reproduce the failure. Fixtures use the real offending text rather than a stand-in.
+{
+  printf "✗ atuin unit: 'exec … || exec …' cannot fall back — exec replaces the process\n"
+  printf '✗ serve: plain second failure\n'
+} >"$_fdg/pipes.txt"
+_fdout="$(_core_fail_digest "$_fdg/pipes.txt")"
+if [[ "$_fdout" == "2: atuin unit: 'exec … || exec …' cannot fall back — exec replaces the process | serve: plain second failure" ]]; then
+  pass "fail digest: a literal '||' inside a message survives verbatim — the count and the visible boundaries agree"
+else
+  fail "fail digest: a message's own pipes were rewritten as separators — got '$_fdout'"
+fi
+
+# 4. NO MARKER MUST YIELD NOTHING, so the caller can tell "these assertions failed" from "it
+#    died before it could report". Rendering an empty list beside a red line would read as zero
+#    failures and send the reader hunting a contradiction that is not there; audit-core.sh
+#    branches on this emptiness to say "exited N without printing a ✗" instead.
+printf 'ran fine\nno markers here\n' >"$_fdg/nomark.txt"
+_fdout="$(_core_fail_digest "$_fdg/nomark.txt")"
+_fdout2="$(_core_fail_digest "$_fdg/does-not-exist.txt")"
+if [[ -z "$_fdout" && -z "$_fdout2" ]]; then
+  pass "fail digest: output with no ✗, and an unreadable file, both yield EMPTY so a crash is not misreported as assertions"
+else
+  fail "fail digest: expected empty for both no-marker ('$_fdout') and missing file ('$_fdout2')"
+fi
+
 hdr "CI path classifier (scripts/ci-classify.sh)"
 CLASSIFY="$HERE/scripts/ci-classify.sh"
 _classify_is() { # _classify_is <label> <newline-input> <want-shell> <want-nvim>
@@ -1484,6 +1682,573 @@ if have git; then
   _fdd_is "drift: ahead with no mainline ref fails closed" 1 'no mainline ref'
 else
   skip "fleet drift classifier (git unavailable)"
+fi
+
+# ── F6. sync-core.sh — THE fan-out, on hermetic fixtures ─────────────────────
+# scripts/sync-core.sh is the highest-blast-radius script here: it gates on the audit,
+# runs `git subtree pull` into eight working trees, and stamps core.lock. Until now it
+# had NO coverage at all — its only proof was sync-fanout.yml running it for real
+# against the live fleet, i.e. the fleet WAS the test.
+#
+# Everything below is a REFUSAL or an idempotency property. That matters for what these
+# tests are worth: a broken guard does not throw, it fans a bad tree out to eight repos
+# and reports success. So each case asserts the script DECLINED, and (where the guard is
+# per-repo) that it declined without abandoning the repos after it.
+#
+# The fixture is a miniature of the real topology: `coreremote` is the origin every OS
+# repo vendors from, `core` is the local checkout sync-core.sh runs out of ($HERE, as it
+# computes from BASH_SOURCE), and `repos/` is REPOS_ROOT. audit-core.sh is STUBBED in the
+# fixture so the audit gate can be driven both ways in-process — the real one cannot fail
+# on demand.
+# `git subtree` is a CONTRIB command, not part of core git: the Alpine/busybox image
+# ships git without it, and Debian splits it into a separate git-subtree package. Every
+# assertion below needs a real subtree add + pull, so probe for the command itself rather
+# than assuming `have git` implies it — otherwise the fixture silently builds an OS repo
+# with no core/ and half these tests fail for a reason that has nothing to do with
+# sync-core.sh. Probing the exec-path is deterministic; `git subtree --help` can page.
+_sc_subtree=0
+if have git; then
+  if [[ -x "$(git --exec-path 2>/dev/null)/git-subtree" ]] || have git-subtree; then _sc_subtree=1; fi
+fi
+if ((_sc_subtree)); then
+  hdr "sync-core.sh fan-out guards (hermetic fixtures)"
+  SCF="$SANDBOX/synccore"
+  rm -rf "$SCF"
+  mkdir -p "$SCF"
+  # Host git config must not reach in: a global commit.gpgsign blocks every fixture
+  # commit, and init.defaultBranch decides whether `main` even exists (load-bearing —
+  # CORE_BRANCH defaults to main). Same neutralisation the fleet-drift fixture uses.
+  _scg() { git -C "$1" -c commit.gpgsign=false -c user.email=t@example.com -c user.name=t "${@:2}"; }
+  # sync-core.sh runs `git subtree pull` and `git commit` INSIDE these fixtures with its
+  # own argv — it never inherits the -c flags above. A CI runner has no global git
+  # identity, so those commits abort with "Please tell me who you are" and the whole
+  # fan-out silently produces no core.lock. (A developer machine hides this: the global
+  # identity is already set, so it passes locally and fails only on CI.) Stamp the
+  # identity into each fixture's LOCAL config so any git invocation inside it can commit.
+  _sc_ident() {
+    git -C "$1" config user.email t@example.com
+    git -C "$1" config user.name t
+    git -C "$1" config commit.gpgsign false
+  }
+
+  # 1) coreremote — the vendored origin. Carries the REAL sync-core.sh + the libs it
+  #    sources, so the code under test is the shipped code, not a copy of its logic.
+  mkdir -p "$SCF/coreremote/scripts/lib" "$SCF/coreremote/lib"
+  cp "$HERE/scripts/sync-core.sh" "$SCF/coreremote/scripts/"
+  cp "$HERE/scripts/lib/common.sh" "$SCF/coreremote/scripts/lib/"
+  cp "$HERE/lib/ux.sh" "$HERE/lib/bootstrap-lib.sh" "$SCF/coreremote/lib/"
+  printf '9.9.9\n' >"$SCF/coreremote/core.version"
+  printf 'dotfiles-Test\ndotfiles-Other\ndotfiles-NotCloned\n' >"$SCF/coreremote/scripts/os-repos.txt"
+  printf 'core payload v1\n' >"$SCF/coreremote/payload.txt"
+  # The stub audit: exits with whatever $SCF/auditrc says, so a single file flips the
+  # pre-fan-out gate between green and red without touching the script under test.
+  printf '#!/usr/bin/env bash\nexit "$(cat "%s/auditrc" 2>/dev/null || echo 0)"\n' "$SCF" \
+    >"$SCF/coreremote/scripts/audit-core.sh"
+  chmod +x "$SCF/coreremote/scripts/audit-core.sh" "$SCF/coreremote/scripts/sync-core.sh"
+  printf '0\n' >"$SCF/auditrc"
+  _scg "$SCF/coreremote" init -q >/dev/null 2>&1
+  _sc_ident "$SCF/coreremote"
+  _scg "$SCF/coreremote" symbolic-ref HEAD refs/heads/main
+  _scg "$SCF/coreremote" add -A
+  _scg "$SCF/coreremote" commit -q -m "core c0"
+
+  # 2) core — the local checkout sync-core.sh runs from. A clone, so HEAD == remote tip
+  #    (the state the local-vs-remote guard demands).
+  git -c commit.gpgsign=false clone -q "$SCF/coreremote" "$SCF/core" >/dev/null 2>&1
+  _sc_ident "$SCF/core"
+  _SCS="$SCF/core/scripts/sync-core.sh"
+
+  # 3) the fleet. dotfiles-Test gets a real core/ subtree; the other two are the
+  #    "not cloned" and "no core/ yet" shapes the loop must SKIP rather than fail.
+  mkdir -p "$SCF/repos/dotfiles-Other" "$SCF/repos/dotfiles-NotCloned"
+  _sc_new_osrepo() { # <name>  — a repo with a real core/ subtree sharing history
+    local d="$SCF/repos/$1"
+    mkdir -p "$d"
+    _scg "$d" init -q >/dev/null 2>&1
+    _sc_ident "$d"
+    _scg "$d" symbolic-ref HEAD refs/heads/main
+    printf 'os layer\n' >"$d/os.txt"
+    _scg "$d" add -A
+    _scg "$d" commit -q -m "os c0"
+    _scg "$d" subtree add -q --prefix=core "$SCF/coreremote" main --squash >/dev/null 2>&1
+  }
+  _sc_new_osrepo dotfiles-Test
+  _scg "$SCF/repos/dotfiles-Other" init -q >/dev/null 2>&1   # a git repo with NO core/
+  _sc_ident "$SCF/repos/dotfiles-Other"
+  _scg "$SCF/repos/dotfiles-Other" symbolic-ref HEAD refs/heads/main
+  rm -rf "$SCF/repos/dotfiles-NotCloned/.git"                 # a dir that is not a repo
+
+  _sc_run() { # run the fixture's sync-core.sh against the fixture fleet
+    env -u DOTFILES_ALLOW_CORE_EDIT CORE_COLOR=never \
+      REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main \
+      SYNC_JOBS=1 "$@" bash "$_SCS" 2>&1
+  }
+
+  # --- the audit gate: the property that a RED tree must never fan out ---------
+  # This is the single most important assertion in the file: every other guard protects
+  # one repo, this one protects all eight. It must also refuse BEFORE mutating anything.
+  printf '1\n' >"$SCF/auditrc"
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(_sc_run)"; _sc_rc=$?
+  if ((_sc_rc != 0)) && grep -q 'refusing to fan out a red tree' <<<"$_sc_out"; then
+    pass "sync-core: a RED audit refuses the fan-out (rc=$_sc_rc)"
+  else
+    fail "sync-core: a red audit did NOT stop the fan-out (rc=$_sc_rc)"
+  fi
+  # ...and it refused BEFORE touching anything. HEAD alone is too weak a claim: a
+  # regression that WROTE core.lock or staged a file before returning would leave HEAD
+  # unchanged and still pass. Require the working tree to be clean as well.
+  if [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]] &&
+    [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
+    pass "sync-core: the red-audit refusal happens before any repo is mutated"
+  else
+    fail "sync-core: a repo was written to or moved despite the red-audit refusal"
+  fi
+  printf '0\n' >"$SCF/auditrc"
+
+  # --- the local-vs-remote guard ----------------------------------------------
+  # subtree pull fetches the REMOTE tip, but the audit above validated the LOCAL tree.
+  # Advance the remote so the two disagree; the run must refuse rather than vendor a
+  # commit nobody audited.
+  printf 'core payload v2\n' >"$SCF/coreremote/payload.txt"
+  _scg "$SCF/coreremote" commit -q -am "core c1"
+  _sc_out="$(_sc_run)"; _sc_rc=$?
+  if ((_sc_rc != 0)) && grep -q 'local HEAD' <<<"$_sc_out"; then
+    pass "sync-core: local HEAD != remote tip refuses (audited tree != vendored tree)"
+  else
+    fail "sync-core: local/remote mismatch was not caught (rc=$_sc_rc)"
+  fi
+  _scg "$SCF/core" pull -q --ff-only >/dev/null 2>&1   # realign for the runs below
+
+  # --- skip vs fail: an absent repo is not a failure ---------------------------
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  # Both names appearing is not the property — they would still appear if either branch
+  # were changed from skip() to err(). Assert the SUMMARY BUCKETS: two skipped, none
+  # failed. That is the distinction that decides whether a missing clone reds a fan-out.
+  if grep -q 'dotfiles-NotCloned' <<<"$_sc_out" && grep -qE 'dotfiles-Other.*no core/' <<<"$_sc_out" &&
+    grep -qE 'skipped 2' <<<"$_sc_out" && grep -qE 'failed 0' <<<"$_sc_out"; then
+    pass "sync-core: uncloned repo and core/-less repo land in the SKIPPED bucket, not failed"
+  else
+    fail "sync-core: absent/core-less repos not counted as skips (want skipped 2 / failed 0)"
+  fi
+
+  # --- dotfiles-Windows is never a target -------------------------------------
+  # It vendors no core/ (its host layer is native PowerShell), so fanning into it would
+  # be wrong, not merely useless. The fallback array inside the script must agree with
+  # scripts/os-repos.txt on that — assert the SHIPPED data file, not the fixture's.
+  if ! grep -qE '^[[:space:]]*dotfiles-Windows[[:space:]]*$' "$HERE/scripts/os-repos.txt" &&
+    ! grep -q 'dotfiles-Windows' <<<"$(sed -n '/^ALL_OS_REPOS=(/,/^)/p' "$HERE/scripts/sync-core.sh")"; then
+    pass "sync-core: dotfiles-Windows is in neither the fleet file nor the fallback array"
+  else
+    fail "sync-core: dotfiles-Windows would be fanned into (it carries no core/ subtree)"
+  fi
+
+  # --- --dry-run mutates nothing ----------------------------------------------
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(env -u DOTFILES_ALLOW_CORE_EDIT CORE_COLOR=never REPOS_ROOT="$SCF/repos" \
+    CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main SYNC_JOBS=1 bash "$_SCS" --dry-run 2>&1)"
+  if grep -q 'would: git -C' <<<"$_sc_out" &&
+    [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]] &&
+    [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
+    pass "sync-core: --dry-run prints the plan and writes nothing"
+  else
+    fail "sync-core: --dry-run mutated the target or printed no plan"
+  fi
+
+  # --- the real pull: core.lock lands at the ROOT and records the full sha -----
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  _sc_lock="$SCF/repos/dotfiles-Test/core.lock"
+  _sc_remote_sha="$(_scg "$SCF/coreremote" rev-parse main)"
+  if [[ -f "$_sc_lock" ]] && ! [[ -e "$SCF/repos/dotfiles-Test/core/core.lock" ]]; then
+    pass "sync-core: core.lock is written at the repo ROOT (a subtree pull cannot clobber it)"
+  else
+    fail "sync-core: core.lock is missing or landed inside core/"
+  fi
+  if grep -q "^core_sha=$_sc_remote_sha\$" "$_sc_lock" &&
+    grep -q '^core_version=9.9.9$' "$_sc_lock" && grep -q '^core_branch=main$' "$_sc_lock"; then
+    pass "sync-core: core.lock records the FULL vendored sha, version and branch"
+  else
+    fail "sync-core: core.lock contents wrong ($(tr '\n' ' ' <"$_sc_lock"))"
+  fi
+  # The tree must be CLEAN afterwards, or the dirty-tree guard blocks the next run —
+  # the self-inflicted deadlock the core.lock commit exists to prevent.
+  if [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
+    pass "sync-core: the target tree is clean after a sync (next run is not self-blocked)"
+  else
+    fail "sync-core: sync left the target dirty — the next run would refuse it"
+  fi
+
+  # --- idempotency: re-syncing the same sha must not manufacture a commit ------
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  if grep -q 'core.lock current' <<<"$_sc_out" &&
+    [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]]; then
+    pass "sync-core: re-syncing an unchanged sha is a no-op (no empty core.lock commit)"
+  else
+    fail "sync-core: a no-change re-sync still moved HEAD"
+  fi
+
+  # --- the dirty-tree guard, and that it does not abandon the rest of the fleet -
+  # Ordering matters here: dotfiles-Test sorts BEFORE dotfiles-Other in the fixture fleet
+  # file, so if a dirty first repo aborted the loop the second would never be reached.
+  printf 'uncommitted\n' >"$SCF/repos/dotfiles-Test/dirty.txt"
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  # Asserted on the ✗ line and the SUMMARY, deliberately NOT on $?. sync-core.sh exits
+  # ZERO here: the failure branch prints "done with failures" to stderr but never sets a
+  # status. That is load-bearing rather than an oversight to "fix" in passing —
+  # sync-fanout.yml runs this under `bash -e` and then does its OWN per-repo
+  # post-condition check (core.lock pins the released sha, branch ≥1 commit ahead), so a
+  # non-zero exit would abort that step and stop it opening PRs for the repos that DID
+  # sync. Pinning the observable contract here keeps the test honest about what the
+  # script actually promises; whether $? should also be non-zero is a design call.
+  if grep -q 'has uncommitted changes' <<<"$_sc_out" &&
+    grep -qE 'failed 1' <<<"$_sc_out"; then
+    pass "sync-core: a dirty target is refused and counted failed (not stashed, not force-merged)"
+  else
+    fail "sync-core: a dirty target was not refused/counted"
+  fi
+  if grep -q 'dotfiles-Other' <<<"$_sc_out"; then
+    pass "sync-core: a dirty repo does not abandon the repos after it"
+  else
+    fail "sync-core: the fan-out stopped at the first dirty repo"
+  fi
+  rm -f "$SCF/repos/dotfiles-Test/dirty.txt"
+else
+  skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
+fi
+
+# ── F7. the REAL link run (blib_link_core against a throwaway $HOME) ─────────
+# bootstrap-test.yml asserts the symlink graph, but it is workflow_call-only and
+# dotfiles-core ships no bootstrap.sh — so it only ever runs from the eight OS repos.
+# Core's own CI unit-tests the blib_* helpers and never performs a real link run, which
+# means a bootstrap-lib regression is caught downstream, in eight repos, instead of here.
+#
+# This closes that: link the ACTUAL Core tree into a sandbox $HOME/$config and assert the
+# graph a consumer depends on. Hermetic — the tpm directory is pre-seeded so the one-time
+# clone is skipped, which is the only network call in the whole function.
+if have git; then
+  hdr "bootstrap link run (blib_link_core against a sandbox HOME)"
+  LR="$SANDBOX/linkrun"
+  rm -rf "$LR"
+  mkdir -p "$LR/home" "$LR/config" "$LR/dotfiles"
+  # A consumer's layout is <repo>/core -> the vendored Core tree. COPY it rather than
+  # symlinking: blib_link_core runs `chmod +x` on core/tmux/scripts/*.sh and core/bin/clip*,
+  # and audit-core.sh launches this suite CONCURRENTLY with its own exec-bit gate — a
+  # symlink here would let the test mutate the very checkout that gate is reading, which is
+  # both a race and a violation of the read-only assumption the whole suite is built on.
+  # Copying per top-level directory keeps .git out without needing a non-portable tar flag.
+  mkdir -p "$LR/dotfiles/core"
+  for _lr_d in zsh nvim tmux vim git starship lazygit mise jujutsu atuin sesh bin lib; do
+    [[ -e "$HERE/$_lr_d" ]] && cp -R "$HERE/$_lr_d" "$LR/dotfiles/core/$_lr_d"
+  done
+  mkdir -p "$LR/config/tmux/plugins/tpm"   # pre-seed: skips the tpm clone (offline)
+  (
+    # shellcheck source=lib/bootstrap-lib.sh
+    HOME="$LR/home" XDG_CONFIG_HOME="$LR/config" \
+      BLIB_ONLY="" BLIB_SKIP="" \
+      bash -c '
+        set -u
+        . "'"$HERE/lib/bootstrap-lib.sh"'"
+        blib_link_core "'"$LR/dotfiles"'" "'"$LR/config"'" >/dev/null 2>&1
+      '
+  ) || true
+
+  _lr_is_link_to() { # <link> <target>  — a symlink resolving to the expected file
+    [[ -L "$1" ]] && [[ "$(readlink "$1")" == "$2" ]]
+  }
+  # The zsh chain is the load-order contract: every numbered Core fragment must land FLAT
+  # in $config/zsh under its own basename, because loader.zsh globs NN-*.zsh there. A
+  # rename or a missed file here is precisely what silently drops a stage on eight boxes.
+  _lr_missing=""
+  for f in "$HERE"/zsh/[0-9][0-9]-*.zsh; do
+    b="$(basename "$f")"
+    _lr_is_link_to "$LR/config/zsh/$b" "$LR/dotfiles/core/zsh/$b" || _lr_missing="$_lr_missing $b"
+  done
+  if [[ -z "$_lr_missing" ]]; then
+    pass "link run: every numbered Core zsh fragment is linked flat into \$ZSH_CFG"
+  else
+    fail "link run: zsh fragments missing or mislinked —$_lr_missing"
+  fi
+  # loader.zsh is not a numbered fragment but IS what sources them; a graph without it
+  # produces a shell that starts and loads nothing.
+  if _lr_is_link_to "$LR/config/zsh/loader.zsh" "$LR/dotfiles/core/zsh/loader.zsh"; then
+    pass "link run: loader.zsh is linked (the chain has an entry point)"
+  else
+    fail "link run: loader.zsh was not linked"
+  fi
+  # nvim is linked as a DIRECTORY symlink — the one manifest entry that is a whole tree.
+  if [[ -L "$LR/config/nvim" && -d "$LR/config/nvim" && -f "$LR/config/nvim/init.lua" ]]; then
+    pass "link run: nvim/ is a directory symlink resolving to a real init.lua"
+  else
+    fail "link run: nvim/ is not a resolvable directory symlink"
+  fi
+  # The rest of the symlinked surface, at the exact destinations bootstrap promises.
+  _lr_bad=""
+  _lr_is_link_to "$LR/config/tmux/tmux.conf" "$LR/dotfiles/core/tmux/tmux.conf" || _lr_bad="$_lr_bad tmux.conf"
+  _lr_is_link_to "$LR/config/starship.toml" "$LR/dotfiles/core/starship/starship.toml" || _lr_bad="$_lr_bad starship.toml"
+  _lr_is_link_to "$LR/config/lazygit/config.yml" "$LR/dotfiles/core/lazygit/config.yml" || _lr_bad="$_lr_bad lazygit"
+  _lr_is_link_to "$LR/config/jj/config.toml" "$LR/dotfiles/core/jujutsu/config.toml" || _lr_bad="$_lr_bad jj"
+  _lr_is_link_to "$LR/home/.gitconfig" "$LR/dotfiles/core/git/gitconfig" || _lr_bad="$_lr_bad .gitconfig"
+  _lr_is_link_to "$LR/home/.vimrc" "$LR/dotfiles/core/vim/vimrc" || _lr_bad="$_lr_bad .vimrc"
+  # Resolve the target, don't just prove it is *a* symlink — a dangling link, or one
+  # pointing at the wrong directory, would otherwise pass this grouped assertion.
+  _lr_is_link_to "$LR/config/tmux/scripts" "$LR/dotfiles/core/tmux/scripts" || _lr_bad="$_lr_bad tmux/scripts"
+  [[ -d "$LR/config/tmux/scripts" ]] || _lr_bad="$_lr_bad tmux/scripts(dangling)"
+  if [[ -z "$_lr_bad" ]]; then
+    pass "link run: tmux, starship, lazygit, jj, gitconfig and vimrc land where bootstrap promises"
+  else
+    fail "link run: wrong or missing links —$_lr_bad"
+  fi
+  # clip is SYMLINKED onto PATH — bootstrap-lib chmod +x's the SOURCE, not the link — so
+  # assert the target as well as the mode. nvim's clipboard provider, tmux copy-pipe and
+  # the zsh helpers all shell out to it by name, so a dangling link breaks copy on every
+  # surface at once while `-x` alone would still look fine on a wrong-but-executable file.
+  if _lr_is_link_to "$LR/home/.local/bin/clip" "$LR/dotfiles/core/bin/clip" &&
+    _lr_is_link_to "$LR/home/.local/bin/clip-paste" "$LR/dotfiles/core/bin/clip-paste" &&
+    [[ -x "$LR/home/.local/bin/clip" && -x "$LR/home/.local/bin/clip-paste" ]]; then
+    pass "link run: clip + clip-paste link onto ~/.local/bin and resolve executable"
+  else
+    fail "link run: clip/clip-paste missing, mislinked, or not executable"
+  fi
+  # The SEEDED files are the inverse contract: real copies, never symlinks, so a user's
+  # identity/local edits are never tracked back into Core. A symlink here would publish
+  # someone's git identity into the repo on their next commit.
+  if [[ -f "$LR/config/git/local.gitconfig" && ! -L "$LR/config/git/local.gitconfig" ]] &&
+    [[ -f "$LR/config/sesh/sesh.toml" && ! -L "$LR/config/sesh/sesh.toml" ]]; then
+    pass "link run: seeded local.gitconfig and sesh.toml are COPIES, not symlinks"
+  else
+    fail "link run: a seeded file is missing or was symlinked (user edits would track back)"
+  fi
+  # Idempotency: bootstrap is re-run after every sync, so a second pass must be a no-op.
+  # Comparing sorted PATH NAMES is not enough — blib_link removing and recreating every
+  # symlink leaves the exact same names behind, which is precisely the churn this is
+  # supposed to catch. Compare INODES: a torn-down-and-remade link gets a new one.
+  # The second run's exit status is captured rather than discarded, so a rerun that fails
+  # outright cannot pass this as "nothing changed".
+  _lr_inodes() { find "$LR/config" "$LR/home" -maxdepth 4 -type l -exec ls -di {} + 2>/dev/null | sort -k2; }
+  _lr_before="$(find "$LR/config" "$LR/home" -maxdepth 4 2>/dev/null | sort)"
+  _lr_ino_before="$(_lr_inodes)"
+  HOME="$LR/home" XDG_CONFIG_HOME="$LR/config" bash -c '
+    set -u
+    . "'"$HERE/lib/bootstrap-lib.sh"'"
+    blib_link_core "'"$LR/dotfiles"'" "'"$LR/config"'" >/dev/null 2>&1
+  '
+  _lr_rc=$?
+  _lr_after="$(find "$LR/config" "$LR/home" -maxdepth 4 2>/dev/null | sort)"
+  _lr_ino_after="$(_lr_inodes)"
+  if ((_lr_rc == 0)) && [[ "$_lr_before" == "$_lr_after" ]] &&
+    [[ -n "$_lr_ino_before" && "$_lr_ino_before" == "$_lr_ino_after" ]] &&
+    [[ -z "$(find "$LR/config" "$LR/home" -name '*.pre-dotfiles.*')" ]]; then
+    pass "link run: a second pass is a true no-op (same inodes, no backups, rc=0)"
+  else
+    fail "link run: re-running bootstrap churned links, backed a file up, or failed (rc=$_lr_rc)"
+  fi
+else
+  skip "bootstrap link run (git unavailable)"
+fi
+
+# ── F9. tag-release.sh — the tag may only exist on a commit that is on main ──
+# This script had NO coverage, which is how its ordering bug survived: it used to commit
+# AND tag in one step, leaving a local vX.Y.Z on a commit that was not yet on main. A
+# concurrent session pushing with push.followTags carried exactly such a tag to origin and
+# fired release.yml + sync-fanout.yml against an unmerged commit — eight bad vendor PRs,
+# and a retired version number, because release tags are immutable by ruleset.
+#
+# The invariant these pin: a vX.Y.Z tag only ever exists on a commit already on
+# origin/main. Phase 1 must create NO tag; phase 2 must refuse unless origin/main really
+# carries the version.
+if have git; then
+  hdr "tag-release.sh two-phase ordering (hermetic fixtures)"
+  TR="$SANDBOX/tagrelease"
+  rm -rf "$TR"; mkdir -p "$TR"
+  _trg() { git -C "$1" -c commit.gpgsign=false -c user.email=t@example.com -c user.name=t "${@:2}"; }
+  _tr_ident() {
+    git -C "$1" config user.email t@example.com
+    git -C "$1" config user.name t
+    git -C "$1" config commit.gpgsign false
+  }
+  # A miniature release repo: the REAL tag-release.sh plus the two files it reads, and an
+  # "origin" it can fetch. audit is stubbed so the gate can be driven without running the
+  # real one inside a test.
+  mkdir -p "$TR/origin/scripts/lib" "$TR/origin/lib"
+  cp "$HERE/scripts/tag-release.sh" "$TR/origin/scripts/"
+  cp "$HERE/scripts/lib/common.sh" "$TR/origin/scripts/lib/"
+  cp "$HERE/lib/ux.sh" "$TR/origin/lib/"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$TR/origin/scripts/audit-core.sh"
+  chmod +x "$TR/origin/scripts/audit-core.sh" "$TR/origin/scripts/tag-release.sh"
+  printf '1.0.0\n' >"$TR/origin/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n## [v1.0.0] - 2026-01-01\n\n- released\n' >"$TR/origin/CHANGELOG.md"
+  _trg "$TR/origin" init -q >/dev/null 2>&1
+  _tr_ident "$TR/origin"
+  _trg "$TR/origin" symbolic-ref HEAD refs/heads/main
+  _trg "$TR/origin" add -A; _trg "$TR/origin" commit -q -m "v1.0.0"
+  # The fixture "origin" is a normal repo with main checked out, so a push to that branch
+  # is refused by default. Allow it: the test needs to LAND the release on origin's main
+  # to exercise the guard, and nothing here reads origin's worktree.
+  git -C "$TR/origin" config receive.denyCurrentBranch ignore
+  git -c commit.gpgsign=false clone -q "$TR/origin" "$TR/work" >/dev/null 2>&1
+  _tr_ident "$TR/work"
+  _TRS="$TR/work/scripts/tag-release.sh"
+
+  # Stage a 1.1.0 release in the clone, exactly as release.sh would leave it.
+  printf '1.1.0\n' >"$TR/work/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n## [v1.1.0] - 2026-02-02\n\n- new\n\n## [v1.0.0] - 2026-01-01\n\n- released\n' >"$TR/work/CHANGELOG.md"
+
+  _tr_run() { (cd "$TR/work" && env CORE_COLOR=never TAG_SKIP_AUDIT=1 bash "$_TRS" "$@" 2>&1); }
+
+  # THE property. Phase 1 commits and must leave NO tag behind — there must be nothing
+  # for a stray push to carry while the commit is still off main.
+  _tr_out="$(_tr_run)"; _tr_rc=$?
+  _tr_tags="$(_trg "$TR/work" tag -l | tr '\n' ' ')"
+  if ((_tr_rc == 0)) && [[ -z "$_tr_tags" ]] &&
+    [[ -n "$(_trg "$TR/work" log --oneline -1 --grep='release v1.1.0')" ]]; then
+    pass "tag-release: phase 1 commits the release and creates NO tag"
+  else
+    fail "tag-release: phase 1 left tags '$_tr_tags' (rc=$_tr_rc) — a pre-merge tag is the hazard"
+  fi
+
+  # Phase 2 must REFUSE while the commit is only local: origin/main still carries 1.0.0.
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  if ((_tr_rc != 0)) && grep -q 'has not merged' <<<"$_tr_out" &&
+    [[ -z "$(_trg "$TR/work" tag -l 'v1.1.0')" ]]; then
+    pass "tag-release: --publish refuses while origin/main lacks the version (no tag created)"
+  else
+    fail "tag-release: --publish tagged a release that had not landed (rc=$_tr_rc)"
+  fi
+
+  # The withdrawn flag must fail loudly rather than silently doing the old thing.
+  _tr_out="$(_tr_run --push)"; _tr_rc=$?
+  if ((_tr_rc == 2)) && grep -q 'was removed' <<<"$_tr_out"; then
+    pass "tag-release: the withdrawn --push flag fails with a pointer to --publish"
+  else
+    fail "tag-release: --push did not fail cleanly (rc=$_tr_rc)"
+  fi
+
+  # Land the release on origin's main — and then let main ADVANCE, which is the case
+  # that matters. core.version does not change again until the next release, so "the tip
+  # carries $VERSION" stays true for every later commit; tagging the tip would sweep work
+  # still under [Unreleased] into the release, and release.yml builds the body from the
+  # [vX.Y.Z] section, so it would ship undescribed.
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null
+  _tr_release_sha="$(_trg "$TR/work" rev-parse HEAD)"
+  # a later, unrelated commit on origin/main
+  printf 'later\n' >"$TR/work/later.txt"
+  _trg "$TR/work" add later.txt; _trg "$TR/work" commit -q -m "unrelated work after the release"
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null
+  _trg "$TR/work" fetch -q origin
+
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  _tr_at="$(_trg "$TR/work" rev-parse -q --verify 'v1.1.0^{commit}' 2>/dev/null)"
+  _tr_tip="$(_trg "$TR/work" rev-parse -q --verify origin/main 2>/dev/null)"
+  if ((_tr_rc == 0)) && [[ "$_tr_at" == "$_tr_release_sha" ]]; then
+    pass "tag-release: --publish tags the RELEASE commit, not origin/main's tip"
+  else
+    fail "tag-release: tagged $_tr_at, wanted the release commit $_tr_release_sha (tip=$_tr_tip, rc=$_tr_rc)"
+  fi
+  if [[ "$_tr_at" != "$_tr_tip" ]]; then
+    pass "tag-release: the tip had advanced, and the tag did not follow it"
+  else
+    fail "tag-release: fixture did not actually advance the tip — the assertion above proves nothing"
+  fi
+  # ...and the moving major alias rides along to the same commit.
+  if [[ "$(_trg "$TR/work" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)" == "$_tr_release_sha" ]]; then
+    pass "tag-release: --publish moves the vN alias to the release commit too"
+  else
+    fail "tag-release: the vN alias did not follow the release"
+  fi
+  # Re-publishing an already-published tag must refuse — release tags are immutable.
+  # Runs here, while 1.1.0 is still origin/main's newest core.version change.
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  if ((_tr_rc != 0)) && grep -q 'already exists on origin' <<<"$_tr_out"; then
+    pass "tag-release: --publish refuses to re-tag a published release (immutable)"
+  else
+    fail "tag-release: --publish would clobber a published tag (rc=$_tr_rc)"
+  fi
+
+  # The alias may only move FORWARD. The lease covers changes after REMOTE_MAJOR is read,
+  # but a publisher that finishes BEFORE that read is seen as our own expected value, and
+  # the leased push would satisfy the lease while rolling vN backward. Reaching that state
+  # naturally needs a real race, so drive it directly: stage an UNPUBLISHED release (so the
+  # immutability guard does not fire first), point origin's alias at a commit that is NOT
+  # an ancestor of it, and require the refusal.
+  printf '1.3.0\n' >"$TR/work/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n## [v1.3.0] - 2026-05-05\n\n- three\n' >"$TR/work/CHANGELOG.md"
+  _trg "$TR/work" add -A; _trg "$TR/work" commit -q -m "release v1.3.0"
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null
+  _tr_rel13="$(_trg "$TR/work" rev-parse HEAD)"
+  # a commit off that line, published to origin so a ref there can point at it
+  _trg "$TR/work" checkout -q -b divergent "$_tr_rel13~1" 2>/dev/null
+  printf 'divergent\n' >"$TR/work/side.txt"
+  _trg "$TR/work" add side.txt; _trg "$TR/work" commit -q -m "a commit off the release line"
+  _tr_div="$(_trg "$TR/work" rev-parse HEAD)"
+  _trg "$TR/work" push -q origin HEAD:refs/heads/divergent 2>/dev/null
+  git -C "$TR/origin" update-ref refs/tags/v1 "$_tr_div"
+  _trg "$TR/work" checkout -q main 2>/dev/null
+  _trg "$TR/work" fetch -q --tags --force origin
+  printf '1.3.0\n' >"$TR/work/core.version"
+
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  _tr_v1_now="$(git -C "$TR/origin" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)"
+  if ((_tr_rc != 0)) && grep -q 'not an ancestor' <<<"$_tr_out" &&
+    [[ "$_tr_v1_now" == "$_tr_div" ]] && [[ -z "$(_trg "$TR/work" tag -l 'v1.3.0')" ]]; then
+    pass "tag-release: --publish refuses to move vN off its line (ancestry, not just the lease)"
+  else
+    fail "tag-release: alias moved off its line (rc=$_tr_rc, v1=$_tr_v1_now want=$_tr_div)"
+  fi
+  # restore a sane alias for the cases below
+  git -C "$TR/origin" update-ref refs/tags/v1 "$_tr_rel13"
+  _trg "$TR/work" fetch -q --tags --force origin
+
+  # Publishing an OLDER release must be refused and must not move the alias. The property
+  # matters more than which guard enforces it: resolution only accepts origin/main's
+  # NEWEST core.version change, so an older version never resolves — and vN, which every
+  # reusable-workflow caller pins to, cannot be pointed at an older Core.
+  printf '1.0.0\n' >"$TR/work/core.version"
+  _tr_v1_before="$(git -C "$TR/origin" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)"
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  _tr_v1_after="$(git -C "$TR/origin" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)"
+  if ((_tr_rc != 0)) && [[ -z "$(_trg "$TR/work" tag -l 'v1.0.0')" ]] &&
+    [[ -n "$_tr_v1_before" && "$_tr_v1_before" == "$_tr_v1_after" ]]; then
+    pass "tag-release: publishing an older release is refused and vN does not move backward"
+  else
+    fail "tag-release: older publish not refused (rc=$_tr_rc, v1 $_tr_v1_before -> $_tr_v1_after)"
+  fi
+
+  # A heading with an EMPTY body must be refused too. release.yml rejects an empty Release
+  # body, and release.sh will promote an empty [Unreleased] without complaint — so without
+  # this the immutable tag is pushed and the workflow fails afterwards, burning the version
+  # for a reason knowable up front. Uses release.yml's own extraction, so the two agree.
+  printf '2.5.0\n' >"$TR/work/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n## [v2.5.0] - 2026-04-04\n\n## [v1.1.0] - 2026-02-02\n\n- new\n' >"$TR/work/CHANGELOG.md"
+  _trg "$TR/work" add -A; _trg "$TR/work" commit -q -m "release v2.5.0 (empty section)"
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null; _trg "$TR/work" fetch -q origin
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  if ((_tr_rc != 0)) && grep -q 'is EMPTY' <<<"$_tr_out" &&
+    [[ -z "$(_trg "$TR/work" tag -l 'v2.5.0')" ]]; then
+    pass "tag-release: --publish refuses an empty [vX.Y.Z] section (no tag created)"
+  else
+    fail "tag-release: published a version release.yml would reject as an empty body (rc=$_tr_rc)"
+  fi
+
+  # A release commit with the right core.version but NO [vX.Y.Z] heading must be refused
+  # BEFORE any tag exists: release.yml builds the Release body from that section, so
+  # publishing first and finding out later leaves an immutable tag on a release that
+  # cannot be published — the version is burned. (This guard was silently lost in an
+  # earlier revision of this script, which is why it is pinned.) Both files move in ONE
+  # commit, as release.sh + make tag produce. Runs LAST: it advances origin/main.
+  printf '3.0.0\n' >"$TR/work/core.version"
+  printf '# Changelog\n\n## [Unreleased]\n\n- deliberately no 3.0.0 heading\n' >"$TR/work/CHANGELOG.md"
+  _trg "$TR/work" add -A; _trg "$TR/work" commit -q -m "release v3.0.0 (no heading)"
+  _trg "$TR/work" push -q origin HEAD:main 2>/dev/null; _trg "$TR/work" fetch -q origin
+  _tr_out="$(_tr_run --publish)"; _tr_rc=$?
+  if ((_tr_rc != 0)) && grep -q 'has no' <<<"$_tr_out" &&
+    [[ -z "$(_trg "$TR/work" tag -l 'v3.0.0')" ]]; then
+    pass "tag-release: --publish refuses a release commit with no CHANGELOG heading (no tag created)"
+  else
+    fail "tag-release: published a version release.yml would fail on (rc=$_tr_rc)"
+  fi
+else
+  skip "tag-release.sh two-phase ordering (git unavailable)"
 fi
 
 # ── G. module selection (lib/bootstrap-lib.sh blib_select / blib_want) ─────────
@@ -2331,6 +3096,17 @@ elif ! have python3; then
   skip "atuin autostart premise (python3 not installed)"
 else
   hdr "atuin autostart self-healing premise (--premise autostart, hermetic)"
+  # THIS RUN'S NAME IN SHARED /tmp. Case 17 asserts that a completed verifier run leaves no
+  # sandbox behind, and the only evidence it has is what appeared under /tmp during a window.
+  # /tmp has other writers — a second worktree, another agent, `make audit` in one terminal
+  # while `make tag` audits in another — and an untagged glob cannot tell their sandbox from a
+  # leak of ours. That is not hypothetical: it failed a `make tag` for exactly this reason.
+  # Exported once, so every invocation below (case 18 runs the script from a copied repo, not
+  # through _d_run) tags its trees identically and case 17's glob is exhaustive for OUR runs
+  # and blind to everyone else's. The pid is the token because two LIVE processes cannot share
+  # one, which is precisely the collision being defended against.
+  _DTAG="t$$"
+  export CORE_ATVERIFY_TAG="$_DTAG"
   _dstub="$(mktemp -d "$SANDBOX/dstub.XXXXXX")"
   # Section-local reaping. Every stub daemon writes its pid where the stub can find it, but a
   # test that fails midway can leave one behind — and unlike the script under test, this
@@ -2610,6 +3386,24 @@ STUB
   # here, and it is the difference between J4 costing seconds and costing minutes. Lowering it
   # against a REAL atuin manufactures findings; see the knob's own comment in
   # verify-atuin-guard.sh.
+  # …AND THAT ARGUMENT DOES NOT COVER THE APPARATUS GATE, which is the one case here running a
+  # stub that is supposed to SUCCEED at everything. For it the bound is not idle waiting, it is
+  # a deadline: the manual-spawn control has 3 ticks — 300ms — for a spawned daemon to bind and
+  # answer, and a loaded runner misses that. The verifier then declines, correctly and by
+  # design, and the gate reads the decline as a defect in the detector. That reddened an audit
+  # leg for an unrelated change.
+  #
+  # So the KNOWN-GOOD run gets a deadline with real headroom while every negative case keeps
+  # the tight one. Measured on this repo's own fixture, all four arms holding: POLL=3 → 10.9s,
+  # POLL=30 → 14.0s, POLL=100 → 23.4s. Three seconds of headroom for three seconds of wall
+  # clock, once per suite, and 10x the margin on the only bound that has ever flaked here.
+  # (Not free, because --premise autostart also spends the bound PROVING unreachability, which
+  # is waiting that no amount of promptness shortens — hence 30 rather than 100.)
+  _DPOLL=3
+  _DPOLL_GATE=30
+  # Set by the gate around its own calls; empty everywhere else. Declared here so `set -u`
+  # holds and so the override is visible next to the constants it overrides.
+  _dpoll=""
   _d_run() { # _d_run <stub> [extra args...] → sets _dout (stdout) / _dstderr / _drc
     local stub="$1"
     shift
@@ -2621,7 +3415,7 @@ STUB
     # verdict came back empty, because something musl-side wrote to stderr and json.load then
     # choked on it. stderr is still captured, so a genuine crash still reaches the message.
     _dstderr=""
-    _dout="$(CORE_COLOR=never CORE_ATVERIFY_POLL=3 "$_DVERIFY" --atuin "$_dstub/$stub" "$@" 2>"$SANDBOX/derr.txt")"
+    _dout="$(CORE_COLOR=never CORE_ATVERIFY_POLL="${_dpoll:-$_DPOLL}" "$_DVERIFY" --atuin "$_dstub/$stub" "$@" 2>"$SANDBOX/derr.txt")"
     _drc=$?
     _dstderr="$(head -c 400 "$SANDBOX/derr.txt" 2>/dev/null | tr '\n' ' ')"
   }
@@ -2654,6 +3448,119 @@ STUB
     pass "atuin autostart: an unknown --premise and a --premise with no value both exit 2 (usage, not a finding)"
   else
     fail "atuin autostart: --premise must exit 2 on a bad value (got rc$_drc) and on a missing one (got rc$_drc2)"
+  fi
+
+  # 1b. THE TAG CONTRACT, asserted where it is cheapest — no daemon, no sandbox, no atuin.
+  #     CORE_ATVERIFY_TAG is a PUBLIC knob (it is in --help), and case 17 only ever exports a
+  #     generated valid one, so every way a caller can get it wrong was unasserted: the value
+  #     becomes a path component under /tmp, and it is the only thing standing between the
+  #     leak check and a glob that silently matches nothing.
+  #
+  #     THE EMPTY CASE IS THE IMPORTANT ONE, and it is why the script reads `${…-$$}` rather
+  #     than the `${…:-…}` its two neighbouring knobs use. An empty tag is not a request for
+  #     the default — it is a caller whose tag expression came out empty — and accepting it
+  #     would put the sandbox under the pid while the caller globbed `/tmp/atverify..*`,
+  #     matching nothing and greening the leak assertion forever. That is precisely the
+  #     vacuous pass case 17's self-check exists to catch, arriving by a different door, so
+  #     it is pinned here rather than left to the `-` vs `:-` being noticed in review.
+  #
+  #     Rejection must also happen BEFORE anything is measured, which is read off the stub's
+  #     own call log rather than assumed: a tag validated late would already have spawned.
+  _mkdstub atuin-tagck heals
+  _dbad=0
+  _dtagwhy=""
+  # 17 chars, one past the cap — not 16, which is the accepted boundary asserted just below.
+  #
+  # THE TWO NON-ASCII CASES assert the ASCII half of the contract, and are the ones that would
+  # notice if the script's LC_ALL=C pin were removed on a userland where it matters. A range
+  # like [A-Z] is defined by COLLATION, not codepoint, so a locale may admit letters this
+  # contract does not mean to allow; `ábcdefghij123456` is the same fault one step downstream —
+  # sixteen CHARACTERS but seventeen BYTES, so a character-counting cap would pass a path
+  # component longer than promised, against an AF_UNIX budget measured in bytes. Downstream,
+  # not separate: every character in [A-Za-z0-9_-] is single-byte ASCII, so 16 chars can only
+  # exceed 16 bytes once collation has already leaked a non-ASCII one in.
+  #
+  # THE PROBE ASKS THE ONLY QUESTION THAT MATTERS: is there a locale here under which the
+  # UNPINNED pattern actually accepts the sample? An earlier version probed for multibyte
+  # DECODING (`${#é}` is 1, not 2) and picked the first hit — which proved nothing, because a
+  # locale can decode multibyte and still collate `á` outside [A-Za-z]. C.UTF-8 does exactly
+  # that and was probed first, so the case passed identically with and without the pin: a
+  # regression test that could not fail. Selecting on the real predicate means that where a
+  # locale IS found the case genuinely fails if the pin is removed, and where none is found the
+  # message SAYS the pin is unexercised here rather than implying coverage this box cannot give.
+  # ENUMERATED, not guessed, wherever the box can answer. A hand-written candidate list is its
+  # own way of reporting the wrong coverage: the locale that misbehaves here need not be among
+  # seven names someone happened to think of — this machine offers 84 UTF-8 locales, not 7.
+  # `locale -a` is the box's own answer; musl ships no such command, so the named candidates
+  # survive as the fallback and the result line says which source it actually used.
+  _dlocs="$(locale -a 2>/dev/null | grep -iE 'utf-?8' || true)"
+  _dlocsrc=installed
+  if [[ -z "$_dlocs" ]]; then
+    _dlocsrc=candidate
+    _dlocs="$(printf '%s\n' C.UTF-8 en_US.UTF-8 en_US.utf8 UTF-8 de_DE.UTF-8 cs_CZ.UTF-8 hu_HU.UTF-8)"
+  fi
+  _dutf8=""
+  _dlocn=0
+  while read -r _dl; do
+    [[ -n "$_dl" ]] || continue
+    _dlocn=$((_dlocn + 1))
+    if LC_ALL="$_dl" "$BASH" -c '[[ "$1" =~ ^[A-Za-z0-9_-]{1,16}$ ]]' _ 'tág' 2>/dev/null; then
+      _dutf8="$_dl"
+      break
+    fi
+  done <<<"$_dlocs"
+  # Said out loud in the result line, because "the pin is exercised here" and "no locale here
+  # can exercise it" are different facts and a reader must not have to guess which one a green
+  # tick meant. This is the same discipline as case 17's self-check, applied to coverage.
+  if [[ -n "$_dutf8" ]]; then
+    _dcov=" — LC_ALL=C pin EXERCISED under $_dutf8, which accepts the sample unpinned"
+  else
+    _dcov=" — none of $_dlocn $_dlocsrc UTF-8 locales accepts the sample unpinned, so the LC_ALL=C pin is unexercised on this box (contract only)"
+  fi
+  for _dcase in "bad/tag" "up..dir" "abcdefghij1234567" "" "tag with space" "tág" "ábcdefghij123456"; do
+    # `:-C`, not a bare "$_dutf8". An EMPTY LC_ALL is not "no locale" — it falls through to the
+    # caller's LC_COLLATE/LANG, which is an unprobed locale that could be the very one that
+    # accepts the sample. The run would then exercise the pin while the line above reported it
+    # unexercised: the report would be wrong in the one direction a coverage claim must not be.
+    LC_ALL="${_dutf8:-C}" CORE_COLOR=never CORE_ATVERIFY_TAG="$_dcase" "$_DVERIFY" \
+      --premise autostart --atuin "$_dstub/atuin-tagck" >/dev/null 2>&1
+    _drc=$?
+    if ((_drc != 2)); then
+      _dbad=1
+      _dtagwhy="$_dtagwhy '${_dcase:-<empty>}'→rc$_drc"
+    fi
+  done
+  # Accepted, by contrast: the 16-char boundary and an ABSENT tag both get past validation and
+  # fail later for the missing binary (rc 3), which is what tells acceptance from rejection
+  # without measuring anything. The absent case is the standalone contract — it is what
+  # `make verify-atuin-guard` and atuin-guard-verify.yml rely on, and the section exports a
+  # tag, so it is unset in a SUBSHELL rather than for the rest of the run.
+  CORE_COLOR=never CORE_ATVERIFY_TAG="sixteenchars0123" "$_DVERIFY" \
+    --premise autostart --atuin "$_dstub/nonexistent" >/dev/null 2>&1
+  _drc=$?
+  if ((_drc != 3)); then
+    _dbad=1
+    _dtagwhy="$_dtagwhy 16-char→rc$_drc"
+  fi
+  (
+    unset CORE_ATVERIFY_TAG
+    CORE_COLOR=never "$_DVERIFY" --premise autostart \
+      --atuin "$_dstub/nonexistent" >/dev/null 2>&1
+  )
+  _drc=$?
+  if ((_drc != 3)); then
+    _dbad=1
+    _dtagwhy="$_dtagwhy unset→rc$_drc"
+  fi
+  [[ -z "$(_d_calls atuin-tagck)" ]] || {
+    _dbad=1
+    _dtagwhy="$_dtagwhy (a rejected tag still invoked atuin)"
+  }
+  _dreap
+  if ((_dbad == 0)); then
+    pass "atuin autostart: a tag that is empty, overlong, non-ASCII, or not [A-Za-z0-9_-] exits 2 before measuring, while the 16-char boundary and an ABSENT tag are accepted$_dcov"
+  else
+    fail "atuin autostart: the CORE_ATVERIFY_TAG contract is not enforced —$_dtagwhy; an accepted bad tag globs nothing and greens the leak check vacuously"
   fi
 
   # 2. The premise travels in the JSON. The workflow's two legs differ by ONE flag and both
@@ -2710,12 +3617,53 @@ J4PROBE
   else
     rm -f "/tmp/j4probe.$$.sock"
     # The apparatus is established WITHOUT the subject's help, so a known-good stub that does
-    # not report `holds` is a regression in the detector — a FAILURE, never a skip.
+    # not report `holds` is a regression in the detector — a FAILURE, never a skip. This gate is
+    # deliberately NOT §J3's blanket "skip unless holds": there, no independent probe exists, so
+    # declining is all it can honestly do; here one does, and the stricter stance is the point.
+    #
+    # THE STRICTNESS IS KEPT AND THE DEADLINE IS FIXED INSTEAD, which is the whole correction.
+    # This arm used to fail on ANY non-`holds`, including `unmeasurable` — the verifier's
+    # fail-closed answer when the manual-spawn control's daemon did not answer inside 300ms. On
+    # a loaded runner that is a property of the BOX, and reporting it as a defect in the
+    # detector is a false finding of exactly the kind §J4 exists to prevent.
+    #
+    # The tempting repair — skip on `unmeasurable` — is wrong, and the reason is worth keeping:
+    # that verdict covers a family of causes, and most are DETERMINISTIC AND ARE THE DETECTOR
+    # (a renamed or duplicated anchor, control-arm row accounting that no longer matches, and
+    # `internal: no verdict was reached (this is a bug in verify-atuin-guard.sh)`). Skipping on
+    # it would silence the sixteen assertions below while the subject announces its own bug —
+    # the blindness the block comment above refuses to allow, arriving by a quieter door. No
+    # amount of retrying separates those from slowness either, since every one of them repeats.
+    #
+    # So nothing here skips. The deadline is simply made generous enough that missing it is not
+    # ordinary: $_DPOLL_GATE ticks instead of $_DPOLL, and one retry, so a transient stall has
+    # to land twice inside a 10x-wider window to be seen at all. What remains is a gate that
+    # cannot go quiet — every verdict other than `holds` still reddens it — bought with about
+    # three seconds of wall clock, once.
+    #
+    # The three failures are told apart because they mean different things to whoever reads the
+    # line: `moved` is the verifier miscategorising correct behaviour, `unmeasurable` is it
+    # declining where it should measure (and carries its own reason, which names the cause), and
+    # no parseable verdict at all is the apparatus failing to report — the Alpine shape, where a
+    # stray stderr line merged into the JSON, so that one carries stderr.
+    _dpoll="$_DPOLL_GATE"
     _d_run atuin-heals --premise autostart --json
     _dapp="$(_d_get "$_dout" verdict)"
+    _dappwhy="$(_d_get "$_dout" reason)"
     _dreap
-    if [[ "$_dapp" != holds ]]; then
-      fail "atuin autostart: this box can bind AF_UNIX sockets, yet the known-good stub reported ${_dapp:-<unparseable>} rather than holds — that is a regression in verify-atuin-guard.sh, not an unusable apparatus: $(_d_get "$_dout" reason)"
+    if [[ "$_dapp" == unmeasurable ]]; then
+      _d_run atuin-heals --premise autostart --json
+      _dapp="$(_d_get "$_dout" verdict)"
+      _dappwhy="$(_d_get "$_dout" reason)"
+      _dreap
+    fi
+    _dpoll=""
+    if [[ "$_dapp" == unmeasurable ]]; then
+      fail "atuin autostart: the known-good stub reported unmeasurable TWICE at a ${_DPOLL_GATE}-tick bound — this box can bind AF_UNIX sockets, so verify-atuin-guard.sh is declining where it should measure: ${_dappwhy:-no reason parsed}"
+    elif [[ "$_dapp" == moved ]]; then
+      fail "atuin autostart: this box can bind AF_UNIX sockets, yet the known-good stub reported moved rather than holds — that is a regression in verify-atuin-guard.sh, not an unusable apparatus: ${_dappwhy:-no reason parsed}"
+    elif [[ "$_dapp" != holds ]]; then
+      fail "atuin autostart: the known-good stub produced no parseable verdict (rc$_drc) — the apparatus failed to report rather than measuring${_dstderr:+ (stderr: $_dstderr)}"
     else
 
     # 4. The happy path, and the shape real 18.19.0 has: all four arms spawn and land a row.
@@ -2936,19 +3884,59 @@ J4PROBE
     #     once its socket is unlinked, so a socket-only proof yields extra rows and a FALSE
     #     `moved`; the group half of the proof kills it at the inter-arm stop and the run
     #     stays clean. Asserted on the VERDICT, because that is where the damage would show.
+    #
+    #     THREE VERDICTS HERE TOO, and this is the one case in the section that had to learn
+    #     it. Every other verdict-bearing arm drives its stub to a SPECIFIC negative
+    #     (`moved`, or `unmeasurable` for a named apparatus limit), so anything else is a
+    #     genuine miss. This one is the only arm that expects the POSITIVE verdict from an
+    #     otherwise well-behaved stub — which means it inherits every environmental way a run
+    #     can honestly decline, and `[[ $_dv == holds ]]` … `else fail` swept all of them into
+    #     a message asserting an upstream finding. That is precisely the inversion the third
+    #     verdict exists to prevent (see verify-atuin-guard.sh's header: `unmeasurable` is
+    #     "the apparatus could not be trusted … never a finding about upstream"), so the check
+    #     that polices it must not be the one committing it.
+    #
+    #     NOT HYPOTHETICAL, and not a rare corner. The section runs at CORE_ATVERIFY_POLL=3 —
+    #     300ms for the manual-spawn control's daemon to bind and answer — which a loaded box
+    #     misses, yielding "a daemon started by hand never answered … An apparatus limit, not
+    #     a finding" with NOTHING having survived. Reproduced under CPU contention (the same
+    #     stub flips holds/unmeasurable), and it reddened audit-alpine on an unrelated
+    #     docs-only PR, where a rerun of the identical commit went green.
+    #
+    #     THE SKIP DOES NOT MAKE THIS GO QUIET, which is the only reason it is allowed. The
+    #     two halves are separated: the SURVIVOR half is unconditional and stays a failure
+    #     under any verdict — a live daemon is a leak whether or not the run could measure —
+    #     and `moved` stays a failure because that is the false verdict the zombie's rows
+    #     would manufacture. Nor can a contaminated control hide behind the skip: the opening
+    #     control runs before any daemon exists, the spawn control runs while the socket is
+    #     PRESENT (this stub only commits once it is gone), and the closing drain control runs
+    #     only after daemon_stop_proven has confirmed the owner pid dead. Contamination has no
+    #     route to `unmeasurable` here — it can only surface as `moved` or a survivor.
     _mkdstub atuin-stopunlink stop-unlinks-only
     _d_run atuin-stopunlink --premise autostart --json
     _dv="$(_d_get "$_dout" verdict)"
+    _dwhy="$(_d_get "$_dout" reason)"
     _dleft=0
     _dpf="$_dstub/atuin-stopunlink.pid"
     if [[ -f "$_dpf" ]] && kill -0 "$(cat "$_dpf" 2>/dev/null)" 2>/dev/null; then
       _dleft=1
     fi
     _dreap
-    if [[ "$_dv" == holds ]] && ((_dleft == 0)); then
+    if ((_dleft != 0)); then
+      fail "atuin autostart: a socket-only stop left the zombie daemon alive (verdict=$_dv) — it keeps committing into later arms and its writes would be reported as an upstream finding"
+    elif [[ "$_dv" == holds ]]; then
       pass "atuin autostart: a daemon that outlives its own socket is stopped before the next arm — it cannot write rows the run would blame on upstream"
+    elif [[ "$_dv" == unmeasurable ]]; then
+      skip "atuin autostart: a daemon that outlives its own socket — no zombie survived, but the verdict half could not be measured on this box (${_dwhy:-no reason reported})"
+    elif [[ "$_dv" == moved ]]; then
+      fail "atuin autostart: a socket-only stop let the zombie's rows land in a measured arm — the run reports a premise that MOVED on writes it made itself"
     else
-      fail "atuin autostart: a socket-only stop let a zombie daemon keep committing into later arms (verdict=$_dv, survived=$_dleft) — its writes would be reported as an upstream finding"
+      # NO VERDICT AT ALL is its own outcome, and routing it into the `moved` arm would name a
+      # cause this run has no evidence for. It is also the one shape with a KNOWN history here:
+      # a stray line on stderr merging into stdout leaves json.load with nothing to parse, which
+      # is how §J4 first went red on Alpine (see _d_run's comment). So stderr is carried into the
+      # message — it is the only thing that can say what actually happened.
+      fail "atuin autostart: the socket-only-stop run produced no parseable verdict (rc$_drc) — this is the apparatus failing to report, not a measurement${_dstderr:+ (stderr: $_dstderr)}"
     fi
 
     # 17. The sandbox is REMOVED on a normal run — asserted on the DELTA, not on a global scan
@@ -2956,13 +3944,26 @@ J4PROBE
     #     so a tree left by an earlier run, a hand-run, or a concurrent one would otherwise
     #     fail this for a run that cleaned up perfectly. Only paths this run created count.
     #
+    #     A DELTA IS NOT ENOUGH, because /tmp is a SHARED namespace and the window is not
+    #     exclusive. This globbed every `atverify.*` and treated anything new as a leak, which
+    #     silently assumed no second run existed — and a second run is ordinary here: another
+    #     worktree, another agent, or simply `make audit` in one terminal while `make tag`
+    #     audits in another. The second run's sandbox is born inside the first run's window and
+    #     the first run reports a leak that does not exist. That is what happened: a `make tag`
+    #     failed the audit with "leaked 1 new sandbox dir(s)" on the repo's most consequential
+    #     command, where the operator's natural next move — re-run, or reach for
+    #     TAG_SKIP_AUDIT=1 — is the exact habit a release gate must not teach. So the glob is
+    #     narrowed to $_DTAG, the tag every sandbox of OURS carries (see CORE_ATVERIFY_TAG),
+    #     and a foreign tree is now invisible to it by construction rather than by luck.
+    #
     #     THE SELF-CHECK IS NOT OPTIONAL. A delta over a directory listing that silently
     #     returns nothing passes for every run, forever — and that is precisely what the first
     #     version of this did: on macOS /tmp is a symlink to private/tmp and `find /tmp`
     #     without -L does not descend it, so both snapshots were empty and the assertion was
     #     vacuous on a third of the fleet. Prove the snapshot can see a directory before
     #     trusting it to notice one. (The fault there was the unfollowed symlink, not a
-    #     missing -maxdepth.)
+    #     missing -maxdepth.) Narrowing the glob makes that guard MORE load-bearing, not less:
+    #     a tag that never reached the script would empty both snapshots the same way.
     # The shell's own one-level glob, not find(1) and not ls(1). BSD find on macOS does
     # support -maxdepth (checked against /usr/bin/find, which is what the macOS CI leg runs),
     # so the earlier version was not broken for that reason — but a glob needs no portability
@@ -2970,27 +3971,59 @@ J4PROBE
     _dsnap() {
       local d
       local -a out=()
-      for d in /tmp/atverify.*; do [[ -d "$d" ]] && out+=("$d"); done
+      for d in "/tmp/atverify.$_DTAG."*; do [[ -d "$d" ]] && out+=("$d"); done
       ((${#out[@]})) && printf '%s\n' "${out[@]}" | sort
       return 0
     }
-    mkdir -p "/tmp/atverify.selfcheck$$"
-    if ! _dsnap | grep -q "atverify.selfcheck$$"; then
-      rmdir "/tmp/atverify.selfcheck$$" 2>/dev/null
+    # _dnewdirs <pre-snapshot> — the tagged dirs present now that were absent in <pre>.
+    # comm needs sorted input on both sides; _dsnap sorts, so a snapshot may be fed back in.
+    _dnewdirs() {
+      comm -13 <(printf '%s\n' "$1" | grep -v '^$') <(_dsnap | grep -v '^$')
+    }
+    _dselfck="/tmp/atverify.$_DTAG.selfcheck$$"
+    mkdir -p "$_dselfck"
+    if ! _dsnap | grep -q "atverify.$_DTAG.selfcheck$$"; then
+      rmdir "$_dselfck" 2>/dev/null
       fail "atuin autostart: the sandbox-leak check cannot enumerate /tmp — it would pass vacuously, so it is reported as broken rather than green"
     else
-      rmdir "/tmp/atverify.selfcheck$$" 2>/dev/null
+      rmdir "$_dselfck" 2>/dev/null
       _dpre="$(_dsnap)"
       _d_run atuin-heals --premise autostart --json
       _dreap
-      _dpost="$(_dsnap)"
-      _dnew="$(comm -13 <(printf '%s\n' "$_dpre" | grep -v '^$') \
-        <(printf '%s\n' "$_dpost" | grep -v '^$') | grep -c . || true)"
+      # A CONCURRENT RUN'S SANDBOX, planted inside the window on purpose — this is the
+      # regression half of the assertion, not scaffolding. Who created it is irrelevant: a
+      # glob is all this check has to reason with, so a directory of the right SHAPE under a
+      # tag that is not ours is exactly what a second test-core.sh on this box contributes.
+      # If it is ever counted again, this arm goes red here rather than at a release cut.
+      _dforeign="/tmp/atverify.foreign$$.regress"
+      mkdir -p "$_dforeign"
+      _dleaked="$(_dnewdirs "$_dpre")"
+      rmdir "$_dforeign" 2>/dev/null
+      _dnew="$(printf '%s\n' "$_dleaked" | grep -c . || true)"
       if ((_dnew == 0)); then
-        pass "atuin autostart: a completed run leaves no NEW sandbox behind, daemon stopped first"
+        pass "atuin autostart: a completed run leaves no NEW sandbox behind, daemon stopped first — and a concurrent run's sandbox in shared /tmp is not mistaken for one"
       else
-        fail "atuin autostart: a completed run leaked $_dnew new sandbox dir(s) under /tmp"
+        fail "atuin autostart: a completed run leaked $_dnew new sandbox dir(s) under /tmp: $(printf '%s' "$_dleaked" | tr '\n' ' ')"
       fi
+    fi
+
+    # 17b. THE OTHER HALF OF 17, and the reason narrowing the glob is safe rather than merely
+    #      quiet. A check that ignores a foreign tree and a check that ignores EVERY tree look
+    #      identical from a green run, and 17 alone cannot tell them apart — its expected
+    #      result is zero either way. So the discrimination is asserted directly, with no
+    #      verifier involved: plant one sandbox under a foreign tag and one under ours, and
+    #      require the delta to name OURS and only ours. A single string compare carries both
+    #      directions — a wrong count or a wrong path fails it.
+    _dpre="$(_dsnap)"
+    _dforeign="/tmp/atverify.foreign$$.control"
+    _dmine="/tmp/atverify.$_DTAG.leak$$"
+    mkdir -p "$_dforeign" "$_dmine"
+    _dleaked="$(_dnewdirs "$_dpre")"
+    rmdir "$_dforeign" "$_dmine" 2>/dev/null
+    if [[ "$_dleaked" == "$_dmine" ]]; then
+      pass "atuin autostart: the leak check still SEES a genuine leak under this run's tag while ignoring a foreign one — narrowing the glob did not make it blind"
+    else
+      fail "atuin autostart: the leak check must report exactly $_dmine as new and nothing else, got '$(printf '%s' "$_dleaked" | tr '\n' ' ')' — it is either blind to a real leak or still counting foreign sandboxes"
     fi
 
     # 18. A MALFORMED ANCHOR IS NOT AN ABSENT ONE. Absence is legitimate for THIS premise —
@@ -3158,7 +4191,7 @@ smoke_out="$(
 smoke_errs="$(grep -Ei \
   'command not found|parse error|: no such file or directory|not defined|bad pattern|bad math expression|maximum nested' \
   "$SANDBOX/smoke.err" 2>/dev/null || true)"
-if ! printf '%s' "$smoke_out" | grep -q '^SMOKE_OK$'; then
+if ! grep -q '^SMOKE_OK$' <<<"$smoke_out"; then
   fail "load-order chain did not reach the end (no SMOKE_OK sentinel — a fragment aborted)"
   [[ -s "$SANDBOX/smoke.err" ]] && sed 's/^/    /' "$SANDBOX/smoke.err" >&2
 elif [[ -n "$smoke_errs" ]]; then
@@ -3218,7 +4251,7 @@ integ_out="$(
 integ_errs="$(grep -Ei \
   'command not found|parse error|: no such file or directory|not defined|missing|bad pattern|bad math expression|maximum nested' \
   "$INTEG/integ.err" 2>/dev/null || true)"
-if ! printf '%s' "$integ_out" | grep -q '^INTEG_OK$'; then
+if ! grep -q '^INTEG_OK$' <<<"$integ_out"; then
   fail "consumer load (Core+80-os+99-local) did not reach the end — a layer aborted"
   [[ -s "$INTEG/integ.err" ]] && sed 's/^/    /' "$INTEG/integ.err" >&2
 elif [[ -n "$integ_errs" ]]; then
@@ -3544,6 +4577,19 @@ check "_core_wired detects an integration once its hook function exists" \
   'starship_precmd() { :; }; _core_wired starship'
 check "_core_wired is false for an idle integration and an unknown name" \
   '_core_wired starship 2>/dev/null; (( $? != 0 )); _core_wired bogustool 2>/dev/null; (( $? != 0 ))'
+# Upstream RENAMES the function its `init` emits, and Core sources that init verbatim — so a
+# probe pinned to one spelling silently goes stale and reports a FALSE `○ (idle)` for a live
+# integration (seen on starship 1.24.2 → prompt_starship_precmd, carapace-bin 1.5.7 →
+# _carapace_completer; neither emits the historical name at all). Pin BOTH spellings per tool
+# so dropping either fallback fails the audit instead of quietly recreating that bug.
+check "_core_wired accepts starship's current hook name (prompt_starship_precmd)" \
+  'prompt_starship_precmd() { :; }; _core_wired starship'
+check "_core_wired accepts carapace's historical hook name (_carapace)" \
+  '_carapace() { :; }; _core_wired carapace'
+check "_core_wired accepts carapace's current hook name (_carapace_completer)" \
+  '_carapace_completer() { :; }; _core_wired carapace'
+check "_core_wired is false for an idle carapace" \
+  '_core_wired carapace 2>/dev/null; (( $? != 0 ))'
 # core-help (U5): the width-aware renderer must emit every verb and never crash on its
 # kw arithmetic — including a pathologically narrow terminal where the key column clamps.
 check "core-help renders all verbs (wide terminal)" \
@@ -4177,6 +5223,62 @@ ucheck "browser: macOS (OSTYPE=darwin) leaves \$BROWSER unset even with no DISPL
   "DISPLAY=''; WAYLAND_DISPLAY=''; OSTYPE=darwin24; source '$TOOLS_FILE'; source '$ALIASES_FILE'; (( \$+aliases[web] )) && [[ -z \${BROWSER:-} ]]" \
   PATH="$BRBIN"
 
+# ── renamed binaries: fd/bat symmetry + an honest doctor (#418) ──────────────
+# Debian/Ubuntu/Kali ship fd as `fdfind` and bat as `batcat`. 00-tools.zsh resolves both
+# into FD_BIN/BAT_BIN, but the two were then handled ASYMMETRICALLY: 20-aliases.zsh gave
+# fd an alias under its canonical name and bat none, so `bat` was untypeable on those
+# boxes — and core-doctor reported `✗ bat` two lines above a `resolved` section printing
+# `bat → batcat`. The ✓ that fd got was itself accidental: it came from zsh's `command -v`
+# resolving the ALIAS, not from PATH, which is why `core-doctor -v` still printed a bare
+# versionless `✓ fd` there (the probe forks `"$bin" --version`, a parameter expansion, and
+# parameters are never alias-expanded — the error was swallowed by the pipeline).
+# Both halves are pinned here against a stubbed PATH, hermetically, because a regression
+# fans out to all eight OS repos and is invisible on macOS where the names are canonical.
+RNBIN="$SANDBOX/rnbin"
+_real_grep="$(command -v grep)"
+_real_head="$(command -v head)"
+_rn_only() { # _rn_only [binary-name ...] — stub these onto an otherwise-empty bin dir
+  rm -rf "$RNBIN"
+  mkdir -p "$RNBIN"
+  local n
+  for n in "$@"; do
+    printf '#!/bin/sh\necho "%s 0.24.0"\n' "$n" >"$RNBIN/$n"
+    chmod +x "$RNBIN/$n"
+  done
+  # grep/head are linked in, not stubbed: `core-doctor -v` pipes each tool's --version
+  # through them, so case (c) cannot run on a PATH that lacks them. Linking the real ones
+  # keeps the dir hermetic for the names that MATTER — a stubbed batcat/fdfind/bat/fd
+  # still wins by precedence, and no real bat/fd from /usr/bin can leak in and hand the
+  # version assertion someone else's release number on a Fedora or Debian runner.
+  ln -sf "$_real_grep" "$RNBIN/grep"
+  ln -sf "$_real_head" "$RNBIN/head"
+}
+# (a) SYMMETRY — the issue itself: on Debian names, BOTH tools are typeable canonically.
+_rn_only batcat fdfind
+ucheck "renamed: Debian names → alias bat=batcat AND alias fd=fdfind (symmetric)" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; [[ \${aliases[bat]} == batcat && \${aliases[fd]} == fdfind ]]" \
+  PATH="$RNBIN"
+# (b) HONEST DOCTOR — and it must NOT depend on (a). 20-aliases.zsh is deliberately NOT
+# sourced here, so a ✓ can only come from _core_doctor_bin resolving $BAT_BIN/$FD_BIN.
+ucheck "renamed: core-doctor --json reports bat/fd present without the aliases loaded" \
+  "source '$TOOLS_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ \$j == *'\"bat\":true'* && \$j == *'\"fd\":true'* ]]" \
+  PATH="$RNBIN" CORE_NO_PAGER=1
+# (c) VERSIONS — the latent half: -v forks the RESOLVED binary, so both rows carry a
+# version. Before the fix this printed `✓ fd` bare, with the failure swallowed.
+ucheck "renamed: core-doctor -v reads versions off the resolved binary" \
+  "source '$TOOLS_FILE'; source '$UI'; source '$FN'; o=\$(core-doctor -v); [[ \$o == *'bat 0.24.0'* && \$o == *'fd 0.24.0'* ]]" \
+  PATH="$RNBIN" CORE_NO_PAGER=1
+# (d) CANONICAL NAMES — the non-Debian answer is unchanged: self-named aliases, still ✓.
+_rn_only bat fd
+ucheck "renamed: canonical names → aliases stay self-named and the doctor still reports ✓" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ \${aliases[bat]} == bat && \${aliases[fd]} == fd && \$j == *'\"bat\":true'* && \$j == *'\"fd\":true'* ]]" \
+  PATH="$RNBIN" CORE_NO_PAGER=1
+# (e) NEITHER — a bare box degrades: no HAVE_*, no bat/fd/cat alias, and an honest ✗.
+_rn_only
+ucheck "renamed: neither present → no bat/fd/cat alias and the doctor reports absent" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ -z \${HAVE_BAT:-} && -z \${HAVE_FD:-} ]] && ! (( \$+aliases[bat] )) && ! (( \$+aliases[fd] )) && ! (( \$+aliases[cat] )) && [[ \$j == *'\"bat\":false'* && \$j == *'\"fd\":false'* ]]" \
+  PATH="$RNBIN" CORE_NO_PAGER=1
+
 # ── OSC 133 prompt marks + the command-block rule (00-tools.zsh) ─────────────
 # The marks are what tmux's next-prompt/previous-prompt (bound to ] / [ in
 # tmux.reset.conf) read, so a regression here silently costs the keybinding its meaning
@@ -4553,8 +5655,12 @@ ucheck "maint: systemd timer+service render with a valid OnCalendar" \
   "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; maint-install 09:30 >/dev/null 2>&1; ud=\"\$XDG_CONFIG_HOME/systemd/user\"; [[ -f \"\$ud/dotfiles-maint.timer\" && -f \"\$ud/dotfiles-maint.service\" ]] || exit 1; grep -q 'OnCalendar=\*-\*-\* 09:30:00' \"\$ud/dotfiles-maint.timer\" || exit 1; grep -q 'ExecStart=.*dotfiles-maint.sh' \"\$ud/dotfiles-maint.service\"" \
   PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-systemd"
 # cron: the captured table line must be a well-formed 5-field schedule at MM HH, tagged.
-ucheck "maint: cron line renders as a valid 5-field schedule" \
-  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; maint-install 09:30 >/dev/null 2>&1; [[ -f \"\$CRON_CAPTURE\" ]] || exit 1; grep -qE '^30 09 \* \* \* .*dotfiles-maint\.sh # dotfiles-maint\$' \"\$CRON_CAPTURE\"" \
+# The runner is single-quoted, which is part of the contract rather than incidental: cron's
+# command field is handed to /bin/sh, so a bare runner is split on whitespace and a $(…) in
+# the path would be evaluated on every scheduled run. Anchoring on the closing quote is what
+# makes dropping the quoting fail HERE rather than on the one box whose path contains a space.
+ucheck "maint: cron line renders as a valid 5-field schedule with the runner quoted" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; maint-install 09:30 >/dev/null 2>&1; [[ -f \"\$CRON_CAPTURE\" ]] || exit 1; grep -qE '^30 09 \* \* \* .*dotfiles-maint\.sh'\\'' # dotfiles-maint\$' \"\$CRON_CAPTURE\"" \
   PATH="$SCHEDBIN:$PATH" CRON_CAPTURE="$SANDBOX/cron.captured"
 # launchd: the plist must be WELL-FORMED XML (plistlib parses it) with the rendered
 # Hour/Minute — the one artifact that's silent text the other gates never inspect. Needs
@@ -4566,6 +5672,475 @@ if have python3; then
 else
   skip "maint launchd plist (python3 absent — cannot parse plist XML)"
 fi
+
+# ── the PATH capture (the one seam where an OS prefix may enter the runner) ───
+# maint/dotfiles-maint.sh is portable Core and names no Homebrew/pkgsrc/Nix prefix, so
+# the scheduler unit is the ONLY thing that tells the unattended runner where this box
+# keeps its binaries. Drop the capture in a refactor and nothing breaks loudly: the job
+# still fires, still logs, still exits 0 — it just resolves no brew/mise and skips those
+# steps silently. That is why this is asserted per-scheduler rather than trusted.
+# A /sentinel/bin injected into PATH at install time must appear in the rendered unit.
+ucheck "maint: systemd unit bakes in the installing shell's PATH" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; PATH=/sentinel/bin:\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q '^Environment=\"PATH=.*/sentinel/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
+  PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-path-systemd"
+# cron's command field is sh, so the PATH rides as an env prefix — and `%` is cron's
+# newline metacharacter, which would truncate the line mid-PATH if it were not escaped.
+# The sentinel deliberately contains one.
+ucheck "maint: cron line carries the PATH, single-quoted, with % escaped" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; PATH='/sent%inel/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; line=\$(cat \"\$CRON_CAPTURE\"); [[ \$line == *\"PATH='\"* ]] && [[ \$line == *'sent\\%inel'* ]]" \
+  PATH="$SCHEDBIN:$PATH" CRON_CAPTURE="$SANDBOX/cron-path.captured"
+# The decisive one. cron's command field is handed to /bin/sh, so a PATH entry holding
+# $(…), a backtick, or a quote is CODE unless it is quoted as DATA — an unquoted or
+# double-quoted assignment would evaluate it on every scheduled run, silently and with
+# the user's privileges. Build the assignment exactly as maint-install does, then let a
+# real /bin/sh parse it back and compare: nothing but a true round-trip passes this.
+_mq_want='/we'"'"'ird/$(echo pwned)/`echo pwned`/"dq"/bin'
+_mq_rendered="$(zsh -c "source '$UI'; source '$MNT'; _maint_sh_squote \"\$1\"" _ "$_mq_want" 2>/dev/null)"
+_mq_got="$(sh -c "PATH=$_mq_rendered; printf '%s' \"\$PATH\"" 2>/dev/null)"
+if [[ "$_mq_got" == "$_mq_want" ]]; then
+  pass "maint: a hostile PATH round-trips through /bin/sh as data (no \$() evaluation)"
+else
+  fail "maint: PATH did not round-trip through sh (got '$_mq_got')"
+fi
+# launchd's plist is XML: an unescaped & in a directory name yields a malformed plist
+# that launchctl rejects at load time, i.e. a schedule that silently never runs. Assert
+# plistlib can still PARSE it and that the value round-trips — the escape and the parse
+# together, since either alone would pass while the pair is broken.
+if have python3; then
+  ucheck "maint: launchd plist XML-escapes the PATH and still parses" \
+    "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; PATH='/a&b/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; python3 -c 'import sys,plistlib; d=plistlib.load(open(sys.argv[1],\"rb\")); sys.exit(0 if \"/a&b/bin\" in d[\"EnvironmentVariables\"][\"PATH\"] else 1)' \"\$HOME/Library/LaunchAgents/com.dotfiles.maint.plist\"" \
+    PATH="$SCHEDBIN:$PATH" HOME="$SANDBOX/sched-path-launchd"
+else
+  skip "maint launchd PATH capture (python3 absent — cannot parse plist XML)"
+fi
+# systemd expands % SPECIFIERS inside Environment= (%h = home, %i = instance, …), so a
+# legitimate PATH entry like /sent%h/bin would silently become /sent<homedir>/bin — or
+# the unit would refuse to load on an unknown specifier. Quotes and backslashes carry
+# unit-file syntax there too. Assert the three documented substitutions against a
+# literal expectation rather than round-tripping through a reimplementation of the rule.
+_ms_got="$(zsh -c "source '$UI'; source '$MNT'; _maint_systemd_escape \"\$1\"" _ '/a%h/b"c/d\e/bin' 2>/dev/null)"
+_ms_want='/a%%h/b\"c/d\\e/bin'
+if [[ "$_ms_got" == "$_ms_want" ]]; then
+  pass "maint: systemd Environment= escapes %, \" and \\ (no specifier expansion)"
+else
+  fail "maint: systemd escape wrong (got '$_ms_got' want '$_ms_want')"
+fi
+# ...and the rendered unit actually carries it, so the helper cannot be wired up wrong.
+ucheck "maint: the systemd unit's PATH survives a % in the installing PATH" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; PATH='/sent%h/bin':\$PATH maint-install 09:30 >/dev/null 2>&1; grep -q 'Environment=\"PATH=/sent%%h/bin' \"\$XDG_CONFIG_HOME/systemd/user/dotfiles-maint.service\"" \
+  PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$SANDBOX/sched-pct-systemd"
+
+# ── the stale-unit detector (_maint_unit_needs_refresh) ──────────────────────
+# This is what makes the migration survivable. A unit written before the PATH capture
+# still fires, still logs, still exits 0 — and silently resolves no brew/mise. maint-status
+# is the ONLY place that can surface it, so the detector is load-bearing rather than a
+# nicety.
+#
+# The SECOND silent death is a unit whose recorded runner path no longer resolves: move
+# the consuming repo and the scheduler keeps firing at the old absolute path. Observed in
+# the wild, and invisible from every angle — `maint-status` printed the timer happily,
+# `launchctl list` reported exit status 0 (the job had not fired since the move), and
+# `maint-run` kept working because it re-resolves the runner from the live config rather
+# than reading the unit. Only reading the unit back catches it, so each arm is asserted
+# per-scheduler with a REAL runner path for the healthy fixture — point the "current"
+# fixtures at a path that does not exist and this whole section passes vacuously.
+#
+# Four states per scheduler, and the last matters as much as the others: a box with NO
+# schedule installed must stay quiet, or every such box is nagged forever.
+_MRF="$SANDBOX/maint-refresh"
+_MRF_RUNNER="$HERE/maint/dotfiles-maint.sh" # a path that really exists
+_MRF_GONE="$_MRF/moved-away/core/maint/dotfiles-maint.sh"
+rm -rf "$_MRF"
+mkdir -p "$_MRF/bin" "$_MRF/sd-new/systemd/user" "$_MRF/sd-old/systemd/user" \
+  "$_MRF/sd-dead/systemd/user" "$_MRF/sd-none" \
+  "$_MRF/ld-new/Library/LaunchAgents" "$_MRF/ld-old/Library/LaunchAgents" \
+  "$_MRF/ld-dead/Library/LaunchAgents" "$_MRF/ld-none"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash %s\n' "$_MRF_RUNNER" \
+  >"$_MRF/sd-new/systemd/user/dotfiles-maint.service"
+printf '[Service]\nExecStart=/usr/bin/env bash %s\n' "$_MRF_RUNNER" \
+  >"$_MRF/sd-old/systemd/user/dotfiles-maint.service"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash %s\n' "$_MRF_GONE" \
+  >"$_MRF/sd-dead/systemd/user/dotfiles-maint.service"
+printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string><string>%s</string></array><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  "$_MRF_RUNNER" >"$_MRF/ld-new/Library/LaunchAgents/com.dotfiles.maint.plist"
+# ld-old is precisely the case a bare `EnvironmentVariables` presence test MISSES: the
+# dict exists but carries no PATH, so the runner is still handed a stripped environment
+# while the detector reports the schedule as current.
+printf '<plist><dict><key>EnvironmentVariables</key><dict><key>LANG</key><string>C</string></dict></dict></plist>\n' \
+  >"$_MRF/ld-old/Library/LaunchAgents/com.dotfiles.maint.plist"
+# ld-dead is the observed macOS case, rendered as maint-install writes it (ProgramArguments
+# on its own line, argv[0] the interpreter) so the argv[1] extraction is exercised for real.
+printf '<plist><dict>\n  <key>ProgramArguments</key>\n  <array><string>/bin/bash</string><string>%s</string></array>\n  <key>EnvironmentVariables</key>\n  <dict><key>PATH</key><string>/x/bin</string></dict>\n</dict></plist>\n' \
+  "$_MRF_GONE" >"$_MRF/ld-dead/Library/LaunchAgents/com.dotfiles.maint.plist"
+printf '#!/bin/sh\ncase "$1" in -l) cat "${CRON_TABLE:-/dev/null}" ;; *) exit 0 ;; esac\n' >"$_MRF/bin/crontab"
+chmod +x "$_MRF/bin/crontab"
+# The PATH prefix is SINGLE-quoted, as _maint_sh_squote renders it — the runner extraction
+# has to step over that assignment, so a fixture using bare or double quotes would let a
+# parser that simply grabbed field 6 pass.
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_RUNNER" >"$_MRF/cron-new"
+printf '30 09 * * * /usr/bin/env bash %s # dotfiles-maint\n' "$_MRF_RUNNER" >"$_MRF/cron-old"
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_GONE" >"$_MRF/cron-dead"
+: >"$_MRF/cron-none"
+
+ucheck "maint/refresh: systemd unit WITH the PATH capture and a resolvable runner is current" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-new"
+ucheck "maint/refresh: systemd unit WITHOUT it is flagged stale (why=path)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
+  XDG_CONFIG_HOME="$_MRF/sd-old"
+ucheck "maint/refresh: systemd unit whose runner path is gone is flagged (why=runner)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  XDG_CONFIG_HOME="$_MRF/sd-dead"
+ucheck "maint/refresh: no systemd unit at all stays quiet (no nag without a schedule)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-none"
+ucheck "maint/refresh: launchd plist WITH a PATH key and a resolvable runner is current" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-new"
+ucheck "maint/refresh: launchd plist with EnvironmentVariables but NO PATH is flagged stale (why=path)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
+  HOME="$_MRF/ld-old"
+ucheck "maint/refresh: launchd plist whose ProgramArguments runner is gone is flagged (why=runner)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  HOME="$_MRF/ld-dead"
+ucheck "maint/refresh: no launchd plist at all stays quiet" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-none"
+ucheck "maint/refresh: cron line carrying a PATH and a resolvable runner is current" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-new"
+ucheck "maint/refresh: cron line without a PATH is flagged stale (why=path)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == path ]]" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-old"
+ucheck "maint/refresh: cron line whose runner path is gone is flagged (why=runner)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-dead"
+ucheck "maint/refresh: an empty crontab stays quiet" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-none"
+# The runner a unit records must be read back VERBATIM — the hint prints it, and an
+# extraction that mangled it (dropping the PATH prefix's quoting, or half a path with a
+# space) would still "detect" a dead runner while telling the operator the wrong path.
+ucheck "maint/refresh: the recorded runner path is read back verbatim (launchd argv[1])" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
+  HOME="$_MRF/ld-dead"
+ucheck "maint/refresh: the recorded runner path is read back verbatim (cron, past the PATH prefix)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-dead"
+
+# ── the runner path is DATA in three different grammars ──────────────────────
+# maint-install escapes the captured PATH per scheduler but wrote the RUNNER raw, and the
+# runner is not a constant: it is wherever the consuming repo was cloned to. Every one of
+# the three failures is silent or nearly so, which is why they survived —
+#
+#   systemd  % is a SPECIFIER in ExecStart, so a repo under …/a%h/… runs a different path
+#            (or the unit refuses to load on an unknown one); an unquoted argument is also
+#            split on whitespace, and " / \ carry unit-file syntax.
+#   cron     % is cron's NEWLINE metacharacter: the command is truncated there and the
+#            remainder is fed to it as stdin, so the job simply stops running. Unquoted,
+#            the command field is also sh, so a space splits it and $(…) is CODE.
+#   launchd  & < > make the plist malformed and `launchctl load` rejects it.
+#
+# One fixture path carries all of it — % space & < > " \ ' — and each arm asserts the full
+# loop: maint-install renders it, _maint_unit_runner reads it back VERBATIM, and the unit
+# reads as CURRENT rather than as a dead runner. That last part is the user-visible bug:
+# before this, a repo at such a path got a broken schedule AND a maint-status that either
+# said nothing or named the wrong file.
+#
+# The pre-existing fixtures above all use the older UNQUOTED shapes, so they double as the
+# backward-compatibility gate: units already on disk are only rewritten when the operator
+# re-runs maint-install, and must keep parsing until they do.
+# Every hazard in one component. The last four are the ones a "looks about right" fixture
+# misses: `$i`/`${j}` because systemd substitutes VARIABLES in ExecStart on top of its %
+# specifiers, and `\n`/`\c` because they are the two-character sequences zsh's `echo`
+# builtin would rewrite — `\c` truncating the crontab line outright. An earlier revision of
+# this fixture used `\g`, which is not a recognized escape, so the whole hazard sat
+# unexercised while the assertion read green.
+_MRF_HOSTILE_DIR="$_MRF/hostile/a%h b&c<d>e\"f\\g'h\$i\${j}\\nk\\cl"
+_MRF_HOSTILE="$_MRF_HOSTILE_DIR/dotfiles-maint.sh"
+if mkdir -p "$_MRF_HOSTILE_DIR" 2>/dev/null && printf '#!/bin/bash\n:\n' >"$_MRF_HOSTILE" 2>/dev/null; then
+  # A crontab stub that ROUND-TRIPS: `-` stores the table, `-l` reads that same table back.
+  # The one above is read-only, and install-then-read is the whole point here.
+  mkdir -p "$_MRF/rtbin"
+  printf '#!/bin/sh\ncase "$1" in -l) [ -f "$CRON_TABLE" ] && cat "$CRON_TABLE"; exit 0 ;; -) cat > "$CRON_TABLE" ;; *) exit 0 ;; esac\n' >"$_MRF/rtbin/crontab"
+  chmod +x "$_MRF/rtbin/crontab"
+  : >"$_MRF/cron-hostile"
+  # The path rides in through the ENVIRONMENT — it holds a single quote, a double quote and
+  # a backslash, so interpolating it into the assertion body would rewrite the body itself.
+  _MRF_RT="source '$UI'; source '$MNT'; _MAINT_SH=\"\$SH\"; _maint_scheduler() { echo SCHED }; maint-install 09:30 >/dev/null 2>&1; [[ \"\$(_maint_unit_runner)\" == \"\$SH\" ]] && ! _maint_unit_needs_refresh"
+
+  ucheck "maint/refresh: a runner path holding % \$ \" \\ and a space round-trips through the systemd unit" \
+    "${_MRF_RT/SCHED/systemd}" \
+    PATH="$SCHEDBIN:$PATH" XDG_CONFIG_HOME="$_MRF/rt-sd" SH="$_MRF_HOSTILE"
+  ucheck "maint/refresh: a runner path holding & < > and a quote round-trips through the launchd plist" \
+    "${_MRF_RT/SCHED/launchd}" \
+    PATH="$SCHEDBIN:$PATH" HOME="$_MRF/rt-ld" SH="$_MRF_HOSTILE"
+  ucheck "maint/refresh: a runner path holding % and shell metacharacters round-trips through the cron line" \
+    "${_MRF_RT/SCHED/cron}" \
+    PATH="$_MRF/rtbin:$SCHEDBIN:$PATH" CRON_TABLE="$_MRF/cron-hostile" SH="$_MRF_HOSTILE"
+
+  # ...and the same three artifacts read by something that is NOT this codebase. A round-trip
+  # through our own reader proves only that the two halves AGREE — escape it wrongly and
+  # unescape it wrongly the same way and the assertions above stay green while the scheduler
+  # runs nothing. These pin the emitted text against the real grammar instead, the way the
+  # PATH assertions already do.
+  #
+  # systemd has no parser to borrow on a macOS runner, so it gets the literal expectation:
+  # the ONE directory component is spelled out post-escape (% doubled, " and \ backslashed)
+  # rather than recomputed here — restating the rule in the test would let a wrong rule pass.
+  if grep -qF 'ExecStart=/usr/bin/env bash "' "$_MRF/rt-sd/systemd/user/dotfiles-maint.service" 2>/dev/null &&
+    grep -qF 'a%%h b&c<d>e\"f\\g'"'"'h$$i$${j}\\nk\\cl/dotfiles-maint.sh"' "$_MRF/rt-sd/systemd/user/dotfiles-maint.service" 2>/dev/null; then
+    pass "maint: the systemd ExecStart runner is quoted with %, \$, \" and \\ escaped"
+  else
+    fail "maint: the systemd ExecStart runner is not escaped as expected"
+  fi
+  # cron: let a real /bin/sh parse the command back, after applying cron's OWN pass (\% → %)
+  # exactly as crond would before handing the field over. Exactly one argument must come out
+  # of it, spelled the same as the file on disk.
+  # ONE line, AND that line reaches its terminating marker. maint-install runs under
+  # `emulate -L zsh`, where `echo` interprets backslash escapes, so a `\n` in the runner
+  # splits the entry in two and a `\c` truncates it and swallows the trailing newline.
+  #
+  # BOTH halves are needed, and the reason is worth stating because the obvious single check
+  # does not work: with this fixture the two corruptions CANCEL in the line count — `\n`
+  # adds a newline, `\c` removes the final one, and a line count of exactly 1 comes back
+  # from a table that is in fact one wrapped fragment plus one unterminated one. What the
+  # truncation cannot fake is arriving at the marker, since everything past the `\c` is
+  # gone. Verified against a reverted copy of the module: `echo` yields marker-terminated=0
+  # while `print -r` yields 1, with the line count reading 1 for both.
+  _mr_nlines="$(wc -l <"$_MRF/cron-hostile" 2>/dev/null | tr -d ' ')"
+  _mr_tagged="$(grep -c '# dotfiles-maint$' "$_MRF/cron-hostile" 2>/dev/null || true)"
+  if [[ "$_mr_nlines" == 1 && "$_mr_tagged" == 1 ]]; then
+    pass "maint: the cron entry is one marker-terminated line (no echo-escape split or truncation)"
+  else
+    fail "maint: cron table is $_mr_nlines line(s), $_mr_tagged marker-terminated — a backslash escape corrupted the entry"
+  fi
+  _mr_line="$(cat "$_MRF/cron-hostile" 2>/dev/null)"
+  # A BARE % is one left over once every escaped \% is accounted for — testing for the
+  # mere presence of \% would pass a line that escaped the PATH's % and not the runner's.
+  if [[ "${_mr_line//\\%/}" == *'%'* ]]; then
+    fail "maint: the cron line carries a BARE % — crond truncates the command there"
+  else
+    _mr_tok="${_mr_line% # dotfiles-maint}"
+    _mr_tok="${_mr_tok#*"/usr/bin/env bash "}"
+    _mr_tok="${_mr_tok//\\%/%}" # cron's own unescape
+    _mr_got="$(sh -c "set -- $_mr_tok; printf '%s|%s' \"\$#\" \"\$1\"" 2>/dev/null)"
+    if [[ "$_mr_got" == "1|$_MRF_HOSTILE" ]]; then
+      pass "maint: the cron runner survives cron's % pass and reaches sh as one argument"
+    else
+      fail "maint: cron runner did not round-trip through sh (got '$_mr_got')"
+    fi
+  fi
+  # launchd: plistlib is the third party, as it is for the PATH value two sections up.
+  if have python3; then
+    if python3 -c 'import sys,plistlib; d=plistlib.load(open(sys.argv[1],"rb")); sys.exit(0 if d["ProgramArguments"][1]==sys.argv[2] else 1)' \
+      "$_MRF/rt-ld/Library/LaunchAgents/com.dotfiles.maint.plist" "$_MRF_HOSTILE" 2>/dev/null; then
+      pass "maint: the launchd plist still parses and ProgramArguments[1] is the real path"
+    else
+      fail "maint: the launchd plist is malformed or ProgramArguments[1] is not the runner"
+    fi
+  else
+    skip "maint launchd runner escape (python3 absent — cannot parse plist XML)"
+  fi
+else
+  # Some filesystems (a CI runner on exFAT, a Windows-hosted mount) reject " or \ in a
+  # name. Skipping is honest; silently passing would vouch for an escape never exercised.
+  skip "maint runner-path escaping (this filesystem rejects a name holding \" or \\)"
+fi
+
+# The refusals — the other half of the contract, and the half that decides whether this
+# feature is trustworthy. systemd's ExecStart and cron's command field are COMMANDS, not
+# path fields, so a parse that swallows the whole tail turns `bash /a/live/runner --quiet`
+# into the nonexistent path "/a/live/runner --quiet" and reports a HEALTHY job as dead.
+# The launchd equivalent is an `<array>` that is not ProgramArguments' own value: skip over
+# a non-array value there and the parser lifts the second string out of whatever key owns
+# the NEXT array, naming a path the unit never runs. Each fixture below runs a runner that
+# genuinely EXISTS, so a regression here is a false death notice, not a missed one.
+mkdir -p "$_MRF/sd-args/systemd/user" "$_MRF/ld-displaced/Library/LaunchAgents"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash %s --quiet\n' "$_MRF_RUNNER" \
+  >"$_MRF/sd-args/systemd/user/dotfiles-maint.service"
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s >>/tmp/m.log # dotfiles-maint\n" "$_MRF_RUNNER" \
+  >"$_MRF/cron-args"
+printf '<plist><dict><key>ProgramArguments</key><string>%s</string><key>WatchPaths</key><array><string>/a</string><string>%s</string></array><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  "$_MRF_RUNNER" "$_MRF_GONE" >"$_MRF/ld-displaced/Library/LaunchAgents/com.dotfiles.maint.plist"
+
+ucheck "maint/refresh: a systemd ExecStart with extra argv is refused, not read as one path" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-args"
+ucheck "maint/refresh: a cron command with a redirection is refused, not read as one path" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-args"
+ucheck "maint/refresh: a later key's <array> is not mistaken for ProgramArguments'" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-displaced"
+
+# The same rule against the QUOTED shapes, where "one argument" is a property of where the
+# closing quote sits rather than of whitespace. Both fixtures run a runner that exists, so
+# a regression is again a false death notice. The third is the quoted counterpart of the
+# `%` refusal below: there, a bare `%` reaches `_maint_lone_arg` and is rejected because
+# nothing escaped it; here the value IS escaped, so a SINGLE `%` inside the quotes is a
+# specifier that survived — a path we cannot reconstruct without reimplementing systemd's
+# table, and therefore not evidence of anything either.
+mkdir -p "$_MRF/sd-qargs/systemd/user" "$_MRF/sd-spec/systemd/user"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash "%s" --quiet\n' "$_MRF_RUNNER" \
+  >"$_MRF/sd-qargs/systemd/user/dotfiles-maint.service"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash "/a%%h/dotfiles-maint.sh"\n' \
+  >"$_MRF/sd-spec/systemd/user/dotfiles-maint.service"
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash '%s' >>/tmp/m.log # dotfiles-maint\n" "$_MRF_RUNNER" \
+  >"$_MRF/cron-qargs"
+
+ucheck "maint/refresh: a quoted systemd runner with argv after the closing quote is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-qargs"
+ucheck "maint/refresh: a QUOTED systemd runner holding an unresolved % specifier is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-spec"
+ucheck "maint/refresh: a quoted cron runner with a redirection after it is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-qargs"
+
+# The two metacharacters that sh QUOTING does not save you from, one per scheduler. cron
+# translates % before sh ever sees the field, so a bare % inside the quotes still truncates
+# the command; systemd substitutes $VAR inside double quotes, so `$HOME` there is not the
+# path it runs. Both fixtures name a runner that RESOLVES if the metacharacter is merely
+# ignored — so a reader that failed to refuse would hand back a confident wrong verdict
+# about a job that does not run, which is worse than the noisy kind.
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash '%s' # dotfiles-maint\n" "$_MRF_RUNNER%h" \
+  >"$_MRF/cron-qpct"
+mkdir -p "$_MRF/sd-qvar/systemd/user"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash "%s$HOME"\n' "$_MRF_RUNNER" \
+  >"$_MRF/sd-qvar/systemd/user/dotfiles-maint.service"
+
+ucheck "maint/refresh: a QUOTED cron runner carrying a bare % is refused (quoting is no defence)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-qpct"
+ucheck "maint/refresh: a QUOTED systemd runner carrying a \$VAR reference is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-qvar"
+
+# A RELATIVE recorded runner is the one value that cannot be tested at all: `[[ -f ]]`
+# resolves it against whatever directory maint-status was invoked from, so the same unit
+# would read dead in one shell and alive in another — a verdict about the caller, not the
+# unit. maint-install never writes one ($_MAINT_SH is `:A`-resolved at the top of the
+# module), and a hand-edited unit can legitimately pair a relative script with systemd's
+# WorkingDirectory= or cron's implicit $HOME. All three arms must stay quiet.
+mkdir -p "$_MRF/sd-rel/systemd/user" "$_MRF/ld-rel/Library/LaunchAgents"
+_MRF_REL='core/maint/dotfiles-maint.sh'
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash %s\n' "$_MRF_REL" \
+  >"$_MRF/sd-rel/systemd/user/dotfiles-maint.service"
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_REL" >"$_MRF/cron-rel"
+printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string><string>%s</string></array><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  "$_MRF_REL" >"$_MRF/ld-rel/Library/LaunchAgents/com.dotfiles.maint.plist"
+
+ucheck "maint/refresh: a relative systemd runner is refused (verdict must not depend on cwd)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-rel"
+ucheck "maint/refresh: a relative cron runner is refused (verdict must not depend on cwd)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-rel"
+ucheck "maint/refresh: a relative launchd runner is refused (verdict must not depend on cwd)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-rel"
+
+# The last way to name a path the unit does not actually run: read an argument belonging to
+# some OTHER program. Both fixtures below are healthy jobs — `/bin/echo /missing` succeeds —
+# so extracting `/missing` from either would be a death notice for a live schedule. The
+# interpreter has to be identified by POSITION (launchd argv[0]; cron's command, anchored to
+# the closing quote of the PATH assignment), not merely found somewhere in the unit.
+mkdir -p "$_MRF/ld-argv0/Library/LaunchAgents"
+printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/echo</string><string>%s</string></array><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  "$_MRF_GONE" >"$_MRF/ld-argv0/Library/LaunchAgents/com.dotfiles.maint.plist"
+printf "30 09 * * * PATH='/x/bin' /bin/echo /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_GONE" >"$_MRF/cron-spliced"
+
+ucheck "maint/refresh: a launchd argv[0] that is not the interpreter is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-argv0"
+ucheck "maint/refresh: a cron command with another program spliced before the interpreter is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-spliced"
+
+# ...and the version of that splice which HIDES the anchor inside a quoted argument. This
+# is why the PATH value is consumed as a real single-quoted token (_maint_squote_rest)
+# rather than located by searching: `/bin/echo '␣/usr/bin/env bash /missing'` runs echo and
+# is healthy, but contains a quote followed by the exact interpreter text, so any
+# appearance-based anchor reads /missing back as our runner. The escaped-quote fixture is
+# the other half — the scanner must step OVER a '\'' inside the value, or a legitimate
+# PATH containing an apostrophe would stop the scan early and lose the real runner.
+printf "30 09 * * * PATH='/x' /bin/echo ' /usr/bin/env bash %s' # dotfiles-maint\n" "$_MRF_GONE" >"$_MRF/cron-quoted"
+printf "30 09 * * * PATH='/we'\\\\''ird/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_GONE" >"$_MRF/cron-squote"
+
+ucheck "maint/refresh: a cron argument that merely QUOTES the interpreter text is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-quoted"
+ucheck "maint/refresh: a PATH value containing an escaped quote does not derail the scan" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ \"\$(_maint_unit_runner)\" == '$_MRF_GONE' ]]" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-squote"
+
+# launchd entity decoding. A plist may legally encode a quote as &quot;/&apos;, and launchd
+# resolves it to the real filename — returning the encoded text would name a path that does
+# not exist and call a live job dead. Anything we CANNOT decode (a numeric reference, an
+# unknown entity) is refused for the same reason, from the other direction: a filename we
+# cannot reconstruct is not evidence of anything.
+mkdir -p "$_MRF/ld-entity/Library/LaunchAgents" "$_MRF/ld-numref/Library/LaunchAgents"
+_MRF_QUOTED="$_MRF/moved'away/core/maint/dotfiles-maint.sh"
+printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string><string>%s/moved&apos;away/core/maint/dotfiles-maint.sh</string></array><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  "$_MRF" >"$_MRF/ld-entity/Library/LaunchAgents/com.dotfiles.maint.plist"
+printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string><string>%s&#47;gone&#47;dotfiles-maint.sh</string></array><key>EnvironmentVariables</key><dict><key>PATH</key><string>/x/bin</string></dict></dict></plist>\n' \
+  "$_MRF" >"$_MRF/ld-numref/Library/LaunchAgents/com.dotfiles.maint.plist"
+
+# The expectation rides in via the ENVIRONMENT, not interpolated into the assertion text:
+# the whole point of this fixture is a path containing a single quote, which would close
+# the quoting of the body itself. (The other verbatim checks above interpolate safely only
+# because their paths happen to hold no quote — a hazard of the harness, not of the code.)
+ucheck "maint/refresh: launchd decodes &apos; so the hint names the real filename" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ \"\$(_maint_unit_runner)\" == \"\$WANT\" ]] && _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  HOME="$_MRF/ld-entity" WANT="$_MRF_QUOTED"
+ucheck "maint/refresh: a launchd path with an undecodable numeric reference is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  HOME="$_MRF/ld-numref"
+
+# The two causes are not mutually exclusive, and a unit predating the PATH capture is if
+# anything the LIKELIEST to have been orphaned by a move as well — it is the oldest thing
+# on the box. Reporting the milder cause there tells the operator "some steps will skip"
+# about a job that does not run at all. The runner is inspected first for that reason, and
+# these fixtures pin it per arm, since each arm detects the PATH separately. The cron one
+# also exercises the pre-capture LINE SHAPE (no `PATH=` prefix): refusing to parse it would
+# silently reintroduce the misclassification for exactly the units most likely to hit it.
+mkdir -p "$_MRF/sd-old-dead/systemd/user" "$_MRF/ld-old-dead/Library/LaunchAgents"
+printf '[Service]\nExecStart=/usr/bin/env bash %s\n' "$_MRF_GONE" \
+  >"$_MRF/sd-old-dead/systemd/user/dotfiles-maint.service"
+printf '<plist><dict><key>ProgramArguments</key><array><string>/bin/bash</string><string>%s</string></array><key>EnvironmentVariables</key><dict><key>LANG</key><string>C</string></dict></dict></plist>\n' \
+  "$_MRF_GONE" >"$_MRF/ld-old-dead/Library/LaunchAgents/com.dotfiles.maint.plist"
+printf '30 09 * * * /usr/bin/env bash %s # dotfiles-maint\n' "$_MRF_GONE" >"$_MRF/cron-old-dead"
+
+ucheck "maint/refresh: a pre-capture systemd unit that is ALSO dead reports runner, not path" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  XDG_CONFIG_HOME="$_MRF/sd-old-dead"
+ucheck "maint/refresh: a pre-capture launchd plist that is ALSO dead reports runner, not path" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo launchd }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  HOME="$_MRF/ld-old-dead"
+ucheck "maint/refresh: a pre-capture cron line that is ALSO dead reports runner, not path" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; _maint_unit_needs_refresh && [[ \$_MAINT_REFRESH_WHY == runner ]]" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-old-dead"
+
+# A `%` in the recorded runner means the literal text is NOT what runs. systemd expands
+# specifiers in ExecStart (%h and friends) — the very expansion _maint_systemd_escape
+# already doubles against in `Environment=` — and cron treats % as its newline
+# metacharacter, so everything past it becomes stdin. `-f` on the raw text answers a
+# question about a path nothing executes, so both arms must refuse. The fixtures use a
+# runner that would RESOLVE if the % were simply ignored, so a reader that failed to
+# refuse would emit a confident, wrong verdict rather than merely a noisy one.
+mkdir -p "$_MRF/sd-pct/systemd/user"
+printf '[Service]\nEnvironment="PATH=/x/bin"\nExecStart=/usr/bin/env bash %s\n' "$_MRF_RUNNER%h" \
+  >"$_MRF/sd-pct/systemd/user/dotfiles-maint.service"
+printf "30 09 * * * PATH='/x/bin' /usr/bin/env bash %s # dotfiles-maint\n" "$_MRF_RUNNER%m" >"$_MRF/cron-pct"
+
+ucheck "maint/refresh: a systemd runner carrying a % specifier is refused (not the path that runs)" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo systemd }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  XDG_CONFIG_HOME="$_MRF/sd-pct"
+ucheck "maint/refresh: a cron runner carrying % (cron's newline metacharacter) is refused" \
+  "source '$UI'; source '$MNT'; _maint_scheduler() { echo cron }; [[ -z \"\$(_maint_unit_runner)\" ]] && ! _maint_unit_needs_refresh" \
+  PATH="$_MRF/bin:$PATH" CRON_TABLE="$_MRF/cron-pct"
 
 # ── maint RUNNER stdin contract (hermetic, bash — the runner is not zsh) ──────
 # The runner is unattended but inherits whatever stdin started it (a terminal, via
@@ -5144,6 +6719,496 @@ _serve_net 'case "$2" in tun0) echo 10.8.0.2 ;; esac' ':'
 ucheck "serve: a failed default route does not reprint the tunnel addr as (lan)" \
   "source '$UI' || exit 1; source '$FN' || exit 1; out=\$(_serve_advertise 8000); [[ \$out == *'(tun0)'* && \$out != *'(lan)'* ]]" \
   PATH="$SRVBIN"
+
+# ── K. nvim orphan backstop (scripts/nvim-reachability.sh) ────────────────────
+# core.manifest lists nvim/ as a DIRECTORY, so the audit's manifest⇄fs check auto-lists
+# every path under it and cannot see an orphan. §4b of the audit is the backstop; this
+# proves the backstop actually catches what it claims to, rather than merely existing —
+# the same lesson the atuin-guard verification exists to enforce. Hermetic: a synthetic
+# git repo with a miniature gerrrt tree, so it asserts the LOGIC, never this repo's tree.
+#
+# Every negative fixture asserts BOTH the finding text and exit status 1, because the
+# script documents `1 = findings` as its CLI contract and audit-core.sh keys off the
+# output — matching one without the other would leave half the contract untested.
+if have git; then
+  hdr "nvim orphan backstop (nvim-reachability.sh)"
+  NVR="$HERE/scripts/nvim-reachability.sh"
+  NREPO="$SANDBOX/nvimrepo"
+
+  _nvr_fresh() { # build a minimal, fully REACHABLE gerrrt tree
+    rm -rf "$NREPO"
+    mkdir -p "$NREPO/nvim/lua/gerrrt/config" "$NREPO/nvim/lua/gerrrt/plugins" \
+             "$NREPO/nvim/lua/gerrrt/servers" "$NREPO/nvim/lua/gerrrt/utils"
+    git -C "$NREPO" init -q
+    git -C "$NREPO" config user.email t@example.com
+    git -C "$NREPO" config user.name tester
+    printf 'require("gerrrt")\n'                          >"$NREPO/nvim/init.lua"
+    printf 'require("gerrrt.config")\n'                   >"$NREPO/nvim/lua/gerrrt/init.lua"
+    printf 'local M={} function M.check() end return M\n' >"$NREPO/nvim/lua/gerrrt/health.lua"
+    printf 'require("gerrrt.config.lazy")\n'              >"$NREPO/nvim/lua/gerrrt/config/init.lua"
+    # one explicit require, lazy's directory import, and the dynamic servers arm
+    printf 'require("gerrrt.utils.term")\nrequire("lazy").setup({ { import = "gerrrt.plugins" } })\nrequire("gerrrt.servers")\n' \
+                                                          >"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+    printf 'return {}\n'                                  >"$NREPO/nvim/lua/gerrrt/utils/term.lua"
+    printf 'return {}\n'                                  >"$NREPO/nvim/lua/gerrrt/plugins/anything.lua"
+    printf 'local servers = {\n\t"lua_ls",\n}\nfor _, n in ipairs(servers) do pcall(require, "gerrrt.servers." .. n) end\n' \
+                                                          >"$NREPO/nvim/lua/gerrrt/servers/init.lua"
+    printf 'return {}\n'                                  >"$NREPO/nvim/lua/gerrrt/servers/lua_ls.lua"
+    git -C "$NREPO" add -A >/dev/null 2>&1
+  }
+  # Capture output and status TOGETHER. Note the deliberate absence of a pipeline here:
+  # `"$NVR" … | grep -q` would return the SCRIPT's status under `set -o pipefail` (1
+  # whenever findings exist), silently inverting every assertion below into the wrong
+  # branch — which is exactly what the first version of this section did.
+  _nvr_catches() { # <grep-pattern> <label>
+    git -C "$NREPO" add -A >/dev/null 2>&1
+    local out rc
+    out="$("$NVR" --root "$NREPO" 2>&1)"
+    rc=$?
+    if grep -q "$1" <<<"$out" && [[ $rc -eq 1 ]]; then
+      pass "nvim-reachability: $2"
+    else
+      fail "nvim-reachability: $2 (rc=$rc, output=${out:-<empty>})"
+    fi
+  }
+  _nvr_clean() { # <label>
+    git -C "$NREPO" add -A >/dev/null 2>&1
+    local out rc
+    out="$("$NVR" --root "$NREPO" 2>&1)"
+    rc=$?
+    if [[ -z "$out" && $rc -eq 0 ]]; then
+      pass "nvim-reachability: $1"
+    else
+      fail "nvim-reachability: $1 (rc=$rc, output=${out:-<empty>})"
+    fi
+  }
+
+  _nvr_fresh
+  _nvr_clean "a fully reachable tree is clean"
+
+  # the gap this whole section exists to close: a utils/ module nothing requires
+  _nvr_fresh; printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/dead.lua"
+  _nvr_catches 'gerrrt\.utils\.dead' "catches an orphaned utils/ module"
+
+  # a stray top-level lua/gerrrt/*.lua (health.lua is the only legitimate one)
+  _nvr_fresh; printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/junk.lua"
+  _nvr_catches 'gerrrt\.junk' "catches a stray top-level module"
+
+  # THE reason this is a graph walk and not a mention-scan: two dead modules that
+  # require each other have a non-zero indegree but are reachable from nothing.
+  _nvr_fresh
+  printf 'require("gerrrt.utils.beta")\nreturn {}\n' >"$NREPO/nvim/lua/gerrrt/utils/alpha.lua"
+  printf 'require("gerrrt.utils.alpha")\nreturn {}\n' >"$NREPO/nvim/lua/gerrrt/utils/beta.lua"
+  _nvr_catches 'gerrrt\.utils\.alpha' "catches a disconnected require cycle"
+
+  # a module named only in a COMMENT is not reached — comments are stripped before edges
+  _nvr_fresh
+  printf -- '-- require("gerrrt.utils.ghost")\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/ghost.lua"
+  _nvr_catches 'gerrrt\.utils\.ghost' "a commented-out require does not count as an edge"
+
+  # health.lua must NOT be flagged — Neovim discovers lua/**/health.lua by runtimepath
+  _nvr_fresh; _nvr_clean "exempts health.lua (:checkhealth root)"
+
+  # plugins/ must NOT be flagged — lazy imports the directory wholesale
+  _nvr_fresh; printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/plugins/another.lua"
+  _nvr_clean "exempts plugins/ (lazy imports the dir)"
+
+  # an LSP module absent from the registry is dead config
+  _nvr_fresh; printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/servers/pyright.lua"
+  _nvr_catches 'pyright.*registry' "catches an unlisted LSP module"
+
+  # the reverse — a registry name with no file is a RUNTIME load error
+  _nvr_fresh
+  printf 'local servers = {\n\t"lua_ls",\n\t"ghostls",\n}\n' >"$NREPO/nvim/lua/gerrrt/servers/init.lua"
+  _nvr_catches 'ghostls' "catches a registry entry with no module file"
+
+  # an unparseable registry must FAIL CLOSED — not emit N bogus findings, not go quiet
+  _nvr_fresh
+  printf 'local servers = vim.tbl_flatten({\n\t"lua_ls",\n})\n' >"$NREPO/nvim/lua/gerrrt/servers/init.lua"
+  _nvr_catches 'could not parse' "fails closed on an unparseable registry"
+
+  # …and so must a MISSING one: skipping it silently would disable the whole servers arm
+  _nvr_fresh; rm -f "$NREPO/nvim/lua/gerrrt/servers/init.lua"
+  _nvr_catches 'missing.*servers/init\.lua' "fails closed on a missing registry"
+
+  # a `package.loaded["gerrrt.x"]` PEEK is not a load — health.lua uses exactly this to
+  # inspect the registry without forcing it to load, and counting it as an edge would let
+  # the whole servers/ arm look reachable from the health root with no real require left.
+  _nvr_fresh
+  printf 'local _ = package.loaded["gerrrt.utils.peeked"]\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/peeked.lua"
+  _nvr_catches 'gerrrt\.utils\.peeked' "a package.loaded peek is not an edge"
+
+  # a require inside a MULTILINE --[[ ]] block is still a comment; a line-only stripper
+  # leaves the block interior searchable and would forge the edge
+  _nvr_fresh
+  printf -- '--[[\nrequire("gerrrt.utils.blockghost")\n]]\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/blockghost.lua"
+  _nvr_catches 'gerrrt\.utils\.blockghost' "a multiline block comment is not an edge"
+
+  # lua long comments come in levels — --[=[ … ]=], --[==[ … ]==] — and the closing
+  # delimiter must match the opener's `=` count, so it cannot be hardcoded
+  _nvr_fresh
+  printf -- '--[=[\nrequire("gerrrt.utils.levelghost")\n]=]\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/levelghost.lua"
+  _nvr_catches 'gerrrt\.utils\.levelghost' "a --[=[ level long comment is not an edge"
+
+  # require() of a DIRECTORY is a runtime error, not a lazy import: it must be reported,
+  # and it must NOT mark the directory's children reachable
+  _nvr_fresh
+  printf 'require("gerrrt.utils")\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/onlychild.lua"
+  _nvr_catches 'dangling require' "reports require() of a module that does not exist"
+  _nvr_catches 'gerrrt\.utils\.onlychild' "require() of a directory does not expand children"
+
+  # a lazy import naming nothing at all is dead config, not a silent no-op
+  _nvr_fresh
+  printf 'require("lazy").setup({ { import = "gerrrt.nosuchdir" } })\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  _nvr_catches 'imports "gerrrt.nosuchdir"' "reports a lazy import that matches no module"
+
+  # the inventory must map module names the way LUA does, or the walk marks the wrong rows
+  # visited. Two files claiming one name: lua loads exactly one (package.path order), so
+  # the other is dead config riding on its twin's reachability.
+  _nvr_fresh
+  mkdir -p "$NREPO/nvim/lua/gerrrt/utils/dup"
+  printf 'require("gerrrt.utils.dup")\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/dup.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/dup/init.lua"
+  _nvr_catches 'duplicate module id' "catches two files claiming one module id"
+
+  # a dot inside a filename is not a path separator to lua: require("gerrrt.a.b") resolves
+  # a/b.lua, never a.b.lua — so the file is unaddressable, and must not masquerade as the
+  # module some other file legitimately owns
+  _nvr_fresh
+  printf 'require("gerrrt.utils.shadow")\n' >>"$NREPO/nvim/lua/gerrrt/config/lazy.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/shadow.lua"
+  printf 'return {}\n' >"$NREPO/nvim/lua/gerrrt/utils/shadow.init.lua"
+  _nvr_catches 'unaddressable module file' "catches a literal-dot filename lua cannot address"
+
+  # a repo with no nvim/ (every OS repo) is silently clean, not an error
+  _nvr_fresh; rm -rf "$NREPO/nvim"
+  _nvr_clean "no nvim/ tree is a clean no-op"
+fi
+# ── L. escalation + failure tally (lib/bootstrap-lib.sh) ──────────────────────
+# The provisioning half of the bootstrap scaffold: blib_resolve_su picks the escalator,
+# blib_priv runs a command through it, blib_user_bindirs_on_path stops the presence guards
+# lying, and blib_note_fail/blib_failures_report make a half-provisioned box say so. All
+# pure bash — no package manager, no network, no privileges — so it runs everywhere.
+#
+# Each of these encodes a real fresh-machine failure: a hard-coded `sudo` that exited 127
+# on a container, a PATH-only guard that rebuilt every Rust crate on every run, and ~20
+# `|| true` steps that still reported "bootstrap complete".
+hdr "escalation + failure tally (blib_resolve_su / blib_priv / blib_note_fail)"
+# NB: lib/bootstrap-lib.sh is deliberately NOT re-sourced here. Sections F and G already
+# source it at file scope, and its `_CORE_BOOTSTRAP_LIB_SH` re-entry guard makes a repeat
+# `source` a runtime no-op regardless. It is not free for `shellcheck -x` though: a third
+# source re-reads the lib's `${XDG_STATE_HOME:-…}` expansions AFTER section H's subshell
+# assignment of that same variable, which is enough to trip SC2030/SC2031 on section H's
+# otherwise untouched line 2215.
+
+# An explicitly-set BLIB_SU always wins — INCLUDING an empty one, which is the "already
+# root / run directly" contract bootstrap-test.yml depends on. A resolver testing
+# emptiness instead of set-ness would silently re-add sudo in CI.
+_su_after() { (
+  eval "$1"
+  blib_resolve_su >/dev/null 2>&1
+  printf '%s' "${BLIB_SU-UNSET}"
+); }
+if [[ "$(_su_after 'BLIB_SU=')" == "" ]]; then pass "blib_resolve_su: an explicit empty BLIB_SU is preserved"; else fail "blib_resolve_su clobbered an explicit BLIB_SU= (would re-add sudo as root)"; fi
+if [[ "$(_su_after 'BLIB_SU=doas')" == "doas" ]]; then pass "blib_resolve_su: an explicit BLIB_SU=doas is preserved"; else fail "blib_resolve_su clobbered BLIB_SU=doas"; fi
+# `command -v` also reports aliases, builtins and FUNCTIONS, so an exported `sudo()` makes
+# it print the bare word `sudo`. Recording that defeats the absolute-path pinning (a bare
+# name is re-resolved at every call) and could hand privileged execution to the function.
+if [[ "$(id -u)" -ne 0 ]]; then
+  # shellcheck disable=SC2030,SC2031,SC2123,SC2317,SC2329  # emptying PATH and defining a
+  # shadowing `sudo` function are both the POINT here; the function is reached via
+  # `command -v` and never called, which is why BOTH unreachability codes are suppressed.
+  # SC2317 alone used to cover it; 0.10 split "this function is never invoked" out into
+  # SC2329, so the older list went red on every audit leg over an info-level finding.
+  _su_fn="$( unset BLIB_SU; PATH="$SANDBOX/emptybin"
+    sudo() { :; }
+    blib_resolve_su >/dev/null 2>&1
+    printf '%s' "$BLIB_SU" )"
+  if [[ -z "$_su_fn" ]]; then pass "blib_resolve_su ignores a shell FUNCTION named sudo"; else fail "blib_resolve_su recorded a non-executable [$_su_fn]"; fi
+else
+  skip "blib_resolve_su function-shadowing case (suite is running as root)"
+fi
+
+# With no escalator on PATH and not root, --require must FAIL (rc 1) rather than hand back
+# a broken escalator; without --require it must SUCCEED (links-only needs no privileges).
+mkdir -p "$SANDBOX/emptybin"
+# shellcheck disable=SC2123  # emptying PATH is the POINT: it hides sudo/doas (and id)
+_su_none() { ( unset BLIB_SU; PATH="$SANDBOX/emptybin"; blib_resolve_su "$@" >/dev/null 2>&1 ); }
+if [[ "$(id -u)" -ne 0 ]]; then
+  if _su_none --require; then fail "blib_resolve_su --require succeeded with no escalator and no root"; else pass "blib_resolve_su --require fails when there is no escalator"; fi
+  if _su_none; then pass "blib_resolve_su (no --require) succeeds — links-only needs no privileges"; else fail "blib_resolve_su without --require must not fail"; fi
+else
+  # The MINIMAL-ROOT contract, and the only leg that can test it: as root with no id, sudo
+  # or doas reachable, --require must SUCCEED with an empty BLIB_SU, because root needs no
+  # escalator. This is exactly what $EUID buys — the previous `id -u` probe returned "" on a
+  # PATH with no `id`, concluded "not root", and failed --require on the minimal container
+  # this scaffold exists to serve. Non-root legs cannot reach the branch, so without this
+  # case the regression ships unseen (and every root leg skipped the whole section).
+  # shellcheck disable=SC2030,SC2031,SC2123  # emptying PATH is the point: it hides `id` too
+  _su_root="$( unset BLIB_SU; PATH="$SANDBOX/emptybin"
+    blib_resolve_su --require >/dev/null 2>&1 && printf 'ok/%s' "${BLIB_SU-UNSET}" || printf 'failed/%s' "${BLIB_SU-UNSET}" )"
+  if [[ "$_su_root" == "ok/" ]]; then pass "blib_resolve_su --require succeeds as root on an empty PATH (no id/sudo/doas)"; else fail "root minimal-PATH --require regressed (got $_su_root; want ok/ with an empty BLIB_SU)"; fi
+  skip "blib_resolve_su NON-root no-escalator cases (suite is running as root)"
+fi
+
+# "Resolve once" must mean ONCE: the recorded escalator has to survive a later PATH change,
+# because blib_user_bindirs_on_path (same file) prepends user-writable dirs by design. A
+# bare `sudo` would be re-resolved against the new PATH and could pick up a different
+# binary — which would then receive the password prompt.
+_su_pin_a="$(mktemp -d "$SANDBOX/supin-a.XXXXXX")"
+_su_pin_b="$(mktemp -d "$SANDBOX/supin-b.XXXXXX")"
+printf '#!/bin/sh\nexit 0\n' >"$_su_pin_a/sudo"; chmod +x "$_su_pin_a/sudo"
+printf '#!/bin/sh\nexit 0\n' >"$_su_pin_b/sudo"; chmod +x "$_su_pin_b/sudo"   # the impostor
+# Root-guarded, like the no-escalator cases above: as root the resolver correctly returns
+# an EMPTY BLIB_SU (nothing to escalate with), so there is no path to pin. The Alpine and
+# Arch audit legs run in root containers, which is exactly where an unguarded version of
+# this assertion fails for the wrong reason.
+if [[ "$(id -u)" -ne 0 ]]; then
+  # shellcheck disable=SC2030,SC2031
+  _su_pinned="$( unset BLIB_SU; PATH="$_su_pin_a:/usr/bin:/bin"
+    blib_resolve_su >/dev/null 2>&1
+    PATH="$_su_pin_b:$PATH"          # a later prepend, exactly what bindirs_on_path does
+    printf '%s' "$BLIB_SU" )"
+  if [[ "$_su_pinned" == "$_su_pin_a/sudo" ]]; then pass "blib_resolve_su pins the absolute path (survives a later PATH prepend)"; else fail "blib_resolve_su recorded [$_su_pinned] — a later PATH change can swap the escalator"; fi
+else
+  skip "blib_resolve_su path pinning (suite is running as root — no escalator to pin)"
+fi
+
+# blib_priv must never invoke an empty-string command: with BLIB_SU= it runs CMD directly,
+# and with an escalator set it prefixes it (`env` stands in harmlessly for sudo).
+if [[ "$(BLIB_SU='' blib_priv printf 'ran-%s' direct)" == "ran-direct" ]]; then pass "blib_priv with BLIB_SU= runs the command directly"; else fail "blib_priv mishandled an empty escalator"; fi
+if [[ "$(BLIB_SU='env' blib_priv printf 'ran-%s' viasu)" == "ran-viasu" ]]; then pass "blib_priv routes through a non-empty BLIB_SU"; else fail "blib_priv did not route through BLIB_SU"; fi
+
+# blib_user_bindirs_on_path: adds only EXISTING dirs, never duplicates.
+_bindirs_path() { (
+  HOME="$1"
+  PATH="/usr/bin"
+  blib_user_bindirs_on_path
+  blib_user_bindirs_on_path
+  printf '%s' "$PATH"
+); }
+_bhome="$(mktemp -d "$SANDBOX/bindirs.XXXXXX")"
+mkdir -p "$_bhome/.local/bin" "$_bhome/.cargo/bin" # deliberately NO go/bin, NO .atuin/bin
+_bpath="$(_bindirs_path "$_bhome")"
+case "$_bpath" in *"$_bhome/.local/bin"*) pass "blib_user_bindirs_on_path adds an existing ~/.local/bin" ;; *) fail "blib_user_bindirs_on_path missed ~/.local/bin" ;; esac
+case "$_bpath" in *"$_bhome/.cargo/bin"*) pass "blib_user_bindirs_on_path adds an existing ~/.cargo/bin (the cargo-rebuild bug)" ;; *) fail "blib_user_bindirs_on_path missed ~/.cargo/bin" ;; esac
+case "$_bpath" in *"$_bhome/go/bin"*) fail "blib_user_bindirs_on_path added a NON-EXISTENT dir (~/go/bin)" ;; *) pass "blib_user_bindirs_on_path skips directories that do not exist" ;; esac
+if [[ "$(printf '%s' "$_bpath" | tr ':' '\n' | grep -cxF "$_bhome/.local/bin")" == "1" ]]; then pass "blib_user_bindirs_on_path is idempotent (no duplicate PATH entries)"; else fail "blib_user_bindirs_on_path duplicated a PATH entry on the second call"; fi
+
+# The failure tally. Empty ⇒ silent AND rc 0; non-empty ⇒ rc 1 and every entry listed.
+# That rc IS the contract a caller maps onto its --strict flag.
+if (BLIB_FAILED=(); blib_failures_report >/dev/null); then pass "blib_failures_report returns 0 when nothing failed"; else fail "blib_failures_report must return 0 on an empty tally"; fi
+if [[ -z "$(BLIB_FAILED=(); blib_failures_report 2>&1)" ]]; then pass "blib_failures_report prints nothing when nothing failed"; else fail "blib_failures_report printed on an empty tally"; fi
+_tally_out="$(BLIB_FAILED=(); blib_note_fail 'carapace: RPM install failed' >/dev/null 2>&1; blib_note_fail 'op: install failed' >/dev/null 2>&1; blib_failures_report 2>&1 || true)"
+case "$_tally_out" in *"2 step(s) did not complete"*) pass "blib_failures_report counts the recorded steps" ;; *) fail "blib_failures_report lost the count" ;; esac
+case "$_tally_out" in *"carapace: RPM install failed"*) pass "blib_failures_report lists the first failure" ;; *) fail "blib_failures_report dropped a recorded failure" ;; esac
+case "$_tally_out" in *"op: install failed"*) pass "blib_failures_report lists the last failure" ;; *) fail "blib_failures_report dropped the last failure" ;; esac
+if (BLIB_FAILED=(); blib_note_fail x >/dev/null 2>&1; blib_failures_report >/dev/null 2>&1); then fail "blib_failures_report must return NON-zero when a step failed"; else pass "blib_failures_report returns non-zero when a step failed (drives --strict)"; fi
+if [[ "$(BLIB_FAILED=(); blib_note_fail a >/dev/null 2>&1; blib_note_fail b >/dev/null 2>&1; blib_failed_count)" == "2" ]]; then pass "blib_failed_count reports the tally size"; else fail "blib_failed_count wrong"; fi
+# bash 3.2 + `set -u`: an empty array expansion counts as UNSET, so a bare
+# "${BLIB_FAILED[@]}" would abort the report on the HAPPY path. Prove the guarded form
+# survives errexit+nounset — which is exactly how a bootstrap runs.
+if (set -eu; BLIB_FAILED=(); blib_failures_report >/dev/null 2>&1); then pass "blib_failures_report survives set -eu with an empty tally (bash 3.2 array rule)"; else fail "blib_failures_report tripped set -u on an empty array"; fi
+
+# ── the relocatable bindirs (CARGO_HOME / GOBIN / GOPATH) ────────────────────
+# cargo honours $CARGO_HOME and go honours $GOBIN then $GOPATH/bin. Hard-coding
+# ~/.cargo/bin would leave a box with a custom CARGO_HOME still rebuilding every crate on
+# every run — the same bug, just relocated.
+_relo_home="$(mktemp -d "$SANDBOX/relo.XXXXXX")"
+mkdir -p "$_relo_home/xdgcargo/bin" "$_relo_home/gobin" "$_relo_home/gopath/bin"
+_relo_path="$( HOME="$_relo_home" CARGO_HOME="$_relo_home/xdgcargo" GOBIN="$_relo_home/gobin" PATH=/usr/bin; export CARGO_HOME GOBIN; blib_user_bindirs_on_path; printf '%s' "$PATH" )"
+case "$_relo_path" in *"$_relo_home/xdgcargo/bin"*) pass "blib_user_bindirs_on_path honours CARGO_HOME" ;; *) fail "blib_user_bindirs_on_path ignored CARGO_HOME" ;; esac
+case "$_relo_path" in *"$_relo_home/gobin"*) pass "blib_user_bindirs_on_path honours GOBIN" ;; *) fail "blib_user_bindirs_on_path ignored GOBIN" ;; esac
+# shellcheck disable=SC2030,SC2031  # a subshell-local PATH is the POINT of every probe below
+_relo_path2="$( HOME="$_relo_home" GOPATH="$_relo_home/gopath" PATH=/usr/bin; unset GOBIN; export GOPATH; blib_user_bindirs_on_path; printf '%s' "$PATH" )"
+case "$_relo_path2" in *"$_relo_home/gopath/bin"*) pass "blib_user_bindirs_on_path falls back to GOPATH/bin when GOBIN is unset" ;; *) fail "blib_user_bindirs_on_path ignored GOPATH" ;; esac
+# GOPATH is a LIST: go installs into the FIRST entry's bin/. Appending /bin to the whole
+# value would probe "/first:/second/bin", which exists nowhere — so the Go tools stay off
+# PATH and get rebuilt every run, the exact failure this helper exists to prevent.
+# shellcheck disable=SC2030,SC2031
+_relo_path3="$( HOME="$_relo_home" GOPATH="$_relo_home/gopath:$_relo_home/second" PATH=/usr/bin; unset GOBIN; export GOPATH; blib_user_bindirs_on_path; printf '%s' "$PATH" )"
+case "$_relo_path3" in *"$_relo_home/gopath/bin"*) pass "blib_user_bindirs_on_path uses GOPATH's FIRST entry when it is a list" ;; *) fail "blib_user_bindirs_on_path mishandled a multi-entry GOPATH (got: $_relo_path3)" ;; esac
+case "$_relo_path3" in *":$_relo_home/second/bin"*|*"gopath:$_relo_home/second/bin"*) fail "blib_user_bindirs_on_path built a bogus path from a multi-entry GOPATH" ;; *) pass "blib_user_bindirs_on_path builds no bogus /a:/b/bin entry" ;; esac
+
+# ── sudo keepalive (hermetic: a shimmed `sudo` on PATH, never the real one) ───
+# The riskiest code in this batch — it forks a background refresher and installs no trap of
+# its own — so pin the branches that decide whether it runs at all, that a failed FIRST
+# authentication is reported (so a caller can abort before half-provisioning), and that
+# stop() is idempotent and leaves no orphan.
+_ka_bin="$(mktemp -d "$SANDBOX/kabin.XXXXXX")"
+printf '#!/bin/sh\nexit 0\n' >"$_ka_bin/sudo"; chmod +x "$_ka_bin/sudo"
+# _ka_pid <BLIB_SU> <BLIB_DRY> — start the keepalive against the shimmed sudo, print the
+# pid it recorded (empty when it correctly declined to fork). _ka_rc is the same, returning
+# the rc instead. Both wrap the subshell so the SC2030/SC2031 suppression is stated once.
+# shellcheck disable=SC2030,SC2031  # a subshell-local PATH is the POINT (hermetic sudo shim)
+_ka_pid() { ( BLIB_SU="$1"; BLIB_DRY="$2"; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  _p="${BLIB_SUDO_KEEPALIVE_PID:-}"
+  blib_sudo_keepalive_stop  # reap BEFORE printing: a live refresher would otherwise be
+  printf '%s' "$_p" ); }    # a second writer on this substitution's pipe
+# shellcheck disable=SC2030,SC2031
+_ka_rc() { ( BLIB_SU="$1"; BLIB_DRY="$2"; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  blib_sudo_keepalive_start >/dev/null 2>&1 ); }
+# not-sudo escalators must no-op: doas has no refreshable timestamp, root has nothing to prime.
+if [[ -z "$(_ka_pid doas 0)" ]]; then pass "blib_sudo_keepalive_start no-ops under doas"; else fail "blib_sudo_keepalive_start started a refresher under doas"; fi
+if [[ -z "$(_ka_pid '' 0)" ]]; then pass "blib_sudo_keepalive_start no-ops as root (BLIB_SU=)"; else fail "blib_sudo_keepalive_start started a refresher as root"; fi
+# BLIB_DRY must PREVIEW, never authenticate or fork.
+if [[ -z "$(_ka_pid sudo 1)" ]]; then pass "blib_sudo_keepalive_start forks nothing under BLIB_DRY"; else fail "blib_sudo_keepalive_start forked a refresher during a dry run"; fi
+# BLIB_SU is documented as a single command TOKEN, so an absolute path is a valid override.
+# Matching the literal string `sudo` skipped priming for it, silently restoring the very
+# timestamp expiry (and invisible prompt) this helper exists to prevent.
+if [[ -n "$(_ka_pid "$_ka_bin/sudo" 0)" ]]; then pass "blib_sudo_keepalive_start primes an absolute-path BLIB_SU (/…/sudo)"; else fail "an absolute-path BLIB_SU silently disabled the keepalive"; fi
+# a FAILED initial `sudo -v` must return non-zero — that rc is what lets a caller abort.
+printf '#!/bin/sh\nexit 1\n' >"$_ka_bin/sudo"
+if _ka_rc sudo 0; then fail "blib_sudo_keepalive_start returned 0 when sudo -v failed"; else pass "blib_sudo_keepalive_start reports a failed initial authentication"; fi
+# the happy path: it forks exactly one refresher, and stop() reaps it and is re-callable.
+# The shim now RECORDS its argv, so the refresh MODE is assertable further down: a shim that
+# merely exits 0 accepts `-n true` and `-n -v` alike, and the suite passed either way — it
+# could not see the restricted-sudoers fix at all.
+#
+# `printf`, not `echo`: given argv `-n -v`, dash's echo eats the `-n` as its own no-newline
+# flag and records a bare `-v` — a harness that reports the OLD behaviour as the new one.
+_ka_argv="$_ka_bin/argv"
+: >"$_ka_argv"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\nexit 0\n' "$_ka_argv" >"$_ka_bin/sudo"
+# shellcheck disable=SC2030,SC2031  # subshell-local PATH again: the shimmed sudo
+_ka_out="$( BLIB_SU=sudo; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  pid="$BLIB_SUDO_KEEPALIVE_PID"
+  kill -0 "$pid" 2>/dev/null && alive=yes || alive=no
+  blib_sudo_keepalive_stop
+  sleep 0.2
+  kill -0 "$pid" 2>/dev/null && after=alive || after=reaped
+  blib_sudo_keepalive_stop   # second call must be a harmless no-op
+  printf '%s/%s/%s' "$alive" "$after" "${BLIB_SUDO_KEEPALIVE_PID:-empty}" )"
+case "$_ka_out" in yes/*) pass "blib_sudo_keepalive_start forks a live refresher" ;; *) fail "blib_sudo_keepalive_start did not fork a refresher (got $_ka_out)" ;; esac
+case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refresher shell" ;; *) fail "blib_sudo_keepalive_stop left the refresher running (got $_ka_out)" ;; esac
+# The refresh must use sudo's VALIDATION mode. `-n true` additionally requires the account
+# to be authorised to run `true`, which a sudoers restricted to the provisioning commands
+# denies — the refresh then fails silently and the timestamp expires, restoring the hang.
+# The initial prime is a bare `-v`, so require the `-n -v` line specifically.
+#
+# Its OWN run, which POLLS for that line before stopping. Reusing the block above would
+# make this scheduler-dependent: that one stops after a fixed short delay, and a loaded
+# runner need not have scheduled the background loop's first refresh by then. It did not on
+# macOS — the argv log held only the initial `-v` and the assertion failed for a timing
+# reason that had nothing to do with the behaviour under test.
+# shellcheck disable=SC2030,SC2031  # subshell-local PATH: the shimmed sudo
+_ka_mode="$( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  : >"$_ka_argv"
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  n=0
+  while ((n < 100)); do grep -qe '-n -v' "$_ka_argv" 2>/dev/null && break; sleep 0.1; n=$((n + 1)); done
+  blib_sudo_keepalive_stop
+  tr '\n' '|' <"$_ka_argv" )"
+case "$_ka_mode" in *"-n -v"*) pass "the background refresh uses 'sudo -n -v' (validation mode)" ;; *) fail "the refresher did not use -n -v (argv recorded: $_ka_mode)" ;; esac
+# The refresher's SLEEPER is a separate process. Killing only the loop shell leaves it
+# running — orphaned for up to its full duration — and the pid check above cannot see that,
+# so it certified a "no orphan" property it never tested.
+#
+# Assert on THIS keepalive's own sleeper, by pid. Comparing a global `pgrep -x sleep` count
+# before and after could not tell our sleeper from the box's, and failed in BOTH directions:
+# an unrelated sleep exiting between the two snapshots dropped the count and passed the
+# assertion while this keepalive had in fact leaked one, and an unrelated sleep starting
+# failed it for something no one here did. On a CI leg (or a dev box running two suites at
+# once) that is a coin toss, and the direction that matters is the silent pass.
+#
+# The shim records the sleeper's pid and then EXECs the real sleep, so the recorded pid IS
+# the surviving process — no parent/child indirection to get wrong. Only the 50s refresher
+# sleeper is recorded: the harness's own short sleeps reach this shim through the same
+# scoped PATH, and counting those would put us right back to measuring the box.
+_ka_sleeper_file="$SANDBOX/ka-sleeper.pids"
+: >"$_ka_sleeper_file"
+_ka_real_sleep="$(command -v sleep)"
+cat >"$_ka_bin/sleep" <<SHIM
+#!/bin/sh
+case "\$1" in 50) printf '%s\n' "\$\$" >>"$_ka_sleeper_file" ;; esac
+exec "$_ka_real_sleep" "\$@"
+SHIM
+chmod +x "$_ka_bin/sleep"
+# shellcheck disable=SC2030,SC2031
+# No fixed delays, in EITHER direction. A pre-stop sleep can fire before the refresher has
+# been scheduled on a loaded runner (that is the macOS failure documented above), so poll
+# for the recording instead. And a post-stop grace period is worse than useless here: it
+# lets a NON-synchronous stop() pass whenever the sleeper happens to die shortly after,
+# which is exactly the contract under test — so assert the instant stop() returns.
+# shellcheck disable=SC2030,SC2031
+( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  n=0; while ((n < 100)) && [[ ! -s "$_ka_sleeper_file" ]]; do sleep 0.1; n=$((n + 1)); done
+  blib_sudo_keepalive_stop ) >/dev/null 2>&1
+_ka_sleeper_pid="$(head -n1 "$_ka_sleeper_file" 2>/dev/null || true)"
+# An empty recording is a FAILURE, not a pass. If the shim never fired, no sleeper was ever
+# forked and the reaping claim is vacuous — precisely the silent-pass mode being removed.
+if [[ -z "$_ka_sleeper_pid" ]]; then
+  fail "the keepalive forked no sleeper (shim recorded none) — the reaping assertion would be vacuous"
+elif kill -0 "$_ka_sleeper_pid" 2>/dev/null; then
+  fail "blib_sudo_keepalive_stop returned with its sleeper (pid $_ka_sleeper_pid) still alive — teardown is not synchronous"
+else
+  pass "blib_sudo_keepalive_stop reaps the SLEEPER before returning (synchronous teardown)"
+fi
+case "$_ka_out" in */empty) pass "blib_sudo_keepalive_stop clears the pid and is idempotent" ;; *) fail "blib_sudo_keepalive_stop did not clear the pid (got $_ka_out)" ;; esac
+# The TERM handler must target the JOB, never a pid. `$!` does not clear when `wait` reaps
+# the sleeper, so a handler holding it signals that dead pid for the whole of the next
+# `sudo -n -v` — and once the box has cycled through the pid space, whatever now owns it,
+# as root. A saved copy is wrong the other way (assigned after the fork, so a TERM in
+# between orphans the new sleeper). Only a job spec is set by the fork AND cleared by the
+# reap. This is a STRUCTURAL gate because the failure needs a 50s iteration boundary plus a
+# pid wrap to observe — unreachable in a suite, which is exactly why it needs pinning.
+_ka_trap="$(sed -n "/^ *trap .*TERM$/p" "$HERE/lib/bootstrap-lib.sh")"
+# REQUIRE the job spec, do not merely reject the pid spellings. A blacklist passes anything
+# it did not think of — `trap 'exit 0' TERM` names no pid, sails through, and silently
+# restores the orphan leak; so does a differently-named pid variable. Demand both halves
+# positively (`kill %%` to signal the sleeper, `wait %%` to reap it before exiting) AND
+# keep the pid rejection, so the two failure modes are covered from both directions.
+if [[ -z "$_ka_trap" ]]; then
+  fail "keepalive: no TERM handler found in lib/bootstrap-lib.sh — the reaping gate cannot check anything"
+elif [[ "$_ka_trap" == *'$!'* || "$_ka_trap" == *'_sleeper'* ]]; then
+  fail "keepalive: the TERM handler targets a pid, not a job — \$! survives the reap and can signal a recycled pid: $_ka_trap"
+elif [[ "$_ka_trap" != *'kill %%'*'wait %%'*exit* ]]; then
+  # ONE ORDERED pattern, not three independent substring tests. Testing membership
+  # separately says nothing about sequence or reachability, so it accepted
+  # `trap 'exit 0; kill %%; wait %%' TERM` — where both cleanup commands sit after the
+  # exit and never run — and a wait-before-kill handler, which blocks on a sleeper it
+  # has not signalled. Requiring kill THEN wait THEN exit rejects both by construction.
+  fail "keepalive: the TERM handler is not 'kill %% … wait %% … exit' in that order — it must signal the sleeper, reap it, and only then exit: $_ka_trap"
+else
+  pass "keepalive: the TERM handler kills AND waits the job (%%), so it cannot leak or signal a recycled pid"
+fi
+
+# ── blib_set_login_shell must never abort a completed wiring ─────────────────
+# It runs at the very END of wire_links, so a failure here would discard an otherwise
+# correct install. Shim zsh/getent/chsh so the function reaches its mutating half, then
+# make each mutation fail and assert the whole thing still returns 0 under `set -e`.
+_ls_bin="$(mktemp -d "$SANDBOX/lsbin.XXXXXX")"
+printf '#!/bin/sh\nexit 0\n' >"$_ls_bin/zsh"; chmod +x "$_ls_bin/zsh"
+# getent reports a NON-zsh current shell so the early "already zsh" return is not taken.
+printf '#!/bin/sh\necho "u:x:1:1::/home/u:/bin/sh"\n' >"$_ls_bin/getent"; chmod +x "$_ls_bin/getent"
+printf '#!/bin/sh\nexit 1\n' >"$_ls_bin/chsh"; chmod +x "$_ls_bin/chsh"   # chsh FAILS
+printf '#!/bin/sh\nexit 1\n' >"$_ls_bin/tee"; chmod +x "$_ls_bin/tee"     # /etc/shells append FAILS
+printf '#!/bin/sh\nexit 1\n' >"$_ls_bin/grep"; chmod +x "$_ls_bin/grep"   # ...so the append is attempted
+for _b in id printf cut awk; do [[ -x "$_ls_bin/$_b" ]] || ln -sf "$(command -v "$_b")" "$_ls_bin/$_b" 2>/dev/null; done
+if ( set -eu
+     PATH="$_ls_bin:/usr/bin:/bin"
+     BLIB_SU=""; BLIB_DRY=0; BLIB_ONLY=""; BLIB_SKIP=""
+     blib_set_login_shell >/dev/null 2>&1 ); then
+  pass "blib_set_login_shell returns 0 under set -e when /etc/shells AND chsh both fail"
+else
+  fail "blib_set_login_shell still aborts a completed wiring when its last step fails"
+fi
+# ...and it must SAY so rather than failing silently.
+_ls_msg="$( PATH="$_ls_bin:/usr/bin:/bin" BLIB_SU="" BLIB_DRY=0 BLIB_ONLY="" BLIB_SKIP="" blib_set_login_shell 2>&1 || true )"
+# Match the two warnings SEPARATELY and on strings unique to each. A bare *chsh* match is
+# vacuous: the /etc/shells warning also says "chsh may refuse it", so it passed whether or
+# not the chsh branch ever ran.
+case "$_ls_msg" in *"could not add"*) pass "blib_set_login_shell warns when the /etc/shells append fails" ;; *) fail "blib_set_login_shell swallowed the /etc/shells failure (got: $_ls_msg)" ;; esac
+case "$_ls_msg" in *"chsh failed"*) pass "blib_set_login_shell warns when chsh fails, naming the manual fallback" ;; *) fail "blib_set_login_shell swallowed the chsh failure (got: $_ls_msg)" ;; esac
 
 # ── summary ───────────────────────────────────────────────────────────────────
 summary

@@ -21,6 +21,7 @@ belong on the same cheat sheet.
 | `tree` | `eza --tree --icons=auto` | eza |
 | `cat` | `bat --paging=never` | bat |
 | `catp` | `bat` (paged) | bat |
+| `bat` | `batcat` or `bat` (Debian-aware) | bat |
 | `fd` | `fdfind` or `fd` (Debian-aware) | fd-find / fd |
 | `rg` | `rg --smart-case` | ripgrep |
 | `cd` | `z` (directory jumper) | zoxide |

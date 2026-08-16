@@ -138,6 +138,33 @@ TIMEOUT_S="${CORE_ATVERIFY_TIMEOUT:-30}"
 # renders that as "autostart did not land the entry". scripts/test-core.sh §J4 sets it low
 # because its stubs are deterministic and several of them are *supposed* to never write.
 POLL_N="${CORE_ATVERIFY_POLL:-100}"
+# WHOSE SANDBOX IS THIS. /tmp is a SHARED namespace, so the `atverify.` prefix alone cannot
+# answer "did THIS run leave a tree behind" — and scripts/test-core.sh §J4 asserts exactly
+# that, by snapshotting before and after and treating anything new as a leak. A second run on
+# the same box (another worktree, two agents, `make audit` in one terminal while `make tag`
+# audits in another) drops its own sandbox into that window and the first run reports a leak
+# that never happened. It has already cost one false `make tag` failure — on the repo's most
+# consequential command, where the natural operator response is to re-run or reach for
+# TAG_SKIP_AUDIT=1. So every sandbox carries a per-run tag and the caller globs only its own.
+#
+# Defaulting to the PID is what keeps this script STANDALONE: `make verify-atuin-guard` and
+# .github/workflows/atuin-guard-verify.yml pass nothing and still get a prefix no concurrent
+# run can collide with, because two live processes cannot share a pid.
+#
+# Capped at 16 chars because the whole path is an AF_UNIX budget, not free text: sun_path caps
+# near 108 bytes and the daemon socket sits at <sandbox>/home/.local/share/atuin/ (~35 bytes),
+# which is the same reason /tmp is hardcoded above instead of $TMPDIR. 14 + 16 + 7 + 35 leaves
+# room to spare; a tag longer than that would start spending it.
+#
+# `-`, NOT `:-`, and the difference is the whole point of the knob. The two bounds above use
+# `:-`, so an empty CORE_ATVERIFY_TIMEOUT harmlessly means "the default" — but an empty tag is
+# not a caller asking for the default, it is a caller whose tag EXPRESSION came out empty
+# (`CORE_ATVERIFY_TAG="$some_unset_var"`). Defaulting that to the pid is the vacuous-pass shape
+# this whole change exists to close: the script would sandbox under its pid while the caller
+# globbed `/tmp/atverify..*`, which matches nothing, and the leak assertion would go green
+# forever without ever looking at a sandbox. Unset is a default; empty is a bug, and falls
+# through to the validator below to be rejected.
+RUN_TAG="${CORE_ATVERIFY_TAG-$$}"
 
 # Parse EVERY arg and reject an unknown one rather than ignore it — the same fail-closed
 # contract as the gates, and as bench-atuin-daemon.sh's arg loop.
@@ -292,6 +319,10 @@ missing prerequisite exits 3, not 0.
 Environment:
   CORE_ATVERIFY_TIMEOUT=<s>   per-call timeout (default 30). A call that never returns is
                               itself a finding — see atuinsh/atuin#3382.
+  CORE_ATVERIFY_TAG=<tag>     1-16 chars of [A-Za-z0-9_-] naming this run's sandboxes, which
+                              are created as /tmp/atverify.<tag>.XXXXXX (default: this
+                              script's pid). Set it when the caller needs to tell ITS
+                              sandboxes apart from a concurrent run's in shared /tmp.
 EOF
     exit 0
     ;;
@@ -315,6 +346,25 @@ done
 [[ "$POLL_N" =~ ^[1-9][0-9]*$ ]] || {
   printf 'verify-atuin-guard.sh: CORE_ATVERIFY_POLL must be a positive integer with no leading zero: %s\n' \
     "$POLL_N" >&2
+  exit 2
+}
+# Rejected, not sanitized. This value becomes a path component under /tmp, so a `/` or a `..`
+# in it is a caller bug that would put the sandbox somewhere the cleanup trap does not expect;
+# and a caller that globs its own tag needs the tag it PASSED, not a quietly rewritten one.
+#
+# IN THE C LOCALE, and BOTH halves of the pattern need it. POSIX defines a range like [A-Z] by
+# COLLATION rather than codepoint, so under a UTF-8 locale it may admit letters this contract
+# does not mean to allow — and Core ships to glibc, musl and BSD userlands, which do not agree
+# with each other about that. The cap needs it just as much: `{1,16}` counts CHARACTERS, so
+# sixteen multibyte ones are up to 64 bytes and the limit silently stops being the AF_UNIX
+# budget it exists to be. Under LC_ALL=C both become bytes, which is the unit that matters.
+# A subshell rather than an assignment, so the locale cannot leak into the report rendering.
+(
+  LC_ALL=C
+  [[ "$RUN_TAG" =~ ^[A-Za-z0-9_-]{1,16}$ ]]
+) || {
+  printf 'verify-atuin-guard.sh: CORE_ATVERIFY_TAG must be 1-16 characters of [A-Za-z0-9_-]: %s\n' \
+    "$RUN_TAG" >&2
   exit 2
 }
 
@@ -1427,7 +1477,9 @@ measure() {
 
   # /tmp, not $TMPDIR: AF_UNIX sun_path caps near 108 bytes and macOS's TMPDIR is long
   # enough on its own to blow that — the same reason bench-atuin-daemon.sh hardcodes /tmp.
-  LOCALDIR="$(mktemp -d /tmp/atverify.XXXXXX)" || {
+  # The $RUN_TAG component is what makes this tree attributable to THIS run in a directory
+  # every other run also writes to — see the CORE_ATVERIFY_TAG block near the top.
+  LOCALDIR="$(mktemp -d "/tmp/atverify.${RUN_TAG}.XXXXXX")" || {
     unmeasurable "could not create a sandbox under /tmp"
     return
   }
