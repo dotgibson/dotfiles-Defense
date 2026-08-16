@@ -1,14 +1,16 @@
 # v4 proposal — the loader & layout overhaul
 
-> **Status: IMPLEMENTED (under `[Unreleased]`), pending the v4.0.0 release cut.**
-> The Core-side implementation of this design has landed on the
-> `claude/dotfiles-core-v4-breaking` branch — the numbered fragments, the glob
-> loader, the XDG split, and `CORE_PROFILE` are live, with the breaking changes
-> recorded under `## [Unreleased]` in `CHANGELOG.md`. What has **not** happened is
-> the deliberate release ceremony: bumping `core.version` to `4.0.0`, tagging, and
-> the canary-first fan-out to the OS/Role repos (each re-vendors Core and updates
-> its `bootstrap.sh`) per `RELEASE-RUNBOOK.md`. The open questions in [§9](#9-non-goals-and-open-questions)
-> are now **resolved** (see there). When a claim here drifts from
+> **Status: SHIPPED in v4.0.0 — this is a historical design record, not a plan.**
+> Everything proposed here is live and has been for ten minor releases: the numbered
+> fragments, the glob loader, the XDG split, and `CORE_PROFILE`. The release ceremony
+> this document once described as pending — the `core.version` bump, the tag, and the
+> canary-first fan-out — completed long ago; `core.version` is well past `4.0.0` and the
+> whole fleet vendors it. The open questions in [§9](#9-non-goals-and-open-questions) are
+> **resolved** (see there).
+>
+> Keep reading this for the *rationale* behind the v4 layout — why bands, why XDG, why a
+> profile ceiling. For how the shipped system behaves, `ARCHITECTURE.md`, `PORTABILITY.md`
+> and `VENDORING.md` are authoritative, and when a claim here drifts from
 > `RELEASE-STRATEGY.md` or `CONTRIBUTING.md`, those win.
 >
 > This is still written in RFC "Current → Proposed" voice: the **"Current"**

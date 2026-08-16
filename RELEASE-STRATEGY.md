@@ -248,7 +248,7 @@ GitHub's own recommended pattern for reusable workflows.
   One deliberate exception: `dotfiles-Windows` SHA-pins its `auto-tag-call` caller, trading the
   auto-fan-out for immunity to a moved tag. It vendors no `core/`, so it is outside the
   `scripts/os-repos.txt` sweep and needs a hand bump.
-- **Bootstrapping a major:** `vN` is created/advanced by `make tag PUSH=1`; the very first
+- **Bootstrapping a major:** `vN` is created/advanced by `make publish`; the very first
   `vN` can also be stamped by hand (`git tag -f vN vN.0.0 && git push -f origin vN`).
 - **Trade vs. exact-SHA pinning:** a SHA is maximally deterministic but needs a manual
   caller bump fleet-wide on every change — rejected as too high-churn for a first-party,
@@ -278,7 +278,9 @@ release-blocking:
 ```sh
 make release VERSION=X.Y.Z   # bumps core.version, promotes CHANGELOG, runs the audit
 git diff                     # review the two-file change
-make tag PUSH=1              # commit + annotated tag vX.Y.Z, re-run the audit, push
+make tag                     # commit core.version + CHANGELOG (no tag yet)
+# ...land the PR, then:
+make publish                 # tag the release commit on origin/main + push both refs
 ```
 
 Pushing the tag triggers `.github/workflows/release.yml`, which publishes the
@@ -327,10 +329,12 @@ The pieces this policy leaned on are now wired:
   **Alpine** (`audit-alpine`, musl + busybox) and **Arch** (`audit-arch`, the
   rolling GNU toolchain) on top of the Ubuntu + macOS matrix — closing the
   "passed on Fedora, assumed elsewhere" gap before a tag.
-- **`make tag`.** `scripts/tag-release.sh` commits `core.version` + `CHANGELOG`
+- **`make tag` / `make publish`.** `scripts/tag-release.sh` commits `core.version` + `CHANGELOG`
   and creates the annotated `vX.Y.Z` tag (re-running the audit gate), so
-  `make release VERSION=X.Y.Z && make tag` is the whole cut end to end. Pushing
-  stays opt-in (`make tag PUSH=1`).
+  `make release VERSION=X.Y.Z && make tag` stages and commits; `make publish` finishes
+  it AFTER the PR merges. The tag is created only then, at the release commit on
+  `origin/main` — never on a commit that is not yet on `main` (see RELEASE-RUNBOOK.md
+  §"Why the tag comes last").
 - **Auto-published GitHub Release.** `.github/workflows/release.yml` fires on a
   `vX.Y.Z` tag push and publishes the Release, its body taken from the curated
   `CHANGELOG.md` section — gated on the tag matching `core.version`.
@@ -345,7 +349,7 @@ so a CI-cut tag can't rely on a separate `on: push: tags` workflow:
 
 | Repo | Tag cut by | Release created by | Notes source |
 | ---- | ---------- | ------------------ | ------------ |
-| **dotfiles-core** | you (`make tag` → push) | `release.yml` (`on: push: tags`) — fires because *you* pushed the tag | curated `CHANGELOG.md` section |
+| **dotfiles-core** | you (`make publish`, after the PR merges) | `release.yml` (`on: push: tags`) — fires because *you* pushed the tag | curated `CHANGELOG.md` section |
 | **OS repos** (×8) | `auto-tag.sh` in CI on a `core/**` fan-out | `auto-tag.sh --release`, **in the same job** (the token-pushed tag can't trigger `release.yml`) | grouped Conventional-Commit notes (`auto-tag.sh` → `--notes-file`; `--generate-notes` only as the empty-range fallback) |
 | **dotfiles-Windows** — auto patch | `auto-tag.sh` in CI on an `nvim/`/`starship/` sync | same as OS repos, but SHA-pinned (calls `auto-tag-call.yml` at a commit, not `@v4`) | grouped Conventional-Commit notes (same `auto-tag.sh` `--notes-file` path) |
 | **dotfiles-Windows** — deliberate minor/major | **you**, by hand for host work (`git tag` → push) | **you** (`gh release create --notes-file`) — auto-tag only ever patches and never fires on a CHANGELOG commit or a tag push | curated `CHANGELOG.md` section |

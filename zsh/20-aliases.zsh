@@ -24,6 +24,14 @@ fi
 if [[ -n ${HAVE_BAT:-} ]]; then
   alias cat="$BAT_BIN --paging=never"
   alias catp="$BAT_BIN"   # paged, full bat
+  # …and `bat` under its CANONICAL name, mirroring the fd line below. Debian/Ubuntu/Kali
+  # ship the binary as `batcat`, so without this the tool was installed and fully wired
+  # (cat, catp, MANPAGER, the fzf previews) yet untypeable by the name its own README, man
+  # page and every upstream recipe use. The two renamed tools were handled asymmetrically —
+  # fd got this alias, bat did not — which is also what made core-doctor report `✗ bat` two
+  # lines above a `resolved` section naming batcat. Harmless `alias bat=bat` elsewhere: zsh
+  # does not re-expand an alias to its own name in command position.
+  alias bat="$BAT_BIN"
   export BAT_THEME="ansi" # follow the terminal palette (tokyonight via ghostty)
   export MANPAGER="sh -c 'col -bx | $BAT_BIN -l man -p'"
 fi

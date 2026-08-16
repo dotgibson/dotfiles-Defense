@@ -106,8 +106,18 @@ fi
 printf '\n%s──────── release %s staged ────────%s\n' "$c_blu" "$VERSION" "$c_rst"
 cat <<EOF
   review:  git diff
-  commit:  git add $VERFILE $CHANGELOG && git commit -m "release v$VERSION"
-  tag:     git tag -a v$VERSION -m v$VERSION
-  push:    git push && git push --tags
-  fan out: ./scripts/sync-core.sh        # vendor v$VERSION into the OS repos
+
+  NOTE: do NOT tag yet. A vX.Y.Z tag must only ever exist on a commit that is already on
+  origin/main — a local tag on an unmerged commit can be carried to the remote by any
+  push from this checkout (yours or a concurrent session's), firing release.yml and
+  sync-fanout.yml against a commit main does not have. See RELEASE-RUNBOOK.md
+  §"Why the tag comes last".
+
+  1. commit:   make tag                  # commits $VERFILE + $CHANGELOG, creates NO tag
+  2. land it:  git push origin HEAD:release/v$VERSION
+               gh pr create --base main --head release/v$VERSION --title "release v$VERSION"
+               # ...then merge it
+  3. publish:  make publish              # tags the release commit on origin/main + pushes
+  4. fan out:  sync-fanout.yml opens the vendor PRs on release
+               (or ./scripts/sync-core.sh to do it by hand)
 EOF

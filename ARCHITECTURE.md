@@ -44,6 +44,35 @@ starship, and mise, plus the smaller configs that are equally identical everywhe
 shared bash libs), taken together. `core.manifest` is the exhaustive list; this
 sentence is the shape, not the inventory.
 
+`PORTABILITY.md` is the companion rule set: once something *is* Core, that document
+defines what it may assume about the machine it lands on. `VENDORING.md` is the same
+contract read from the consuming OS repo's side.
+
+### The two deliberate exceptions
+
+The test above is absolute, so the two places Core knowingly departs from it are named
+here rather than left to be rediscovered as drift:
+
+- **`zsh/55-maint.zsh`** — the scheduler control surface. Its launchd arm writes
+  `~/Library/LaunchAgents` and embeds an Apple plist; its systemd arm embeds a unit file.
+  Two OS-specific payloads in one Core file, but selected by `_maint_scheduler`, which is
+  the correct cross-OS shape. Excepted explicitly in `audit-core.sh` §5c.
+- **`zsh/60-update.zsh`** — the `up` verb: roughly 480 lines that know how seven package
+  managers count and apply updates, including `grep -qi tumbleweed /etc/os-release` to
+  choose `zypper dup` over `zypper up`. By the letter of the rule this is OS-layer work.
+  It stays in Core because `up` is **one verb with N backends** — structurally identical
+  to `bin/clip` — and putting it here means every machine has the same muscle memory
+  instead of eight subtly different update commands.
+
+  The line is drawn at *interactive* apply, not at knowledge. `60-update.zsh` itself
+  never applies unattended — `up` is a verb you run. Scheduled apply lives one file over,
+  in `maint/dotfiles-maint.sh`, and is **opt-in and deliberately narrowed**: off unless
+  `MAINT_SYSTEM_UPGRADE=1`, and even then refused on Kali (engagement boxes) and on
+  Arch/Gentoo (rolling distros that must not upgrade unattended). So scheduled apply is
+  part of the same accepted exception rather than something Core disclaims; what Core
+  will not do is apply *by default*. A change to how one distro upgrades still edits a
+  Core file, and that is the accepted cost.
+
 ## The fleet
 
 Ten repositories make up the configuration system (one Core plus nine machine
