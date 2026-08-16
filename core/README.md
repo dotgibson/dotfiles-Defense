@@ -276,6 +276,17 @@ what counts as Core, the manifest contract, and the `make audit` gate. The short
 3. Run `make audit` until it's green
 4. Open a pull request with a [Conventional Commits](https://www.conventionalcommits.org/) title
 
+Two companion documents answer the questions `CONTRIBUTING.md` deliberately does not:
+
+* [`PORTABILITY.md`](PORTABILITY.md) — **how to write Core that survives the fan-out.**
+  The bash 3.2 floor, the BSD/busybox coreutils traps, and the shim pattern for reaching
+  an OS capability without naming a path. Read it before your first Core change.
+* [`VENDORING.md`](VENDORING.md) — **the contract from an OS repo's side.** What `core/`
+  and `core.lock` mean, which load-order band your file may claim, and how to send a fix
+  back upstream.
+
+By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 Prefer a quick idea? Open an issue with the "enhancement" tag.
 
 ### Top contributors

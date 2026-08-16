@@ -1,24 +1,36 @@
 #!/usr/bin/env bash
-# scripts/tag-release.sh — finish a release: commit, annotated-tag, (optionally) push.
+# scripts/tag-release.sh — finish a release, in TWO phases: commit, then (after the PR
+# merges) publish the tags.
 # ──────────────────────────────────────────────────────────────────────────────
 # `release.sh` deliberately stops short of git: it bumps core.version, promotes the
 # CHANGELOG, runs the audit, and PRINTS the commit/tag/push recipe for the operator to
 # run by hand. That hand-run recipe is the last drift-prone step — a fat-fingered tag
 # name or a forgotten `git push --tags` is exactly the class of mistake the rest of the
-# release path is mechanized to avoid. This is the other half: it reads the version
-# `release.sh` already stamped, re-proves the tree green, commits core.version+CHANGELOG,
-# and creates the annotated `vX.Y.Z` tag — so `make release … && make tag` is the whole
-# cut, end to end (RELEASE-STRATEGY.md gap 3).
+# release path is mechanized to avoid. This is the other half.
 #
-# Push stays OPT-IN. Tagging is local and cheap to undo (`git tag -d`); pushing a tag to
-# origin is the outward, hard-to-walk-back step, so it happens only with --push (or
-# `make tag PUSH=1`). Without it, the script prints the exact push commands, mirroring
-# release.sh's hands-off-the-remote stance.
+# WHY TWO PHASES — the tag is created LAST, never before the merge:
+#
+# This script used to commit AND tag in one go, leaving a local `vX.Y.Z` sitting on a
+# commit that was not yet on main. That window is not safe, and no amount of
+# `--no-follow-tags` discipline closes it: the flag governs YOUR push, while the tag
+# lives in SHARED .git state that any other process can push. It happened — a concurrent
+# session pushed its own branch with `push.followTags` set, carried the release tag to
+# origin, and fired release.yml + sync-fanout.yml against an unmerged commit, opening
+# eight bad vendor PRs across the fleet. The version number had to be retired.
+#
+# So the invariant is now structural rather than procedural:
+#
+#     a vX.Y.Z tag only ever exists on a commit that is already on origin/main.
+#
+# Phase 1 (default) commits the release and creates NO tag — there is nothing for a
+# stray push to carry. Phase 2 (--publish) runs after the PR merges: it proves
+# origin/main actually carries this version, then tags origin/main and pushes.
 #
 # Usage:
-#   ./scripts/tag-release.sh            # commit + annotated tag for core.version's value
-#   ./scripts/tag-release.sh --push     # …then push the tags (vX.Y.Z + vN) to origin
-#   make tag                            # same, via the Makefile façade (PUSH=1 to push)
+#   ./scripts/tag-release.sh              # phase 1: commit core.version + CHANGELOG
+#   ./scripts/tag-release.sh --publish    # phase 2: tag origin/main + push (AFTER merge)
+#   make tag                              # phase 1, via the Makefile façade
+#   make publish                          # phase 2
 #
 # Env:
 #   TAG_SKIP_AUDIT=1   skip the green-tree gate (escape hatch for a tree you just audited)
@@ -33,29 +45,39 @@ source "${BASH_SOURCE[0]%/*}/lib/common.sh"
 
 usage() {
   cat <<'EOF'
-usage: tag-release.sh [--push]
+usage: tag-release.sh [--publish]
 
-Finish the release that release.sh staged: commit core.version + CHANGELOG.md,
-create the annotated tag vX.Y.Z (X.Y.Z = the current core.version), after proving
-the tree green. Pushing is opt-in:
+Finish the release that release.sh staged, in two phases.
 
-  --push        push the release tags (vX.Y.Z + the moved vN alias) to origin;
-                main is protected, so the release commit lands via a PR (the script
-                prints the recipe) — --push never touches the branch
+  (no flag)     PHASE 1 — prove the tree green and commit core.version + CHANGELOG.md.
+                Creates NO tag: until the commit is on origin/main there must be no
+                vX.Y.Z for a stray push to carry to the remote. Prints the land recipe.
+
+  --publish     PHASE 2 — run AFTER the release PR merges. Proves origin/main really
+                carries this core.version, then creates the annotated vX.Y.Z and moves
+                the vN alias AT origin/main, and pushes both.
+
   -h, --help    show this help and exit
 
 Env: TAG_SKIP_AUDIT=1 skips the audit gate (use only on a tree you just audited).
 EOF
 }
 
-PUSH=0
+MODE=commit
 case "${1:-}" in
 -h | --help)
   usage
   exit 0
   ;;
+--publish)
+  MODE=publish
+  ;;
 --push)
-  PUSH=1
+  # Removed deliberately. Its whole semantic was "push the tag we just made on the
+  # PRE-merge commit", which is the failure this script now exists to prevent.
+  fail "tag-release.sh: --push was removed — it pushed a tag for a commit that was not on main yet"
+  fail "run this with no flag to commit, land the PR, then re-run with --publish"
+  exit 2
   ;;
 "") ;;
 *)
@@ -90,7 +112,183 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 TAG="v$VERSION"
 
-hdr "tag $TAG (from core.version)"
+MAJOR="v${VERSION%%.*}"
+
+# ── PHASE 2 — publish the tags for a release that has ALREADY landed on main ──
+if [[ "$MODE" == publish ]]; then
+  hdr "publish $TAG (tag origin/main)"
+  git fetch -q --tags origin 2>/dev/null || {
+    fail "tag-release.sh: could not fetch origin — publishing needs the remote's view of main"
+    exit 1
+  }
+  git rev-parse -q --verify origin/main >/dev/null || {
+    fail "tag-release.sh: no origin/main to tag"
+    exit 1
+  }
+
+  # THE guard, and it must identify the RELEASE COMMIT — not merely today's tip.
+  # core.version does not change again until the NEXT release, so "origin/main carries
+  # $VERSION" stays true for every commit that lands afterwards. Tagging the tip would
+  # therefore tag whatever merged most recently, sweeping changes still sitting under
+  # [Unreleased] into the release — and release.yml builds the Release body from the
+  # [vX.Y.Z] section, so those changes would ship undescribed.
+  #
+  # So resolve the commit that SET core.version to this value: walk origin/main's history
+  # for commits touching core.version, newest first, and take the first whose blob is
+  # $VERSION. Under a squash merge that is exactly the release commit.
+  RELEASE_SHA=''
+  while IFS= read -r _sha; do
+    [[ -n "$_sha" ]] || continue
+    if [[ "$(git show "$_sha:$VERFILE" 2>/dev/null | tr -d '[:space:]')" == "$VERSION" ]]; then
+      RELEASE_SHA="$_sha"
+    else
+      # First commit going back that does NOT carry $VERSION — everything older predates
+      # the bump, so the last match we saw is the commit that introduced it.
+      break
+    fi
+  done < <(git rev-list origin/main -- "$VERFILE")
+
+  if [[ -z "$RELEASE_SHA" ]]; then
+    fail "tag-release.sh: no commit on origin/main sets $VERFILE to '$VERSION' as its newest change"
+    fail "either the release PR has not merged, or main has already moved on to a newer release"
+    fail "land it first: the recipe is printed by a no-flag run"
+    exit 1
+  fi
+  pass "release commit on origin/main: $(git rev-parse --short "$RELEASE_SHA") (sets $VERFILE to $VERSION)"
+
+  # Say so when the tag will not land on the tip — that is legitimate (main moved on
+  # after the release merged) but the operator should know `git describe` on main will
+  # now report commits-since, not a clean tag.
+  if [[ "$RELEASE_SHA" != "$(git rev-parse origin/main)" ]]; then
+    note "origin/main has advanced $(git rev-list --count "$RELEASE_SHA..origin/main") commit(s) since the release — tagging the release commit, not the tip"
+  fi
+
+  # The Release BODY comes from this commit's [vX.Y.Z] section (release.yml extracts it),
+  # so a commit with the right core.version but no heading yields a tag that release.yml
+  # then fails on — and by then the tag is published and immutable, i.e. the version is
+  # burned. Validate before creating any tag.
+  #
+  # Captured, NOT piped into `grep -q`: under `set -o pipefail` that pipeline reports
+  # failure on a successful match, because grep -q exits on the first hit and git show
+  # then dies of SIGPIPE part-way through a 4000-line file.
+  RELEASE_CHANGELOG="$(git show "$RELEASE_SHA:$CHANGELOG" 2>/dev/null)"
+  if ! grep -qE "^## +\[v?${VERSION//./\\.}\]" <<<"$RELEASE_CHANGELOG"; then
+    fail "tag-release.sh: the release commit's $CHANGELOG has no '## [v$VERSION]' heading"
+    fail "release.yml builds the Release body from that section — refusing to publish a tag it would fail on"
+    exit 1
+  fi
+
+  # A heading is not enough: release.yml ALSO rejects an empty section, and release.sh
+  # will happily promote an empty [Unreleased]. Without this, publish would push the
+  # immutable tag and release.yml would then fail on the empty body — burning the version
+  # for a reason that was knowable up front. Extract the body with the SAME awk release.yml
+  # uses, so the two cannot disagree about what "empty" means.
+  RELEASE_BODY="$(awk -v tag="v$VERSION" '
+    $0 ~ "^## +\\[" tag "\\]" { f = 1; next }
+    f && /^## +\[/ { exit }
+    f && NF { p = 1 }
+    f && p { buf[++n] = $0 }
+    END { while (n > 0 && buf[n] ~ /^[[:space:]]*$/) n--; for (i = 1; i <= n; i++) print buf[i] }
+  ' <<<"$RELEASE_CHANGELOG")"
+  if [[ -z "${RELEASE_BODY//[[:space:]]/}" ]]; then
+    fail "tag-release.sh: the [v$VERSION] section in $CHANGELOG is EMPTY"
+    fail "release.yml refuses an empty Release body — publishing would burn the version; write the notes first"
+    exit 1
+  fi
+  pass "the release commit's $CHANGELOG carries a non-empty [v$VERSION] section"
+
+  # Never clobber a published release. vX.Y.Z is immutable by ruleset, so a re-push
+  # would be rejected anyway — fail here with a reason instead of a git error.
+  if git ls-remote --tags --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
+    fail "tag-release.sh: $TAG already exists on origin — a published release tag is immutable"
+    exit 1
+  fi
+
+  # Capture the remote alias NOW, well before the push: it is the lease for the force
+  # below. A concurrent publisher that moves $MAJOR between this read and that push
+  # invalidates the lease and our push is rejected — which is the point. Reading it here
+  # rather than immediately before the push widens the window the lease protects.
+  #
+  # Rolling $MAJOR BACKWARD needs no separate guard: the resolution above only accepts the
+  # NEWEST core.version change on origin/main, so an older release cannot resolve at all
+  # and is refused before any tag is created (pinned by a test).
+  REMOTE_MAJOR="$(git ls-remote origin "refs/tags/$MAJOR" 2>/dev/null | awk 'NR==1{print $1}')"
+
+  # The lease alone is not enough. It only covers changes AFTER this read — but a newer
+  # publisher that completes BEFORE it makes us read THEIR alias as our expected value,
+  # and the leased push then moves $MAJOR backward with the lease perfectly satisfied.
+  # So require the move to be FORWARD: whatever $MAJOR points at must be an ancestor of
+  # the commit we are about to move it to. (An earlier revision dropped this guard as
+  # unreachable, reasoning that resolution only accepts origin/main's newest core.version
+  # change — true, but that reasoning holds only at resolution time, and this read happens
+  # later. The two together are what make it safe: ancestry closes the gap before the
+  # read, the lease closes the gap after it.)
+  if [[ -n "$REMOTE_MAJOR" ]]; then
+    REMOTE_MAJOR_COMMIT="$(git rev-parse -q --verify "$REMOTE_MAJOR^{commit}" 2>/dev/null || echo '')"
+    if [[ -z "$REMOTE_MAJOR_COMMIT" ]]; then
+      fail "tag-release.sh: cannot resolve origin's $MAJOR ($REMOTE_MAJOR) locally — refusing to move an alias blind"
+      exit 1
+    fi
+    if [[ "$REMOTE_MAJOR_COMMIT" != "$RELEASE_SHA" ]] &&
+      ! git merge-base --is-ancestor "$REMOTE_MAJOR_COMMIT" "$RELEASE_SHA" 2>/dev/null; then
+      fail "tag-release.sh: origin's $MAJOR points at $(git rev-parse --short "$REMOTE_MAJOR_COMMIT"), which is not an ancestor of this release"
+      fail "moving it would roll $MAJOR backward for every caller pinned to it — refusing (another publisher may have raced ahead; re-fetch and re-check)"
+      exit 1
+    fi
+  fi
+
+  if ! git tag -fa "$TAG" "$RELEASE_SHA" -m "$TAG"; then
+    fail "tag-release.sh: could not create $TAG at origin/main"
+    exit 1
+  fi
+  pass "tagged $TAG at $(git rev-parse --short "$RELEASE_SHA")"
+
+  # The moving MAJOR alias reusable-workflow callers pin to (RELEASE-STRATEGY.md
+  # §"Pinning reusable workflows"). Force-moved to each new vN.x so callers pick up
+  # patch/minor guard fixes without a manual bump.
+  if ! git tag -f "$MAJOR" "$RELEASE_SHA" >/dev/null; then
+    fail "tag-release.sh: could not move major tag $MAJOR"
+    exit 1
+  fi
+  pass "moved major tag $MAJOR → $(git rev-parse --short "$RELEASE_SHA")"
+
+  # ONE atomic push, not two. Pushed separately these can half-land: if vX.Y.Z lands and
+  # vN does not, release.yml and sync-fanout.yml fire while the alias every reusable-
+  # workflow caller pins to is still stale — and re-running --publish then refuses,
+  # because the immutable tag now exists. A concurrent publisher makes it worse: this
+  # invocation could lose the vX.Y.Z race and still force vN back to its stale value.
+  # --atomic makes it all-or-nothing; the leading + forces ONLY the alias, so a
+  # non-fast-forward on the immutable tag is still rejected rather than overwritten.
+  # The lease turns the alias force into a compare-and-swap: reject rather than overwrite
+  # if $MAJOR moved since REMOTE_MAJOR was read. With no remote alias yet (a new major)
+  # there is nothing to lease against and the ref is simply created.
+  push_args=(--atomic origin "refs/tags/$TAG")
+  if [[ -n "$REMOTE_MAJOR" ]]; then
+    push_args+=(--force-with-lease="refs/tags/$MAJOR:$REMOTE_MAJOR" "+refs/tags/$MAJOR")
+  else
+    push_args+=("refs/tags/$MAJOR")
+  fi
+  if ! git push "${push_args[@]}"; then
+    fail "tag-release.sh: atomic tag push failed — nothing was published"
+    fail "if $MAJOR moved under you, another publisher won the race: re-fetch and re-run 'make publish'"
+    exit 1
+  fi
+  pass "pushed $TAG and $MAJOR atomically"
+
+  printf '\n%s──────── %s published ────────%s\n' "$c_blu" "$TAG" "$c_rst"
+  cat <<EOF
+  release.yml publishes the GitHub Release from the CHANGELOG section, then
+  sync-fanout.yml opens a vendor PR in every repo in scripts/os-repos.txt.
+  It opens PRs and never merges them — review canary-first (RELEASE-STRATEGY.md).
+
+  verify:  gh run list --workflow release --limit 1
+           gh run list --workflow sync-fanout --limit 1
+EOF
+  exit 0
+fi
+
+# ── PHASE 1 — commit the release. NO TAG IS CREATED HERE. ────────────────────
+hdr "commit $TAG (from core.version)"
 
 # Guard 1: never clobber an existing tag — a re-run after a successful tag must be a
 # clear no-op error, not a silent second tag or a moved ref.
@@ -136,96 +334,34 @@ else
   fi
 fi
 
-# Annotated (not lightweight) tag: release.sh's printed recipe uses -a, git-cliff and
-# `git describe` expect the annotation, and it carries the tagger/date.
-if git tag -a "$TAG" -m "$TAG"; then
-  pass "tagged $TAG"
-else
-  fail "tag-release.sh: 'git tag -a $TAG' failed"
-  exit 1
-fi
+printf '\n%s──────── %s committed (no tag yet, by design) ────────%s\n' "$c_blu" "$TAG" "$c_rst"
+cat <<EOF
+  review:  git show HEAD
 
-# Moving MAJOR tag (vN) — the ref reusable-workflow callers pin to (RELEASE-STRATEGY.md
-# §"Pinning reusable workflows"). Lightweight and FORCE-moved to each new vN.x so callers
-# get patch/minor guard improvements without a manual bump, while staying deterministic
-# between releases (unlike @main). Advancing it here, in the one release step, is what
-# keeps it from ever drifting from the release it should point at.
-MAJOR="v${VERSION%%.*}"
-if git tag -f "$MAJOR" "$TAG^{commit}" >/dev/null; then
-  pass "moved major tag $MAJOR → $TAG"
-else
-  fail "tag-release.sh: could not move major tag $MAJOR"
-  exit 1
-fi
-
-if ((PUSH)); then
-  hdr "push tags $TAG + $MAJOR → origin"
-  # TAGS ONLY — never `git push origin main`. main is a PROTECTED branch (required
-  # status checks), so a direct branch push is rejected and the release COMMIT must
-  # land via a PR (as v2.0.0 did, #95). Tags are not branch-protected, so we push the
-  # immutable vX.Y.Z and force-move the vN alias here; the commit goes up with the PR.
-  if git push origin "$TAG" && git push -f origin "$MAJOR"; then
-    pass "pushed $TAG and moved $MAJOR → $TAG"
-  else
-    fail "tag-release.sh: tag push failed — re-push manually: git push origin $TAG && git push -f origin $MAJOR"
-    exit 1
-  fi
-  printf '\n%s──────── %s released (tags pushed) ────────%s\n' "$c_blu" "$TAG" "$c_rst"
-  cat <<EOF
-  NOTE: --push tagged the PRE-merge commit. main is protected, so the commit lands via a
-  PR — which adds a merge commit, leaving these tags one behind main's HEAD ('git describe'
-  shows $TAG-1-g…). After the PR merges, RE-POINT both at the merged tip for a clean tag:
-
-  1. land the commit:  git push --no-follow-tags origin HEAD:release/$TAG
-       gh pr create --base main --head release/$TAG --title "release $TAG"
-       # merge with a MERGE commit (not squash)
-  2. re-point AFTER it merges:
-       git fetch origin
-       git tag -fa $TAG origin/main -m $TAG && git tag -f $MAJOR origin/main
-       git push -f origin $TAG ; git push -f origin $MAJOR   # ';' not '&&' — independent
-  3. fan out: ./scripts/sync-core.sh     # or let sync-fanout.yml open the PRs on release
-
-  (Tip: skip PUSH=1 and follow the 'make tag' recipe below — it tags the merged tip from
-  the start, so there's nothing to re-point.)
-EOF
-else
-  printf '\n%s──────── %s tagged locally ────────%s\n' "$c_blu" "$TAG" "$c_rst"
-  cat <<EOF
-  review:  git show $TAG
+  NO TAG EXISTS YET, and that is the point. A vX.Y.Z tag is only created once the commit
+  is on origin/main, so there is no window in which a stray push — yours or a concurrent
+  session sharing this checkout — can carry $TAG to the remote and fire release.yml +
+  sync-fanout.yml against an unmerged commit.
 
   You should be ON release/$TAG right now — this script commits to whatever branch you are
   standing on, and RELEASE-RUNBOOK.md §1.1 step 1 branches before staging for that reason.
-  If you staged from main instead, the release commit is now sitting on your local main, one
+  If you staged from main instead, the release commit is sitting on your local main, one
   ahead of origin, where it must NEVER be pushed (main is protected and takes the commit
   through the PR below). Push it to the branch as step 1 shows, then 'git reset --hard
   origin/main' to put your local main back.
 
-  Ship IN THIS ORDER — land the commit FIRST, then tag the MERGED tip. main is protected,
-  so the commit lands via a PR (a merge commit); tagging only AFTER that, at origin/main,
-  keeps the tag on main's HEAD and 'git describe' clean. (Tagging before the merge leaves
-  the tag one commit behind and needs a re-point — the trap PUSH=1 falls into.)
-
-  Also note $MAJOR was just force-moved LOCALLY onto this not-yet-merged commit, so it
-  disagrees with origin's $MAJOR until step 2 below. Abandoning the cut?
-  'git tag -d $TAG $MAJOR' then 'git fetch --tags --force origin' undoes both. Delete
-  $MAJOR explicitly — a fetch only UPDATES tags origin already has, so on a MAJOR (where
-  $MAJOR is newly minted and origin has never seen it) fetching leaves it behind, pointing
-  at the commit you just dropped. Full recipe: RELEASE-RUNBOOK.md §"Abandoning a cut".
-
-  --no-follow-tags below is LOAD-BEARING: $TAG already exists locally, and with
-  \`push.followTags = true\` set a plain push carries it to origin — putting the tag on the
-  PRE-merge commit and firing release.yml + sync-fanout.yml right then, which lands you in
-  the very PUSH=1 state this ordering avoids.
-
   1. land the commit:
-       git push --no-follow-tags origin HEAD:release/$TAG
+       git push origin HEAD:release/$TAG
        gh pr create --base main --head release/$TAG --title "release $TAG"
-       # merge with a MERGE commit (not squash)
-  2. tag the merged tip AFTER the PR merges:
-       git fetch origin
-       git tag -fa $TAG origin/main -m $TAG
-       git tag -f  $MAJOR origin/main
-       git push origin $TAG ; git push -f origin $MAJOR   # ';' not '&&' — independent pushes
-  3. fan out: ./scripts/sync-core.sh     # or let sync-fanout.yml open the PRs on release
+       # merge it — GitHub only offers the methods this repo enables, and any of them is
+       # fine: phase 2 tags origin/main, so the merge method cannot affect the tag.
+       # (Why the method cannot matter: RELEASE-RUNBOOK.md §"Why the tag comes last".)
+  2. publish the tags AFTER the PR merges:
+       make publish          # or: ./scripts/tag-release.sh --publish
+       # refuses unless origin/main actually carries core.version $VERSION
+  3. fan out: sync-fanout.yml opens the vendor PRs on release; or ./scripts/sync-core.sh
+
+  Abandoning instead? Nothing to undo but the commit and the branch — no tags were
+  created, so there is no 'git tag -d' step and no vN alias pointing at a dropped commit.
+  Full recipe: RELEASE-RUNBOOK.md §"Abandoning a cut".
 EOF
-fi

@@ -65,7 +65,7 @@ _Repo status_ at the bottom).
 | xh               | `xh`              | `xh`         | `xh`              | `net-misc/xh`¹²            | `xh`              |
 | doggo            | `doggo`           | `doggo`¹⁸    | `doggo`           | `net-dns/doggo`            | go³               |
 | gping¹⁹          | `gping`           | `gping`¹⁹    | `gping`           | GURU¹⁹                     | `gping`¹⁹         |
-| carapace         | AUR³              | go³          | `carapace`        | `app-shells/carapace`¹²    | go³               |
+| carapace         | AUR²⁷             | rpm²⁷        | `carapace`        | `app-shells/carapace`¹²    | deb²⁷             |
 | op (1Password)¹³ | AUR               | vendor rpm   | vendor apk        | GURU¹²                     | vendor apt        |
 | hyperfine²¹      | `hyperfine`       | `hyperfine`  | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`       |
 | watchexec²¹ ²⁵   | `watchexec`       | `watchexec`  | `watchexec`       | GURU²⁵                     | cargo²⁵           |
@@ -85,10 +85,15 @@ _Repo status_ at the bottom).
 installer / `cargo install` / `go install` / AUR), the same pattern bootstrap
 already uses on Fedora. Add `cargo`/`rust` (or a `go` toolchain) to packages.
 `go install` targets land in `~/.local/bin` via `GOBIN` so they're on PATH.
+**`carapace` is the one documented exception to the `go install` half of this** — that
+module can never be `go install`ed, on any platform, so its cells point at ²⁷ instead.
 ⁴ Debian/Kali ship these under different binary names — `bat` runs as `batcat`,
 the `fd-find` package installs `fdfind`, and the `du-dust` package installs the
 `dust` command. Core's `00-tools.zsh` already resolves them, so aliases and config
-work unchanged.
+work unchanged. `20-aliases.zsh` additionally aliases `bat`/`fd` back to their
+canonical names, so both are typeable as documented upstream, and `core-doctor`
+probes the RESOLVED binary — it reports `✓` for a renamed tool rather than the `✗`
+that once contradicted the `resolved` line in the same report.
 ⁵ nvim-treesitter (pinned to `main`) needs tree-sitter-cli ≥ 0.26.1. **Mac:**
 `tree-sitter-cli` via brew — **not** `tree-sitter`, which is now lib-only.
 **Fedora:** `tree-sitter-cli` via dnf (verify ≥ 0.26.1, else mise/cargo).
@@ -473,6 +478,120 @@ against each distro's own package pages:
   binary).
 - **openSUSE Tumbleweed is the one laggard, at 0.6.17** — the gap #394 flagged, confirmed
   here rather than left as a repology snapshot. Re-check on the next openSUSE stamp.
+
+²⁷ carapace: **`go install` cannot work here, on any platform, for any published version.**
+This row used to read `go³`, and following that footnote fails on every box. It is the one
+row where ³'s `go install` arm is not merely stale but impossible, so it gets its own paths.
+Two independent blockers, both **properties of how the module is built** rather than a broken
+build waiting to be fixed:
+
+1. `carapace-bin`'s `go.mod` carries two **`replace`** directives (`spf13/pflag` →
+   `carapace-sh/carapace-pflag`, `kevinburke/ssh_config` → `carapace-sh/ssh_config`), and
+   `go install pkg@version` refuses any module that does — a `replace` would make the build
+   differ from building that module as the main module: _"The go.mod file for the module
+   providing named packages contains one or more replace directives. It must not contain
+   directives that would cause it to be interpreted differently than if it were the main
+   module."_
+2. The **generated sources are not committed**: `pkg/actions/actions_generated.go` and
+   `pkg/conditions/conditions_generated.go` are absent from a fresh clone, and
+   `cmd/carapace/main.go`'s `go:generate` lines produce them.
+
+Blocker 1 kills `go install`; blocker 2 kills the obvious workaround (`go build ./cmd/carapace`
+on a clone) until `go generate` has run.
+
+**The scope is every version, not just the current one** — which matters, because `go install`
+takes any `@version` you name and the obvious next move on a failure is to pin an older one.
+Don't: it fails identically. Checked exhaustively over the whole tag history on 2026-08-15
+(`git clone --bare --filter=blob:none`, then `git show <tag>:go.mod` for each of the 184 tags
+from **v0.0.3, 2020-08-31, through v1.7.3, 2026-06-30**):
+
+- **184 of 184 tags carry a `replace` directive.** Zero exceptions. The count rose from one to
+  two at v1.6.0, which is immaterial — one is enough.
+- **0 of 184 tags commit `pkg/actions/actions_generated.go`.** It has never been in the tree.
+
+So this is not an extrapolation from the current release: in nearly six years of tags there has
+never been a version you could `go install`. Upstream's own `.goreleaser.yml` runs
+`go generate ./cmd/...` as a pre-build hook and the AUR's from-source `carapace` PKGBUILD does
+the same — this is the intended build shape, not an oversight. Upstream _could_ drop the
+`replace` directives or start committing the generated sources in a future release, and this
+row can be revisited if they do, but that would reverse six years of practice: treat it as a
+change to watch for, not one to assume. **Re-check only on an announced change, and verify
+with an actual `go install` before believing it.**
+
+**The route is the upstream release artifact**, which goreleaser publishes per arch as
+`.rpm`, `.deb`, `.apk` and `.tar.gz` (v1.7.3, 2026-06-30). Per target:
+
+- **openSUSE** — the `linux_<arch>.rpm`. This is exactly the route `dotfiles-Fedora`'s
+  `bootstrap.sh` already ships and has proven end-to-end; port that block, don't re-derive
+  it. One difference from dnf that will bite: **upstream signs nothing** (there is no `signs:`
+  stanza in `.goreleaser.yml`), and while dnf4 installs an unsigned local/URL rpm without
+  complaint, `zypper -n` aborts on one — so a non-interactive install needs
+  `--no-gpg-checks`. Same shape for Alpine's `.apk` (`--allow-untrusted`) if you ever need it.
+
+  Be clear-eyed about what that flag gives up rather than pasting it as boilerplate: with no
+  signature to check, **the only trust anchor left is HTTPS to the GitHub release origin**,
+  and you are installing as root. Upstream does publish a `checksums.txt`, but it is
+  unsigned and served from the same origin as the asset — it catches a truncated or corrupted
+  download, not a compromised release, so it is not a substitute for a signature. A repo that
+  wants a real anchor should pin the version and record the SHA-256 **in its own tree**, which
+  is precisely the shape `scripts/tool-versions.env` + `scripts/update-tool-checksums.sh`
+  already use for the gate toolchain (`.github/actions/setup-core-tools` verifies before
+  installing). That is a heavier contract than any other bootstrap-installed tool carries
+  today — starship and atuin come from upstream installer scripts, which verify less — so it
+  is a deliberate per-repo call, not something this row silently mandates.
+- **Kali/Debian** — the `linux_<arch>.deb`, same asset set (`amd64`/`arm64`). `apt-get
+  install` wants a path, not a URL, so this is curl-to-a-tempfile then `apt-get install
+  ./carapace-bin_*.deb` (which resolves deps, unlike bare `dpkg -i`).
+- **Arch** — the AUR, and the package name matters: **`carapace-bin`** (1.7.3-1, `provides`/
+  `conflicts` `carapace`, covers x86_64/aarch64/i686) just unpacks the upstream tarball, while
+  the AUR also carries a from-source **`carapace`** that is x86_64-only and needs a Go
+  toolchain. Prefer `paru -S carapace-bin`. Note the same exception ¹⁶ records for viddy:
+  `dotfiles-Arch`'s bootstrap builds no AUR helper, so on a bare box this is a manual step —
+  or lift the binary straight out of the upstream `.tar.gz` into `~/.local/bin`.
+- **Alpine (`carapace`, `community`) and Gentoo (`app-shells/carapace`, GURU per ¹²) need no
+  fallback at all** — both are genuinely packaged and both bootstraps install them. Those two
+  cells carry no ²⁷ because they are verified fine, not because they were skipped.
+
+**What the release-URL route costs you, stated plainly:** installing from a release URL adds
+no repo, so **nothing upgrades carapace afterwards** — not `zypper dup`/`apt upgrade`, not
+`maint/dotfiles-maint.sh`, and not a later bootstrap either (a `command -v carapace` guard
+short-circuits the whole block once the binary exists). Upstream ships no rpm/apt repo and
+neither distro packages it, so there is no upgrade source to point at; updating is a
+deliberate manual step and `carapace --version` is how you would know you are behind. That is
+the real cost, and it is still the right trade: `go install` cannot work at all, so the choice
+is a manually-updated binary or no carapace. Arch is the exception — `carapace-bin` from the
+AUR is a normal package that `paru -Syu` refreshes.
+
+**Building from source** is the escape hatch for an arch with no published artifact. Verified
+end-to-end in #416:
+
+```bash
+git clone --depth 1 https://github.com/carapace-sh/carapace-bin.git
+cd carapace-bin
+go generate ./cmd/...                          # writes the *_generated.go files
+go build -o ~/.local/bin/carapace ./cmd/carapace
+```
+
+Two caveats. **Size:** this is a big binary either way — 500+ bundled completers put
+upstream's released amd64 build at **81.6 MB on disk** (from a ~14 MiB download), and a plain
+`go build` lands nearer 114 MB because it is unstripped and skips upstream's `-tags release`;
+add `-ldflags='-s -w' -tags release` to close most of the gap. **Version:** the build will
+self-report `carapace-bin develop` no matter what you clone. That is **not** a shallow-clone
+artifact, as it first appears — `cmd/carapace/main.go` initializes `var version = "develop"`
+and nothing in the build derives it from git, so a full clone and a checked-out tag report
+`develop` too. The version is injected at link time or not at all; pass it yourself, as both
+upstream's goreleaser and the AUR PKGBUILD do:
+`-ldflags="-s -w -X main.version=v<tag>"`.
+
+Core's side is unchanged by any of this: `zsh/00-tools.zsh` sets `HAVE_CARAPACE`, and
+`zsh/45-plugins.zsh` runs `carapace _carapace zsh` through `_cache_eval` **after** `compinit`
+(`zsh/10-options.zsh`), feeding fzf-tab. Inert without the binary.
+
+**Three OS repos still call the impossible `go install`** and have been failing invisibly at
+it, because `_dotfiles_go_install` sends the explanation to `/dev/null` and downgrades the
+failure to a deferred note: `dotfiles-Arch/bootstrap.sh`, `dotfiles-Kali/bootstrap.sh` and
+`dotfiles-openSUSE/bootstrap.sh`. Each is tracked in its own repo; this footnote is the
+contract they should be fixed against.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

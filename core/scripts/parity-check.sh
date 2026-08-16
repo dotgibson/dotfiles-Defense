@@ -149,7 +149,7 @@ if [[ -r "$ALIAS_MANIFEST" ]]; then
     fi
     # pwsh side (only when Windows is present): the name must be in the `provides:` set.
     ((WIN_PRESENT)) || continue
-    if printf '%s' "$provides" | grep -qE "(^|,)[[:space:]]*${palias}[[:space:]]*(,|\$)"; then
+    if grep -qE "(^|,)[[:space:]]*${palias}[[:space:]]*(,|\$)" <<<"$provides"; then
       pass "alias ${cap} — pwsh (${palias})"
     else
       fail "alias ${cap} — MISSING from pwsh 00-aliases.ps1 provides: ${palias}"
