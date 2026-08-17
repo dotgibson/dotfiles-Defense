@@ -99,6 +99,31 @@ fail() {
   FAIL=$((FAIL + 1))
   printf '%s✗%s %s\n' "$c_red" "$c_rst" "$*" >&2
 }
+# fail_detail <captured-output> — print a failing tool's OWN report under the ✗ line.
+#
+# The audit's job is to say WHAT failed; the tool has already computed WHY. Discarding it
+# meant a red CI run named a gate and nothing else — "✗ markdownlint reported issues" with
+# no rule, no file, no line — and CI is precisely where you cannot re-run the tool by hand
+# (dotgibson/dotfiles-core#456).
+#
+# stderr, like fail(), so --json keeps stdout clean for the summary object. Indented so it
+# reads as detail rather than as further findings, and capped so a pathological run cannot
+# bury the summary; the "run:" hint on each fail line stays the route to the full output.
+#
+# NB the herestrings: `head` exits after N lines, so `printf … | head` under `set -o
+# pipefail` is the SIGPIPE trap this repo has hit three times (#459). `head <<<` has no
+# upstream to kill, and the `| sed` downstream consumes everything without exiting early.
+CORE_FAIL_DETAIL_LINES="${CORE_FAIL_DETAIL_LINES:-40}"
+fail_detail() {
+  local out="${1:-}" n
+  [ -n "$out" ] || return 0
+  n="$(wc -l <<<"$out" | tr -d ' ')"
+  head -n "$CORE_FAIL_DETAIL_LINES" <<<"$out" | sed 's/^/    /' >&2
+  if [ "${n:-0}" -gt "$CORE_FAIL_DETAIL_LINES" ]; then
+    printf '    … %s more line(s) — run the command above for the rest\n' \
+      "$((n - CORE_FAIL_DETAIL_LINES))" >&2
+  fi
+}
 hdr() { ((QUIET)) || printf '\n%s== %s ==%s\n' "$c_blu" "$*" "$c_rst"; }
 
 # ── area scope (shared by audit-core.sh + test-core.sh) ───────────────────────
@@ -164,4 +189,96 @@ _core_read_classify() { # _core_read_classify <classifier-output>
   case "$CLASSIFY_SHELL" in true | false) ;; *) return 1 ;; esac
   case "$CLASSIFY_NVIM" in true | false) ;; *) return 1 ;; esac
   return 0
+}
+
+# _core_fail_digest <file> — condense the ✗ lines of a nested gate's CAPTURED output into
+# one line: `N: first | second | third (+M more)`, or EMPTY when the file holds no ✗ at all.
+#
+# WHY A DIGEST EXISTS. A wrapper that reports only "the nested suite failed — go re-run it"
+# sends the operator away to reproduce a result the run already had, and for an INTERMITTENT
+# failure that is advice which cannot be taken: the re-run passes and the evidence is gone.
+# The digest rides along in the wrapper's own fail line, so the names survive wherever that
+# line goes — a summary block, --json, a CI job log, a `tail` of a long log. (A CI ANNOTATION
+# is NOT among them: fail() writes to stderr and ci.yml runs audit-core.sh directly, with
+# nothing emitting `::error::`. Naming a destination this does not reach would be the same
+# overclaim the digest exists to prevent, one layer up.)
+#
+# LIVES HERE, not inline in the caller, so it is REACHABLE BY TESTS. Every branch below is a
+# quiet-failure risk rather than an obvious one, and verifying them by making a real gate fail
+# means either recursively invoking that gate or hand-injecting faults — neither of which CI
+# repeats. Both gate scripts already source this file, so the suite can drive it on fixtures.
+#
+# ESCAPES ARE STRIPPED rather than anchoring on a bare ✗: fail() above prefixes the mark with
+# $c_red, so an anchored match finds nothing whenever colour is on — a detector that would go
+# quiet in exactly the runs someone is watching.
+#
+# NAMES ARE CAPPED AT THREE, then counted (+M more) rather than silently truncated: a suite
+# that failed wholesale would otherwise render an unreadable wall, and "one flaky assertion"
+# versus "the whole section is down" is the distinction a reader needs before deciding whether
+# to re-run or to investigate. The leading N is the TRUE total, not the number shown.
+_core_fail_digest() { # _core_fail_digest <captured-output-file>
+  local f="${1:-}" esc lines n why
+  [[ -n "$f" && -r "$f" ]] || return 0
+  esc="$(printf '\033')"
+  lines="$(sed "s/${esc}\[[0-9;]*m//g" "$f" 2>/dev/null | grep '^✗' | sed 's/^✗[[:space:]]*//')"
+  [[ -n "$lines" ]] || return 0
+  n="$(printf '%s\n' "$lines" | grep -c .)"
+  # JOINED WITHOUT REWRITING THE RECORDS. The obvious `tr '\n' '|' | sed 's/|/ | /g'` also
+  # spaces out every literal `|` INSIDE a message, and assertions here really do contain them
+  # — `'exec … || exec …' cannot fall back` is one of nine in test-core.sh. Two failures then
+  # render with four apparent boundaries while the count says 2, which is worse than terse:
+  # it invents structure in the one line someone reads when they cannot reproduce the failure.
+  local l i=0
+  why=""
+  while IFS= read -r l; do
+    [[ -n "$l" ]] || continue
+    i=$((i + 1))
+    ((i <= 3)) || break
+    why="${why:+$why | }$l"
+  done <<<"$lines"
+  ((n > 3)) && why="$why (+$((n - 3)) more)"
+  printf '%s: %s' "$n" "$why"
+}
+
+# ── pipefail SIGPIPE scanner (audit-core.sh §5d) ──────────────────────────────
+# _core_pipefail_hits <file> — print the line number of every place <file> pipes a
+# SHELL-STRING producer (printf/echo) into a reader that EXITS EARLY: grep in a quiet mode,
+# awk reaching an `exit`, head after its count. Under `set -o pipefail` the writer then
+# takes EPIPE, dies with 141, and the pipeline reports failure even though the reader
+# succeeded. Silence = clean.
+#
+# It lives here rather than inline in the gate for the same reason _core_fail_digest does:
+# so test-core.sh can drive it on fixtures. A gate never shown to fire is a gate nobody
+# should trust — and testing this one caught three defects in it before it shipped.
+#
+# WHAT THIS IS: a textual scan, and so a HEURISTIC BACKSTOP rather than a proof. It does
+# not parse shell. The limits, stated so nobody reads a green §5d as more than it is:
+#   * a pipeline split across lines is not seen
+#   * a reader reached through a variable or eval is not seen
+#   * the banned text inside a quoted string still matches — there is no lexer here, which
+#     is why test-core.sh assembles its fixtures instead of spelling them out
+# It catches the shape people actually write; all three real occurrences in this repo were
+# one-liners of exactly that shape.
+#
+# Two deliberate narrowings, both about not crying wolf:
+#   * the file must actually enable pipefail — `set -euo pipefail`, `set -o pipefail`,
+#     `set -e -o pipefail` and `set -o errexit -o pipefail` all count; naming it in prose
+#     does not
+#   * comment lines are skipped, so writing ABOUT the hazard does not trip the gate
+# A FILE producer (`sed x | head -n1`) is out of scope: converting those is not free, and a
+# gate that fires on working code is a gate someone turns off.
+_core_pipefail_hits() { # _core_pipefail_hits <file>
+  local f="${1:-}" re
+  [ -f "$f" ] || return 0
+  # `-o pipefail` in ANY position of a `set`, compact or split. An earlier version anchored
+  # on the first option token and so skipped `set -e -o pipefail` outright — a guard that
+  # silently permits the hazard, which is the worst way for this to be wrong.
+  grep -qE '^[[:space:]]*set[[:space:]].*o[[:space:]]+pipefail' "$f" 2>/dev/null || return 0
+  # Assembled from fragments so this very line cannot match the pattern it defines — the
+  # scanner reads every tracked shell script, and common.sh is one of them.
+  # grep: any quiet spelling (-q, -Eq, -E -q, --quiet). awk: an `exit` that is a statement
+  # rather than the word inside a string — `awk '{ print "exit" }'` exits nothing.
+  re="(printf|echo)[^|]*[|][[:space:]]*(grep[^|]*(-[a-zA-Z]*q|--quiet)([[:space:]]|\$)|head([[:space:]]|\$)|awk[^|]*[^\"'[:alnum:]_]exit)"
+  grep -nE "$re" "$f" 2>/dev/null |
+    awk -F: '{ l = $0; sub(/^[0-9]+:/, "", l); if (l !~ /^[[:space:]]*#/) print $1 }'
 }

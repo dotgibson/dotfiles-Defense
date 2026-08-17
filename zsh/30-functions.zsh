@@ -105,13 +105,19 @@ core() {
 # core-doctor can tell "✓ present" from "✓ present AND working". Returns non-zero for an
 # unknown tool. (Inherited into core-doctor's `$()` capture: zsh forks keep functions +
 # the $widgets/$precmd_functions params readable.)
+# Each arm accepts BOTH the historical and the current upstream name: starship and
+# carapace renamed the functions their `init` emits, so probing only the old name
+# reported a FALSE `○ (idle)` for an integration that was demonstrably driving the
+# prompt/completion (measured on starship 1.24.2 → prompt_starship_precmd, and
+# carapace-bin 1.5.7 → _carapace_completer; neither emits the old name at all). Keep
+# the old names so boxes pinned to older releases keep reporting wired.
 _core_wired() {
   case "$1" in
-  starship) (( $+functions[starship_precmd] )) ;;
+  starship) (( $+functions[starship_precmd] )) || (( $+functions[prompt_starship_precmd] )) ;;
   atuin)    [[ -n ${widgets[atuin-search]:-} ]] || (( $+functions[_atuin_precmd] )) ;;
   mise)     (( $+functions[_mise_hook] )) || (( $+functions[__mise_hook] )) ;;
   zoxide)   (( $+functions[__zoxide_hook] )) || (( $+functions[__zoxide_z] )) ;;
-  carapace) (( $+functions[_carapace] )) ;;
+  carapace) (( $+functions[_carapace] )) || (( $+functions[_carapace_completer] )) ;;
   *) return 1 ;;
   esac
 }
@@ -133,7 +139,8 @@ _core_wired() {
 #   data / net   — reads/transforms data, or talks to the network
 #   dev / repo   — writing and versioning code: lint, format, benchmark, search, diff, VCS
 # fd/bat appear under their CANONICAL names; 00-tools.zsh resolves fdfind/batcat into
-# FD_BIN/BAT_BIN and the "resolved" line at the bottom of the report shows which one won.
+# FD_BIN/BAT_BIN, _core_doctor_bin (just below) probes the resolved binary, and the
+# "resolved" line at the bottom of the report shows which one won.
 # The terminal browser is deliberately absent: BROWSER_BIN picks from w3m/lynx/links2/links/
 # elinks, so there is no single name to probe — a fixed `w3m` row would read ✗ on a box
 # that has lynx and is working fine.
@@ -143,6 +150,29 @@ typeset -ga _CORE_DOCTOR_GROUPS=(
   "data / net"   "jq yq jnv gron sd xh doggo gping glow lnav op"
   "dev / repo"   "ast-grep shellcheck shfmt hyperfine watchexec uv jj difft git-absorb"
 )
+
+# _core_doctor_bin <tool> → REPLY = the binary that actually BACKS that row.
+# The rows above are canonical names, but two of them are not the binary on every distro:
+# Debian/Ubuntu/Kali ship fd as `fdfind` and bat as `batcat`, and 00-tools.zsh resolves
+# those into FD_BIN/BAT_BIN. Probing the canonical name therefore reported `✗ bat` for a
+# tool that was installed and fully wired — two lines above the `resolved` section printing
+# the very binary it had found. `fd` escaped that only by ACCIDENT: 20-aliases.zsh defines
+# `alias fd="$FD_BIN"` and zsh's `command -v` resolves aliases, so the ✓ came from the alias
+# rather than from PATH. That accident did not extend to the -v readout, which forks
+# `"$tool" --version` — a PARAMETER expansion, never alias-expanded — so `core-doctor -v`
+# printed a bare versionless `✓ fd` on Debian and swallowed the error. Resolving here fixes
+# presence and version together, and rests on FD_BIN/BAT_BIN rather than on an alias.
+# Sets REPLY instead of printing: $(…) forks, and this is called once per tool per report.
+# ONE definition, called by BOTH the render and --json, so the two cannot drift (same rule
+# as _CORE_DOCTOR_GROUPS above). The :- fallbacks keep the answer byte-identical when
+# 00-tools.zsh has not run — the unit harness sources ui+functions alone.
+_core_doctor_bin() {
+  case "$1" in
+  fd)  REPLY="${FD_BIN:-fd}" ;;
+  bat) REPLY="${BAT_BIN:-bat}" ;;
+  *)   REPLY="$1" ;;
+  esac
+}
 
 # _core_doctor_json — machine-readable health (B12). The gate scripts emit --json; the
 # RUNTIME health verb did not, so a statusline/editor/CI could not consume it. One object
@@ -166,11 +196,17 @@ _core_doctor_json() {
     alltools+=(${=_CORE_DOCTOR_GROUPS[_gi]})
   done
   local -a wir=(starship atuin mise zoxide carapace)
-  local t first=1
+  # REPLY is declared HERE, with the rest — _core_doctor_bin writes it, and `local` inside
+  # the loop would re-declare an already-set parameter (see the `local … _v` note in
+  # _core_doctor_render for what that costs).
+  local t first=1 REPLY
   print -rn -- "{\"version\":\"${ver}\",\"tools\":{"
   for t in $alltools; do
     ((first)) || print -rn -- ","; first=0
-    if _core_have "$t"; then print -rn -- "\"$t\":true"; else print -rn -- "\"$t\":false"; fi
+    # Probe the RESOLVED binary, but key the object on the CANONICAL name: consumers and
+    # the render⇄json parity test both look up `.tools.bat`, not `.tools.batcat`.
+    _core_doctor_bin "$t"
+    if _core_have "$REPLY"; then print -rn -- "\"$t\":true"; else print -rn -- "\"$t\":false"; fi
   done
   print -rn -- "},\"wired\":{"
   first=1
@@ -249,18 +285,22 @@ _core_doctor_render() {
   # `emulate -L zsh`), so a `local _v` inside the loop dumped a literal `_v=0.26.1` line into
   # the report on every iteration after the first — `core-doctor -v` rendered garbage instead
   # of versions. Nothing caught it because no test drove the -v path.
-  local gi tool line _v
+  # `bin` and REPLY join _v here for the same reason: _core_doctor_bin writes REPLY, and
+  # both are assigned once per tool inside the loop.
+  local gi tool line _v bin REPLY
   local -a missing=()
   for ((gi = 1; gi <= ${#groups}; gi += 2)); do
     print -r -- "${c}${groups[gi]}${r}"
     line=""
     for tool in ${=groups[gi + 1]}; do
-      if _core_have "$tool"; then
+      # `tool` is what we PRINT (the canonical name); `bin` is what we PROBE and fork.
+      _core_doctor_bin "$tool"; bin=$REPLY
+      if _core_have "$bin"; then
         if ((show_versions)); then
           # Best-effort, like setup.sh's _doctor: pull the first semver-ish token from
           # the tool's own --version. Unparseable → just the ✓ (never an error). Assigned,
           # never re-declared: see the `local … _v` note above the loop.
-          _v="$("$tool" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
+          _v="$("$bin" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
           line+="  ${g}✓${r} ${tool}${_v:+ ${d}${_v}${r}}"
         else
           line+="  ${g}✓${r} ${tool}"

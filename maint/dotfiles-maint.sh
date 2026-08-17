@@ -31,7 +31,16 @@ export HOME="${HOME:?}"
 # it, so without this the `have rustup` guard below is false and the rust step
 # silently skips — the exact unattended case it exists to cover. `:-` default keeps
 # it nounset-safe when CARGO_HOME is unset.
-export PATH="$HOME/.local/bin:${CARGO_HOME:-$HOME/.cargo}/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
+# NO OS-specific prefix belongs here: this file is portable Core, vendored into every
+# OS repo. The scheduler unit written by `maint-install` bakes in the LIVE PATH of the
+# shell that installed it (zsh/55-maint.zsh), which is where a Homebrew/pkgsrc/Nix
+# prefix legitimately enters — supplied by the OS, not hardcoded by Core. What remains
+# below is only the POSIX floor for a hand-wired scheduler that supplies no PATH at all.
+# ORDER IS LOAD-BEARING: intentional prepends, then the CAPTURED PATH, then the floor.
+# The captured PATH must outrank the floor — an Apple-Silicon shell puts the Homebrew bin
+# ahead of a legacy /usr/local/bin, and appending it last would silently run the legacy
+# brew instead. The floor is a last resort for a hand-wired scheduler, not a preference.
+export PATH="$HOME/.local/bin:${CARGO_HOME:-$HOME/.cargo}/bin${PATH:+:$PATH}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 : "${XDG_CACHE_HOME:=$HOME/.cache}"
 : "${XDG_STATE_HOME:=$HOME/.local/state}"
 : "${XDG_DATA_HOME:=$HOME/.local/share}"
@@ -144,18 +153,12 @@ step() {
 log "═══════════ dotfiles-maint start ($(uname -s) $(hostname 2>/dev/null)) ═══════════"
 
 # ── Homebrew ──────────────────────────────────────────────────────────────────
-if have brew || [[ -x /opt/homebrew/bin/brew || -x /home/linuxbrew/.linuxbrew/bin/brew ]]; then
-  # Put brew on PATH if a scheduler handed us a minimal env without it. Explicit
-  # if/else (not `A && B || C`): under SC2015 that idiom silently runs C when B
-  # fails, and conflates "test failed" with "shellenv failed" — here we want a
-  # plain Apple-Silicon-else-Linuxbrew branch.
-  if ! have brew; then
-    if [[ -x /opt/homebrew/bin/brew ]]; then
-      eval "$(/opt/homebrew/bin/brew shellenv)"
-    else
-      eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-    fi
-  fi
+# `have brew` is the whole test. The two Homebrew prefixes this used to probe by
+# absolute path were the last OS-specific literals in portable Core; the scheduler unit
+# now carries the installing shell's PATH, so a box with brew resolves it here without
+# Core naming a prefix. A unit written before that change carries no PATH — re-run
+# `maint-install` once to refresh it (maint-status reports when that is pending).
+if have brew; then
   step "brew update" _to "$MAINT_BREW_TIMEOUT" brew update
   step "brew upgrade" _to "$MAINT_BREW_TIMEOUT" brew upgrade
   step "brew cleanup" brew cleanup -s

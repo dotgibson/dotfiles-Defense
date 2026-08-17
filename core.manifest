@@ -113,7 +113,9 @@ tmux/tmux.conf            # main config; sources tmux.reset.conf first, os.conf 
 tmux/tmux.reset.conf      # the keybinding layer (prefix C-a lives here) — MUST be symlinked
 # tmux popup + status scripts. Listed PER-FILE (not as `tmux/scripts/`) so an added or
 # removed script is caught offline (B10) — this is the exact gap that let an orphaned
-# tmux-sessionizer.sh linger here once (see verify-core.sh). Keep alphabetical.
+# tmux-sessionizer.sh linger here once. (nvim/ closes the same gap the other way, via
+# audit-core.sh §4b reachability; per-file listing is the cheaper answer here.)
+# Keep alphabetical.
 tmux/scripts/tmux-battery.sh
 tmux/scripts/tmux-cheat.sh
 tmux/scripts/tmux-claude.sh
@@ -135,7 +137,10 @@ vim/vimrc
 # whole directory: lua/gerrrt/{config,plugins,servers,utils}. Kept DIRECTORY-granular on
 # purpose (unlike completions/ + tmux/scripts/ above): this is a vendored lazy.nvim tree
 # that legitimately churns wholesale as plugins/servers come and go, so per-file listing
-# would be maintenance noise. verify-core.sh (byte-for-byte vs upstream) is the orphan
-# backstop here instead of the manifest (B10).
+# would be maintenance noise. The orphan backstop here is audit-core.sh §4b (nvim module
+# reachability) instead of the manifest (B10): it walks the load graph and fails on a lua
+# module nothing can require. NB this comment previously named verify-core.sh, which has
+# never existed in this repo — so from the day nvim/ went directory-granular until §4b
+# was added, the "backstop instead of the manifest" was nothing at all (#454).
 nvim/
 # ── Core layers: zsh + clip + mise + sesh + tmux + maint + git + nvim. ────────

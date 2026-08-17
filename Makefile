@@ -7,7 +7,7 @@
 # pre-commit call the same scripts/audit-core.sh, so `make audit` == green CI.
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-.PHONY: help setup doctor audit audit-changed test bench profile bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern release tag release-notes
+.PHONY: help setup doctor audit audit-changed test bench profile bench-atuin bench-atuin-systemd verify-atuin-guard verify-atuin-guard-autostart lint sync sync-dry fleet-drift core-integrity parity-check freshness-dashboard hooks update-hooks update-plugins update-nvim-plugins update-tool-checksums check-pins check-modern release tag publish release-notes
 
 help: ## Show this help
 	@echo "dotfiles-core — make targets:"
@@ -93,8 +93,11 @@ check-modern: ## Check CI meets the modern floor (scripts/modern-baseline.yml) �
 release: ## Cut a release: bump core.version + CHANGELOG, run the audit (usage: make release VERSION=X.Y.Z)
 	@./scripts/release.sh $(VERSION)
 
-tag: ## Finish the release: commit + annotated tag vX.Y.Z from core.version (PUSH=1 also pushes)
-	@./scripts/tag-release.sh $(if $(filter 1,$(PUSH)),--push,)
+tag: ## Release phase 1: commit core.version + CHANGELOG (creates NO tag — see publish)
+	@./scripts/tag-release.sh
+
+publish: ## Release phase 2: tag origin/main + push, AFTER the release PR has merged
+	@./scripts/tag-release.sh --publish
 
 release-notes: ## Draft a GitHub Release body from Conventional Commits since the last release (needs git-cliff)
 	@command -v git-cliff >/dev/null 2>&1 || { echo "git-cliff not found: cargo install git-cliff (or scoop/pkg). Config: cliff.toml"; exit 1; }

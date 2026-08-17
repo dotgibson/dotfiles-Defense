@@ -72,7 +72,7 @@ if _yaml_bool require_action_sha_pin; then
     spec="${m#*uses:}"; spec="${spec#"${spec%%[![:space:]]*}"}"  # text after `uses:`, ltrimmed
     owner="${spec%%/*}"
     { [ -n "$exempt" ] && [ "$owner" = "$exempt" ]; } && continue   # own reusable workflows: @vN policy
-    printf '%s' "$ref" | grep -qE '^[0-9a-f]{40}$' || note "unpinned action (need a 40-hex SHA): $m"
+    grep -qE '^[0-9a-f]{40}$' <<<"$ref" || note "unpinned action (need a 40-hex SHA): $m"
   done < <(grep -HnoE "uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[^[:space:]\"']+" "${FILES[@]}" 2>/dev/null || true)
 fi
 
