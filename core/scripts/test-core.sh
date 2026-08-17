@@ -888,6 +888,28 @@ if have git; then
 printf '%s' \"\$big\" $_pf_p grep -q needle"
   if [[ "$(_core_pipefail_hits "$_pfd/grepq.sh")" == 2 ]]; then pass "pipefail scan: catches a printf piped into grep -q"; else fail "pipefail scan: missed a printf piped into grep -q"; fi
 
+  # FLAG ORDER must not matter. The regex used to require `q` to be the LAST letter of the
+  # cluster, so `-q` and `-xq` were caught while `-qx` and `-Eqi` walked past — identical
+  # hazard, different spelling. That blind spot was hiding a live one in ci-pr-link.sh's
+  # No-Issue probe (`-Eqi`), where a body over the pipe buffer would have failed a
+  # correctly-exempt PR. Pin every spelling so the gate cannot go half-blind again (#501).
+  _pf_write grepqx.sh "set -euo pipefail
+printf '%s' \"\$big\" $_pf_p grep -qx needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/grepqx.sh")" == 2 ]]; then pass "pipefail scan: catches grep -qx (q not last in the cluster)"; else fail "pipefail scan: missed grep -qx — the regex still requires q to be last"; fi
+
+  _pf_write grepeqi.sh "set -euo pipefail
+printf '%s' \"\$big\" $_pf_p grep -Eqi needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/grepeqi.sh")" == 2 ]]; then pass "pipefail scan: catches grep -Eqi (the real ci-pr-link.sh shape)"; else fail "pipefail scan: missed grep -Eqi"; fi
+
+  _pf_write grepxq.sh "set -euo pipefail
+printf '%s' \"\$big\" $_pf_p grep -xq needle"
+  if [[ "$(_core_pipefail_hits "$_pfd/grepxq.sh")" == 2 ]]; then pass "pipefail scan: still catches grep -xq (q last, the original form)"; else fail "pipefail scan: regressed on grep -xq"; fi
+
+  # The widened cluster must not swallow a grep with NO q at all — that has no early exit.
+  _pf_write grepnoq.sh "set -euo pipefail
+printf '%s' \"\$big\" $_pf_p grep -Ei needle"
+  if [[ -z "$(_core_pipefail_hits "$_pfd/grepnoq.sh")" ]]; then pass "pipefail scan: a grep with no quiet flag is not a finding"; else fail "pipefail scan: widened regex now flags a non-quiet grep"; fi
+
   _pf_write head.sh "set -euo pipefail
 echo \"\$v\" $_pf_p head -n1"
   if [[ "$(_core_pipefail_hits "$_pfd/head.sh")" == 2 ]]; then pass "pipefail scan: catches an echo piped into head"; else fail "pipefail scan: missed an echo piped into head"; fi
@@ -1029,6 +1051,116 @@ else
   fail "fail digest: expected empty for both no-marker ('$_fdout') and missing file ('$_fdout2')"
 fi
 
+# ── E0. content-gate file set (_audit_ls, scripts/lib/common.sh) ──────────────
+# The audit's content gates (bash -n, zsh -n, shellcheck, the pipefail scanner, toml/
+# yaml/json) used to enumerate with a bare `git ls-files`, which lists ONLY tracked
+# files. A brand-new script was therefore invisible until `git add`, and the gate still
+# reported "all clean" — a green audit that had not read the file. That shipped: #496's
+# scripts/ci-pr-link.sh passed a local 261/0 audit, then failed all four CI legs on two
+# SC2016 violations. Pin the enumeration so the blind spot cannot come back.
+#
+# Driven in a THROWAWAY repo, not this one: asserting against the real checkout would
+# depend on whatever happens to be untracked in the developer's tree, which is exactly
+# the kind of ambient state that makes a test lie.
+if have git; then
+  hdr "content-gate file set (_audit_ls)"
+  ALSREPO="$SANDBOX/audit-ls-repo"
+  rm -rf "$ALSREPO"
+  mkdir -p "$ALSREPO"
+  git -C "$ALSREPO" init -q
+  git -C "$ALSREPO" config user.email t@example.com
+  git -C "$ALSREPO" config user.name tester
+  printf 'ignored/\n' >"$ALSREPO/.gitignore"
+  printf '#!/usr/bin/env bash\n:\n' >"$ALSREPO/tracked.sh"
+  git -C "$ALSREPO" add -A
+  git -C "$ALSREPO" commit -qm init
+  # Created AFTER the commit: the exact state the bug was blind to.
+  printf '#!/usr/bin/env bash\n:\n' >"$ALSREPO/untracked.sh"
+  mkdir -p "$ALSREPO/ignored"
+  printf '#!/usr/bin/env bash\n:\n' >"$ALSREPO/ignored/skipped.sh"
+  _als_out="$(cd "$ALSREPO" && _audit_ls '*.sh')"
+  _als_has() { # _als_has <label> <needle> <want:0|1>
+    local n=0
+    # Herestring, NOT `printf … | grep -qx`: that is the SIGPIPE shape §5d exists to
+    # catch — grep exits on its first match, printf takes EPIPE, and pipefail reports
+    # the pipeline as failed, which here would silently flip an assertion to false.
+    # The list is small enough to fit the pipe buffer today, so it happens to work;
+    # "happens to work" is exactly what this file should not rely on.
+    grep -qx "$2" <<<"$_als_out" && n=1
+    if ((n == $3)); then pass "$1"; else fail "$1 (got list: ${_als_out//$'\n'/ })"; fi
+  }
+  _als_has "_audit_ls includes a tracked script" 'tracked.sh' 1
+  # THE REGRESSION GUARD: this is the assertion that would have failed before the fix.
+  _als_has "_audit_ls includes an UNTRACKED script (the #496 blind spot)" 'untracked.sh' 1
+  # --exclude-standard: a gitignored scratch script must not start failing anyone's audit.
+  _als_has "_audit_ls excludes a gitignored script" 'ignored/skipped.sh' 0
+  # Deduped: a tracked file must not be listed twice just because both probes ran.
+  _als_n="$(printf '%s\n' "$_als_out" | grep -cx 'tracked.sh')"
+  if [[ "$_als_n" == 1 ]]; then
+    pass "_audit_ls does not double-list a tracked file"
+  else
+    fail "_audit_ls double-listed a tracked file ($_als_n times)"
+  fi
+  # The audit's CONTENT gates must all use _audit_ls; the GIT-STATE gates — the --changed
+  # scope probe, manifest reverse-drift, and the index exec-bit check — must NOT.
+  #
+  # Manifest EXPANSION is deliberately absent from that list: it feeds §5c, which cat|greps
+  # every file it names, so it is a content gate wearing manifest clothing and routes
+  # through _audit_ls like the rest. It sat in this list while the implementation said
+  # otherwise, which is how it got misfiled in the first place.
+  #
+  # Assert the split EXACTLY, in both directions. A floor (">= N helper calls") looks like
+  # it guards this and does not: once seven calls exist, a NEW content gate can enumerate
+  # with a bare `git ls-files` and the floor is still satisfied — the guard would sit green
+  # through the reintroduction of the very bug it exists to prevent. Worse, a later helper
+  # call could mask a regression elsewhere by keeping the total up.
+  #
+  # Exact counts are deliberately a tripwire: adding EITHER kind of enumeration fails here
+  # until someone bumps the number, which is the moment to decide which side of the rule
+  # the new gate belongs on. That decision is the whole point; a test that lets it be made
+  # implicitly is not guarding anything.
+  #
+  # EVERY gate script that `make audit` consults, not just audit-core.sh. The first
+  # version guarded one file, and the rule was quietly broken in three places outside it:
+  # audit-core.sh's own manifest expansion (which feeds the §5c OS-path CONTENT scan and
+  # merely looks like a manifest question), check-modern.sh's workflow inventory, and
+  # nvim-reachability.sh's module inventory. A rule documented as universal but enforced
+  # on one file is worse than no rule — it reads as covered.
+  #
+  # Count CALLS robustly: `_audit_ls '<glob>'`, `_audit_ls "$m"`, and `_audit_ls \` with
+  # the pathspecs on the next line all count. Two earlier patterns here were too narrow
+  # and undercounted exactly those forms. The definition line `_audit_ls() {` and comment
+  # lines are excluded from both counts, so prose ABOUT either mechanism never trips it.
+  _als_calls() { # _als_calls <file> → number of _audit_ls call sites
+    grep -nE '(^|[^[:alnum:]_])_audit_ls([[:space:]]|$)' "$1" 2>/dev/null |
+      grep -vE '^[0-9]+:[[:space:]]*#' | grep -vcE '_audit_ls\(\)'
+  }
+  _als_direct() { # _als_direct <file> → number of bare `git ls-files` sites
+    grep -nE 'git ls-files' "$1" 2>/dev/null | grep -vcE '^[0-9]+:[[:space:]]*#'
+  }
+  # file:want_content:want_direct — exact on BOTH sides. A floor would stop guarding the
+  # moment the count was met: a NEW content gate could use bare `git ls-files` and still
+  # satisfy it. Exactness makes adding either kind of enumeration fail here until someone
+  # picks a side, which is the decision this rule exists to force.
+  _als_expect="audit-core.sh:8:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
+  _als_bad=""
+  for _als_spec in $_als_expect; do
+    _als_f="${_als_spec%%:*}"
+    _als_rest="${_als_spec#*:}"
+    _als_wc="${_als_rest%%:*}"
+    _als_wd="${_als_rest##*:}"
+    _als_gc="$(_als_calls "$HERE/scripts/$_als_f")"
+    _als_gd="$(_als_direct "$HERE/scripts/$_als_f")"
+    [[ "$_als_gc" == "$_als_wc" && "$_als_gd" == "$_als_wd" ]] ||
+      _als_bad="${_als_bad}${_als_f} (got ${_als_gc}/${_als_gd}, want ${_als_wc}/${_als_wd}) "
+  done
+  if [[ -z "$_als_bad" ]]; then
+    pass "enumeration split is exact across all three gate scripts (content via _audit_ls / git-state direct)"
+  else
+    fail "enumeration split changed: ${_als_bad}— a new enumeration must pick a side (content → _audit_ls, git-state → git ls-files), then update these counts"
+  fi
+fi
+
 hdr "CI path classifier (scripts/ci-classify.sh)"
 CLASSIFY="$HERE/scripts/ci-classify.sh"
 _classify_is() { # _classify_is <label> <newline-input> <want-shell> <want-nvim>
@@ -1050,6 +1182,93 @@ _classify_is "unrecognised path → FAIL CLOSED to full run" 'newdir/thing.xyz' 
 _classify_is "mixed shell+nvim set → union of both" $'zsh/05-ui.zsh\nnvim/init.lua' true true
 _classify_is "atuin/ config change → shell gate only" 'atuin/config.toml' true false
 _classify_is "examples/ change → no gate (repo-meta, nothing links it)" 'examples/atuin-daemon.service' false false
+
+# ── E2. PR link gate (scripts/ci-pr-link.sh) ──────────────────────────────────
+# #446 fixed #420 and #423 and merged green with NO closing keyword, so GitHub linked
+# nothing and both issues sat open looking like live bugs. pr-link-check.yml now gates
+# that, and the verdict logic lives in a script (like ci-classify.sh) precisely so it
+# can be pinned here instead of rotting untested inside workflow YAML.
+hdr "PR link gate (scripts/ci-pr-link.sh)"
+PRLINK="$HERE/scripts/ci-pr-link.sh"
+_prlink_is() { # _prlink_is <label> <title> <linked-count> <body> <want-verdict>
+  local got rc want_rc
+  got="$(printf '%s' "$4" | "$PRLINK" "$2" "$3" 2>/dev/null)"
+  rc=$?
+  # Assert the EXIT STATUS as well as the verdict line. The workflow enforces the policy
+  # through the status, not the text — so a regression to `exit 0` on missing-link would
+  # silently stop failing PRs while a stdout-only assertion stayed green. Checking both
+  # pins the two together: missing-link is the only verdict that may exit non-zero.
+  # Both blocking verdicts exit 1. They are NOT interchangeable: missing-link asserts
+  # something about the PR, probe-failed asserts only that the API could not be reached
+  # (#500). Same policy, different claim — so the tests pin the verdict token too, and a
+  # regression that swapped one for the other would fail on the stdout comparison above.
+  case "$5" in
+  missing-link | probe-failed) want_rc=1 ;;
+  *) want_rc=0 ;;
+  esac
+  if [[ "$got" == "verdict=$5" ]] && ((rc == want_rc)); then
+    pass "$1"
+  else
+    fail "$1 (got: ${got:-<empty>} rc=$rc; want verdict=$5 rc=$want_rc)"
+  fi
+}
+# The gated set: the delimiter-aware Conventional-Commit shape from
+# scripts/gen-release-notes.sh:50 — optional (scope), optional breaking `!`, then the `:`.
+# NOT cliff.toml:56, which groups on a broader bare `^fix` and would sweep in `fixup:`;
+# the gate deliberately takes the stricter of the two.
+_prlink_is "fix( PR with a linked issue → ok" 'fix(doctor): probe both names' 1 '' ok
+_prlink_is "fix( PR with no link and no reason → missing-link" 'fix(doctor): probe both names' 0 '' missing-link
+_prlink_is "unscoped fix: is gated too" 'fix: probe both names' 0 '' missing-link
+_prlink_is "breaking fix!: is gated too" 'fix!: probe both names' 0 '' missing-link
+_prlink_is "breaking scoped fix(x)!: is gated too" 'fix(doctor)!: probe both names' 0 '' missing-link
+_prlink_is "feat( is not gated (fix-only rule)" 'feat(doctor): new panel' 0 '' not-gated
+_prlink_is "chore( is not gated" 'chore(deps): bump actions' 0 '' not-gated
+# The delimiter is what separates a type from prose — without it, `fixup:` and an
+# ordinary sentence would both be swept in, and authors would learn to distrust the gate.
+_prlink_is "fixup: is not the fix type (delimiter, not prefix)" 'fixup: squash me' 0 '' not-gated
+_prlink_is "prose starting with the word is not gated" 'fixing a flaky test' 0 '' not-gated
+# The escape hatch, and its two failure modes.
+_prlink_is "No-Issue: with a reason exempts" 'fix(x): y' 0 'No-Issue: found in one pass, never filed' exempt
+_prlink_is "No-Issue: is case-insensitive and may be indented" 'fix(x): y' 0 '   no-issue: trivial typo' exempt
+_prlink_is "bare No-Issue: with no reason does NOT exempt" 'fix(x): y' 0 'No-Issue:' missing-link
+_prlink_is "no-issue: mid-prose does NOT exempt (line-anchored)" 'fix(x): y' 0 'there is no-issue: here' missing-link
+# THE ONE THAT MATTERS. pull_request_template.md documents the marker inside an HTML
+# comment; if the scan read the raw body, every unedited-template PR would exempt itself
+# and the gate would ship dead — green and green look identical, so nothing would catch it.
+_prlink_is "commented-out No-Issue: does NOT exempt (inline)" \
+  'fix(x): y' 0 '<!-- No-Issue: <reason> if there is no issue -->' missing-link
+_prlink_is "commented-out No-Issue: does NOT exempt (multi-line)" \
+  'fix(x): y' 0 $'<!--\nNo-Issue: <reason>\n-->' missing-link
+_prlink_is "a real marker after a comment still exempts" \
+  'fix(x): y' 0 $'<!-- guidance -->\nNo-Issue: genuinely no issue' exempt
+# ── An undeterminable count is NOT zero links (#500) ─────────────────────────────────
+# The first version coerced a non-numeric count to 0, so a GitHub API blip produced
+# `missing-link` and told the author their linked PR had no link. That happened for real:
+# #499 links #498, and during a run of 503s the check failed it with "closes no issue and
+# gives no reason" — false, and the kind of thing that teaches people to distrust a gate.
+# It still BLOCKS (a broken probe must never silently open the gate), but the claim it
+# makes is now true.
+_prlink_is "an undeterminable count is probe-failed, NOT missing-link" \
+  'fix(x): y' 'unknown' '' probe-failed
+_prlink_is "an empty count (partial API response) is probe-failed too" \
+  'fix(x): y' '' '' probe-failed
+# The escape hatch is read from the body and needs no API call, so it must still work
+# while the probe is down — blocking a PR that already carries its reason would be
+# gratuitous, and the check has everything it needs to say yes.
+_prlink_is "No-Issue: still exempts while the probe is down" \
+  'fix(x): y' 'unknown' 'No-Issue: found in one pass' exempt
+# A non-fix PR is out of scope whatever the probe did.
+_prlink_is "a non-fix PR stays not-gated while the probe is down" \
+  'feat(x): y' 'unknown' '' not-gated
+# Usage error is its own exit code (2), distinct from a policy violation (1), so a
+# workflow that miscalls the script reads as broken rather than as a failing PR.
+# Asserted inline rather than via check(), which is zsh-only and defined further down.
+"$PRLINK" 'only-one-arg' </dev/null >/dev/null 2>&1
+if [[ $? -eq 2 ]]; then
+  pass "ci-pr-link.sh exits 2 on usage error"
+else
+  fail "ci-pr-link.sh exits 2 on usage error"
+fi
 
 # ── F. core/ pre-commit guard (lib/bootstrap-lib.sh blib_install_core_guard) ───
 # The guard hook (installed by sync-core.sh on every fan-out, and by a bootstrap on a
@@ -2165,6 +2384,55 @@ if have git; then
     pass "link run: a second pass is a true no-op (same inodes, no backups, rc=0)"
   else
     fail "link run: re-running bootstrap churned links, backed a file up, or failed (rc=$_lr_rc)"
+  fi
+
+  # A FAILED tpm clone must read as a failure. It used to be announced with blib_say —
+  # blue `::` on STDOUT, the identical shape to the "cloning tpm" progress line above —
+  # with git's error discarded by `>/dev/null 2>&1`. Behind a proxy that left tmux with no
+  # plugin manager, nothing in the log to notice, and an empty tally, so an adopting
+  # bootstrap could not tell a degraded box from a good one.
+  #
+  # Hermetic and OFFLINE: GIT_ALLOW_PROTOCOL=file makes git refuse the https transport, so
+  # the clone fails deterministically without depending on the remote being unreachable
+  # (or reachable). $config is fresh, so the clone is genuinely attempted.
+  TF="$SANDBOX/tpmfail"
+  rm -rf "$TF"
+  mkdir -p "$TF/home" "$TF/config"
+  HOME="$TF/home" XDG_CONFIG_HOME="$TF/config" GIT_ALLOW_PROTOCOL=file \
+    BLIB_ONLY="tmux" BLIB_SKIP="" bash -c '
+      set -u
+      . "'"$HERE/lib/bootstrap-lib.sh"'"
+      blib_link_core "'"$LR/dotfiles"'" "'"$TF/config"'"
+      printf "TALLY=%s\n" "$(blib_failed_count)"
+    ' >"$TF/out" 2>"$TF/err"
+  if grep -q "tpm clone failed" "$TF/err"; then
+    pass "tpm clone failure warns on STDERR"
+  else
+    fail "tpm clone failure did not reach stderr"
+  fi
+  # The regression itself: the message must not be on stdout, where blib_say put it.
+  if grep -q "tpm clone failed" "$TF/out"; then
+    fail "tpm clone failure is on STDOUT (blib_say regression — it must use blib_note_fail)"
+  else
+    pass "tpm clone failure is NOT on stdout (no longer a blib_say status line)"
+  fi
+  # Recorded, so blib_failures_report / a caller's --strict can act on it downstream.
+  if grep -q "^TALLY=[1-9]" "$TF/out"; then
+    pass "tpm clone failure lands in the blib_note_fail tally"
+  else
+    fail "tpm clone failure was not recorded in the tally"
+  fi
+  # git's own error is the whole diagnosis (DNS, proxy, TLS, rate limit) and used to be
+  # thrown away. Assert the indented passthrough, not git's wording, which varies.
+  #
+  # `[^[:space:]]` is load-bearing, not decoration: an EMPTY capture still produces an
+  # indented line, because `printf '%s\n' ""` emits one empty line and sed indents it to
+  # four spaces. A bare `^    ` therefore passed whether or not anything was captured —
+  # exactly the regression this is here to catch. Require real content after the indent.
+  if grep -q '^    [^[:space:]]' "$TF/err"; then
+    pass "tpm clone failure surfaces git's own error, indented under it"
+  else
+    fail "tpm clone failure discarded git's error output"
   fi
 else
   skip "bootstrap link run (git unavailable)"
@@ -7377,7 +7645,28 @@ case "$_ka_out" in */empty) pass "blib_sudo_keepalive_stop clears the pid and is
 # between orphans the new sleeper). Only a job spec is set by the fork AND cleared by the
 # reap. This is a STRUCTURAL gate because the failure needs a 50s iteration boundary plus a
 # pid wrap to observe — unreachable in a suite, which is exactly why it needs pinning.
-_ka_trap="$(sed -n "/^ *trap .*TERM$/p" "$HERE/lib/bootstrap-lib.sh")"
+_ka_trap_want="trap 'kill %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM"
+# ONE matcher, used for BOTH the extraction and the count. Two matchers could disagree,
+# and a gate whose two halves disagree is the failure this whole change is about.
+#
+# It recognises TERM ANYWHERE in the signal operand list, not only as the final token. The
+# first version anchored on `.*TERM$`, which made a second handler invisible:
+#     trap 'exit 0' TERM INT   -> not matched (TERM is not last)
+#     trap 'exit 0' 15         -> not matched (numeric spelling)
+# Bash gives a signal to the MOST RECENT trap, so either line added later would replace the
+# keepalive's TERM behaviour while this gate still counted one handler, still saw the safe
+# line, and still passed. That is a matcher asserting less than it appears to — precisely
+# the defect this change exists to remove, sitting inside the fix for it.
+#
+# Anchoring the signal list AFTER the quoted handler is what keeps it honest in the other
+# direction too: `trap 'echo TERM' INT` mentions TERM in the COMMAND and is correctly
+# ignored, where a bare `.*TERM` would have matched it.
+_ka_trap_re="^[[:space:]]*trap[[:space:]]+('[^']*'|\"[^\"]*\")[[:space:]]+([A-Za-z0-9]+[[:space:]]+)*(TERM|SIGTERM|15)([[:space:]]|\$)"
+_ka_trap="$(grep -E "$_ka_trap_re" "$HERE/lib/bootstrap-lib.sh" 2>/dev/null)"
+_ka_trap="${_ka_trap#"${_ka_trap%%[![:space:]]*}"}" # ltrim indentation, keep the statement
+# Exactly one TERM handler is expected. If a second is ever added the equality below would
+# compare a two-line string and red for a confusing reason, so say the real one out loud.
+_ka_trap_n="$(grep -cE "$_ka_trap_re" "$HERE/lib/bootstrap-lib.sh" 2>/dev/null || echo 0)"
 # REQUIRE the job spec, do not merely reject the pid spellings. A blacklist passes anything
 # it did not think of — `trap 'exit 0' TERM` names no pid, sails through, and silently
 # restores the orphan leak; so does a differently-named pid variable. Demand both halves
@@ -7385,18 +7674,47 @@ _ka_trap="$(sed -n "/^ *trap .*TERM$/p" "$HERE/lib/bootstrap-lib.sh")"
 # keep the pid rejection, so the two failure modes are covered from both directions.
 if [[ -z "$_ka_trap" ]]; then
   fail "keepalive: no TERM handler found in lib/bootstrap-lib.sh — the reaping gate cannot check anything"
+elif [[ "$_ka_trap_n" != 1 ]]; then
+  fail "keepalive: expected exactly one TERM handler in lib/bootstrap-lib.sh, found $_ka_trap_n — this gate assumes the keepalive owns the only one"
 elif [[ "$_ka_trap" == *'$!'* || "$_ka_trap" == *'_sleeper'* ]]; then
   fail "keepalive: the TERM handler targets a pid, not a job — \$! survives the reap and can signal a recycled pid: $_ka_trap"
-elif [[ "$_ka_trap" != *'kill %%'*'wait %%'*exit* ]]; then
-  # ONE ORDERED pattern, not three independent substring tests. Testing membership
-  # separately says nothing about sequence or reachability, so it accepted
-  # `trap 'exit 0; kill %%; wait %%' TERM` — where both cleanup commands sit after the
-  # exit and never run — and a wait-before-kill handler, which blocks on a sleeper it
-  # has not signalled. Requiring kill THEN wait THEN exit rejects both by construction.
-  fail "keepalive: the TERM handler is not 'kill %% … wait %% … exit' in that order — it must signal the sleeper, reap it, and only then exit: $_ka_trap"
+elif [[ "$_ka_trap" != "$_ka_trap_want" ]]; then
+  # WHOLE-HANDLER equality, not a pattern. Each looser form let something through, because
+  # a wildcard between two command names asserts nothing about what sits in the gap:
+  #   membership   accepted `exit 0; kill %%; wait %%`   (cleanup after the exit, dead code)
+  #   ordered glob accepted `kill %%; exit 0; wait %%; exit 0` (reaps after exiting) and
+  #                         `kill %%; wait %% & exit 0`  (reap backgrounded — not synchronous)
+  # The production handler has exactly one safe form, so compare against it verbatim. A
+  # deliberate change to it must update this expectation in the same commit — which is the
+  # point: this gate exists because the failure needs a 50s boundary plus a pid wrap to
+  # observe at runtime, so review is the only place it can be caught.
+  fail "keepalive: the TERM handler is not the expected form.
+    want: $_ka_trap_want
+    got:  $_ka_trap"
 else
   pass "keepalive: the TERM handler kills AND waits the job (%%), so it cannot leak or signal a recycled pid"
 fi
+
+# The matcher above is the gate's blind-spot surface: anything it cannot SEE is a handler
+# that can replace the keepalive's TERM behaviour while the count stays 1 and the equality
+# still compares the safe line. Bash gives a signal to the most recent trap, so an
+# invisible second handler wins silently. Pin what it must see and what it must not, or
+# the anchor can quietly narrow again (it did: `.*TERM$` missed both forms below).
+_ka_re_is() { # _ka_re_is <label> <candidate-line> <want:0|1>
+  local n
+  n="$(printf '%s\n' "$2" | grep -cE "$_ka_trap_re")"
+  if [[ "$n" == "$3" ]]; then pass "trap matcher: $1"; else fail "trap matcher: $1 (matched=$n want=$3)"; fi
+}
+_ka_re_is "sees the shipped handler" "    trap 'kill %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM" 1
+_ka_re_is "sees TERM when it is NOT the last operand" "    trap 'exit 0' TERM INT" 1
+_ka_re_is "sees TERM after another signal" "    trap 'exit 0' INT TERM" 1
+_ka_re_is "sees the SIGTERM spelling" "    trap 'exit 0' SIGTERM" 1
+_ka_re_is "sees the numeric spelling (15)" "    trap 'exit 0' 15" 1
+_ka_re_is "sees a double-quoted handler" '    trap "exit 0" TERM' 1
+# The other direction: it must not fire on traps that do not take TERM, or the gate reds on
+# unrelated edits and someone deletes it.
+_ka_re_is "ignores a trap that does not take TERM" "    trap 'exit 0' HUP INT" 0
+_ka_re_is "ignores TERM appearing inside the COMMAND, not the signal list" "    trap 'echo TERM' INT" 0
 
 # ── blib_set_login_shell must never abort a completed wiring ─────────────────
 # It runs at the very END of wire_links, so a failure here would discard an otherwise
@@ -7425,6 +7743,35 @@ _ls_msg="$( PATH="$_ls_bin:/usr/bin:/bin" BLIB_SU="" BLIB_DRY=0 BLIB_ONLY="" BLI
 # not the chsh branch ever ran.
 case "$_ls_msg" in *"could not add"*) pass "blib_set_login_shell warns when the /etc/shells append fails" ;; *) fail "blib_set_login_shell swallowed the /etc/shells failure (got: $_ls_msg)" ;; esac
 case "$_ls_msg" in *"chsh failed"*) pass "blib_set_login_shell warns when chsh fails, naming the manual fallback" ;; *) fail "blib_set_login_shell swallowed the chsh failure (got: $_ls_msg)" ;; esac
+
+# The OTHER no-op outcome: chsh is absent entirely (a distro without `shadow`). The login
+# shell is just as unchanged as in the failure branch above, but this one announced itself
+# with blib_say — blue `::` on STDOUT — so it read as a status line rather than a problem.
+# The block above cannot cover it: its shim PATH always contains a chsh, and it merges
+# stdout into stderr with 2>&1, so it could neither reach this branch nor tell the streams
+# apart if it did. Hence a separate fixture, with the streams kept SEPARATE.
+#
+# PATH is the bindir ALONE — adding /usr/bin:/bin would find the system chsh and silently
+# test the wrong branch. So every binary the function reaches for is shimmed or linked in.
+_lsn_bin="$(mktemp -d "$SANDBOX/lsnbin.XXXXXX")"
+printf '#!/bin/sh\nexit 0\n' >"$_lsn_bin/zsh"; chmod +x "$_lsn_bin/zsh"
+printf '#!/bin/sh\necho "u:x:1:1::/home/u:/bin/sh"\n' >"$_lsn_bin/getent"; chmod +x "$_lsn_bin/getent"
+# grep exits 0 = "$zsh_path is already listed in /etc/shells", so the privileged tee append
+# is skipped and this stays a pure no-privilege test.
+printf '#!/bin/sh\nexit 0\n' >"$_lsn_bin/grep"; chmod +x "$_lsn_bin/grep"
+for _b in id cut awk printf; do [[ -x "$_lsn_bin/$_b" ]] || ln -sf "$(command -v "$_b")" "$_lsn_bin/$_b" 2>/dev/null; done
+PATH="$_lsn_bin" BLIB_SU="" BLIB_DRY=0 BLIB_ONLY="" BLIB_SKIP="" \
+  blib_set_login_shell >"$SANDBOX/lsn.out" 2>"$SANDBOX/lsn.err" || true
+if grep -q "chsh not found" "$SANDBOX/lsn.err"; then
+  pass "blib_set_login_shell warns on STDERR when chsh is absent"
+else
+  fail "blib_set_login_shell did not warn on stderr when chsh is absent (got: $(tr '\n' ' ' <"$SANDBOX/lsn.err"))"
+fi
+if grep -q "chsh not found" "$SANDBOX/lsn.out"; then
+  fail "'chsh not found' is on STDOUT (blib_say regression — the shell was NOT changed, it must warn)"
+else
+  pass "'chsh not found' is NOT on stdout (no longer a blib_say status line)"
+fi
 
 # ── summary ───────────────────────────────────────────────────────────────────
 summary

@@ -5,6 +5,20 @@
 
 <!-- One or two lines. What changed in the Core layer, and why. -->
 
+## Linked issue
+
+<!-- A `fix(…)` PR must close an issue or say why it doesn't — pr-link-check enforces
+     this. Use a CLOSING KEYWORD below (closes/fixes/resolves); "Refs #420" reads like
+     a link but closes nothing, so the issue would stay open after merge.
+
+       Closes #420
+
+     No issue behind it? Replace the line above with a reason, e.g.
+
+       No-Issue: found and fixed in one pass, never filed
+
+     Editing this body re-runs the check. -->
+
 ## Is it actually Core?
 
 - [ ] Identical on every machine — **not** OS-specific (pkg manager, paths, clipboard → the OS repo)

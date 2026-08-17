@@ -73,6 +73,13 @@
 # ──────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
+# For _audit_ls — this backstop inventories module FILES and reads their contents, so it
+# must see untracked ones (see the rule in common.sh); a brand-new lua module that nothing
+# requires is an orphan whether or not git has met it yet. Sourced BEFORE the `cd "$ROOT"`
+# below, while BASH_SOURCE still resolves against the invocation directory.
+# shellcheck source=scripts/lib/common.sh
+source "${BASH_SOURCE[0]%/*}/lib/common.sh"
+
 ROOT="."
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -138,7 +145,7 @@ srv_init=nvim/lua/gerrrt/servers/init.lua
 #
 # None of this is visible to `bash -n` on a modern bash, to shellcheck, or to the ubuntu,
 # Alpine and Arch legs. The macos leg is the only thing that catches it.
-mods="$(git ls-files 'nvim/lua/gerrrt/*.lua' 2>/dev/null | while IFS= read -r f; do
+mods="$(_audit_ls 'nvim/lua/gerrrt/*.lua' | while IFS= read -r f; do
   [ -n "$f" ] || continue
   rel="${f#nvim/lua/gerrrt/}"
   base="${rel%.lua}"
@@ -163,7 +170,7 @@ while IFS= read -r f; do
       rc=1 ;;
   esac
 done <<EOF
-$(git ls-files 'nvim/lua/gerrrt/*.lua' 2>/dev/null)
+$(_audit_ls 'nvim/lua/gerrrt/*.lua')
 EOF
 
 # Two files claiming one module name: lua loads exactly one of them (package.path order),
