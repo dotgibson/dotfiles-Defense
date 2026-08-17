@@ -1913,6 +1913,129 @@ if ((_sc_subtree)); then
     fail "sync-core: the fan-out stopped at the first dirty repo"
   fi
   rm -f "$SCF/repos/dotfiles-Test/dirty.txt"
+
+  # --- the THIRD Core reference: reusable-workflow SHA pins (#482) -------------
+  # A repo names the vendored Core in three places — the core/ subtree, core.lock, and the
+  # `uses:` pins of any SHA-pinned reusable caller. The sync wrote two and left the third,
+  # so a fan-out produced a tree that VENDORED one Core and RAN another, with both existing
+  # gates green (core-integrity checks the tree object, verify-core the split; neither reads
+  # a workflow). It reached production on the v4.12.0 fan-out and only surfaced because
+  # dotfiles-MacBook had built its own pin gate.
+  #
+  # Tag the fixture Core first: the comment rewrite is driven by core.lock's core_tag, so
+  # without a tag that half of the contract would go untested (and core_tag untested too).
+  _scg "$SCF/coreremote" tag -f v9.9.9 >/dev/null 2>&1
+  _scg "$SCF/core" fetch -q --tags origin >/dev/null 2>&1
+  _sc_remote_sha="$(_scg "$SCF/coreremote" rev-parse main)"
+  _sc_oldsha=0123456789abcdef0123456789abcdef01234567
+  _sc_wf="$SCF/repos/dotfiles-Test/.github/workflows"
+  mkdir -p "$_sc_wf"
+  # Four shapes: the first two must move, the last two must NOT.
+  printf 'jobs:\n  t:\n    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@%s # v9.0.0\n' \
+    "$_sc_oldsha" >"$_sc_wf/pinned-with-comment.yml"
+  printf 'jobs:\n  n:\n    uses: dotgibson/dotfiles-core/.github/workflows/notify-web-call.yml@%s\n' \
+    "$_sc_oldsha" >"$_sc_wf/pinned-no-comment.yml"
+  printf 'jobs:\n  l:\n    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v4\n' \
+    >"$_sc_wf/mutable-alias.yml"
+  printf 'jobs:\n  c:\n    uses: actions/checkout@%s # v4.2.2\n' \
+    "$_sc_oldsha" >"$_sc_wf/third-party.yml"
+  # ...and the nastier variant: a NON-Core reference already sitting at the exact sha we
+  # are syncing to. A third-party action can be pinned there by coincidence and a FORK of
+  # this repo by construction. The sha pass is scoped to the dotgibson/dotfiles-core
+  # prefix, so it never moved these — but the comment pass was addressed on the bare sha
+  # and rewrote their `# vX.Y.Z` to our tag, falsifying a version claim on someone else's
+  # action. Two files: neither prefix matches, and their comments must survive verbatim.
+  printf 'jobs:\n  s:\n    uses: someorg/someaction@%s # v1.2.3\n' \
+    "$_sc_remote_sha" >"$_sc_wf/third-party-same-sha.yml"
+  printf 'jobs:\n  k:\n    uses: someonelse/dotfiles-core/.github/workflows/lint-call.yml@%s # v9.0.0\n' \
+    "$_sc_remote_sha" >"$_sc_wf/forked-core.yml"
+  _scg "$SCF/repos/dotfiles-Test" add -A
+  _scg "$SCF/repos/dotfiles-Test" commit -q -m "ci: pinned callers"
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+
+  if grep -q "@${_sc_remote_sha} # v9.9.9\$" "$_sc_wf/pinned-with-comment.yml"; then
+    pass "sync-core: a SHA-pinned caller is repointed at the vendored Core, comment and all"
+  else
+    fail "sync-core: pinned caller not repointed ($(grep -o '@[^ ]*.*' "$_sc_wf/pinned-with-comment.yml"))"
+  fi
+  # No comment in, no comment out: inventing one would hand Renovate a version claim the
+  # repo never made.
+  if grep -q "@${_sc_remote_sha}\$" "$_sc_wf/pinned-no-comment.yml"; then
+    pass "sync-core: a pin with no version comment gets the sha moved and no comment invented"
+  else
+    fail "sync-core: comment-less pin mishandled ($(cat "$_sc_wf/pinned-no-comment.yml"))"
+  fi
+  # The two must-not-touch cases. `@v4` is a deliberate per-repo policy (7 of 9 repos take
+  # the moving alias); converting it to a SHA pin would change that repo's update model
+  # behind its back. And a third-party action pinned to a sha with a `# vX.Y.Z` comment has
+  # exactly the shape of our own pins — rewriting it would point actions/checkout at a
+  # dotfiles-core commit, which is the worst outcome in this whole block.
+  if grep -q '@v4$' "$_sc_wf/mutable-alias.yml"; then
+    pass "sync-core: a caller on the mutable @v4 alias is left alone (policy is the repo's)"
+  else
+    fail "sync-core: the @v4 alias was rewritten into a SHA pin"
+  fi
+  if grep -q "actions/checkout@${_sc_oldsha} # v4.2.2\$" "$_sc_wf/third-party.yml"; then
+    pass "sync-core: a third-party action pinned in the same shape is untouched"
+  else
+    fail "sync-core: a non-dotfiles-core action was rewritten ($(cat "$_sc_wf/third-party.yml"))"
+  fi
+  # The case the first version of this fixture missed: pinning the OLD sha made every
+  # non-Core file trivially out of scope, so a comment pass addressed on the bare sha
+  # looked correct. These two sit at the sha being synced TO.
+  if grep -q "someorg/someaction@${_sc_remote_sha} # v1.2.3\$" "$_sc_wf/third-party-same-sha.yml" &&
+    grep -q "someonelse/dotfiles-core/.github/workflows/lint-call.yml@${_sc_remote_sha} # v9.0.0\$" "$_sc_wf/forked-core.yml"; then
+    pass "sync-core: a third-party action and a FORK already at the synced sha keep their own version comments"
+  else
+    fail "sync-core: a non-Core reference at the synced sha had its version comment rewritten"
+  fi
+  # The pins must land in the SAME commit as core.lock: landing them apart leaves a window
+  # where the repo's own pin gate is red on main.
+  if [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" != "$_sc_head_before" ]] &&
+    [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]] &&
+    _scg "$SCF/repos/dotfiles-Test" show --stat --oneline HEAD | grep -q 'core.lock' &&
+    _scg "$SCF/repos/dotfiles-Test" show --stat --oneline HEAD | grep -q 'pinned-with-comment.yml'; then
+    pass "sync-core: pins and core.lock land in ONE commit, leaving the tree clean"
+  else
+    fail "sync-core: pins/core.lock were not committed together (or left the tree dirty)"
+  fi
+  # The regression the staged-wide check exists for: core.lock is now current, so a
+  # core.lock-scoped idempotency test would report "current" and silently skip a stale pin.
+  sed -i.bak "s|@${_sc_remote_sha}|@${_sc_oldsha}|" "$_sc_wf/pinned-with-comment.yml"
+  rm -f "$_sc_wf/pinned-with-comment.yml.bak"
+  _scg "$SCF/repos/dotfiles-Test" commit -q -a -m "ci: regress the pin"
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  if grep -q "@${_sc_remote_sha} # v9.9.9\$" "$_sc_wf/pinned-with-comment.yml"; then
+    pass "sync-core: a stale pin is fixed even when core.lock is already current"
+  else
+    fail "sync-core: stale pin left behind because core.lock needed no change"
+  fi
+  # ...and re-syncing an already-correct repo still manufactures nothing.
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+  if [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]]; then
+    pass "sync-core: a repo whose pins and core.lock are both current gets no empty commit"
+  else
+    fail "sync-core: an already-correct repo still produced a commit"
+  fi
+  # A rewrite that CANNOT run must fail the repo, not read as "no pins here". Swallowed,
+  # it would let the run commit core.lock and report the repo synced while a caller still
+  # pointed at the previous Core — this fix's own error path recreating the drift it
+  # exists to end. Root ignores the mode bits, so the CI legs that run as root skip it
+  # rather than assert a property they cannot create.
+  if [[ "$(id -u)" -ne 0 ]]; then
+    chmod a-w "$_sc_wf"
+    _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+    chmod u+w "$_sc_wf"
+    if grep -q 'pin rewrite failed' <<<"$_sc_out" && grep -qE 'failed 1' <<<"$_sc_out"; then
+      pass "sync-core: an unwritable workflow fails the repo instead of reading as 'no pins'"
+    else
+      fail "sync-core: a pin-rewrite failure was swallowed (want the named file and failed 1)"
+    fi
+  else
+    skip "sync-core: unwritable-workflow case (suite is running as root)"
+  fi
 else
   skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
 fi
@@ -2045,6 +2168,99 @@ if have git; then
   fi
 else
   skip "bootstrap link run (git unavailable)"
+fi
+
+# ── F8. blib_link displacement accounting (lib/bootstrap-lib.sh) ─────────────
+# blib_link is reached above only THROUGH blib_link_core, and no test asserted a BLIB_*
+# value at all — which is how #430 survived: a real file at $dst was moved to
+# .pre-dotfiles.<epoch> and counted, while a symlink pointing SOMEWHERE ELSE was rm -f'd
+# with no record of its target, no counter, and nothing in the run summary. The repos
+# being wired are symlink farms, so that was the common case, not the rare one.
+#
+# These pin the contract both directions: a displaced link is logged + counted as
+# RELINKED (never as backed up — that word promises a restorable file on disk), a
+# displaced file still backs up, and an already-correct link stays silent so a plain
+# re-run of bootstrap.sh prints no relink noise.
+hdr "blib_link displacement accounting (relink is recorded, not silent)"
+_bl="$(mktemp -d "$SANDBOX/blink.XXXXXX")"
+printf 'REAL\n' >"$_bl/src"
+printf 'OTHER\n' >"$_bl/other"
+
+# The lib's `_CORE_BOOTSTRAP_LIB_SH` re-entry guard makes a re-`source` a no-op, so the
+# counters cannot be observed from a subshell here — sections F/G already sourced it at
+# file scope. Drive a fresh `bash -c` instead, exactly as the link run above does, so the
+# tallies are genuinely read from 0. Prints the run's output, then `--`, then the four.
+_bl_run() { # <dry> <src> <dst>
+  BLIB_DRY="$1" bash -c '
+    set -u
+    . "'"$HERE/lib/bootstrap-lib.sh"'"
+    blib_link "$1" "$2"
+    printf -- "--\n%s %s %s %s\n" "$BLIB_LINKED" "$BLIB_BACKED" "$BLIB_RELINKED" "$BLIB_SKIPPED"
+  ' _ "$2" "$3" 2>&1
+}
+_bl_tally() { printf '%s' "${1##*$'--\n'}" | tr -d '\n'; } # the line after the -- marker
+
+# 1) a symlink pointing ELSEWHERE: repointed, its old target NAMED, counted as relinked
+#    and NOT as backed up, and no stray .pre-dotfiles.* left behind.
+ln -sfn "$_bl/other" "$_bl/dst1"
+_bl_out="$(_bl_run 0 "$_bl/src" "$_bl/dst1")"
+if [[ "$_bl_out" == *"relinking"*"$_bl/other"* ]] && [[ "$(_bl_tally "$_bl_out")" == "1 0 1 0" ]] &&
+  [[ "$(readlink "$_bl/dst1")" == "$_bl/src" ]] &&
+  [[ -z "$(find "$_bl" -name 'dst1.pre-dotfiles.*')" ]]; then
+  pass "blib_link: a displaced symlink is repointed, its old target named, counted relinked"
+else
+  fail "blib_link: displaced symlink lost its target or was miscounted (got: $_bl_out)"
+fi
+
+# 2) a real file still takes the OTHER path — moved aside with its content intact, counted
+#    as backed up and NOT as relinked. The two tallies must not bleed into each other.
+printf 'MINE\n' >"$_bl/dst2"
+_bl_out="$(_bl_run 0 "$_bl/src" "$_bl/dst2")"
+_bl_bak="$(find "$_bl" -name 'dst2.pre-dotfiles.*' | head -1)"
+if [[ "$(_bl_tally "$_bl_out")" == "1 1 0 0" ]] && [[ -n "$_bl_bak" ]] &&
+  [[ "$(cat "$_bl_bak")" == "MINE" ]] && [[ "$(readlink "$_bl/dst2")" == "$_bl/src" ]]; then
+  pass "blib_link: a displaced real file still backs up (content intact), counted backed up"
+else
+  fail "blib_link: real-file backup regressed or leaked into the relink tally (got: $_bl_out)"
+fi
+
+# 3) BLIB_DRY previews the displacement instead of hiding it. "would relink: $dst" alone
+#    reads as *repoint*; a reader has to be told what is about to go, and the fixture must
+#    come through untouched.
+ln -sfn "$_bl/other" "$_bl/dst3"
+_bl_out="$(_bl_run 1 "$_bl/src" "$_bl/dst3")"
+if [[ "$_bl_out" == *"would relink"* ]] && [[ "$_bl_out" == *"currently -> $_bl/other"* ]] &&
+  [[ "$(readlink "$_bl/dst3")" == "$_bl/other" ]] && [[ "$(_bl_tally "$_bl_out")" == "1 0 1 0" ]]; then
+  pass "blib_link: BLIB_DRY=1 names what it would displace and mutates nothing"
+else
+  fail "blib_link: dry-run plan hides the displaced target or mutated the fixture (got: $_bl_out)"
+fi
+
+# 4) the already-correct link is still a silent no-op. bootstrap.sh is re-run after every
+#    sync, so a relink notice here would fire on every path on every run and mean nothing.
+ln -sfn "$_bl/src" "$_bl/dst4"
+_bl_out="$(_bl_run 0 "$_bl/src" "$_bl/dst4")"
+if [[ "$(_bl_tally "$_bl_out")" == "1 0 0 0" ]] && [[ "$_bl_out" != *"relink"* ]]; then
+  pass "blib_link: an already-correct link stays a silent no-op (no relink noise on re-run)"
+else
+  fail "blib_link: a correct link was counted or announced as a relink (got: $_bl_out)"
+fi
+
+# 5) the summary carries it. The counter only matters if the run's footer reports it —
+#    that footer is what an OS repo's bootstrap prints, and it is the only place a user
+#    who scrolled past the per-link lines can still see that something was displaced.
+_bl_sum="$(bash -c '
+  set -u
+  . "'"$HERE/lib/bootstrap-lib.sh"'"
+  ln -sfn "$2" "$3"; ln -sfn "$2" "$4"
+  blib_link "$1" "$3" >/dev/null 2>&1
+  blib_link "$1" "$4" >/dev/null 2>&1
+  blib_wire_summary
+' _ "$_bl/src" "$_bl/other" "$_bl/dst5" "$_bl/dst6" 2>&1)"
+if [[ "$_bl_sum" == *"2 relinked"* ]]; then
+  pass "blib_wire_summary: displaced links are reported in the run footer"
+else
+  fail "blib_wire_summary: the footer omits the relink tally (got: $_bl_sum)"
 fi
 
 # ── F9. tag-release.sh — the tag may only exist on a commit that is on main ──

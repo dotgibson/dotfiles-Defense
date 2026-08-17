@@ -225,6 +225,89 @@ if ((!DRY)) && ((SYNC_JOBS > 1)) && [[ "$CORE_SHA" != unknown ]]; then
   echo
 fi
 
+# ── the THIRD reference to a Core commit: the reusable-workflow SHA pins ──────────────
+# An OS repo names the vendored Core in three places — the core/ subtree, core.lock's
+# core_sha, and (in any repo that SHA-pins its reusable callers) the `uses:` pins. This
+# script wrote the first two and left the third, so a fan-out into a pinned repo produced
+# a tree that VENDORED one Core and RAN another. Not cosmetic: auto-tag-call holds
+# `contents: write` and notify-web-call is handed two secrets, so the pins decide whose
+# privileged code executes. Both existing gates stay green through it — core-integrity
+# checks the tree object and verify-core the byte-for-byte split, and neither looks at a
+# workflow — so the drift was silent until dotfiles-MacBook's test/check-pins.sh caught it
+# on the v4.12.0 fan-out (#482).
+#
+# Only an EXISTING 40-hex pin is moved. A caller on the mutable `@v4` alias is left alone:
+# tracking the alias is a deliberate per-repo policy (7 of the 9 repos choose it, and the
+# alias is what makes a guard fix reach them without an edit), so silently converting one
+# into a SHA pin would change that repo's update model behind its back. Converting the
+# other way is equally out of scope.
+#
+# The trailing `# vX.Y.Z` moves with the SHA. Renovate reads that comment to choose the
+# next bump, and check-pins.sh compares it against core.lock's core_tag INDEPENDENTLY of
+# the SHA — so rewriting one without the other just trades a red gate for a different red
+# gate. It is written as core_tag verbatim (`git describe` output, which may be
+# v4.12.0-5-gabc1234 off a tag) precisely so the two agree by construction.
+#
+# Portable-sed shape: write to a temp and mv, never `sed -i` (BSD wants an arg, GNU does
+# not). Idempotent by construction — an unchanged file is cmp-identical and left alone, so
+# a re-sync of the same Core stages nothing.
+_sync_pin_workflows() { # <repo-path> <full-sha> <tag> → prints how many files it changed
+  local path="$1" sha="$2" tag="$3" f tmp changed=0 rc=0
+  [[ -d "$path/.github/workflows" ]] || { printf 0; return 0; }
+  for f in "$path"/.github/workflows/*.yml "$path"/.github/workflows/*.yaml; do
+    [[ -f "$f" ]] || continue # unmatched glob stays literal (nullglob is off)
+    tmp="$f.sync.tmp"
+    # EVERY failure below is reported and fails the repo, never swallowed. Treating an
+    # unreadable or unwritable workflow as "no pins here" would let the caller commit the
+    # new core.lock and report the repo synced while a caller still pointed at the previous
+    # Core — the exact silent drift this function exists to end, reintroduced through its
+    # own error path. The file is named on stderr; the caller turns the non-zero return
+    # into an err() (this runs in a command substitution, so an err() in here would have
+    # its FAIL increment discarded with the subshell).
+    if ! sed -E "s|(dotgibson/dotfiles-core/\.github/workflows/[^@[:space:]]+@)[0-9a-f]{40}|\1${sha}|g" \
+      "$f" >"$tmp" 2>/dev/null; then
+      rm -f "$tmp"
+      printf 'pin rewrite failed (could not read or write): %s\n' "$f" >&2
+      rc=1
+      continue
+    fi
+    # Refresh the version comment only on the lines that now carry OUR sha, so a line
+    # left on `@v4` above keeps whatever comment it had. A failure here is NOT recoverable
+    # by keeping the sha-only rewrite: that lands a pin whose comment still names the old
+    # release, which a pin check reds independently of the sha. Discard and report.
+    #
+    # The address carries the SAME dotgibson/dotfiles-core prefix as the sha pass above,
+    # not a bare /@${sha}/. Matching on the sha alone reached any line that happened to
+    # contain it — a third-party action pinned at the same commit, or a FORK of this repo
+    # — and rewrote its `# vX.Y.Z` to our tag, silently falsifying a version claim on
+    # somebody else's action while the sha (correctly prefix-scoped) stayed put. The
+    # `\%…%` form picks % as the address delimiter so the slashes in the path need no
+    # escaping; it is POSIX and works on both BSD and GNU sed.
+    if [[ -n "$tag" ]]; then
+      if sed -E "\%dotgibson/dotfiles-core/\.github/workflows/[^@[:space:]]+@${sha}% s|(#[[:space:]]*)v[0-9][^[:space:]]*|\1${tag}|" \
+        "$tmp" >"$tmp.2" 2>/dev/null && mv "$tmp.2" "$tmp"; then
+        : # comment pass landed
+      else
+        rm -f "$tmp.2" "$tmp"
+        printf 'pin comment rewrite failed: %s\n' "$f" >&2
+        rc=1
+        continue
+      fi
+    fi
+    if cmp -s "$f" "$tmp"; then
+      rm -f "$tmp"
+    elif mv "$tmp" "$f"; then
+      changed=$((changed + 1))
+    else
+      rm -f "$tmp"
+      printf 'pin rewrite could not replace: %s\n' "$f" >&2
+      rc=1
+    fi
+  done
+  printf '%s' "$changed"
+  return "$rc"
+}
+
 # Per-REPO tally for the summary footer. The line-level PASS/SKIP/FAIL counters from
 # common.sh count function calls, not repos: the pre-flight audit ✓ plus two ok() per
 # healthy repo (subtree pull + core.lock) — so reporting $PASS as "updated" once claimed
@@ -282,13 +365,37 @@ for repo in "${TARGETS[@]}"; do
       # NEXT run — otherwise the dirty-tree guard above would see the uncommitted core.lock
       # and refuse to update this repo. Idempotent: a re-sync of the same SHA leaves
       # core.lock byte-identical, so there's nothing staged and we skip the commit.
+      # Move the workflow pins in the SAME commit that stamps core.lock: the two name the
+      # same Core, so landing them apart leaves a window where the repo's own pin gate is
+      # red on main. See the _sync_pin_workflows block above for why (#482).
+      # `|| _pinfail=1` rather than a bare assignment: `set -e` is on, so a non-zero from
+      # the command substitution would abort the whole fan-out mid-fleet. We want THIS repo
+      # marked failed and the remaining repos still attempted — the same shape the dirty-tree
+      # guard uses.
+      _pinfail=0
+      _pins="$(_sync_pin_workflows "$path" "$CORE_SHA_FULL" "$CORE_TAG")" || _pinfail=1
+      # core.lock is still committed below even on a pin failure: the subtree pull has
+      # already landed, so leaving it uncommitted would only add a dirty tree that self-blocks
+      # the next run on top of the drift. The err() is what makes it non-silent — it flips
+      # this repo into the failed bucket, so the run cannot end "updated 8" with a repo whose
+      # pins never moved.
+      ((_pinfail)) && err "$repo: a workflow pin could not be rewritten (named above) — core.lock will be ahead of its pins; re-run after fixing the file"
       git -C "$path" add core.lock
-      if git -C "$path" diff --cached --quiet -- core.lock; then
+      ((_pins)) && git -C "$path" add .github/workflows
+      # Staged-wide, not `-- core.lock`: a repo whose core.lock is already current but
+      # whose pins are stale (the state a fan-out predating this left behind) must still
+      # commit. Scoping the check to core.lock reported "current" and dropped the pin fix.
+      if git -C "$path" diff --cached --quiet; then
         ok "$repo core.lock current → ${CORE_SHA_FULL:0:12} (v$CORE_VERSION)"
-      elif git -C "$path" commit -q -m "chore(core): core.lock → ${CORE_SHA} (v$CORE_VERSION)"; then
-        ok "$repo core.lock committed → ${CORE_SHA_FULL:0:12} (v$CORE_VERSION)"
       else
-        err "$repo core.lock commit failed — commit it manually before re-running"
+        _lockmsg="chore(core): core.lock → ${CORE_SHA} (v$CORE_VERSION)"
+        ((_pins)) && _lockmsg="chore(core): core.lock + ${_pins} workflow pin(s) → ${CORE_SHA} (v$CORE_VERSION)"
+        if git -C "$path" commit -q -m "$_lockmsg"; then
+          ok "$repo core.lock committed → ${CORE_SHA_FULL:0:12} (v$CORE_VERSION)"
+          ((_pins)) && ok "$repo repointed ${_pins} workflow file(s) at ${CORE_SHA_FULL:0:12}${CORE_TAG:+ ($CORE_TAG)}"
+        else
+          err "$repo core.lock commit failed — commit it manually before re-running"
+        fi
       fi
     fi
     # (re)install the local core/ pre-commit guard so a later hand-edit of the vendored
