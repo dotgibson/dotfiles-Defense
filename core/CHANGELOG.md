@@ -13,6 +13,67 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.12.1] - 2026-08-16
+
+### Fixed
+
+- **`blib_link` deleted a displaced symlink with no record, while backing up a regular
+  file** ([#430](https://github.com/dotgibson/dotfiles-core/issues/430)). A real file at
+  the destination was moved to `<dst>.pre-dotfiles.<epoch>` and counted; a symlink was
+  `rm -f`'d — whatever it pointed at — with no backup, no counter, and nothing in the run
+  summary. The early return above that branch only skips an **already-correct** link, so
+  the delete was reached precisely when the link pointed somewhere else, which is the one
+  case worth recording.
+
+  Not the rare path, the common one: the repos being wired are symlink farms, so `$dst` is
+  far more often a symlink than a regular file. `dotfiles-Kali` and `dotfiles-Defense` are
+  designed to coexist as red/blue twins, and whichever bootstrapped second silently
+  discarded the other's links; a user migrating off a hand-rolled tree lost every record of
+  where their fragments used to point. `bootstrap.sh` is advertised as idempotent and safe
+  to re-run, and backup-on-clobber is what made that credible — the guarantee quietly did
+  not hold for the thing it actually encounters most.
+
+  A displaced link is now **printed with its old target** (`relinking <dst> (was -> …)`)
+  and counted in a new `BLIB_RELINKED` tally, and the dry-run says what it is about to
+  displace (`would relink: <dst> (currently -> …)`) instead of a bare "would relink", which
+  read as _repoint_ rather than _discard unrecorded_. Deliberately logged rather than moved
+  aside: backing a symlink up would leave one stray link per fragment per run in
+  `~/.config` — a role switch relinks nearly everything — and the counter is deliberately
+  **separate from `BLIB_BACKED`** rather than folded into it, because "backed up" promises a
+  restorable `.pre-dotfiles.*` file on disk and the OS repos' unlink/restore paths read
+  exactly those. `blib_wire_summary` therefore gains a field:
+  `N linked · M seeded · K backed up · R relinked · S skipped`. An already-correct link is
+  still a silent no-op, so a plain re-run prints no relink noise.
+
+- **The fan-out moved the tree and the lock, and left the pins pointing at the previous
+  Core** ([#482](https://github.com/dotgibson/dotfiles-core/issues/482)). An OS repo names
+  the vendored Core in three places — the `core/` subtree, `core.lock`'s `core_sha`, and,
+  in any repo that SHA-pins its reusable callers, the workflow `uses:` pins.
+  `sync-core.sh` wrote the first two and had no concept of the third, so a fan-out produced
+  a repo that **vendored one Core and ran another**.
+
+  Not cosmetic: `auto-tag-call` holds `contents: write` and pushes tags, `notify-web-call`
+  is handed two secrets. And the drift was silent by construction — `core-integrity`
+  compares a tree object and `verify-core` a byte-for-byte split, so both stay green while
+  a workflow points somewhere else entirely. It reached production on the v4.12.0 fan-out
+  and surfaced only because `dotfiles-MacBook` had just built its own pin gate; every other
+  repo takes the mutable `@v4` alias, which the release force-advances, so nothing else
+  showed a symptom.
+
+  The pins now move in the **same commit** that stamps `core.lock` (landing them apart
+  would leave a window where the repo's own gate is red on `main`). Two boundaries, both
+  tested: only an existing 40-hex pin moves — a caller on `@v4` is left alone, because
+  taking the alias is a deliberate per-repo policy and silently converting it to a SHA pin
+  would change that repo's update model behind its back — and the trailing `# vX.Y.Z` moves
+  with the SHA, since Renovate reads it and a pin check compares it against `core_tag`
+  independently, so rewriting one without the other only trades one red gate for another.
+  A third-party action pinned in the identical `@<sha> # <version>` shape is matched on the
+  `dotgibson/dotfiles-core/` prefix and skipped.
+
+  The idempotency check widened from `core.lock` to the whole staged set. Scoped to
+  `core.lock` it reported "current" and dropped the pin fix on exactly the repos a
+  pre-fix fan-out had already left stale.
+
 ## [v4.12.0] - 2026-08-16
 
 ### Added

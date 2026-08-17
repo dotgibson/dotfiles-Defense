@@ -40,9 +40,10 @@ core_branch=main
 core_tag=v4.10.0              # only once Core carries a tag describing that commit
 ```
 
-Written by `sync-core.sh` and committed as `chore(core): core.lock → <sha> (v<version>)`.
-It exists so the question "which Core is this box on?" is answerable **offline and in
-O(1)**, without parsing `git log` for the subtree-squash marker.
+Written by `sync-core.sh` and committed as `chore(core): core.lock → <sha> (v<version>)`
+— or `core.lock + N workflow pin(s) → …` when the repo SHA-pins its reusable callers (see
+below). It exists so the question "which Core is this box on?" is answerable **offline and
+in O(1)**, without parsing `git log` for the subtree-squash marker.
 
 Two consumers depend on it:
 
@@ -51,6 +52,38 @@ Two consumers depend on it:
   is the normal between-releases state and is reported as current, not drift.
 - **`core-integrity.sh`** resolves `core_sha` to a tree and compares it with your actual
   `core/`, which is how a hand-edit is detected.
+
+## The third reference: reusable-workflow SHA pins
+
+A repo names the vendored Core in **three** places, not two — and the third is the one that
+decides which Core's code actually _runs_:
+
+| Reference | What it is | Gated by |
+| --------- | ---------- | -------- |
+| the `core/` subtree | the vendored tree | `core-integrity` + `verify-core` |
+| `core.lock` `core_sha` | the provenance stamp | `verify-core` |
+| the workflow `uses:` pins | which reusable actually executes | the repo's own pin check, if it has one |
+
+The pins are not inert: `auto-tag-call` holds `contents: write` and pushes tags, and
+`notify-web-call` is handed two secrets. Running a different Core's version of those than
+the tree you vendored is the drift `core.lock` exists to prevent, one layer up — and it is
+invisible to both existing gates, which read a tree object and a split marker, never a
+workflow.
+
+`sync-core.sh` therefore moves the pins in the **same commit** that stamps `core.lock`. Two
+rules govern what it touches:
+
+- Only an **existing 40-hex pin** moves. A caller on the mutable `@v4` alias is left alone —
+  taking the alias is a deliberate per-repo policy (most of the fleet does, and it is what
+  lets a guard fix reach them with no edit), so converting one into a SHA pin would change
+  that repo's update model behind its back.
+- The trailing **`# vX.Y.Z` comment moves with the SHA**, written as `core_tag` verbatim.
+  Renovate reads that comment to pick the next bump, and a pin check compares it against
+  `core_tag` independently of the SHA, so moving one without the other just trades one red
+  gate for another.
+
+Nothing else is rewritten — a third-party action pinned in the identical
+`@<sha> # <version>` shape is matched on the `dotgibson/dotfiles-core/` prefix and skipped.
 
 **Do not pull the subtree by hand.** A raw `git subtree pull` updates `core/` but not
 `core.lock`, so `core-integrity.sh` compares your tree against a commit the lock no longer
