@@ -1,1 +1,0 @@
-{"Event": {"System": {"EventID": 10, "Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS01"}, "EventData": {"TargetImage": "C:\\Windows\\System32\\lsass.exe", "GrantedAccess": "0x1010", "SourceImage": "C:\\Temp\\mimikatz.exe"}}}

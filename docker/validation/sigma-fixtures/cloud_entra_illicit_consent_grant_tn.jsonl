@@ -1,1 +1,0 @@
-{"Event": {"System": {"Channel": "azure"}, "EventData": {"OperationName": "Consent to application", "TargetResources": "app 00000000-0000-0000-0000-000000000000 scope Mail.Read"}}}
