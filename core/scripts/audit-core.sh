@@ -64,8 +64,16 @@ SCOPE_NVIM=1
 # Shared palette + pass/skip/fail/hdr/have + _set_scope (one definition for every gate
 # script). Sourced HERE — before the arg loop below calls _set_scope — and after QUIET
 # is set so the lib's `: "${QUIET:=0}"` preserves it.
+#
+# Via the ALREADY-ABSOLUTE $HERE, not ${BASH_SOURCE[0]%/*}: line 48 has already cd'd,
+# while BASH_SOURCE stays relative to the caller's original directory, so the two
+# disagree the moment this script is invoked by a relative path from somewhere else.
+# `bash ../../repo/scripts/audit-core.sh` printed "lib/common.sh: No such file or
+# directory" and then carried on with every helper undefined. Pre-existing; found while
+# fixing the same shape in check-modern.sh, and fixed here rather than left as the one
+# copy of the bug the reader would trip over next.
 # shellcheck source=scripts/lib/common.sh
-source "${BASH_SOURCE[0]%/*}/lib/common.sh"
+source "$HERE/scripts/lib/common.sh"
 # Render the active scope as test-core.sh expects it (shell,nvim | shell | nvim | none).
 _scope_str() {
   local s=""
@@ -275,6 +283,7 @@ META_ALLOWLIST=(
 # subtree copy but is never symlinked.
 META_PREFIXES=(examples/ .github/ scripts/ .claude/ .devcontainer/ assets/)
 
+
 # ── 1. manifest <-> filesystem drift ─────────────────────────────────────────
 hdr "manifest ↔ filesystem"
 # Parse manifest: strip comments/blank lines, take the first whitespace token.
@@ -348,14 +357,14 @@ fi
 hdr "shell syntax (bash -n / zsh -n)"
 while IFS= read -r f; do
   if bash -n "$f" 2>/dev/null; then pass "bash -n $f"; else fail "bash syntax error: $f"; fi
-done < <(git ls-files '*.sh' 'bin/clip' 'bin/clip-paste' 2>/dev/null)
+done < <(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
 if ((SCOPE_SHELL)); then
   if have zsh; then
     # The sourced modules AND the autoloaded completion functions (zsh/completions/_*,
     # no .zsh extension) — both are zsh that fans out to eight repos; both must parse.
     while IFS= read -r f; do
       if zsh -n "$f" 2>/dev/null; then pass "zsh -n  $f"; else fail "zsh syntax error: $f"; fi
-    done < <(git ls-files 'zsh/*.zsh' 'zsh/completions/*' 2>/dev/null)
+    done < <(_audit_ls 'zsh/*.zsh' 'zsh/completions/*')
   else
     skip "zsh -n (zsh not installed)"
   fi
@@ -429,7 +438,7 @@ elif have shellcheck; then
       fail "shellcheck: $f"
       fail_detail "$sc_out"
     fi
-  done < <(git ls-files '*.sh' 'bin/clip' 'bin/clip-paste' 2>/dev/null)
+  done < <(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
   ((sc_fail)) || pass "shellcheck (all bash scripts clean)"
 else
   skip "shellcheck (not installed)"
@@ -540,9 +549,17 @@ while IFS= read -r f; do
     fail "OS-specific path in a portable Core file ($f) — it belongs in the OS layer, not Core"
   fi
 done < <(
-  # Expand the manifest: directory entries (nvim/) via git ls-files, file entries as-is.
+  # Expand the manifest: directory entries (nvim/) into their files, file entries as-is.
+  #
+  # _audit_ls, not plain `git ls-files`: this list feeds a CONTENT scan — each file is
+  # cat'd and grepped for OS-absolute paths above — so it sits on the content side of the
+  # rule in common.sh. It reads like a manifest question and is not one; the manifest
+  # names the DIRECTORY, and every file under it is in scope whether or not git has seen
+  # it yet. Without this, a new nvim/ lua module hardcoding a Homebrew prefix would pass
+  # the boundary gate locally and only fail after `git add` — the same blind spot this
+  # rule exists to close, wearing manifest clothing.
   for m in "${MANIFEST_PATHS[@]}"; do
-    if [[ "$m" == */ ]]; then git ls-files "$m" 2>/dev/null; else printf '%s\n' "$m"; fi
+    if [[ "$m" == */ ]]; then _audit_ls "$m"; else printf '%s\n' "$m"; fi
   done | sort -u
 )
 ((bnd_fail)) || pass "every manifested Core file carries no OS-absolute path (scope derived from core.manifest)"
@@ -589,7 +606,7 @@ else
 $(_core_pipefail_hits "$pf_f")
 EOF
   done <<EOF
-$(git ls-files '*.sh' 'bin/clip' 'bin/clip-paste' 2>/dev/null)
+$(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
 EOF
   ((pf_fail)) || pass "pipefail (no shell-string producer feeds an early-exiting reader)"
 fi
@@ -608,7 +625,7 @@ if have python3 && python3 -c 'import tomllib' 2>/dev/null; then
     if python3 -c 'import tomllib,sys; tomllib.load(open(sys.argv[1],"rb"))' "$f" 2>/dev/null; then
       pass "toml $f"
     else fail "toml parse error: $f"; fi
-  done < <(git ls-files '*.toml' '*.toml.example' 2>/dev/null)
+  done < <(_audit_ls '*.toml' '*.toml.example')
 else
   skip "toml parse (python3 tomllib unavailable — needs python ≥3.11)"
 fi
@@ -618,7 +635,7 @@ if have python3 && python3 -c 'import yaml' 2>/dev/null; then
     if python3 -c 'import yaml,sys; list(yaml.safe_load_all(open(sys.argv[1])))' "$f" 2>/dev/null; then
       pass "yaml $f"
     else fail "yaml parse error: $f"; fi
-  done < <(git ls-files '*.yml' '*.yaml' 2>/dev/null)
+  done < <(_audit_ls '*.yml' '*.yaml')
 else
   skip "yaml parse (python3 PyYAML not importable)"
 fi
@@ -632,7 +649,7 @@ if have python3; then
     if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$f" 2>/dev/null; then
       pass "json $f"
     else fail "json parse error: $f"; fi
-  done < <(git ls-files '*.json' 2>/dev/null)
+  done < <(_audit_ls '*.json')
 else
   skip "json parse (python3 unavailable)"
 fi

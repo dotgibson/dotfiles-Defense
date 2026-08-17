@@ -291,7 +291,7 @@ blib_migrate_v4() {
 # top of this file — that is the canonical enumeration. OS-specific overlays
 # (os/<os>.*) are NOT here — call blib_link_os_layer for those.
 blib_link_core() {
-  local dotfiles="$1" config="$2" f s
+  local dotfiles="$1" config="$2" f s tpm_log
 
   # ── zsh — the Core module chain (os/<os>.zsh comes from blib_link_os_layer) ──
   if blib_want zsh; then
@@ -328,10 +328,20 @@ blib_link_core() {
         blib_say "would clone tpm (tmux plugin manager)"
       else
         blib_say "cloning tpm (tmux plugin manager)"
-        if git clone --depth=1 https://github.com/tmux-plugins/tpm "$config/tmux/plugins/tpm" >/dev/null 2>&1; then
+        # Announce a FAILED clone as a failure, not as a status line. This branch used
+        # blib_say — the same blue `::` on stdout as the "cloning tpm" line above — and
+        # discarded git's error with `>/dev/null 2>&1`, so behind a proxy tmux ended up
+        # with no plugin manager and nothing in the log stood out. blib_note_fail warns on
+        # STDERR and records the step, so a bootstrap that folds in the tally can decline
+        # to call the run clean (the caller's own --strict / exit-code policy decides).
+        #
+        # Capture combined output instead of dropping it: on success it is noise, on
+        # failure it is the entire diagnosis (DNS, proxy, TLS, rate limit).
+        if tpm_log="$(git clone --depth=1 https://github.com/tmux-plugins/tpm "$config/tmux/plugins/tpm" 2>&1)"; then
           blib_ok "tpm cloned — run prefix + I in tmux to install plugins"
         else
-          blib_say "tpm clone failed — clone it manually, then prefix + I"
+          blib_note_fail "tpm clone failed — tmux will start with no plugins; clone it by hand, then press prefix + I"
+          printf '%s\n' "$tpm_log" | sed 's/^/    /' >&2 # git's own error, under the failure
         fi
       fi
     fi
@@ -864,7 +874,9 @@ blib_set_login_shell() {
       blib_warn "chsh failed — set it by hand: chsh -s $zsh_path $user (or usermod -s $zsh_path $user)"
     fi
   else
-    blib_say "chsh not found (install the 'shadow' package) — set it manually with usermod -s $zsh_path $user"
+    # blib_warn, not blib_say: the login shell was NOT changed, which is the same outcome
+    # as the chsh-failed branch above — it must read like one, on stderr.
+    blib_warn "chsh not found (install the 'shadow' package) — set it manually with usermod -s $zsh_path $user"
   fi
 }
 

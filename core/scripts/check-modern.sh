@@ -15,6 +15,19 @@ set -euo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$HERE"
+# For _audit_ls — this gate inventories files whose CONTENT it then checks, so it must
+# see untracked ones (see the rule in common.sh). Sourced for that alone; this script
+# keeps its own `note`/output style. The lib is idempotent and defines no name this
+# script also defines.
+#
+# Via the ALREADY-ABSOLUTE $HERE, not ${BASH_SOURCE[0]%/*}: we have just cd'd, and
+# BASH_SOURCE stays relative to the caller's original directory. Invoking this script
+# by a relative path from elsewhere — `bash ../../repo/scripts/check-modern.sh` — then
+# resolves the lib against the wrong base and, under `set -e`, exits before the gate
+# runs at all. Verified: that invocation reported "lib/common.sh: No such file or
+# directory" until this line used $HERE.
+# shellcheck source=scripts/lib/common.sh
+source "$HERE/scripts/lib/common.sh"
 BASELINE="scripts/modern-baseline.yml"
 [ -r "$BASELINE" ] || { echo "check-modern: $BASELINE missing" >&2; exit 1; }
 
@@ -35,16 +48,16 @@ _yaml_val()  { sed -nE "s/^$1:[[:space:]]*//p" "$BASELINE" | head -n1 | tr -d '"
 # Plain read loop, not `mapfile` — macOS ships bash 3.2 (no mapfile), which the audit
 # runs this under, same bash-3.2 discipline as the rest of Core.
 FILES=()
-while IFS= read -r _f; do [ -n "$_f" ] && FILES+=("$_f"); done < <(git ls-files \
+while IFS= read -r _f; do [ -n "$_f" ] && FILES+=("$_f"); done < <(_audit_ls \
   '.github/workflows/*.yml' '.github/workflows/*.yaml' \
-  '.github/actions/*/action.yml' '.github/actions/*/action.yaml' 2>/dev/null)
+  '.github/actions/*/action.yml' '.github/actions/*/action.yaml')
 [ "${#FILES[@]}" -gt 0 ] || { echo "check-modern: no workflow/action files to check"; exit 0; }
 
 # Workflows alone — rule 5 gates a key that only exists at workflow scope, so it must
 # not see the composite action.yml files above.
 WORKFLOWS=()
-while IFS= read -r _f; do [ -n "$_f" ] && WORKFLOWS+=("$_f"); done < <(git ls-files \
-  '.github/workflows/*.yml' '.github/workflows/*.yaml' 2>/dev/null)
+while IFS= read -r _f; do [ -n "$_f" ] && WORKFLOWS+=("$_f"); done < <(_audit_ls \
+  '.github/workflows/*.yml' '.github/workflows/*.yaml')
 
 violations=0
 note() { printf '  ✗ %s\n' "$*" >&2; violations=$((violations + 1)); }

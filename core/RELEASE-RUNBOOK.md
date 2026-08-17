@@ -158,11 +158,30 @@ de-list it, then cut the next patch version. That is what v4.11.0 → v4.11.1 wa
 
 #### Step 5, by bump type — the moving `@vN` major alias
 
-Reusable-workflow callers in the fleet pin to `@vN` by default (currently `@v4` — verified
-against the callers, not just documented here: 27 of 28), and step 5
-is where that alias moves. The one exception is deliberate — `dotfiles-Windows` SHA-pins its
-`auto-tag-call` caller so a moved tag cannot change what runs there, and must be bumped by
-hand; see the straggler note in §2. What you do with it depends on the bump you chose in §1.0
+Reusable-workflow callers in the fleet pin to `@vN` by default (currently `@v4`), and step 5
+is where that alias moves. A minority SHA-pin instead, and they split into two kinds that
+behave very differently at release time — count them rather than trusting a number frozen
+into this doc:
+
+```bash
+# SHA-pinned Core callers, per repo (0 = takes the moving @vN alias)
+for r in $(grep -v '^#' scripts/os-repos.txt | grep .) dotfiles-Windows; do
+  printf '%-20s %s\n' "$r" \
+    "$(grep -rlE 'dotgibson/dotfiles-core/\.github/workflows/[^@]+@[0-9a-f]{40}' \
+       "../$r/.github/workflows" 2>/dev/null | wc -l | tr -d ' ')"
+done
+```
+
+- **SHA-pinned and inside the fan-out** — `dotfiles-MacBook` and `dotfiles-Defense` today.
+  Since [#482](https://github.com/dotgibson/dotfiles-core/issues/482) `sync-core.sh` moves
+  these pins in the same commit that stamps `core.lock`, so they need **no** hand bump. This
+  is why the fleet App needs **Workflows: write** — their sync branches carry a
+  `.github/workflows/*` change (`GITHUB-APP-AUTH.md`).
+- **SHA-pinned and outside the fan-out** — `dotfiles-Windows`, which vendors no `core/` and
+  so is absent from `scripts/os-repos.txt`. Nothing moves its pin; it is the one that must be
+  bumped **by hand**. See the straggler note in §2.
+
+What you do with the alias depends on the bump you chose in §1.0
 (policy: `RELEASE-STRATEGY.md` §"Pinning reusable workflows"):
 
 - **PATCH or MINOR** — the major number is unchanged, so `vN` stays the **same** alias

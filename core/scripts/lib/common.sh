@@ -278,7 +278,59 @@ _core_pipefail_hits() { # _core_pipefail_hits <file>
   # scanner reads every tracked shell script, and common.sh is one of them.
   # grep: any quiet spelling (-q, -Eq, -E -q, --quiet). awk: an `exit` that is a statement
   # rather than the word inside a string — `awk '{ print "exit" }'` exits nothing.
-  re="(printf|echo)[^|]*[|][[:space:]]*(grep[^|]*(-[a-zA-Z]*q|--quiet)([[:space:]]|\$)|head([[:space:]]|\$)|awk[^|]*[^\"'[:alnum:]_]exit)"
+  # `-[a-zA-Z]*q[a-zA-Z]*`, NOT `-[a-zA-Z]*q`: the q may sit ANYWHERE in the flag cluster.
+  # The old form required it to be the LAST letter, so `grep -q` and `grep -xq` were caught
+  # while `grep -qx` and `grep -Eqi` walked straight past — the same hazard, differing only
+  # in spelling. A gate that misses a spelling of the thing it guards is indistinguishable
+  # from one that works, which is the failure mode this scanner exists to prevent.
+  # Widening it flags exactly ONE line that was already in the tree (ci-pr-link.sh's
+  # No-Issue probe, fixed in the same change), so this is a real catch, not new noise.
+  re="(printf|echo)[^|]*[|][[:space:]]*(grep[^|]*(-[a-zA-Z]*q[a-zA-Z]*|--quiet)([[:space:]]|\$)|head([[:space:]]|\$)|awk[^|]*[^\"'[:alnum:]_]exit)"
   grep -nE "$re" "$f" 2>/dev/null |
     awk -F: '{ l = $0; sub(/^[0-9]+:/, "", l); if (l !~ /^[[:space:]]*#/) print $1 }'
+}
+
+# ── _audit_ls: the file set the CONTENT gates inspect ─────────────────────────
+# Tracked files PLUS untracked-but-not-ignored ones. The distinction matters, and it
+# cost a real round-trip: a brand-new script is invisible to `git ls-files` until the
+# moment it is `git add`ed, so every content gate in audit-core.sh used to skip the one
+# file a change was actually about — and still printed its cheerful "all clean" pass.
+# That is a green audit which proved nothing, strictly worse than a red one.
+#
+# It happened on scripts/ci-pr-link.sh (#496): `make audit-changed` reported 261 pass /
+# 0 fail locally while shellcheck never opened the file, then CI failed all four audit
+# legs on two SC2016 violations that had been there the whole time.
+#
+# The audit was already internally inconsistent about this: its _changed_scope() counts
+# untracked files when deciding which AREAS run, and the walk-based gates (luacheck's
+# `luacheck .`, markdownlint's `**/*.md` glob) have always seen them. Only the
+# `git ls-files` gates disagreed, and nothing surfaced the disagreement.
+#
+# THE RULE, so a new gate lands on the right side of it:
+#   * Does the gate ask "is this file's CONTENT valid?" (syntax, lint, parse) → use
+#     _audit_ls. An untracked file is about to be committed; catching it now is the
+#     entire point of a local gate.
+#   * Does the gate ask "what does GIT RECORD?" (manifest reverse-drift, index exec-bits)
+#     → use plain `git ls-files`. An untracked file has no git state to check, so
+#     including it would be meaningless rather than merely noisy.
+#
+# The rule binds every gate script `make audit` consults, not just audit-core.sh:
+# check-modern.sh (workflow/action inventory) and nvim-reachability.sh (lua module
+# inventory) source this lib for the same reason. scripts/test-core.sh asserts the exact
+# split per file, so adding either kind of enumeration anywhere fails the suite until
+# someone picks a side.
+#
+# The trap to watch for: a gate can READ like a manifest/git question and still be a
+# content one. audit-core.sh's §5c expands `nvim/` from the manifest and then cat|greps
+# every file it names — the manifest chooses the SCOPE, but the check is about contents,
+# so it belongs on the _audit_ls side. Ask what the gate does with the list, not where
+# the list came from.
+# --exclude-standard honours .gitignore, so scratch files and build output stay out.
+# Lives here rather than in audit-core.sh so test-core.sh can exercise the REAL
+# implementation instead of a copy that could drift from it.
+_audit_ls() { # _audit_ls <pathspec>… — content-gate file set, deduped
+  {
+    git ls-files -- "$@" 2>/dev/null
+    git ls-files --others --exclude-standard -- "$@" 2>/dev/null
+  } | sort -u
 }

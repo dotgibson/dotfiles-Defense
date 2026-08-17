@@ -21,7 +21,8 @@
 #
 # AUTH: the built-in GITHUB_TOKEN is scoped to dotfiles-core only — it cannot push a
 # branch or open a PR in another repo. This mints a short-lived, OS-repo-scoped GitHub
-# App installation token at run time (contents + pull-requests write) when the fleet App
+# App installation token at run time (contents + pull-requests + workflows write — the last
+# because a sync branch can carry .github/workflows/* pin moves) when the fleet App
 # is configured (the FLEET_APP_ID variable), and otherwise falls back to the legacy
 # FLEET_SYNC_TOKEN PAT — see GITHUB-APP-AUTH.md. The preflight fails loudly if neither is
 # available.
@@ -235,11 +236,54 @@ jobs:
               continue
             fi
 
-            git -C "$path" push --force-with-lease origin "HEAD:${branch}"
-            open="$(gh pr list --repo "${OWNER}/${r}" --head "$branch" --state open --json url --jq 'length')"
+            # Push per repo, and NEVER let one repo's failure deny the others their PR.
+            # This ran unguarded under `set -e`, so the first bad push aborted the whole
+            # loop: on the v4.12.1 cut dotfiles-MacBook was refused and the remaining seven
+            # repos — five of them already synced and ready — got no PR at all. A release
+            # reached NONE of the fleet over one repo's permission problem. The loop
+            # already treats every other per-repo error this way (fail=1 + continue); the
+            # push was the one step that could still take the fleet down with it.
+            if ! git -C "$path" push --force-with-lease origin "HEAD:${branch}" \
+              >"$RUNNER_TEMP/push-$r.log" 2>&1; then
+              # The failure worth naming precisely: since #482 the fan-out rewrites the
+              # target's .github/workflows/* SHA pins, and a GitHub App token WITHOUT the
+              # `workflows` permission is refused on exactly those files. GitHub's message
+              # is opaque unless you already know that, so name the grant instead.
+              #
+              # Deliberately NOT retried with the workflow changes dropped. core.lock and
+              # the pins name the same Core; landing the lock while silently keeping stale
+              # pins is precisely the "vendors one Core, runs another" split that #482
+              # closed — and it is invisible to core-integrity and verify-core, which is
+              # what made it survive. Failing this repo loudly beats re-creating that.
+              if grep -qi "without .workflows. permission" "$RUNNER_TEMP/push-$r.log"; then
+                echo "- ❌ \`$r\` push refused: the fleet token lacks the \`workflows\` permission, and this repo SHA-pins a Core caller (#482)" >> "$summary"
+                echo "::error::$r: grant the fleet GitHub App the 'workflows' permission (see GITHUB-APP-AUTH.md) — the fan-out must rewrite .github/workflows/* pins in repos that SHA-pin a Core caller"
+              else
+                echo "- ❌ \`$r\` push failed — see the run log" >> "$summary"
+                echo "::error::$r: push failed"
+              fi
+              sed 's/^/    /' "$RUNNER_TEMP/push-$r.log" >&2 || true
+              fail=1
+              continue
+            fi
+            # The gh calls need the same isolation as the push. Under `set -e` a failing
+            # command substitution exits the step, so a repo-specific API error here — a
+            # rate limit, an outage, PR creation disabled on one repo — would strand every
+            # LATER repo despite its branch already being pushed. That is the worse shape
+            # of the two: the push succeeded, so the work is done and merely unannounced.
+            if ! open="$(gh pr list --repo "${OWNER}/${r}" --head "$branch" --state open --json url --jq 'length' 2>"$RUNNER_TEMP/gh-$r.log")"; then
+              # State UNKNOWN, not "no PR". The lookup is what failed, so an open PR could
+              # be hidden by the very rate limit or outage that broke the query — telling
+              # the operator to open one invites a duplicate.
+              echo "- ⚠️ \`$r\` branch pushed, but its PR state could not be read — check \`$branch\` and open a PR only if none exists" >> "$summary"
+              echo "::error::$r: gh pr list failed after a successful push — the sync branch is on the remote; whether a PR exists is UNKNOWN, check before opening one"
+              sed 's/^/    /' "$RUNNER_TEMP/gh-$r.log" >&2 || true
+              fail=1
+              continue
+            fi
             if [ "${open:-0}" != 0 ]; then
-              url="$(gh pr list --repo "${OWNER}/${r}" --head "$branch" --state open --json url --jq '.[0].url')"
-              echo "- 🔁 \`$r\` PR already open — pushed update: $url" >> "$summary"
+              url="$(gh pr list --repo "${OWNER}/${r}" --head "$branch" --state open --json url --jq '.[0].url' || echo '')"
+              echo "- 🔁 \`$r\` PR already open — pushed update: ${url:-(url lookup failed)}" >> "$summary"
             else
               cat > "$RUNNER_TEMP/pr-body.md" <<EOF
           Automated Core fan-out from \`dotfiles-core\` **${TAG}** (\`${short}\`).
@@ -251,9 +295,17 @@ jobs:
           Merge per the staged rollout in \`RELEASE-STRATEGY.md\` — canary
           \`dotfiles-MacBook\` first, bake, then the rest. **Review the diff before merging.**
           EOF
-              url="$(gh pr create --repo "${OWNER}/${r}" --base "$default" --head "$branch" \
+              if ! url="$(gh pr create --repo "${OWNER}/${r}" --base "$default" --head "$branch" \
                 --title "chore(core): sync Core → ${TAG}" \
-                --body-file "$RUNNER_TEMP/pr-body.md")"
+                --body-file "$RUNNER_TEMP/pr-body.md" 2>"$RUNNER_TEMP/gh-$r.log")"; then
+                # Same caution as the list case: a timeout can fail the client after the
+                # PR was created server-side, so check rather than assume it is absent.
+                echo "- ⚠️ \`$r\` branch pushed, but \`gh pr create\` failed — check \`$branch\` and open a PR only if none exists" >> "$summary"
+                echo "::error::$r: gh pr create failed — the sync branch is on the remote; the PR may or may not have been created, check before retrying"
+                sed 's/^/    /' "$RUNNER_TEMP/gh-$r.log" >&2 || true
+                fail=1
+                continue
+              fi
               echo "- 🚀 \`$r\` PR opened: $url" >> "$summary"
             fi
           done

@@ -245,9 +245,18 @@ out automatically; a major bump is the one intentional, reviewed caller edit. Th
 GitHub's own recommended pattern for reusable workflows.
 
 - **Authoring:** new callers use `@vN` for the current major (not `@main`, not a bare SHA).
-  One deliberate exception: `dotfiles-Windows` SHA-pins its `auto-tag-call` caller, trading the
-  auto-fan-out for immunity to a moved tag. It vendors no `core/`, so it is outside the
-  `scripts/os-repos.txt` sweep and needs a hand bump.
+  A minority SHA-pin instead, trading the auto-fan-out for immunity to a moved tag, and what
+  that costs depends on whether the repo is in the fan-out:
+  - **Inside it** (`dotfiles-MacBook`, `dotfiles-Defense` today): since
+    [#482](https://github.com/dotgibson/dotfiles-core/issues/482) `sync-core.sh` moves the pin
+    in the same commit that stamps `core.lock`, so the trade costs nothing at release time —
+    but it does require the fleet App to hold **Workflows: write**, because the sync branch
+    then carries a `.github/workflows/*` change (`GITHUB-APP-AUTH.md`).
+  - **Outside it** (`dotfiles-Windows`): it vendors no `core/`, so it is absent from
+    `scripts/os-repos.txt`, nothing moves its pin, and it needs a hand bump.
+
+  Don't trust a frozen count of who pins what — `RELEASE-RUNBOOK.md` §"Step 5, by bump type"
+  carries a one-liner that derives it from the callers.
 - **Bootstrapping a major:** `vN` is created/advanced by `make publish`; the very first
   `vN` can also be stamped by hand (`git tag -f vN vN.0.0 && git push -f origin vN`).
 - **Trade vs. exact-SHA pinning:** a SHA is maximally deterministic but needs a manual
