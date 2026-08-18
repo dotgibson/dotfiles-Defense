@@ -1,0 +1,31 @@
+# scripts/os-repos.txt — the canonical OS-repo fleet that vendors Core.
+# ──────────────────────────────────────────────────────────────────────────────
+# ONE list of the repos Core fans out into (B9). Read by scripts/sync-core.sh as the
+# default TARGETS when no repos are named on the CLI.
+#
+# THIS FILE IS THE SOURCE, BUT IT IS NOT THE ONLY EDIT. sync-core.sh, fleet-drift.sh
+# and core-integrity.sh each keep a hardcoded fallback array for when this file is
+# missing or unreadable — and that fallback is what runs in exactly the situation you
+# are least likely to notice. Adding or removing a target means FOUR coordinated edits:
+# this file plus those three arrays. scripts/test-core.sh asserts they all agree, so a
+# partial change fails the audit rather than silently dropping a repo from the fan-out.
+#
+# Format: one repo directory name per line. Blank lines and `#` comments ignored.
+# Order is the fan-out order. Keep it case-insensitively alphabetical after
+# dotfiles-MacBook (the reference implementation), which stays first so a smoke sync
+# hits it soonest — i.e. Alpine sorts before Arch ('l' before 'r').
+#
+# DELIBERATELY ABSENT — not a Core-vendoring target (do not re-add):
+#   dotfiles-Windows — the native Windows host layer is replicated from scratch
+#     (PowerShell; not a one-to-one port of the Unix Core), so it carries no
+#     vendored core/ subtree and sync-core.sh must never fan out into it.
+# ──────────────────────────────────────────────────────────────────────────────
+dotfiles-MacBook
+dotfiles-Alpine
+dotfiles-Arch
+dotfiles-Debian
+dotfiles-Defense
+dotfiles-Fedora
+dotfiles-Gentoo
+dotfiles-Offense
+dotfiles-openSUSE
