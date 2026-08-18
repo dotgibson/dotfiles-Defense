@@ -6,7 +6,7 @@
 # surfaced too — create-or-switch, same as tmux-eng.sh.
 #
 # CORE / PORTABLE: this is engagement-AGNOSTIC. On any box without an
-# engagements dir (i.e. everything that isn't Kali), the ◆ section simply never
+# engagements dir (i.e. everything that isn't Offense), the ◆ section simply never
 # renders and behaviour is identical to before — so it's safe to sync to all
 # repos via sync-core.sh.
 #

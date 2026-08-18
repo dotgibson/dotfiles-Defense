@@ -43,16 +43,20 @@ CORE_BRANCH="${CORE_BRANCH:-main}"
 # same place. Override with CORE_REMOTE if your OS repos use a named remote.
 CORE_REMOTE="${CORE_REMOTE:-$(git -C "$HERE" remote get-url origin 2>/dev/null || echo '')}"
 
-# The fleet that vendors Core. SINGLE SOURCE: scripts/os-repos.txt (B9) — one edit
-# adds an OS target, instead of this array drifting from the README/PORTING-MATRIX.
+# The fleet that vendors Core. SOURCE: scripts/os-repos.txt (B9), so this array cannot
+# drift from the README/PORTING-MATRIX unnoticed.
 # The inline list stays as a hard fallback so a missing/corrupt data file can't strand
 # the maintain button (it degrades to the last-known fleet rather than fanning out to
 # nothing). Lines are trimmed; blanks and `#` comments are dropped.
+# KEEP IT IN STEP with scripts/os-repos.txt — scripts/test-core.sh asserts the two are
+# identical, because a fallback that has silently lost a repo is worse than no fallback:
+# it runs only when the data file is already unreadable.
 # NB: dotfiles-Windows is intentionally NOT here — it's the native host layer (no
 # vendored core/ subtree). See the note in scripts/os-repos.txt.
 ALL_OS_REPOS=(
-  dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Defense
-  dotfiles-Fedora dotfiles-Gentoo dotfiles-Kali dotfiles-openSUSE
+  dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian
+  dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense
+  dotfiles-openSUSE
 )
 _OS_REPOS_FILE="$HERE/scripts/os-repos.txt"
 if [[ -r "$_OS_REPOS_FILE" ]]; then

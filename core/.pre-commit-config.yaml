@@ -1,6 +1,6 @@
 # .pre-commit-config.yaml — author-time guardrails for dotfiles-core.
 # Mirrors the CI checks (.github/workflows/ci.yml) so drift is caught locally,
-# before it is committed and subtree-synced into the eight OS repos.
+# before it is committed and subtree-synced into the nine OS repos.
 #
 #   one-time:  pip install pre-commit && pre-commit install
 #   manual:    pre-commit run --all-files
@@ -18,7 +18,7 @@ repos:
         exclude: '\.md$'
       - id: end-of-file-fixer
       - id: check-merge-conflict
-      # Parse-check the config/data files that fan out to all eight OS repos: a broken
+      # Parse-check the config/data files that fan out to all nine OS repos: a broken
       # starship.toml / mise config.toml / workflow yaml is valid text (shellcheck
       # & zsh -n never see it) but dead at runtime for every consumer. Mirrors the
       # toml/yaml section in scripts/audit-core.sh.

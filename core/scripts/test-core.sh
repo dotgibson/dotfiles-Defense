@@ -5,7 +5,7 @@
 # reach. audit-core.sh proves the modules PARSE (zsh -n) and that the manifest and
 # exec-bits are consistent; this proves the modules actually LOAD TOGETHER in the
 # canonical order and that the pure shell functions DO what they claim. A defect
-# here passes every per-file `zsh -n` cleanly and still fans out to eight OS repos —
+# here passes every per-file `zsh -n` cleanly and still fans out to nine OS repos —
 # which is exactly the gap this file closes.
 #
 # Two sections, both zsh-gated and degrading gracefully (mirrors audit-core.sh):
@@ -42,12 +42,13 @@ cd "$HERE" || exit 1
 QUIET=0
 JSON=0 # --json: machine-readable summary on stdout (implies quiet); mirrors audit-core.sh
 # Scope mirrors audit-core.sh: gate the slow AREA-specific sections so a per-area run
-# does less. FAIL-CLOSED default (no --scope → both areas run). The cross-cutting,
+# does less. FAIL-CLOSED default (no --scope → every area runs). The cross-cutting,
 # pure-bash sections (clipboard ladder, CI-classifier) ALWAYS run — they are fast and
 # guard runtime artifacts shared by every area. audit-core.sh passes the classifier's
 # verdict here; a bare `./scripts/test-core.sh` runs everything.
 SCOPE_SHELL=1
 SCOPE_NVIM=1
+SCOPE_ATUIN=1
 # Shared palette + pass/skip/fail/hdr/have + _set_scope + _seed_plugin_dirs (one
 # definition for every gate script). Sourced HERE — before the arg loop calls _set_scope
 # — and after QUIET is set so the lib's `: "${QUIET:=0}"` preserves it.
@@ -64,7 +65,7 @@ while (($#)); do
     # Require an explicit value (mirrors audit-core.sh): `--scope --quiet` must not
     # eat the next flag as the scope list.
     if (($# < 2)) || [[ "$2" == -* ]]; then
-      printf 'test-core.sh: --scope requires a value (shell,nvim|all|none)\n' >&2
+      printf 'test-core.sh: --scope requires a value (shell,nvim,atuin|all|none)\n' >&2
       printf 'try: test-core.sh --help\n' >&2
       exit 2
     fi
@@ -96,8 +97,10 @@ Behavioral suite: clipboard ladder + nvim headless load + nvim event callbacks
 when zsh/nvim are absent.
 
   -q, --quiet     only print SKIP/FAIL lines and the final summary
-  --scope LIST    limit the slow area sections: shell, nvim, all (default), none.
-                  The clipboard + CI-classifier sections always run.
+  --scope LIST    limit the slow area sections: shell, nvim, atuin, all (default),
+                  none. The clipboard + CI-classifier sections always run.
+                  `atuin` drives the premise detector's hermetic self-test
+                  (scripts/verify-atuin-guard.sh) — the slowest thing here by far.
   --color WHEN    auto (default) | always | never; NO_COLOR still wins. (CORE_COLOR env.)
   --json          machine-readable summary on stdout (implies --quiet):
                   {pass,skip,fail,seconds,skipped[],result}
@@ -153,7 +156,7 @@ trap 'rm -rf "$SANDBOX"' EXIT
 # ── C. clipboard detection ladder (bin/clip / bin/clip-paste) ─────────────────
 # bin/clip is the single highest-fan-out runtime artifact in Core — used by zsh
 # (pbcopy alias), tmux (copy-pipe), AND nvim (clipboard provider), across all 8 OS
-# repos — yet its WSL→macOS→Wayland→X11 ladder had no test, only `bash -n`. We drive
+# repos — yet its WSL→macOS→Wayland→X11→OSC 52 ladder had no test, only `bash -n`. We drive
 # the ladder HERMETICALLY: PATH is pointed at a fake bin holding a stub `uname` that
 # reports the OS we want, a stub `grep` that answers the /proc/version probe, and
 # stub backends that print a marker instead of touching a real clipboard — then we
@@ -180,11 +183,16 @@ _stub() {
 _clip_reset() {
   rm -rf "$CBIN"
   mkdir -p "$CBIN"
-  unset WSL_DISTRO_NAME WAYLAND_DISPLAY
+  unset WSL_DISTRO_NAME WAYLAND_DISPLAY DISPLAY
   ln -s "$_real_bash" "$CBIN/bash"
   _stub uname 'echo Linux'
   printf 'Linux version 6.1.0-0 (gcc) #1 SMP\n' >"$CBIN/procversion"
   export CLIP_PROC_VERSION="$CBIN/procversion"
+  # Point the OSC 52 fallback at a path that cannot be opened, so a scenario which
+  # reaches it fails LOUDLY instead of quietly writing to the runner's real terminal
+  # (or accidentally passing because CI happens to have no tty). The OSC 52 cases
+  # below override this with a real file.
+  export CLIP_TTY="$CBIN/no-such-dir/tty"
 }
 # Assert prog's stdout is exactly the marker the chosen backend prints.
 _clip_is() { # _clip_is <label> <prog> <expected>
@@ -220,13 +228,103 @@ _stub wl-copy 'echo WL'
 _clip_is "clip → wl-copy under Wayland" "$CLIP" WL
 unset WAYLAND_DISPLAY
 _clip_reset
+# DISPLAY is required, not incidental: xclip/xsel cannot talk to an X server without
+# one, and the guard is what lets a box that merely HAS xclip installed (a common
+# desktop dependency) fall through to OSC 52 over ssh instead of exec'ing a doomed
+# binary. See the ladder's own comment in bin/clip.
+export DISPLAY=:0
 _stub xclip 'echo XCLIP'
 _clip_is "clip → xclip on X11" "$CLIP" XCLIP
 _clip_reset
+export DISPLAY=:0
 _stub xsel 'echo XSEL'
 _clip_is "clip → xsel when xclip absent" "$CLIP" XSEL
 _clip_reset
-_clip_fails "clip exits non-zero with no backend" "$CLIP"
+# The regression that motivated the guard: xclip present, no DISPLAY. This MUST NOT
+# exec xclip — it must fall past it. The stub writes a marker file so we can prove the
+# backend never ran, rather than inferring it from stdout.
+_stub xclip "echo RAN >'$CBIN/xclip-ran'"
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+export CLIP_TTY="$CBIN/tty-x11"
+if printf 'payload' | PATH="$CBIN" "$CLIP" 2>/dev/null && [[ ! -e "$CBIN/xclip-ran" ]]; then
+  pass "clip: xclip installed but no DISPLAY falls through to OSC 52 (does not exec a doomed xclip)"
+else
+  fail "clip: xclip was exec'd with no DISPLAY, or the OSC 52 fallback did not run"
+fi
+_clip_reset
+# base64/tr must be present, or `clip` dies during ENCODING and never reaches the tty
+# write — leaving this assertion green even if the write-error handling is broken. It
+# would then be testing "the fallback failed", not "the fallback failed FOR THE REASON
+# THIS TEST NAMES". CLIP_TTY still points at _clip_reset's unopenable path.
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+_clip_fails "clip exits non-zero with no backend and no terminal" "$CLIP"
+
+# OSC 52 fallback — the branch that makes `clip` work at all on a headless ssh box.
+# Asserted on the WIRE FORMAT, not just "did something happen": a terminal ignores a
+# malformed sequence silently, so a test that only checked for output would pass while
+# the user's copy vanished. base64/tr are symlinked in because the fallback shells out
+# to them under the stripped PATH.
+_clip_reset
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+export CLIP_TTY="$CBIN/tty-osc52"
+_osc_payload='hello osc52'
+if printf '%s' "$_osc_payload" | PATH="$CBIN" "$CLIP" 2>/dev/null; then
+  # \033]52;c;<base64>\a  — selection `c`, BEL-terminated.
+  # `$(cat …)` strips ALL trailing newlines, which would normalise a stray LF after the
+  # BEL right out of the comparison — so a regression that emitted
+  # `ESC ]52;c;<b64> BEL LF` would sail through a test whose whole job is the exact wire
+  # format. The X sentinel preserves the file's trailing bytes; strip it after.
+  _osc_raw="$(cat "$CBIN/tty-osc52"; printf X)"
+  _osc_raw="${_osc_raw%X}"
+  _osc_b64="${_osc_raw#$'\033']52;c;}"
+  _osc_b64="${_osc_b64%$'\a'}"
+  if [[ "$_osc_raw" == $'\033']52\;c\;*$'\a' ]]; then
+    pass "clip: OSC 52 fallback emits a BEL-terminated \\033]52;c; sequence"
+  else
+    fail "clip: OSC 52 framing wrong (got: $(printf '%q' "$_osc_raw"))"
+  fi
+  if [[ "$(printf '%s' "$_osc_b64" | base64 -d 2>/dev/null)" == "$_osc_payload" ]]; then
+    pass "clip: OSC 52 payload base64-decodes back to exactly what was piped in"
+  else
+    fail "clip: OSC 52 payload did not round-trip"
+  fi
+  # A newline anywhere in the base64 terminates the escape early and the terminal
+  # copies a truncated value — which is why the encoder pipes through `tr -d`, and
+  # why `base64 -w0` (GNU-only) is not used.
+  #
+  # The payload has to be LONG to test this. GNU base64 wraps at 76 columns, so it
+  # only emits a newline once the encoding exceeds that — i.e. past ~57 bytes of
+  # input. A short multi-line string encodes to one line either way, and an assertion
+  # built on one passes just as happily with the `tr` removed. (Confirmed by deleting
+  # it: the short-input version of this test did not notice.) 300 bytes forces
+  # several wraps on any implementation that wraps at all.
+  _osc_long="$(printf 'the quick brown fox jumps over the lazy dog %.0s' 1 2 3 4 5 6 7)"
+  printf '%s\n%s\n' "$_osc_long" "$_osc_long" | PATH="$CBIN" "$CLIP" 2>/dev/null
+  _osc_multi="$(cat "$CBIN/tty-osc52"; printf X)"
+  if [[ "${_osc_multi%X}" != *$'\n'* ]]; then
+    pass "clip: OSC 52 payload stays one unbroken line for multi-line input"
+  else
+    fail "clip: OSC 52 payload contains a newline — the sequence would be truncated"
+  fi
+else
+  fail "clip: OSC 52 fallback did not run with no backend and a writable CLIP_TTY"
+fi
+# The escape must go to the terminal, never stdout: `clip` is used in pipelines and as
+# nvim's provider, so anything on stdout corrupts the caller's data.
+_clip_reset
+ln -s "$_real_tr" "$CBIN/tr"
+ln -s "$(command -v base64)" "$CBIN/base64"
+export CLIP_TTY="$CBIN/tty-stdout"
+_osc_stdout="$(printf 'payload' | PATH="$CBIN" "$CLIP" 2>/dev/null)"
+if [[ -z "$_osc_stdout" && -s "$CBIN/tty-stdout" ]]; then
+  pass "clip: OSC 52 writes to the tty and leaves stdout empty"
+else
+  fail "clip: OSC 52 leaked to stdout (got '$_osc_stdout')"
+fi
+unset _osc_payload _osc_raw _osc_b64 _osc_stdout _osc_long _osc_multi
 
 # clip-paste (paste) — mirror ladder; the WSL leg also strips the CR powershell adds.
 _clip_reset
@@ -251,16 +349,21 @@ _stub wl-paste 'echo WL'
 _clip_is "clip-paste → wl-paste under Wayland" "$CLIPPASTE" WL
 unset WAYLAND_DISPLAY
 _clip_reset
+export DISPLAY=:0
 _stub xclip 'echo XCLIP'
 _clip_is "clip-paste → xclip -o on X11" "$CLIPPASTE" XCLIP
 _clip_reset
-_clip_fails "clip-paste exits non-zero with no backend" "$CLIPPASTE"
+# No OSC 52 mirror here, deliberately: reading the clipboard over OSC 52 means querying
+# the terminal and waiting for a reply that most terminals refuse to send, so clip-paste
+# still fails — loudly — where clip now succeeds. bin/clip-paste's header explains why,
+# and the asymmetry is intentional rather than an oversight.
+_clip_fails "clip-paste exits non-zero with no backend (no OSC 52 read path)" "$CLIPPASTE"
 
 # ── D. Neovim config load (nvim/, headless) ───────────────────────────────────
 # nvim/ is the largest body of code in Core yet was validated only by luacheck
 # (static). Lua that is luacheck-clean can still be a BROKEN config — a bad vim API
 # call, a malformed lazy spec — that surfaces only when nvim actually starts, and it
-# fans out to eight repos. This loads the AUTHORED Lua headlessly: the pure config layer
+# fans out to nine repos. This loads the AUTHORED Lua headlessly: the pure config layer
 # (globals/options/keymaps/autocmds/clipboard/providers) AND every plugin SPEC file
 # (require evaluates the spec TABLE; lazy's deferred config/keys callbacks do NOT run,
 # so no plugin needs to be installed — every plugin `require` in this tree is inside
@@ -496,7 +599,7 @@ fi
 # breaks only when you actually edit. That blind spot shipped a real bug: the
 # TextYankPost highlight called a non-existent `vim.hl.hl_op`, throwing on every yank
 # AND delete (TextYankPost fires on both) while the edit still ran — a red error with
-# no failing gate, fanned out to eight repos. This closes it: load the autocmds, then
+# no failing gate, fanned out to nine repos. This closes it: load the autocmds, then
 # FIRE the events and assert the callbacks ran clean.
 #
 # Events are triggered via post-startup `-c` commands (NOT inside the `-u` init): an
@@ -565,7 +668,7 @@ fi
 # autocmds load and don't throw — it would still pass if FilePost never fired at all
 # (every deferred plugin silently dead: no LSP, no linting, no git signs) or fired
 # repeatedly (every later buffer re-emitting it). Neither shows up as an error, which
-# is exactly the kind of silent breakage that fans out to eight repos.
+# is exactly the kind of silent breakage that fans out to nine repos.
 #
 # So assert the CONTRACT, not just the absence of errors — fires EXACTLY ONCE, in both
 # startup shapes:
@@ -678,7 +781,7 @@ fi
 # untested: the "*" wildcard capability registration, the per-server vim.lsp.config calls,
 # the failed-module isolation, and which names actually get enabled could all regress while
 # the leaf probe stayed green. It is the file that decides whether you have LSP at all, and
-# it fans out to eight repos.
+# it fans out to nine repos.
 #
 # Close it by stubbing the two things that made it untestable — blink.cmp (via package.preload)
 # and the vim.lsp surface — then require the real module and assert what it registered. No
@@ -830,7 +933,7 @@ fi
 # this asserts the contract the workflow depends on: known paths map to the right gates,
 # the __ALL__ sentinel runs everything, and — the regression that matters — an
 # UNRECOGNISED top-level path FAILS CLOSED to the full run instead of silently skipping
-# a gate on the 9-repo fan-out. Pure bash, so it runs even where zsh/nvim are absent.
+# a gate on the 10-repo fan-out. Pure bash, so it runs even where zsh/nvim are absent.
 # ── failing-gate detail (scripts/lib/common.sh :: fail_detail) ────────────────
 # WHY THIS IS TESTED. The audit used to discard every linter's own report, so a red CI run
 # named a gate and nothing else — "✗ markdownlint reported issues", no rule, no file, no
@@ -1163,25 +1266,34 @@ fi
 
 hdr "CI path classifier (scripts/ci-classify.sh)"
 CLASSIFY="$HERE/scripts/ci-classify.sh"
-_classify_is() { # _classify_is <label> <newline-input> <want-shell> <want-nvim>
+_classify_is() { # _classify_is <label> <newline-input> <want-shell> <want-nvim> <want-atuin>
   local got
   got="$(printf '%s\n' "$2" | "$CLASSIFY" 2>/dev/null)"
-  if [[ "$got" == "shell=$3"$'\n'"nvim=$4" ]]; then
+  if [[ "$got" == "shell=$3"$'\n'"nvim=$4"$'\n'"atuin=$5" ]]; then
     pass "$1"
   else
-    fail "$1 (got: ${got//$'\n'/ }; want shell=$3 nvim=$4)"
+    fail "$1 (got: ${got//$'\n'/ }; want shell=$3 nvim=$4 atuin=$5)"
   fi
 }
-_classify_is "zsh/ change → shell gate only" 'zsh/05-ui.zsh' true false
-_classify_is "nvim/ change → nvim gate only" 'nvim/init.lua' false true
-_classify_is "docs (*.md) change → no gate" 'README.md' false false
-_classify_is "infra (scripts/) change → full run" 'scripts/audit-core.sh' true true
-_classify_is "infra (.shellcheckrc) change → full run" '.shellcheckrc' true true
-_classify_is "__ALL__ sentinel → full run" '__ALL__' true true
-_classify_is "unrecognised path → FAIL CLOSED to full run" 'newdir/thing.xyz' true true
-_classify_is "mixed shell+nvim set → union of both" $'zsh/05-ui.zsh\nnvim/init.lua' true true
-_classify_is "atuin/ config change → shell gate only" 'atuin/config.toml' true false
-_classify_is "examples/ change → no gate (repo-meta, nothing links it)" 'examples/atuin-daemon.service' false false
+_classify_is "zsh/ change → shell gate only" 'zsh/05-ui.zsh' true false false
+_classify_is "nvim/ change → nvim gate only" 'nvim/init.lua' false true false
+_classify_is "docs (*.md) change → no gate" 'README.md' false false false
+_classify_is "infra (scripts/) change → full run" 'scripts/audit-core.sh' true true true
+_classify_is "infra (.shellcheckrc) change → full run" '.shellcheckrc' true true true
+_classify_is "__ALL__ sentinel → full run" '__ALL__' true true true
+_classify_is "unrecognised path → FAIL CLOSED to full run" 'newdir/thing.xyz' true true true
+_classify_is "mixed shell+nvim set → union of both" $'zsh/05-ui.zsh\nnvim/init.lua' true true false
+_classify_is "examples/ change → no gate (repo-meta, nothing links it)" 'examples/atuin-daemon.service' false false false
+# The atuin axis. zsh/00-tools.zsh carries _core_atuin_daemon_guard — the thing the premise
+# detector exists to protect — and atuin/ is its config, so both must reach the atuin gate
+# AND the shell gate. The first of these is the ORDERING assertion: 00-tools.zsh also matches
+# the general `zsh/*` arm, and since first match wins, an arm added in the wrong order would
+# classify it as plain shell and silently stop running the detector's self-test on the one
+# module that can break it.
+_classify_is "zsh/00-tools.zsh change → shell AND atuin (guard's own module)" 'zsh/00-tools.zsh' true false true
+_classify_is "atuin/ config change → shell AND atuin" 'atuin/config.toml' true false true
+_classify_is "a plain zsh/ change does NOT pay the atuin gate" 'zsh/45-plugins.zsh' true false false
+_classify_is "mixed atuin+nvim set → union across all three axes" $'atuin/config.toml\nnvim/init.lua' true true true
 
 # ── E2. PR link gate (scripts/ci-pr-link.sh) ──────────────────────────────────
 # #446 fixed #420 and #423 and merged green with NO closing keyword, so GitHub linked
@@ -1905,12 +2017,12 @@ fi
 
 # ── F6. sync-core.sh — THE fan-out, on hermetic fixtures ─────────────────────
 # scripts/sync-core.sh is the highest-blast-radius script here: it gates on the audit,
-# runs `git subtree pull` into eight working trees, and stamps core.lock. Until now it
+# runs `git subtree pull` into nine working trees, and stamps core.lock. Until now it
 # had NO coverage at all — its only proof was sync-fanout.yml running it for real
 # against the live fleet, i.e. the fleet WAS the test.
 #
 # Everything below is a REFUSAL or an idempotency property. That matters for what these
-# tests are worth: a broken guard does not throw, it fans a bad tree out to eight repos
+# tests are worth: a broken guard does not throw, it fans a bad tree out to nine repos
 # and reports success. So each case asserts the script DECLINED, and (where the guard is
 # per-repo) that it declined without abandoning the repos after it.
 #
@@ -1998,14 +2110,19 @@ if ((_sc_subtree)); then
   rm -rf "$SCF/repos/dotfiles-NotCloned/.git"                 # a dir that is not a repo
 
   _sc_run() { # run the fixture's sync-core.sh against the fixture fleet
-    env -u DOTFILES_ALLOW_CORE_EDIT CORE_COLOR=never \
+    # -u CORE_JSON: --json EXPORTS CORE_JSON=1 so nested gates keep stdout clean for the
+    # JSON object, and common.sh's skip() then prints nothing. The fixture inherits that
+    # export, sync-core.sh reports absent / core/-less repos via skip(), and the assertions
+    # below grep for exactly those lines — so `audit-core.sh --json` went red on a tree the
+    # identical non-JSON run passed (#524). Same guard, same reason, as _tr_run below.
+    env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never \
       REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main \
       SYNC_JOBS=1 "$@" bash "$_SCS" 2>&1
   }
 
   # --- the audit gate: the property that a RED tree must never fan out ---------
   # This is the single most important assertion in the file: every other guard protects
-  # one repo, this one protects all eight. It must also refuse BEFORE mutating anything.
+  # one repo, this one protects all nine. It must also refuse BEFORE mutating anything.
   printf '1\n' >"$SCF/auditrc"
   _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
   _sc_out="$(_sc_run)"; _sc_rc=$?
@@ -2050,6 +2167,32 @@ if ((_sc_subtree)); then
   else
     fail "sync-core: absent/core-less repos not counted as skips (want skipped 2 / failed 0)"
   fi
+  # THE REGRESSION GATE for #524, and the reason it is here rather than in a --json test:
+  # the bug was invisible from inside a normal run. Both assertions above pass under a bare
+  # `test-core.sh` and fail only when the parent was invoked with --json, so the suite
+  # certified sync-core's bucketing while `audit-core.sh --json` reported the tree red.
+  #
+  # Drive the SAME fixture with CORE_JSON=1 exported — exactly what --json does — and require
+  # the identical verdict. This fails loudly if anyone drops the `-u CORE_JSON` above, and it
+  # costs one extra fixture run rather than a recursive audit.
+  #
+  # Asserted on the skip LINES, not just the summary counts: the counts are printed by
+  # sync-core.sh's own printf and would survive a silenced skip(), so a count-only assertion
+  # would go on passing through precisely this bug.
+  # An explicit `export` inside a subshell, not a `CORE_JSON=1 _sc_run` prefix. The value must
+  # genuinely be EXPORTED or `env -u` has nothing to strip and the gate passes vacuously; and a
+  # prefix assignment on a FUNCTION call is the one form whose persistence bash and POSIX mode
+  # disagree about, so it could leak CORE_JSON into every later section and silence their skips.
+  _sc_out="$(
+    export CORE_JSON=1
+    _sc_run SYNC_SKIP_AUDIT=1
+  )"
+  if grep -q 'dotfiles-NotCloned' <<<"$_sc_out" && grep -qE 'dotfiles-Other.*no core/' <<<"$_sc_out" &&
+    grep -qE 'skipped 2' <<<"$_sc_out" && grep -qE 'failed 0' <<<"$_sc_out"; then
+    pass "sync-core: the fixture is insulated from an exported CORE_JSON (--json cannot change the verdict)"
+  else
+    fail "sync-core: an exported CORE_JSON silenced the fixture's skip() lines — --json would red a green tree (#524)"
+  fi
 
   # --- dotfiles-Windows is never a target -------------------------------------
   # It vendors no core/ (its host layer is native PowerShell), so fanning into it would
@@ -2062,9 +2205,48 @@ if ((_sc_subtree)); then
     fail "sync-core: dotfiles-Windows would be fanned into (it carries no core/ subtree)"
   fi
 
+  # --- every shipped fallback array equals the canonical fleet -----------------
+  # scripts/os-repos.txt is the single source, but sync-core.sh, fleet-drift.sh and
+  # core-integrity.sh EACH keep a hardcoded array for when that file is missing or
+  # unreadable — and that array is what actually runs in exactly the situation you are
+  # least able to notice it. Registering dotfiles-Debian in the data file alone would
+  # have left three silent omissions, so assert the SHIPPED arrays against the SHIPPED
+  # file rather than trusting that whoever adds the next target remembers all four.
+  _fleet_canon="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' -e 's/[[:space:]]//g' \
+    "$HERE/scripts/os-repos.txt" | sort)"
+  # shellcheck disable=SC2043
+  for _fb in "sync-core.sh:ALL_OS_REPOS" "fleet-drift.sh:OS_REPOS" "core-integrity.sh:OS_REPOS"; do
+    _fb_file="${_fb%%:*}" _fb_var="${_fb##*:}"
+    # Take the FIRST array literal for that name: fleet-drift/core-integrity use the
+    # `((${#VAR[@]})) || VAR=(…)` form, so the assignment is the one with a `(` on it.
+    # awk, not a sed range. A `sed -n '/VAR=(/,/^)/p' ` range restarts on every later
+    # match of the opening address and happily ran on to the end of the file, dragging
+    # in every `dotfiles-core` mentioned in the usage heredoc below. awk with an explicit
+    # in/out flag stops at the FIRST closing paren, which is the array and nothing else.
+    # Comments are stripped too: both files carry prose INSIDE the block explaining why
+    # dotfiles-Windows is excluded, and that prose is otherwise scraped as membership.
+    _fb_list="$(awk -v v="$_fb_var" '
+        $0 ~ "^[[:space:]]*" v "=\\(" { inarr = 1; next }
+        inarr && /^[[:space:]]*\)/     { exit }
+        inarr                           { sub(/#.*/, ""); print }
+      ' "$HERE/scripts/$_fb_file" |
+      tr ' ' '\n' | grep -oE '^dotfiles-[A-Za-z]+$' | sort -u)"
+    if [[ -z "$_fb_list" ]]; then
+      fail "$_fb_file: could not parse the $_fb_var fallback array (did its shape change?)"
+    elif [[ "$_fb_list" == "$_fleet_canon" ]]; then
+      pass "$_fb_file: the $_fb_var fallback matches scripts/os-repos.txt exactly"
+    else
+      fail "$_fb_file: $_fb_var drifted from scripts/os-repos.txt — missing: $(comm -23 <(printf '%s\n' "$_fleet_canon") <(printf '%s\n' "$_fb_list") | tr '\n' ' ')extra: $(comm -13 <(printf '%s\n' "$_fleet_canon") <(printf '%s\n' "$_fb_list") | tr '\n' ' ')"
+    fi
+  done
+  unset _fleet_canon _fb _fb_file _fb_var _fb_list
+
   # --- --dry-run mutates nothing ----------------------------------------------
   _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
-  _sc_out="$(env -u DOTFILES_ALLOW_CORE_EDIT CORE_COLOR=never REPOS_ROOT="$SCF/repos" \
+  # -u CORE_JSON for the same reason as _sc_run (#524). This call site does not currently
+  # assert on skip() output, so it was not failing — but it is the identical trap one
+  # assertion away, and a guard applied only where it already hurts is how this one got in.
+  _sc_out="$(env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never REPOS_ROOT="$SCF/repos" \
     CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main SYNC_JOBS=1 bash "$_SCS" --dry-run 2>&1)"
   if grep -q 'would: git -C' <<<"$_sc_out" &&
     [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]] &&
@@ -2185,7 +2367,7 @@ if ((_sc_subtree)); then
   else
     fail "sync-core: comment-less pin mishandled ($(cat "$_sc_wf/pinned-no-comment.yml"))"
   fi
-  # The two must-not-touch cases. `@v4` is a deliberate per-repo policy (7 of 9 repos take
+  # The two must-not-touch cases. `@v4` is a deliberate per-repo policy (8 of 10 repos take
   # the moving alias); converting it to a SHA pin would change that repo's update model
   # behind its back. And a third-party action pinned to a sha with a `# vX.Y.Z` comment has
   # exactly the shape of our own pins — rewriting it would point actions/checkout at a
@@ -2261,9 +2443,9 @@ fi
 
 # ── F7. the REAL link run (blib_link_core against a throwaway $HOME) ─────────
 # bootstrap-test.yml asserts the symlink graph, but it is workflow_call-only and
-# dotfiles-core ships no bootstrap.sh — so it only ever runs from the eight OS repos.
+# dotfiles-core ships no bootstrap.sh — so it only ever runs from the nine OS repos.
 # Core's own CI unit-tests the blib_* helpers and never performs a real link run, which
-# means a bootstrap-lib regression is caught downstream, in eight repos, instead of here.
+# means a bootstrap-lib regression is caught downstream, in nine repos, instead of here.
 #
 # This closes that: link the ACTUAL Core tree into a sandbox $HOME/$config and assert the
 # graph a consumer depends on. Hermetic — the tpm directory is pre-seeded so the one-time
@@ -2300,7 +2482,7 @@ if have git; then
   }
   # The zsh chain is the load-order contract: every numbered Core fragment must land FLAT
   # in $config/zsh under its own basename, because loader.zsh globs NN-*.zsh there. A
-  # rename or a missed file here is precisely what silently drops a stage on eight boxes.
+  # rename or a missed file here is precisely what silently drops a stage on nine boxes.
   _lr_missing=""
   for f in "$HERE"/zsh/[0-9][0-9]-*.zsh; do
     b="$(basename "$f")"
@@ -2531,6 +2713,106 @@ else
   fail "blib_wire_summary: the footer omits the relink tally (got: $_bl_sum)"
 fi
 
+# ── F8b. blib_link_role_layer (lib/bootstrap-lib.sh) ─────────────────────────
+# The Role band (85-94) had no Core wiring for years, so BOTH role repos hand-rolled it
+# and drifted: dotfiles-Defense honoured BLIB_DRY when dropping the stale pre-v4
+# unnumbered link, dotfiles-Offense did not — so the same `--dry-run` mutated one box and
+# not the other. That asymmetry is exactly what case 3 below pins.
+#
+# The other invariant worth a test is a NEGATIVE one: a role repo must never write band
+# 80. That band belongs to the OS repo underneath it, and a role layer that claimed it
+# would silently displace the OS layer's fragment on every bootstrap — a failure that
+# looks like "my aliases vanished", three layers from its cause.
+hdr "blib_link_role_layer (band 85 + tmux/role.conf, and never band 80)"
+_rl="$(mktemp -d "$SANDBOX/rolelayer.XXXXXX")"
+mkdir -p "$_rl/repo/offensive/templates"
+printf 'ROLEZSH\n'  >"$_rl/repo/offensive/offensive.zsh"
+printf 'ROLECONF\n' >"$_rl/repo/offensive/offensive.conf"
+printf 'TPL\n'      >"$_rl/repo/offensive/templates/engagement.md"
+
+# Fresh `bash -c` per case: the lib's re-entry guard makes a re-source a no-op, and these
+# need BLIB_DRY / BLIB_SKIP read from a clean start. <dry> <skip-csv> <config-dir>.
+_rl_run() {
+  BLIB_DRY="$1" bash -c '
+    set -u
+    . "'"$HERE/lib/bootstrap-lib.sh"'"
+    [ -n "$2" ] && blib_select --skip "$2"
+    blib_link_role_layer "$1/repo" "$3" offensive
+  ' _ "$_rl" "$2" "$3" 2>&1
+}
+
+# 1) the full wire: band 85, tmux/role.conf, and templates under <config>/<role>/.
+_rl_c1="$_rl/cfg1"
+_rl_out="$(_rl_run 0 "" "$_rl_c1")"
+if [[ "$(readlink "$_rl_c1/zsh/85-offensive.zsh")" == "$_rl/repo/offensive/offensive.zsh" ]] &&
+  [[ "$(readlink "$_rl_c1/tmux/role.conf")" == "$_rl/repo/offensive/offensive.conf" ]] &&
+  [[ "$(readlink "$_rl_c1/offensive/templates")" == "$_rl/repo/offensive/templates" ]]; then
+  pass "blib_link_role_layer: wires 85-<role>.zsh, tmux/role.conf and <role>/templates"
+else
+  fail "blib_link_role_layer: the role surface is not fully wired (got: $_rl_out)"
+fi
+
+# 2) it must NOT touch band 80 — that is the OS repo's, and this helper has no business
+#    there even though the role fragment rides the same `zsh` group.
+if [[ ! -e "$_rl_c1/zsh/80-os.zsh" ]]; then
+  pass "blib_link_role_layer: leaves band 80 alone (the OS repo owns it)"
+else
+  fail "blib_link_role_layer: wrote band 80 — a role layer would displace the OS fragment"
+fi
+
+# 3) the stale pre-v4 unnumbered link. The v4 loader globs NN-*.zsh, so an unnumbered
+#    <role>.zsh is INERT while still looking wired — it must be dropped on a real run and
+#    SURVIVE a dry run. The second half is the drift this helper was written to end.
+_rl_c3="$_rl/cfg3"
+mkdir -p "$_rl_c3/zsh"
+ln -sfn "$_rl/repo/offensive/offensive.zsh" "$_rl_c3/zsh/offensive.zsh"
+_rl_out="$(_rl_run 1 "" "$_rl_c3")"
+if [[ -L "$_rl_c3/zsh/offensive.zsh" ]] && [[ ! -e "$_rl_c3/zsh/85-offensive.zsh" ]] &&
+  [[ "$_rl_out" == *"would drop stale pre-v4 link"* ]]; then
+  pass "blib_link_role_layer: BLIB_DRY names the stale pre-v4 link and removes nothing"
+else
+  fail "blib_link_role_layer: dry-run mutated the box or hid the stale link (got: $_rl_out)"
+fi
+_rl_out="$(_rl_run 0 "" "$_rl_c3")"
+if [[ ! -e "$_rl_c3/zsh/offensive.zsh" ]] &&
+  [[ "$(readlink "$_rl_c3/zsh/85-offensive.zsh")" == "$_rl/repo/offensive/offensive.zsh" ]]; then
+  pass "blib_link_role_layer: a real run drops the inert pre-v4 link and numbers the fragment"
+else
+  fail "blib_link_role_layer: the stale unnumbered link survived a real run (got: $_rl_out)"
+fi
+
+# 4) group gating, both directions in one pass: --skip tmux must drop role.conf WITHOUT
+#    dropping the zsh fragment. A helper that ignored blib_want would wire both; one that
+#    gated the whole function on a single group would wire neither.
+_rl_c4="$_rl/cfg4"
+_rl_out="$(_rl_run 0 tmux "$_rl_c4")"
+if [[ ! -e "$_rl_c4/tmux/role.conf" ]] &&
+  [[ "$(readlink "$_rl_c4/zsh/85-offensive.zsh")" == "$_rl/repo/offensive/offensive.zsh" ]]; then
+  pass "blib_link_role_layer: --skip tmux drops role.conf and keeps the band-85 fragment"
+else
+  fail "blib_link_role_layer: --skip tmux gated the wrong half (got: $_rl_out)"
+fi
+
+# 5) <role> names the directory AND the stem, so a role with no .conf (dotfiles-Defense
+#    ships none today) wires cleanly instead of leaving a dangling tmux/role.conf.
+mkdir -p "$_rl/repo2/defense"
+printf 'BLUE\n' >"$_rl/repo2/defense/defense.zsh"
+_rl_c5="$_rl/cfg5"
+_rl_out="$(BLIB_DRY=0 bash -c '
+  set -u
+  . "'"$HERE/lib/bootstrap-lib.sh"'"
+  blib_link_role_layer "$1/repo2" "$2" defense
+' _ "$_rl" "$_rl_c5" 2>&1)"
+# -e AND -L, not -e alone: bash's -e follows the link, so it is FALSE for a dangling
+# symlink — an -e-only assertion would pass on exactly the regression this test is named
+# after. -L catches the dangling case, -e catches a real file or directory.
+if [[ "$(readlink "$_rl_c5/zsh/85-defense.zsh")" == "$_rl/repo2/defense/defense.zsh" ]] &&
+  [[ ! -e "$_rl_c5/tmux/role.conf" && ! -L "$_rl_c5/tmux/role.conf" ]]; then
+  pass "blib_link_role_layer: a role with no .conf and no templates leaves no dangling role.conf"
+else
+  fail "blib_link_role_layer: the no-.conf role wired wrongly (got: $_rl_out)"
+fi
+
 # ── F9. tag-release.sh — the tag may only exist on a commit that is on main ──
 # This script had NO coverage, which is how its ordering bug survived: it used to commit
 # AND tag in one step, leaving a local vX.Y.Z on a commit that was not yet on main. A
@@ -2578,7 +2860,18 @@ if have git; then
   printf '1.1.0\n' >"$TR/work/core.version"
   printf '# Changelog\n\n## [Unreleased]\n\n## [v1.1.0] - 2026-02-02\n\n- new\n\n## [v1.0.0] - 2026-01-01\n\n- released\n' >"$TR/work/CHANGELOG.md"
 
-  _tr_run() { (cd "$TR/work" && env CORE_COLOR=never TAG_SKIP_AUDIT=1 bash "$_TRS" "$@" 2>&1); }
+  # LC_ALL=C so assertions on this output mean the same thing on every box: the script's
+  # own strings are ours and stable, but anything bash or git emits — notably a shell's
+  # "command not found" — is localized, and an assertion that greps a translated
+  # diagnostic silently stops matching rather than failing.
+  # -u CORE_JSON alongside the pins: under --json, common.sh's skip() prints NOTHING (stdout
+  # must carry only the JSON object), and both test-core.sh and audit-core.sh EXPORT
+  # CORE_JSON=1 for that mode. The fixture inherits it, the advanced-tip notice vanishes,
+  # and the assertion below fails for a reason that has nothing to do with tag-release.sh.
+  # Verified: before this, `test-core.sh --json` reported the notice missing. The rule this
+  # follows — a fixture asserting on OUTPUT must pin every variable that governs how output
+  # is produced — is the same one behind LC_ALL and CORE_COLOR here, and $EDITOR below.
+  _tr_run() { (cd "$TR/work" && env -u CORE_JSON LC_ALL=C CORE_COLOR=never TAG_SKIP_AUDIT=1 bash "$_TRS" "$@" 2>&1); }
 
   # THE property. Phase 1 commits and must leave NO tag behind — there must be nothing
   # for a stray push to carry while the commit is still off main.
@@ -2634,11 +2927,97 @@ if have git; then
   else
     fail "tag-release: fixture did not actually advance the tip — the assertion above proves nothing"
   fi
+  # No undefined helper on the publish path. This run just exercised the advanced-tip
+  # branch, which called a `note` that scripts/lib/common.sh has never defined (it defines
+  # pass/skip/fail/hdr/have) — so it printed "note: command not found" and SWALLOWED the
+  # very notice it exists to give. It survived because this branch only runs when main has
+  # moved past the release commit, and because shellcheck cannot flag a bare word that
+  # might be some command on PATH; the assertions above only ever inspected tags, never the
+  # output. It fired for real while publishing v4.12.2.
+  #
+  # BOTH halves, because either alone is satisfiable by the wrong thing:
+  #   * absence of the shell diagnostic alone passes if the notice is DELETED — the
+  #     user-visible regression (no notice at all) would sail through;
+  #   * presence of the notice alone would pass while a second, later helper was undefined.
+  # And the diagnostic is matched only as a NEGATIVE, because bash localizes "command not
+  # found" — a translated shell would silently satisfy a positive match. The notice text
+  # is ours and stable, so that is the half worth asserting positively. _tr_run pins
+  # LC_ALL=C so the negative match stays meaningful wherever this runs.
+  # Order matters for the DIAGNOSIS, not the verdict. An undefined helper fails both halves
+  # at once — bash prints "…: command not found" and the message text never appears, since
+  # the words were arguments to a command that does not exist — so testing the missing
+  # notice first would report "deleted? suppressed?" for a helper that is merely misspelled.
+  # Check the specific cause first and let the general one catch the rest.
+  if grep -qi 'command not found' <<<"$_tr_out"; then
+    fail "tag-release: --publish invoked an undefined helper: $(grep -i 'command not found' <<<"$_tr_out" | head -1)"
+  elif ! grep -q 'origin/main has advanced' <<<"$_tr_out"; then
+    fail "tag-release: --publish printed NO advanced-tip notice — the fixture advanced the tip, so it was due (deleted? suppressed?)"
+  else
+    pass "tag-release: --publish emits the advanced-tip notice, via a helper that exists"
+  fi
   # ...and the moving major alias rides along to the same commit.
   if [[ "$(_trg "$TR/work" rev-parse -q --verify 'v1^{commit}' 2>/dev/null)" == "$_tr_release_sha" ]]; then
     pass "tag-release: --publish moves the vN alias to the release commit too"
   else
     fail "tag-release: the vN alias did not follow the release"
+  fi
+
+  # ── the alias must be ANNOTATED, or signing operators cannot publish (#506) ──────────
+  # The assertion above passes on any box with `tag.gpgsign` OFF, which is why this shipped
+  # broken: under `tag.gpgsign = true` git makes every tag SIGNED — therefore annotated —
+  # so a message-less `git tag -f "$MAJOR"` aborts with "fatal: no tag message?" and the
+  # publish dies AFTER creating the immutable tag locally. It broke the first real release
+  # cut by an operator with signing enabled (v4.12.2).
+  #
+  # This cannot be driven by simply flipping gpgsign on in the fixture: git would then try
+  # to actually sign, and CI has no key, so the test would fail for an unrelated reason and
+  # prove nothing. Note also WHY the fixture never caught this on the maintainer's own box,
+  # where signing IS on — this suite exports GIT_CONFIG_GLOBAL=/dev/null (above), so the
+  # fixture is hermetic from exactly the config that triggers the bug. Hermeticity is right,
+  # and it is also what hid this. Pin it from both ends instead, neither needing a key:
+  #   1. the hazard is REAL — the message-less form still fails under gpgsign, and it fails
+  #      BEFORE any signing is attempted, so no key is required to observe it;
+  #   2. the alias the script ACTUALLY produced is annotated and carries a message.
+  _tr_gpgd="$SANDBOX/tagsign"; rm -rf "$_tr_gpgd"; mkdir -p "$_tr_gpgd"
+  git init -q "$_tr_gpgd"; _tr_ident "$_tr_gpgd"
+  git -C "$_tr_gpgd" commit -q --allow-empty -m x
+  # Assert the STATUS and ONLY the status. The wording is environment-dependent, not a
+  # stable contract: with no message and no -m, git needs one, and how it complains
+  # depends on whether it can open an editor —
+  #     macOS, interactive:  fatal: no tag message?
+  #     CI, no TTY/EDITOR:   error: Terminal is dumb, but EDITOR unset
+  # Both are the same hazard. An earlier version of this assertion demanded the first
+  # wording and went red across all four CI legs for a difference that says nothing about
+  # the bug. The message is kept for the failure text, where it aids diagnosis, and is
+  # never gated on.
+  # GIT_EDITOR=true, and the inherited editor vars cleared. Without this the probe is only
+  # deterministic where there is no editor to launch — i.e. CI. On a developer's
+  # interactive `make audit`, git would open $EDITOR here to collect the tag message and
+  # BLOCK the suite on a modal vim; saving a message would then let it proceed to a real
+  # signing attempt, which is neither what this asserts nor guaranteed to be possible.
+  # `true` is a no-op editor: it exits 0 having written nothing, so the message stays
+  # empty and git aborts exactly as it does in CI — deterministic, key-free, everywhere.
+  _tr_sign_err="$(LC_ALL=C GIT_EDITOR=true EDITOR=true VISUAL=true \
+    git -C "$_tr_gpgd" -c tag.gpgsign=true tag -f vSIG 2>&1)"
+  _tr_sign_rc=$?
+  if ((_tr_sign_rc != 0)); then
+    pass "tag-release: a message-less 'git tag -f' really does abort under tag.gpgsign (the #506 hazard)"
+  else
+    # Not a failure of ours — git changed behaviour, so the check below is guarding a
+    # hazard that may no longer exist. Say so rather than reporting a silent pass.
+    fail "tag-release: message-less 'git tag -f' no longer aborts under gpgsign — re-check whether #506's fix is still needed (git said: ${_tr_sign_err:-<nothing>})"
+  fi
+  # BEHAVIOUR, not source spelling. Grepping tag-release.sh for a command form would match
+  # a comment or dead code, and would reject equivalent correct spellings like
+  # `--annotate --force`. The publish above already created v1 with the real script, so ask
+  # git what that ref actually IS: an annotated tag is its own object (`cat-file -t` → tag)
+  # and carries a message; a lightweight tag resolves straight to the commit.
+  _tr_v1_type="$(_trg "$TR/work" cat-file -t "$(_trg "$TR/work" rev-parse -q --verify v1 2>/dev/null)" 2>/dev/null)"
+  _tr_v1_msg="$(_trg "$TR/work" tag -l --format='%(contents)' v1 2>/dev/null)"
+  if [[ "$_tr_v1_type" == tag && -n "${_tr_v1_msg//[[:space:]]/}" ]]; then
+    pass "tag-release: the vN alias is an ANNOTATED tag with a message (publishable under gpgsign)"
+  else
+    fail "tag-release: the vN alias is '${_tr_v1_type:-missing}' with message '${_tr_v1_msg:-<empty>}' — a lightweight alias makes publish abort for a signing operator (#506)"
   fi
   # Re-publishing an already-published tag must refuse — release tags are immutable.
   # Runs here, while 1.1.0 is still origin/main's newest core.version change.
@@ -3207,7 +3586,18 @@ fi
 # Hermetic: a stub `atuin` supplies every shape, so this needs no atuin, no daemon and no
 # network — the same stubbing idiom Section J uses on the example unit's ExecStart.
 _VERIFY="$HERE/scripts/verify-atuin-guard.sh"
-if [[ ! -x "$_VERIFY" ]]; then
+# SCOPE_ATUIN, not SCOPE_SHELL. This section and J4 below are 197s of a 286s suite — 68% of
+# it, and the largest single cost on the CI critical path across all nine repos. What they
+# exercise is the premise DETECTOR against stub binaries; the detector's real job, measuring
+# live upstream atuin, runs weekly in .github/workflows/atuin-guard-verify.yml and never on a
+# push. So the only changes that can move the result here are the detector itself (scripts/,
+# which ci-classify.sh already treats as infra → full run), the guard it protects in
+# zsh/00-tools.zsh, and atuin/. Every other shell change was paying 197s for a harness it
+# cannot reach. Skipping is FAIL-CLOSED at the classifier, not here: an unrecognised or
+# unparseable path forces the full scope, so an unclassified change still runs this.
+if ! ((SCOPE_ATUIN)); then
+  skip "atuin guard detector (out of scope)"
+elif [[ ! -x "$_VERIFY" ]]; then
   skip "atuin guard detector (scripts/verify-atuin-guard.sh absent or not executable)"
 elif ! have python3; then
   skip "atuin guard detector (python3 not installed)"
@@ -3576,6 +3966,8 @@ fi
 _DVERIFY="$HERE/scripts/verify-atuin-guard.sh"
 if [[ ! -x "$_DVERIFY" ]]; then
   skip "atuin autostart premise (scripts/verify-atuin-guard.sh absent or not executable)"
+elif ! ((SCOPE_ATUIN)); then
+  skip "atuin autostart premise (out of scope)"
 elif ! have python3; then
   skip "atuin autostart premise (python3 not installed)"
 else
@@ -4807,7 +5199,7 @@ UI="$HERE/zsh/05-ui.zsh"
 # Run an assertion under zsh; $1 = label, $2 = zsh body that must exit 0.
 # On FAILURE we capture the child's combined stdout+stderr and print it INDENTED
 # (mirroring the nvim/smoke sections above) — a red unit test must say WHY, not just
-# its label, or a CI failure that fans out to eight repos forces a local re-reproduction.
+# its label, or a CI failure that fans out to nine repos forces a local re-reproduction.
 # On PASS the output is discarded, so the expected _core_err/usage noise stays silent.
 check() { # check <label> <zsh-body>
   local out
@@ -4900,7 +5292,7 @@ check "pullall on a repo-less dir prints the summary and returns 0" \
 # throwaway $GIT_AUTHOR_* identity and git init in mktemp), advance the remote, then run
 # pullall and assert it fast-forwarded the clone (tally "updated: 1", a real new file on
 # disk, zero failures). This exercises trunk auto-detection, the --ff-only pull, and the
-# ✅ tally — the per-repo path that fans out to all eight OS repos.
+# ✅ tally — the per-repo path that fans out to all nine OS repos.
 check_dep "pullall fast-forwards a behind repo and tallies it (hermetic bare remote)" git \
   'export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@e GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@e
    w=$(mktemp -d)
@@ -5171,7 +5563,7 @@ check_dep "extract guards the gz output at the archive's path, not \$PWD" gzip \
 # Sections A/B and audit-core.sh's static pass leave the highest-LOGIC, highest
 # fan-out helpers unproven: the package-manager and scheduler detection LADDERS
 # (which differ per distro and silently mis-fire) and ui.zsh's defensive no-TTY
-# confirm. A regression in any of these ships to all eight OS repos — exactly what a
+# confirm. A regression in any of these ships to all nine OS repos — exactly what a
 # behavioral gate must catch. Each is driven HERMETICALLY against a stubbed PATH
 # (the same technique the clip ladder in section C uses), so the result is
 # deterministic on every CI userland (glibc / BSD / musl) regardless of what's
@@ -5717,7 +6109,7 @@ ucheck "browser: macOS (OSTYPE=darwin) leaves \$BROWSER unset even with no DISPL
 # versionless `✓ fd` there (the probe forks `"$bin" --version`, a parameter expansion, and
 # parameters are never alias-expanded — the error was swallowed by the pipeline).
 # Both halves are pinned here against a stubbed PATH, hermetically, because a regression
-# fans out to all eight OS repos and is invisible on macOS where the names are canonical.
+# fans out to all nine OS repos and is invisible on macOS where the names are canonical.
 RNBIN="$SANDBOX/rnbin"
 _real_grep="$(command -v grep)"
 _real_head="$(command -v head)"
@@ -5762,6 +6154,193 @@ _rn_only
 ucheck "renamed: neither present → no bat/fd/cat alias and the doctor reports absent" \
   "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ -z \${HAVE_BAT:-} && -z \${HAVE_FD:-} ]] && ! (( \$+aliases[bat] )) && ! (( \$+aliases[fd] )) && ! (( \$+aliases[cat] )) && [[ \$j == *'\"bat\":false'* && \$j == *'\"fd\":false'* ]]" \
   PATH="$RNBIN" CORE_NO_PAGER=1
+
+# ── git subcommands in git's exec-path: an honest doctor off $PATH (#424) ────
+# The Debian family packages a git SUBCOMMAND into git's exec-path (`git --exec-path`) and
+# keeps that directory off $PATH on purpose — git dispatches `git absorb` by looking there
+# itself. Verified on Kali, git-absorb 0.6.17-2+b4: `dpkg -L` lists the exec-path binary and
+# a man page and NOTHING in a PATH dir, `command -v git-absorb` finds nothing, and
+# `git absorb --version` prints 0.6.17. core-doctor printed `✗ git-absorb` for a tool the
+# reader had just used — #418's failure one directory further out, and it earns the same
+# hermetic treatment for the same reason: the box running this suite has it one way or the
+# other (a Kali runner ONLY in the exec-path, an Arch one ONLY on PATH) and neither can
+# prove the other's path.
+#
+#   $GXROOT/bin/git                  stub: answers --exec-path, and LOGS every invocation
+#   $GXROOT/lib/git-core/git-absorb  the subcommand — executable, NOT on $PATH
+#   $GXROOT/bin/{grep,head}          real, symlinked: `core-doctor -v` pipes --version through them
+#
+# The bin/ · lib/git-core/ layout is not cosmetic: 00-tools.zsh's zero-fork fallback derives
+# its candidates from ${commands[git]:h:h} rather than naming a distro path, so the tree has
+# to be shaped like a real prefix for that half to be exercised at all. The call log is what
+# lets the fork budget itself be asserted, in (d) and (e) and (h).
+#
+# HERMETIC AGAINST THE DEVELOPER'S OWN ENVIRONMENT. `ucheck` runs `env "$@" zsh`, which
+# passes the named variables ON TOP of the inherited environment — it does not clear it. So
+# a box with GIT_EXEC_PATH exported would leak it into every case here: the git stub honours
+# the variable exactly as real git does, so it would answer with the developer's directory
+# instead of $GXLIB and cases (a)-(h) would fail for a reason that has nothing to do with
+# the code under test. Unset it once, here, for the whole block; the cases that need it
+# pass it explicitly through ucheck's env.
+unset GIT_EXEC_PATH
+GXROOT="$SANDBOX/gitexec"
+GXBIN="$GXROOT/bin"
+GXLIB="$GXROOT/lib/git-core"
+_gx_tree() { # _gx_tree [name ...] — rebuild the tree; each name also lands on $PATH as a stub
+  rm -rf "$GXROOT"
+  mkdir -p "$GXBIN" "$GXLIB"
+  # $1/$* below belong to the /bin/sh stub being written, not to this shell — hence printf
+  # with %s rather than an expanding heredoc.
+  # The stub honours $GIT_EXEC_PATH exactly as real git does. That is not decoration: it is
+  # the only way to move the exec-path BETWEEN two reports using nothing but an env var,
+  # and this PATH is hermetic — it carries git, grep and head and nothing else, so a test
+  # body cannot reach for `mv` to rearrange the tree.
+  printf '#!/bin/sh\necho "$*" >>"%s/calls"\n[ "$1" = --exec-path ] && { echo "${GIT_EXEC_PATH:-%s}"; exit 0; }\nexit 1\n' \
+    "$GXROOT" "$GXLIB" >"$GXBIN/git"
+  printf '#!/bin/sh\necho "git-absorb 0.6.17"\n' >"$GXLIB/git-absorb"
+  chmod +x "$GXBIN/git" "$GXLIB/git-absorb"
+  local n
+  for n in "$@"; do
+    printf '#!/bin/sh\necho "%s 0.6.17"\n' "$n" >"$GXBIN/$n"
+    chmod +x "$GXBIN/$n"
+  done
+  ln -sf "$_real_grep" "$GXBIN/grep"
+  ln -sf "$_real_head" "$GXBIN/head"
+}
+# (a) THE ISSUE. 00-tools.zsh is deliberately NOT sourced, so a ✓ can only come from
+#     _core_doctor_bin asking git — not from a HAVE_* flag and not from an alias.
+_gx_tree
+ucheck "git exec-path: core-doctor reports a subcommand that lives ONLY in git's exec-path" \
+  "source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ \$j == *'\"git-absorb\":true'* ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+# (b) VERSIONS — the latent half, exactly as in the fd/bat suite above: -v forks the RESOLVED
+#     binary. A bare `git-absorb --version` cannot run on this family at all, so this row
+#     could not have carried a version even if presence had somehow been right.
+ucheck "git exec-path: core-doctor -v reads the version off the exec-path binary" \
+  "source '$UI'; source '$FN'; o=\$(core-doctor -v); [[ \$o == *'git-absorb 0.6.17'* ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+# (c) NO LEAK — the row is keyed and PRINTED by its canonical name; the absolute path the
+#     resolver hands back is an implementation detail and must not reach the report. The
+#     `resolved` footer names the exec-path DIRECTORY, which is why this asserts against the
+#     full binary path rather than against the directory.
+ucheck "git exec-path: the report prints the canonical name, never the resolved absolute path" \
+  "source '$UI'; source '$FN'; o=\$(NO_COLOR=1 core-doctor); [[ \$o == *'✓ git-absorb'* && \$o != *'$GXLIB/git-absorb'* ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+# (d) ONE FORK PER REPORT. The cache is the reason forking here is acceptable at all; without
+#     it the answer is re-derived per git-* row and per renderer. Driven through
+#     _core_doctor_bin with TWO different names rather than through a report, deliberately:
+#     _CORE_DOCTOR_GROUPS carries exactly one `git-*` row today, so a whole-report assertion
+#     would read `== 1` with the cache torn out and prove nothing. Two names is the smallest
+#     input that can tell a cache from its absence, and it stays honest if the inventory
+#     never grows a second git subcommand.
+_gx_tree
+ucheck "git exec-path: two git-* rows resolve on ONE fork (the cache, not a one-row artefact)" \
+  "source '$UI'; source '$FN'; _core_doctor_bin git-absorb; _core_doctor_bin git-imaginary; (( \$(grep -c -- '--exec-path' '$GXROOT/calls') == 1 ))" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+# (d2) …AND THE CACHE MUST NOT OUTLIVE ITS REPORT. Only the TTY render runs in a `$(…)`
+#     subshell; --json and the non-TTY path run in the caller's shell, so core-doctor unsets
+#     the cache on entry. Without that unset a shell that ran one report before git was
+#     installed would keep answering from the cached EMPTY value forever. Asserted by
+#     MOVING THE EXEC-PATH between two reports in ONE shell, via $GIT_EXEC_PATH, which the
+#     git stub honours as real git does: the first report is pointed at an empty directory
+#     and must say false, the second at the real one and must say true. A cache that outlives
+#     its report answers the second from the first's directory and the assertion fails.
+#     Done with an env var rather than by rearranging the tree because this PATH is hermetic
+#     — no `mv` on it — and a body that shells out to a missing tool fails silently, which
+#     is how the first draft of this case passed for the wrong reason.
+_gx_tree
+mkdir -p "$GXROOT/lib/git-core-empty"
+#     REDIRECT TO A FILE, never `$(…)` — the same rule the OSC 133 block below states for its
+#     own reason. A command substitution is itself a subshell, so it discards the cache on the
+#     way out and this case passes no matter what core-doctor does. Redirection keeps both
+#     reports in the one shell, which is the only place the leak is observable.
+ucheck "git exec-path: a second report re-derives — the cache does not outlive its invocation" \
+  "source '$UI'; source '$FN'
+   export GIT_EXEC_PATH='$GXROOT/lib/git-core-empty'; core-doctor --json >'$GXROOT/j1'
+   export GIT_EXEC_PATH='$GXLIB';                     core-doctor --json >'$GXROOT/j2'
+   [[ \$(<'$GXROOT/j1') == *'\"git-absorb\":false'* && \$(<'$GXROOT/j2') == *'\"git-absorb\":true'* ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+# (e) PATH FIRST. A git-absorb on $PATH must be used as-is and git must never be asked — this
+#     is what keeps the fix free on every box that never had the bug.
+_gx_tree git-absorb
+ucheck "git exec-path: a git-absorb on \$PATH is used as-is — git is never forked to find it" \
+  "source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ \$j == *'\"git-absorb\":true'* ]] && [[ ! -s '$GXROOT/calls' ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+# (f) HONEST ✗, twice: git present with no subcommand, and no git at all. core-doctor is
+#     read-only diagnostics and must return 0 through both.
+_gx_tree; rm -f "$GXLIB/git-absorb"
+ucheck "git exec-path: git present but no subcommand in its exec-path → an honest ✗, rc 0" \
+  "source '$UI'; source '$FN'; j=\$(core-doctor --json) && [[ \$j == *'\"git-absorb\":false'* ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+_gx_tree; rm -f "$GXBIN/git" "$GXLIB/git-absorb"
+ucheck "git exec-path: no git at all → an honest ✗ and no error (the empty answer is cached)" \
+  "source '$UI'; source '$FN'; j=\$(core-doctor --json) && [[ \$j == *'\"git-absorb\":false'* ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
+# (g) THE RESOLVER'S CONTRACT: a RUNNABLE absolute path, which is what makes the -v fork work.
+_gx_tree
+ucheck "git exec-path: _core_doctor_bin hands back a runnable absolute path for the resolved row" \
+  "source '$UI'; source '$FN'; _core_doctor_bin git-absorb; [[ \$REPLY == '$GXLIB/git-absorb' ]] && [[ \$(\$REPLY --version) == 'git-absorb 0.6.17' ]]" \
+  PATH="$GXBIN"
+# (h) 00-tools.zsh's half — and its ZERO-FORK contract in the same assertion: the flag must be
+#     set from git's exec-path, derived via $commands, with `git` itself never invoked. This is
+#     the guard that fails if someone "simplifies" the fallback into a $(git --exec-path).
+_gx_tree
+ucheck "git exec-path: HAVE_GIT_ABSORB is set from git's exec-path, with no fork (00-tools.zsh)" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_GIT_ABSORB:-} ]] && [[ ! -s '$GXROOT/calls' ]]" \
+  PATH="$GXBIN"
+_gx_tree; rm -f "$GXLIB/git-absorb"
+ucheck "git exec-path: HAVE_GIT_ABSORB stays unset when the exec-path has no git-absorb" \
+  "source '$TOOLS_FILE'; [[ -z \${HAVE_GIT_ABSORB:-} ]]" \
+  PATH="$GXBIN"
+# (i) $GIT_EXEC_PATH is git's own override, so the flag must honour it — asserted from a
+#     directory OUTSIDE the derived prefix, or the derived candidate would satisfy it anyway.
+_gx_tree; rm -f "$GXLIB/git-absorb"
+mkdir -p "$GXROOT/elsewhere"
+printf '#!/bin/sh\necho "git-absorb 0.6.17"\n' >"$GXROOT/elsewhere/git-absorb"
+chmod +x "$GXROOT/elsewhere/git-absorb"
+ucheck "git exec-path: \$GIT_EXEC_PATH is honoured for the flag (git's own override wins)" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_GIT_ABSORB:-} ]]" \
+  PATH="$GXBIN" GIT_EXEC_PATH="$GXROOT/elsewhere"
+# (i2) …and the INVERSE, which case (i) alone cannot see: the override must be EXCLUSIVE, not
+#     one more candidate. GIT_EXEC_PATH REPLACES git's compiled-in exec-path — point it at an
+#     empty directory and `git absorb` answers "'absorb' is not a git command" even with the
+#     binary still sitting in the default one. So with the override empty and the DEFAULT
+#     exec-path populated, the flag must stay unset: setting it would claim a subcommand git
+#     can no longer dispatch, and core-doctor — which asks `git --exec-path` and therefore
+#     inherits the override — would rightly disagree. #503 shipped the fall-through; this is
+#     the guard against it coming back.
+_gx_tree   # git-absorb IS in the default exec-path here; the override deliberately is not
+mkdir -p "$GXROOT/empty-override"
+ucheck "git exec-path: a \$GIT_EXEC_PATH without the subcommand wins over the default (no false ✓)" \
+  "source '$TOOLS_FILE'; [[ -z \${HAVE_GIT_ABSORB:-} ]]" \
+  PATH="$GXBIN" GIT_EXEC_PATH="$GXROOT/empty-override"
+# …and the doctor must AGREE with the flag on that same box, which is the whole point of
+# keeping the two in step (#425). The git stub honours GIT_EXEC_PATH exactly as real git
+# does, so this puts both assertions on one configuration.
+ucheck "git exec-path: flag and doctor agree under an empty override (both absent)" \
+  "source '$TOOLS_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json)
+   [[ -z \${HAVE_GIT_ABSORB:-} && \$j == *'\"git-absorb\":false'* ]]" \
+  PATH="$GXBIN" GIT_EXEC_PATH="$GXROOT/empty-override" CORE_NO_PAGER=1
+# (i3) EXPORTED, not merely set. git reads GIT_EXEC_PATH from its ENVIRONMENT, so a plain
+#     shell assignment — `scalar`, not `scalar-export` — is invisible to it. Treating any
+#     non-empty parameter as authoritative gives the MIRROR of (i2): the flag honours an
+#     override git ignores and reports absent while `git absorb` and the doctor both work.
+#     Set INSIDE the body rather than passed through `ucheck`'s env, which is the whole
+#     point — anything ucheck exports arrives as `scalar-export` and cannot express this.
+#     git-absorb is in the default exec-path, so the correct answer is present-and-agreeing.
+_gx_tree
+#     `unset` FIRST, then assign: assigning to an already-exported parameter PRESERVES the
+#     export attribute, so on a box where GIT_EXEC_PATH is exported a bare assignment would
+#     leave it `scalar-export` and this case would fail for the wrong reason. Unsetting drops
+#     the attribute with the value, and the plain assignment then creates a fresh `scalar`.
+#     The type is asserted rather than assumed, so if that ever stops holding this fails
+#     loudly instead of quietly testing the exported path twice.
+ucheck "git exec-path: an UNEXPORTED GIT_EXEC_PATH is ignored, as git ignores it" \
+  "unset GIT_EXEC_PATH; GIT_EXEC_PATH='$GXROOT/empty-override'   # set, deliberately NOT exported
+   [[ \${(t)GIT_EXEC_PATH} == scalar ]] || return 1
+   source '$TOOLS_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json)
+   [[ -n \${HAVE_GIT_ABSORB:-} && \$j == *'\"git-absorb\":true'* ]]" \
+  PATH="$GXBIN" CORE_NO_PAGER=1
 
 # ── OSC 133 prompt marks + the command-block rule (00-tools.zsh) ─────────────
 # The marks are what tmux's next-prompt/previous-prompt (bound to ] / [ in
@@ -6115,7 +6694,7 @@ ucheck "maint: maint-log rejects a non-numeric N in Core's voice" \
 # ── maint scheduler artifacts (systemd unit / launchd plist / cron line) ──────
 # maint-install GENERATES a systemd unit+timer, a launchd plist (XML), and a cron line —
 # fan-out artifacts that, until now, had NO gate: a malformed OnCalendar, a broken plist,
-# or a bad cron field only fails on the user's box, then fans out to eight repos. Every OTHER
+# or a bad cron field only fails on the user's box, then fans out to nine repos. Every OTHER
 # fan-out artifact class is gated (toml/yaml/json §6, workflows actionlint §8); this closes
 # the maint hole the same way. Hermetic: override _maint_scheduler to pick the branch,
 # stub systemctl/launchctl/crontab to no-ops (so nothing touches the real system), sandbox
@@ -6798,7 +7377,7 @@ ucheck "update: welcome stays silent (no greet, no sentinel) without a tty" \
 
 # completions (U3 / DERIVED regression gate): every first-party PUBLIC verb must have a
 # #compdef that compinit resolves off the vendored fpath dir — a missing/typo'd tag
-# means no tab-completion for that command across all eight repos, with nothing else to
+# means no tab-completion for that command across all nine repos, with nothing else to
 # catch it. The verb set is DERIVED from the source (top-level functions whose names
 # don't start with `_`, Core's private-helper convention) minus an explicit allowlist
 # of public-but-non-completable functions: the zsh-vi-mode init HOOK, the git-alias
@@ -6821,7 +7400,7 @@ ucheck "completions: every first-party verb has a compinit-resolved completion (
 
 # core-help coverage (B2): the cheat sheet is a HAND-MAINTAINED rows=() array — so a new
 # verb is trivially forgotten and the one discoverability surface silently drifts from
-# reality, with nothing to catch it across eight repos. Derive the public-verb set from the
+# reality, with nothing to catch it across nine repos. Derive the public-verb set from the
 # source (same technique as the completion gate above), then assert each appears in the
 # RENDERED core-help output (rows OR the footer line, where the op/health/front-door verbs
 # live). `cheat` is the alias and `core` is the dispatcher whose own help IS the sheet —
@@ -6841,7 +7420,7 @@ ucheck "core-help lists every first-party verb (derived B2 coverage gate)" \
 # this proves its FLAGS still match the verb. Every long flag a flag-bearing completion
 # advertises must still be mentioned in the verb's zsh source — so removing `--dry-run`
 # from `up` (or renaming `--local`) without updating its #compdef now FAILS here instead
-# of silently shipping a completion that offers a flag the verb rejects to all eight repos.
+# of silently shipping a completion that offers a flag the verb rejects to all nine repos.
 # Pure sed+grep (busybox-safe); comment lines in the completion are stripped first.
 hdr "completion ↔ source flag drift (serve, up)"
 _flag_drift() { # _flag_drift <verb> <completion-file> <source-file>
@@ -6861,7 +7440,7 @@ _flag_drift up "$HERE/zsh/completions/_up" "$HERE/zsh/60-update.zsh"
 # ── git helper unit tests (git.zsh) (B2) ──────────────────────────────────────
 # git.zsh's trunk/branch resolution (git_main_branch's 6-way ref search, git_current_branch's
 # detached-HEAD fallback) is real logic that branch-aware aliases (gcom/grbm/gpu) ride on and
-# that fans out to eight repos — yet it was the ONE shell module with no behavioral coverage (only
+# that fans out to nine repos — yet it was the ONE shell module with no behavioral coverage (only
 # `zsh -n`). Drive each helper against throwaway repos, hermetic: HOME → sandbox and git config
 # pinned to /dev/null so the host's init.defaultBranch can't skew the result. Skips without git.
 hdr "git helper unit tests (git.zsh)"
@@ -6943,7 +7522,7 @@ ucheck "update: _pkgup_list parses pacman package names" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
 
 # ── op.zsh 1Password helpers (B7) ─────────────────────────────────────────────
-# op.zsh fans out to eight repos and handles SECRETS, yet had zero behavioral coverage. The
+# op.zsh fans out to nine repos and handles SECRETS, yet had zero behavioral coverage. The
 # module short-circuits (returns) unless `op` is on PATH, so we stub a fake `op` (echoes
 # its args) + a fake `clip` (captures stdin) on an isolated PATH — the same hermetic
 # technique as the clip ladder — and assert the verbs' input-guards, the op:// path
@@ -7007,7 +7586,7 @@ else
 fi
 
 # ── tmux status/popup scripts (U11) ───────────────────────────────────────────
-# The tmux helper scripts fan out to eight repos and were covered only by bash -n + shellcheck
+# The tmux helper scripts fan out to nine repos and were covered only by bash -n + shellcheck
 # (static). Their PORTABILITY CONTRACT — "emit a styled pill when there's something to show,
 # emit NOTHING (segment vanishes) otherwise" — is pure logic that a bad edit could break
 # silently (a status helper that errors blanks the whole bar). Drive the two data-driven
@@ -7527,6 +8106,21 @@ case "$_relo_path3" in *":$_relo_home/second/bin"*|*"gopath:$_relo_home/second/b
 # stop() is idempotent and leaves no orphan.
 _ka_bin="$(mktemp -d "$SANDBOX/kabin.XXXXXX")"
 printf '#!/bin/sh\nexit 0\n' >"$_ka_bin/sudo"; chmod +x "$_ka_bin/sudo"
+# TWO intervals, and the difference between them is deliberate — see each use site.
+#   _KA_INTERVAL          the SHORT one, for the block that must watch the loop go round.
+#   _KA_DEFAULT_INTERVAL  the SHIPPED default, for the block whose assertion needs a
+#                         sleeper that would still be alive if stop() had not reaped it.
+# The shipped default is pinned below rather than assumed: the sleeper shim keys on it, so
+# a change to bootstrap-lib.sh that this file did not follow must say so by name instead of
+# surfacing as the much vaguer "forked no sleeper".
+_KA_INTERVAL=1
+_KA_DEFAULT_INTERVAL=50
+_ka_shipped="$(sed -n 's/^  local interval="${BLIB_SUDO_KEEPALIVE_INTERVAL:-\([0-9]*\)}"$/\1/p' "$HERE/lib/bootstrap-lib.sh")"
+if [[ "$_ka_shipped" == "$_KA_DEFAULT_INTERVAL" ]]; then
+  pass "keepalive: the shipped refresh interval is still ${_KA_DEFAULT_INTERVAL}s (the sleeper shim keys on it)"
+else
+  fail "keepalive: lib/bootstrap-lib.sh ships a ${_ka_shipped:-unreadable} refresh interval, but this suite's sleeper shim keys on ${_KA_DEFAULT_INTERVAL} — update _KA_DEFAULT_INTERVAL or the shim records nothing and the reaping assertion goes vacuous"
+fi
 # _ka_pid <BLIB_SU> <BLIB_DRY> — start the keepalive against the shimmed sudo, print the
 # pid it recorded (empty when it correctly declined to fork). _ka_rc is the same, returning
 # the rc instead. Both wrap the subshell so the SC2030/SC2031 suppression is stated once.
@@ -7583,8 +8177,50 @@ case "$_ka_out" in */reaped/*) pass "blib_sudo_keepalive_stop reaps the refreshe
 # runner need not have scheduled the background loop's first refresh by then. It did not on
 # macOS — the argv log held only the initial `-v` and the assertion failed for a timing
 # reason that had nothing to do with the behaviour under test.
+#
+# THIS BLOCK CAN STALL FOR ONE FULL REFRESH INTERVAL, and the cause is NOT yet known. Read
+# the next 20 lines before trying to fix it — two plausible explanations have already been
+# measured and killed, and the interval seam only bounds the damage.
+#
+# MEASURED:
+#   • It is INTERMITTENT, not the constant an earlier version of this comment asserted:
+#     2 stalls in 16 instrumented suite runs (50.017s pre-seam, 20.016s driven at 20), every
+#     other run 0.02–0.13s. Expect to see "already fast" and wrongly conclude it is fixed.
+#   • The cost is exactly one interval + ~20ms, at every interval it has been driven at.
+#   • During a stall, sampling /proc/<pid>/fd across the whole window (1644 samples): ONE
+#     sleeper, all three fds on /dev/null the entire time, its parent — the refresher loop
+#     shell — alive throughout. So the subshell was still inside blib_sudo_keepalive_stop,
+#     whose `wait` was blocked on a loop shell that did not act on its TERM until its sleeper
+#     expired on its own. This is a TEARDOWN stall.
+#
+# RULED OUT — do not re-propose these:
+#   • Pipe retention by the refresher keeping the command substitution open. An unredirected
+#     sleeper does reproduce the one-interval signature by construction (0.329s redirected vs
+#     7.023s not, at an interval of 7), but the shipped loop redirects and the fd sampling
+#     above never once caught a pipe. A matching duration is not a diagnosis.
+#   • Rewriting this as `( … )` + reading the argv file afterwards, i.e. removing the
+#     substitution. Measured on the converted block: 2 stalls in 2 runs, 30.012s and 30.013s.
+#     The parent waits for the subshell either way, and the subshell is what blocks.
+#
+# RESOLVED (#529): teardown was the right suspect, but not for the expected reason. The
+# trap's TERM DID reach the sleeper — `kill` returned 0 — and the sleeper went on to exit
+# normally after its full interval anyway, with no signal blocked, ignored or caught. It was
+# killable and the signal was lost, not refused. lib/bootstrap-lib.sh now follows the TERM
+# with a KILL, which cannot be lost, and the gate further down forces that case with a
+# SIGTERM-ignoring sleeper so it is not left to a 1-in-3 race.
+#
+# The mechanism behind the lost signal was never isolated, and nothing here should pretend
+# otherwise: it reproduces only inside this suite. stop() alone is clean (0/60 at an interval
+# of 5), this block outside the suite is clean (0/40, 0/30), and no start→stop delay from
+# 0–50ms provokes it.
+#
+# BLIB_SUDO_KEEPALIVE_INTERVAL does NOT keep this poll short, whatever it may once have
+# claimed: the poll is bounded by its own 100 × 0.1s, and the `-n -v` it waits for is written
+# BEFORE the loop's first sleep, so it returns on iteration zero at any interval. What the
+# seam does is cap a stall at ~1s instead of ~50s when the race fires.
 # shellcheck disable=SC2030,SC2031  # subshell-local PATH: the shimmed sudo
 _ka_mode="$( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  BLIB_SUDO_KEEPALIVE_INTERVAL="$_KA_INTERVAL"
   : >"$_ka_argv"
   blib_sudo_keepalive_start >/dev/null 2>&1
   n=0
@@ -7604,15 +8240,22 @@ case "$_ka_mode" in *"-n -v"*) pass "the background refresh uses 'sudo -n -v' (v
 # once) that is a coin toss, and the direction that matters is the silent pass.
 #
 # The shim records the sleeper's pid and then EXECs the real sleep, so the recorded pid IS
-# the surviving process — no parent/child indirection to get wrong. Only the 50s refresher
+# the surviving process — no parent/child indirection to get wrong. Only the refresher's own
 # sleeper is recorded: the harness's own short sleeps reach this shim through the same
 # scoped PATH, and counting those would put us right back to measuring the box.
+#
+# This block deliberately does NOT shorten the interval the way the refresh-mode block above
+# does, and that is the whole reason the two constants exist. The assertion here is that
+# stop() REAPED the sleeper — which is only meaningful while the sleeper would otherwise
+# still be running. Under a 1s interval it would exit on its own inside the poll window and
+# the check would pass for a reason that has nothing to do with stop(): a silent vacuous
+# pass, the exact failure mode the "recorded none" guard below exists to prevent.
 _ka_sleeper_file="$SANDBOX/ka-sleeper.pids"
 : >"$_ka_sleeper_file"
 _ka_real_sleep="$(command -v sleep)"
 cat >"$_ka_bin/sleep" <<SHIM
 #!/bin/sh
-case "\$1" in 50) printf '%s\n' "\$\$" >>"$_ka_sleeper_file" ;; esac
+case "\$1" in $_KA_DEFAULT_INTERVAL) printf '%s\n' "\$\$" >>"$_ka_sleeper_file" ;; esac
 exec "$_ka_real_sleep" "\$@"
 SHIM
 chmod +x "$_ka_bin/sleep"
@@ -7638,6 +8281,102 @@ else
   pass "blib_sudo_keepalive_stop reaps the SLEEPER before returning (synchronous teardown)"
 fi
 case "$_ka_out" in */empty) pass "blib_sudo_keepalive_stop clears the pid and is idempotent" ;; *) fail "blib_sudo_keepalive_stop did not clear the pid (got $_ka_out)" ;; esac
+# BLIB_SUDO_KEEPALIVE_INTERVAL exists for this suite, which means the fleet now ships a knob
+# that a stray value in someone's environment can reach. Its guard has to be tested, or the
+# seam that made this suite fast is also a way to make a provisioning run hammer sudo in a
+# busy-loop — the interval is the ONLY thing bounding that loop's rate.
+#
+# Assert on the argument the sleeper is actually given, not on the source: a regex that
+# merely LOOKS right (`[0-9]*` accepts the empty string, `+` vs `*`) is precisely how a
+# validator passes review and admits `0` anyway. The shim records argv; each case reads back
+# what the loop asked for.
+_ka_iv_argv="$_ka_bin/sleep-argv"
+cat >"$_ka_bin/sleep" <<SHIM
+#!/bin/sh
+case "\$1" in 0.*) ;; *) printf '%s\n' "\$1" >>"$_ka_iv_argv" ;; esac
+exec "$_ka_real_sleep" "\$@"
+SHIM
+chmod +x "$_ka_bin/sleep"
+# _ka_iv <override> — run one keepalive cycle under that override, print the interval the
+# refresher's sleeper was handed. Unset is spelled by passing the literal token `unset`.
+# shellcheck disable=SC2030,SC2031
+_ka_iv() { ( : >"$_ka_iv_argv"
+  BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  if [[ "$1" == unset ]]; then unset BLIB_SUDO_KEEPALIVE_INTERVAL; else BLIB_SUDO_KEEPALIVE_INTERVAL="$1"; fi
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  n=0; while ((n < 100)) && [[ ! -s "$_ka_iv_argv" ]]; do sleep 0.1; n=$((n + 1)); done
+  blib_sudo_keepalive_stop ) >/dev/null 2>&1
+  head -n1 "$_ka_iv_argv" 2>/dev/null || true; }
+# The honoured case FIRST: a guard that rejects everything would pass every fail-safe case
+# below and still have broken the seam this change exists for.
+_ka_iv_got="$(_ka_iv "$_KA_INTERVAL")"
+if [[ "$_ka_iv_got" == "$_KA_INTERVAL" ]]; then pass "keepalive: a valid BLIB_SUDO_KEEPALIVE_INTERVAL is honoured (the test seam works)"; else fail "keepalive: BLIB_SUDO_KEEPALIVE_INTERVAL=$_KA_INTERVAL was not honoured (sleeper got '${_ka_iv_got:-nothing}')"; fi
+# `0` and `-1` are the values that turn the loop into a sudo busy-loop; the empty string is
+# what an exported-but-unset variable looks like; `5s`/`abc` are ordinary typos. Every one
+# must land on the shipped default, not on itself and not on an error.
+_ka_iv_bad=0
+for _ka_iv_case in 0 -1 "" 5s abc 1.5 " " 01; do
+  _ka_iv_got="$(_ka_iv "$_ka_iv_case")"
+  [[ "$_ka_iv_got" == "$_KA_DEFAULT_INTERVAL" ]] || { _ka_iv_bad=1; fail "keepalive: BLIB_SUDO_KEEPALIVE_INTERVAL='$_ka_iv_case' did not fall back to ${_KA_DEFAULT_INTERVAL}s — the sleeper got '${_ka_iv_got:-nothing}'"; }
+done
+((_ka_iv_bad)) || pass "keepalive: a zero/negative/non-numeric interval falls back to ${_KA_DEFAULT_INTERVAL}s (no sudo busy-loop from a stray override)"
+_ka_iv_got="$(_ka_iv unset)"
+if [[ "$_ka_iv_got" == "$_KA_DEFAULT_INTERVAL" ]]; then pass "keepalive: an unset interval is the shipped ${_KA_DEFAULT_INTERVAL}s (the seam changes no default)"; else fail "keepalive: with no override the sleeper got '${_ka_iv_got:-nothing}', not ${_KA_DEFAULT_INTERVAL}"; fi
+rm -f "$_ka_bin/sleep"
+# ── #529: stop() must not block when a TERM to the sleeper goes unheeded ─────
+# The shipped hang was a race: a TERM aimed at the sleeper is sometimes accepted by kill(2)
+# — rc 0 — and never acted on, so the handler's `wait` sits out the sleeper's entire
+# interval and stop() blocks behind it. 50s in a real provisioning run. In this suite it
+# reproduced about 1 run in 3 at a 30s interval and never once outside it, and a 1-in-3
+# race is not a gate: it would pass on the run that mattered.
+#
+# So force the case instead of waiting for it. A sleeper that IGNORES SIGTERM is the lost
+# signal made deterministic — SIG_IGN survives exec, so the real `sleep` inherits it from
+# the shim. The handler's KILL cannot be caught or ignored, so stop() still returns at
+# once; drop the KILL and this blocks for the whole interval, every time.
+#
+# Asserted on WALL CLOCK on purpose. "stop() eventually returned and the sleeper was gone"
+# is true in BOTH cases — it is the passing-for-the-wrong-reason this exists to catch.
+# NO fixed pre-stop delay, for the reason stated at the reaping block above: on a loaded
+# runner a fixed sleep can elapse before the refresher has been scheduled at all, and then
+# stop() finds no job to signal, returns instantly, and this passes with the KILL deleted —
+# the vacuous pass it exists to prevent. Poll for the shim's recording instead, and treat an
+# empty recording as a FAILURE rather than a pass.
+#
+# The shim records only the refresher's own sleeper (it keys on the interval), so the poll's
+# 0.1s sleeps reaching the same shim are not counted. Timing is taken INSIDE the subshell
+# around stop() alone, so the poll's own duration cannot mask a blocked teardown.
+_ka_ign_iv=5
+_ka_ign_file="$SANDBOX/ka-ignterm.pids"
+_ka_ign_dur="$SANDBOX/ka-ignterm.dur"
+: >"$_ka_ign_file"
+: >"$_ka_ign_dur"
+cat >"$_ka_bin/sleep" <<SHIM
+#!/bin/sh
+trap '' TERM
+case "\$1" in $_ka_ign_iv) printf '%s\n' "\$\$" >>"$_ka_ign_file" ;; esac
+exec "$_ka_real_sleep" "\$@"
+SHIM
+chmod +x "$_ka_bin/sleep"
+# shellcheck disable=SC2030,SC2031  # subshell-local PATH: the shimmed sudo + sleep
+( BLIB_SU="$_ka_bin/sudo"; BLIB_DRY=0; BLIB_SUDO_KEEPALIVE_PID=""; PATH="$_ka_bin:$PATH"
+  BLIB_SUDO_KEEPALIVE_INTERVAL="$_ka_ign_iv"
+  blib_sudo_keepalive_start >/dev/null 2>&1
+  n=0; while ((n < 100)) && [[ ! -s "$_ka_ign_file" ]]; do sleep 0.1; n=$((n + 1)); done
+  _ka_ign_t0=$SECONDS
+  blib_sudo_keepalive_stop
+  printf '%s' "$((SECONDS - _ka_ign_t0))" >"$_ka_ign_dur" ) >/dev/null 2>&1
+rm -f "$_ka_bin/sleep"
+_ka_ign_pid="$(head -n1 "$_ka_ign_file" 2>/dev/null || true)"
+_ka_ign_d="$(cat "$_ka_ign_dur" 2>/dev/null || true)"
+if [[ -z "$_ka_ign_pid" ]]; then
+  fail "keepalive: no SIGTERM-ignoring sleeper was ever forked (shim recorded none) — the timing assertion would be vacuous (#529)"
+elif [[ -n "$_ka_ign_d" ]] && ((_ka_ign_d < _ka_ign_iv - 1)); then
+  pass "keepalive: stop() returns promptly when the sleeper ignores SIGTERM (${_ka_ign_d}s < ${_ka_ign_iv}s)"
+else
+  fail "keepalive: stop() blocked ${_ka_ign_d:-?}s waiting out a SIGTERM-ignoring sleeper (pid $_ka_ign_pid) — the handler's KILL is gone (#529)"
+fi
+
 # The TERM handler must target the JOB, never a pid. `$!` does not clear when `wait` reaps
 # the sleeper, so a handler holding it signals that dead pid for the whole of the next
 # `sudo -n -v` — and once the box has cycled through the pid space, whatever now owns it,
@@ -7645,7 +8384,14 @@ case "$_ka_out" in */empty) pass "blib_sudo_keepalive_stop clears the pid and is
 # between orphans the new sleeper). Only a job spec is set by the fork AND cleared by the
 # reap. This is a STRUCTURAL gate because the failure needs a 50s iteration boundary plus a
 # pid wrap to observe — unreachable in a suite, which is exactly why it needs pinning.
-_ka_trap_want="trap 'kill %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM"
+#
+# The KILL is pinned here for the same reason but a different failure: a lone TERM is
+# sometimes accepted by kill(2) and never acted on, and the handler then blocks in `wait`
+# for the sleeper's whole interval (#529). Dropping the KILL back out would restore an
+# intermittent 50s hang that the behavioral gate below can catch only because it forces the
+# case with a TERM-ignoring sleeper — in the wild it is roughly a 1-in-3 race, so this line
+# is what keeps someone from "simplifying" it away on a green run.
+_ka_trap_want="trap 'kill %% 2>/dev/null; kill -9 %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM"
 # ONE matcher, used for BOTH the extraction and the count. Two matchers could disagree,
 # and a gate whose two halves disagree is the failure this whole change is about.
 #
@@ -7705,7 +8451,7 @@ _ka_re_is() { # _ka_re_is <label> <candidate-line> <want:0|1>
   n="$(printf '%s\n' "$2" | grep -cE "$_ka_trap_re")"
   if [[ "$n" == "$3" ]]; then pass "trap matcher: $1"; else fail "trap matcher: $1 (matched=$n want=$3)"; fi
 }
-_ka_re_is "sees the shipped handler" "    trap 'kill %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM" 1
+_ka_re_is "sees the shipped handler" "    trap 'kill %% 2>/dev/null; kill -9 %% 2>/dev/null; wait %% 2>/dev/null; exit 0' TERM" 1
 _ka_re_is "sees TERM when it is NOT the last operand" "    trap 'exit 0' TERM INT" 1
 _ka_re_is "sees TERM after another signal" "    trap 'exit 0' INT TERM" 1
 _ka_re_is "sees the SIGTERM spelling" "    trap 'exit 0' SIGTERM" 1

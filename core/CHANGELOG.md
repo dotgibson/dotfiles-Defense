@@ -3,7 +3,7 @@
 All notable changes to **dotfiles-core** are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-Core is the single source of truth vendored into eight repos via
+Core is the single source of truth vendored into nine repos via
 `git subtree pull --prefix=core <core-remote> main --squash` (see `scripts/sync-core.sh`).
 Every entry below is therefore a change those repos receive on their next sync —
 this file is the human-readable record of _what_ a sync will bring, complementing
@@ -12,6 +12,471 @@ the SHA that `scripts/sync-core.sh` now prints. To cut a release, move the
 commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
+
+## [v4.13.1] - 2026-08-18
+
+### Fixed
+
+- **The reusable `bootstrap-test` no longer assumes every caller has an OS-native layer.**
+  It asserted `~/.config/zsh/80-os.zsh` unconditionally, which is right for the nine OS
+  repos and wrong for a ROLE repo: `dotfiles-Offense` and `dotfiles-Defense` wire Core plus
+  a band-85 role stage and deliberately link nothing at band 80, so the shared test red a
+  repo doing exactly the right thing. The check now arms itself on whether the caller ships
+  an `os/*.zsh` — self-derived, the same way the atuin check is, rather than a new input
+  every role repo would have to remember to pass. Found by `dotfiles-Offense` as it dropped
+  its OS layer to `dotfiles-Debian`.
+
+## [v4.13.0] - 2026-08-18
+
+### Documentation
+
+- **Corrected the keepalive stall's stated cause, and recorded what is actually known.** The
+  `sudo -n -v` assertion in `scripts/test-core.sh` can stall for one full refresh interval.
+  The code described that cost as a determinate property ("EXACTLY ONE INTERVAL … measured
+  three ways"); instrumenting 16 suite runs shows it is **intermittent** — two stalls
+  (50.017s, and 20.016s driven at 20), every other run 0.02–0.13s. A race, which is why it
+  usually reproduces as "already fast" and reads as fixed.
+
+  Two explanations are now ruled out in the comments rather than left for the next person to
+  re-derive. Pipe retention keeping the command substitution open reproduces the one-interval
+  signature by construction (0.329s redirected vs 7.023s not, at an interval of 7), but
+  sampling `/proc/<pid>/fd` across an entire stall — 1644 samples — found one sleeper with all
+  three fds on `/dev/null` throughout and its loop shell alive, so nothing was holding a pipe.
+  Removing the substitution therefore does not help either: measured on the converted block,
+  2 stalls in 2 runs.
+
+  What the sampling does show is a **teardown** stall — the loop did not act on its `TERM`
+  until its sleeper expired, while the caller sat in `blib_sudo_keepalive_stop`'s `wait`. That
+  pointed at the right place, and it is fixed in the entry below (#529); this entry changes no
+  behaviour on its own. `BLIB_SUDO_KEEPALIVE_INTERVAL` does not bound the poll as was claimed.
+
+### Fixed
+
+- **`ci.yml` ran the whole matrix twice on every branch push, and the comment claiming it
+  did not was wrong.** `on:` fired for both `push: branches: ["**"]` and `pull_request`,
+  and the concurrency key was documented as deduping that — it cannot. `github.ref` is
+  `refs/heads/<branch>` on a push and `refs/pull/<n>/merge` on a pull_request, so the two
+  events land in different groups and both run to completion.
+
+  The cost was 7 job-runs becoming 14, and — worse — each check _name_ existing twice on
+  one SHA, leaving the merge gate to take whichever finished last. #531 was blocked
+  exactly that way: its `pull_request` `audit (ubuntu-latest)` passed, then the `push`
+  run's copy concluded `cancelled` and that was the result the ruleset saw.
+
+  `push` is now `main`-only, with `pull_request` covering branches. The two events were
+  never redundant, which is why `pull_request` is the one kept: `push` tests the branch
+  head, `pull_request` tests an ephemeral merge into `main` — what merging actually
+  produces. A branch pushed with no PR open now gets no CI until one exists; that is
+  already the fleet convention, since every OS repo ships `branches: [main, master]` and
+  this repo was the lone holdout.
+
+- **CI's `apt-get update` is now bounded, so a wedged Ubuntu mirror fails fast instead of
+  hanging a job to death.** On 2026-08-18 `archive.ubuntu.com`'s `noble-security` index
+  stalled mid-fetch and took out four `audit (ubuntu-latest)` legs at 15 minutes each —
+  every one in the install step, with the audit never reaching a test. The Azure regional
+  mirror was dark (every `azure.archive.ubuntu.com` index `Ign:`), so apt fell back to
+  `archive.ubuntu.com`, fetched three of four indexes, and wedged on the fourth.
+
+  The `find -delete` already in front of these updates does not cover that, and was never
+  meant to: it drops **third-party** repos from `sources.list.d`, while
+  `azure.archive.ubuntu.com` is Ubuntu's own **regional mirror** in the main sources list.
+  Different repo class, different failure.
+
+  All five CI `apt-get update` sites now run under three layers —
+  `Acquire::http|https::Timeout=20` bounds a single connection, `Acquire::Retries=3`
+  re-attempts a failed index, and `timeout -k 10 120` is the backstop, because a transfer
+  that trickles keeps the socket warm and evades apt's own timeout entirely. The whole
+  thing is retried once, then allowed to fail: a genuinely unreachable archive must go
+  red, not be papered over.
+
+  The **120s** is load-bearing, not a round number. The bound has to be small relative to
+  each job's `timeout-minutes` or it merely relocates the hang — two 300s attempts inside
+  a 15-minute job would leave 5 minutes for an audit that needs ~7, and the job would
+  still die. A healthy update here is 5-15s, so 2x120s is generous for the slowest honest
+  run and still leaves 11 of the 15 minutes for the audit.
+
+  `lint-call.yml` is among the five, so every OS repo consuming it at `@v4` picks this up
+  when the tag next moves. It stays inlined rather than extracted to a shared script
+  precisely because that workflow checks Core out at `ref: v4` — a script added on `main`
+  would not exist there until a release.
+
+- **`blib_sudo_keepalive_stop` could block for a full refresh interval — 50s in a real
+  provisioning run** (#529). The helper exists to stop a bootstrap hanging on an invisible
+  sudo prompt; intermittently it did the hanging itself.
+
+  A `TERM` aimed at the refresher's sleeper is sometimes **accepted by `kill(2)` and never
+  acted on**. Measured in-loop: `kill` returns 0, and 30.003s later the sleeper exits
+  normally having slept its whole interval, with the handler blocked in `wait` and `stop()`
+  blocked behind it. The sleeper had no signal blocked, ignored or caught — it was killable,
+  and the signal was lost rather than refused.
+
+  The handler now sends `KILL` after `TERM`. It cannot be lost or ignored, and it is safe
+  precisely because the target is a bare `sleep`: no state, nothing to flush. There is no
+  grace period between the two — which signal ends the sleeper does not matter, and pausing
+  to find out would put latency back into teardown. (Its exit status proves nothing either
+  way: with no gap, a sleeper that simply was not scheduled in between dies of `KILL` and
+  reports 137 even when `TERM` was delivered normally.) Measured outcome: **zero stalls
+  across 7 instrumented runs with `stop()` steady at 2–3ms**, against roughly one 30s stall
+  every 2–3 runs before.
+
+  **The mechanism was not isolated** and the fix does not claim to explain it — it
+  reproduces only inside the full behavioral suite, never standalone, at no delay between
+  `start()` and `stop()` from 0–50ms, and not through the suite's own `sleep` shim. Since a
+  1-in-3 race cannot gate anything, the new regression test forces the case instead: a
+  sleeper that **ignores `SIGTERM`** is the lost signal made deterministic, and `stop()` is
+  asserted on wall clock to return well inside the interval. Without the `KILL` it blocks
+  the full interval, every time.
+
+- **`audit-core.sh --json` reported `failed` on a tree the identical non-JSON run passed**
+  (#524). `--json` is documented as an output-format switch — "lets a CI step / editor parse
+  the result instead of scraping coloured text" — so it must not move the verdict, and it was
+  moving it in the direction that matters: a **false red**.
+
+  `--json` sets and **exports** `CORE_JSON=1`, which is right for its purpose (nested gates must
+  keep stdout clean for the JSON object), and `common.sh`'s `skip()` then prints nothing. Because
+  the variable is exported it also reached the hermetic fixture that runs `sync-core.sh`, whose
+  absent- and `core/`-less-repo reports go through `skip()` — and two assertions grep for exactly
+  those lines. They failed for a reason unrelated to what they test; `sync-core.sh`'s bucketing
+  was never wrong.
+
+  This trap had already been found once and fixed in ONE place: `_tr_run` carries `-u CORE_JSON`
+  with a comment describing this precise mechanism. Its two siblings never got it. Both now do —
+  including the `--dry-run` call site, which was not failing only because it happens not to assert
+  on `skip()` output, and which is the identical trap one assertion away.
+
+  The regression gate is the point, though. The bug was **invisible from inside a normal run**:
+  both assertions passed under a bare `test-core.sh` and failed only when the parent was invoked
+  with `--json`, so the suite went on certifying `sync-core` while the JSON interface called the
+  tree red. A new check drives the same fixture with `CORE_JSON=1` exported and requires the
+  identical verdict, so the failure now surfaces in an ordinary run. It asserts on the skip LINES
+  rather than the summary counts on purpose: the counts come from `sync-core.sh`'s own `printf`
+  and survive a silenced `skip()`, so a count-only assertion would have passed straight through
+  this bug.
+- **`HAVE_GIT_ABSORB` was set for a subcommand `git absorb` could no longer dispatch**, when
+  `GIT_EXEC_PATH` is set. Shipped in #503 and caught in its own review. `GIT_EXEC_PATH`
+  **replaces** git's compiled-in exec-path rather than adding to it — point it at an empty
+  directory and `git absorb` answers `'absorb' is not a git command` even with the binary
+  still sitting in the default location. The fallback treated it as one more candidate and
+  fell through to the derived `<git-prefix>/{lib,libexec}/git-core` paths, so the flag said
+  present while `core-doctor` — which asks `git --exec-path`, and therefore inherits the
+  override — correctly said absent. That is the exact flag-vs-doctor disagreement of #425,
+  re-created on a new axis by the change meant to remove it. An **exported** override is now
+  probed **exclusively** — exported because git reads the variable from its environment, so
+  a plain shell assignment (`scalar`, not `scalar-export`) never reaches git and must be
+  ignored here too, or the mirror-image disagreement appears: the flag honouring an override
+  git does not see. Three tests pin it: the flag stays unset under an empty exported
+  override with the default exec-path populated, flag and doctor are asserted to agree on
+  that configuration, and an unexported `GIT_EXEC_PATH` is ignored by both.
+
+  The block is also made hermetic against the developer's own environment. `ucheck` runs
+  `env "$@" zsh`, which layers the named variables ON TOP of the inherited environment rather
+  than clearing it, and the suite's git stub honours `GIT_EXEC_PATH` exactly as real git does
+  — so on a box with that variable exported, four of these cases failed for a reason
+  unrelated to the code under test. It is now unset once for the whole block, and the
+  unexported case unsets before assigning, because assigning to an already-exported parameter
+  preserves the export attribute.
+
+  Three documentation claims contradicted each other after #503 and are reconciled:
+  `PORTING-MATRIX.md`'s ²⁶ preamble still said flatly that git-absorb installs on `PATH`,
+  two paragraphs above the correction saying the Debian family does not; the v4.10.0 entry's
+  "Homebrew and Debian/Kali all on 0.9.0" is now superseded inline, since Kali ships
+  0.6.17-2+b4 and so openSUSE was not the only laggard; and this entry's own "whole Debian
+  family" is narrowed to what was actually observed — Kali on-box, Ubuntu 24.04 from the
+  reporter, Debian proper unverified. (`zsh/00-tools.zsh`, `scripts/test-core.sh`,
+  `CHANGELOG.md`, `PORTING-MATRIX.md`)
+
+- **`make publish` swallowed the one notice it had for you, and could hang a local
+  `make audit`.** Follow-ups to the v4.12.2 publish — three found in review of the fix for
+  it, one from running the release, and one correcting recovery advice that this changelog
+  itself had got wrong:
+
+  `tag-release.sh` called a `note` helper that **does not exist** — `scripts/lib/common.sh`
+  defines `pass`/`skip`/`fail`/`hdr`/`have` — so the line printed `note: command not found`
+  and the operator never saw its message. That branch only runs when `main` has advanced
+  past the release commit, an uncommon path no test covered, and a bare word that might be
+  a command on `$PATH` is not something the linter can flag. It fired for real while
+  publishing v4.12.2, discarding exactly the notice it exists to give: that `git describe`
+  on `main` would now report commits-since rather than a clean tag. A new assertion greps
+  the publish output for `command not found` — deliberately generic, so it catches the next
+  undefined helper rather than only this one.
+
+  The `tag.gpgsign` probe inherited `$EDITOR`. With no message and no `-m`, git opens an
+  editor to collect one — so on a developer's interactive `make audit` it would launch vim
+  and **block the suite**, where CI (no editor) merely errored. Verified by simulating a
+  blocking editor: git really does invoke it. The probe now forces a no-op editor, so the
+  empty-message failure is deterministic and key-free everywhere.
+
+  `RELEASE-RUNBOOK.md` and `RELEASE-STRATEGY.md` still documented the manual alias fallback
+  as a bare `git tag -f`, the exact form the fix declares broken — a signing operator
+  following either would have hit the same abort, and a non-signing one would have created
+  a lightweight alias contradicting the new contract. Both now use `git tag -fa … -m`.
+
+- **`core-doctor` reported `✗ git-absorb` on Debian-family boxes, for a tool that was
+  installed and working** (#424). Debian packaging puts a `git-<verb>` subcommand in git's
+  **exec-path** — the directory `git --exec-path` names — and keeps it off `PATH` on
+  purpose: git finds the binary there itself, and the user invokes it as `git absorb`. The
+  presence probe was `command -v git-absorb`, so the row was wrong wherever that convention
+  is followed. Two boxes, two distros: **Kali** `git-absorb` 0.6.17-2+b4, verified on-box —
+  `dpkg -L` lists `/usr/lib/git-core/git-absorb` and a man page and nothing in a `PATH`
+  directory, `command -v` finds nothing, and `git absorb --version` works — and **Ubuntu
+  24.04** 0.6.11, from the reporter's `dpkg -L` in #424. Debian proper is **not** verified;
+  its package page lists 0.9.0-2 and nobody has checked where that build lands, so the
+  claim here is the convention plus two confirmations of it, not a survey. The `✗` implied
+  the verb was unavailable, so a reader would go install what they already had.
+
+  `_core_doctor_bin` (`30-functions.zsh`) gains a `git-*` arm that resolves through git's
+  exec-path when the bare name misses, and hands back an **absolute path**. That is what
+  both consumers need: `command -v` on a path is exactly as honest as the `PATH` probe, and
+  `core-doctor -v` forks `"$bin" --version`, which a bare `git-absorb` could not run on this
+  family at all — so the version readout is fixed in the same change, the way #418's
+  `bat`/`batcat` fix was. The path never reaches the report; the render and the `--json`
+  keys still print the canonical name.
+
+  **Fork budget.** `PATH` is probed first, so a box that never had the bug (Arch, Alpine,
+  Gentoo, Homebrew, macOS) pays one lookup and no fork. Only a miss asks git, and the answer
+  is cached in `_CORE_GIT_EXEC_PATH` for the life of one report — `core-doctor` drops the
+  cache on entry, since only the TTY render runs in a `$(…)` subshell and a cache left
+  standing would answer for a box that has since installed git or moved `GIT_EXEC_PATH`.
+  Three tests pin this: two `git-*` names resolve on one fork, git is never invoked at all
+  when the subcommand is on `PATH`, and a second report re-derives after the exec-path moves.
+
+  `00-tools.zsh` is fixed too, without breaking its zero-fork contract: `HAVE_GIT_ABSORB`
+  falls back to a stat of `<git-prefix>/{lib,libexec}/git-core`, with the prefix derived from
+  zsh's builtin `$commands` hash rather than spelled out as a distro path — or, when an
+  **exported** `$GIT_EXEC_PATH` is in effect, of that directory **exclusively**, since it
+  replaces git's compiled-in exec-path rather than adding to it. (That shipped as an additive
+  candidate list; the correction and its reasoning are in the entry above.)
+  Skipped entirely when the `PATH` probe already hit. The flag has no consumer today,
+  but #425 is the reminder that a `HAVE_*` flag and the doctor disagreeing about the same box
+  is itself a bug — and a test now pins the no-fork property, so "simplifying" it into a
+  `$(git --exec-path)` fails CI.
+
+  Meta-issue #447 proposed instead giving `_core_have` a tri-state override hook. Not taken:
+  `_core_have` is a general primitive that `05-ui.zsh` calls on every confirm/spin/gum probe,
+  so an override there taxes every call site to fix one command's inventory — and answering
+  "present" for a name that cannot be executed would mislead any future caller. Resolving to
+  a runnable path is strictly more information. `_core_doctor_bin` was already the seam for
+  exactly this class.
+
+  Two docs claimed the opposite of the truth and are corrected: `PORTING-MATRIX.md`'s ²⁶
+  footnote ("no mainstream package does this") and the v4.10.0 entry below, which now carries
+  the correction inline rather than being quietly rewritten. The version cell is corrected in
+  the same pass — Kali ships 0.6.17-2+b4, not Debian's 0.9.0-2, so the two are no longer
+  quoted as one cell, and whether Debian's own build uses the exec-path is marked unverified.
+  Latent elsewhere: Git for Windows has a `mingw64/libexec/git-core` with the same shape, but
+  scoop/winget/cargo installs land on `PATH`, so no `dotfiles-Windows` change is needed yet.
+
+- **`clip` had no way to copy from a headless box, so `pbcopy`, tmux's `copy-pipe` and
+  nvim's `"+y` were all dead over plain ssh.** The ladder ran WSL → macOS → Wayland →
+  X11 and then gave up, and none of those exist on a machine you only ever ssh into —
+  which is exactly where copying _out_ of the terminal matters most. It now falls back
+  to **OSC 52**: the payload goes to the terminal as an escape sequence and the terminal
+  emulator puts it on the clipboard of the machine you are sitting at, with nothing
+  installed on the remote end. Core's tmux already sets `set-clipboard on`, so tmux
+  forwards it rather than needing passthrough wrapping.
+
+  Deliberately **last** in the ladder — a real backend is bidirectional and does not
+  depend on terminal support — and it writes to `/dev/tty`, never stdout, because `clip`
+  is used in pipelines and as nvim's provider where stdout carries the caller's data.
+
+- **`clip`/`clip-paste` exec'd `xclip`/`xsel` without checking `DISPLAY`.** The Wayland
+  branch above them checked `WAYLAND_DISPLAY`; the X11 ones checked only that the binary
+  existed. On any desktop distro where something pulled `xclip` in as a dependency,
+  `command -v` succeeded over ssh and the exec then failed for want of a display —
+  _instead of_ falling through to a fallback that would have worked. This is what made
+  the new OSC 52 branch unreachable in the most common real configuration.
+
+- **`clip-paste` still fails on a headless box, and now says why.** There is no safe
+  OSC 52 read: it means querying the terminal and waiting for a reply that most
+  terminals refuse to send (letting a remote host read your clipboard is a genuine
+  hazard), and one that never replies blocks forever. Nothing is lost — pasting _into_ a
+  remote shell is what the terminal's own paste already does. The error names the
+  asymmetry so it does not read as `clip` being broken too.
+
+- **`make publish` could not move the `v4` major alias when `tag.gpgsign` is enabled.**
+  `scripts/tag-release.sh` moved the alias with a bare `git tag -f`, expecting a
+  lightweight ref. Under `tag.gpgsign = true` git makes every tag **signed** — therefore
+  annotated — so the message-less form aborts with `fatal: no tag message?`. The publish
+  died there, after the immutable `vX.Y.Z` tag had already been created locally — harmless
+  debris, since `--publish` consults only whether the tag exists on **origin** and then
+  force-recreates the local one, so a direct `make publish` retry works.
+
+  The failure was well-placed — it happens **before** the atomic push, so nothing
+  half-landed and neither `release.yml` nor `sync-fanout.yml` fired — but the release
+  could not complete, and `v4` is the moving alias every OS repo's reusable-workflow
+  caller pins to. Found cutting v4.12.2, the first release published from a box with tag
+  signing on ([#506](https://github.com/dotgibson/dotfiles-core/issues/506)).
+
+  The alias is now annotated with a message, exactly like the immutable tag beside it —
+  which is also the better artefact for a force-moved pointer, since it records who moved
+  it and when. Two assertions pin it: that a message-less `git tag -f` really does abort
+  under `gpgsign` (so the guard is guarding something), and that the script no longer uses
+  that form. Neither needs a signing key, so both run in CI — where this bug was
+  structurally invisible, because CI signs nothing.
+
+### Changed
+
+- **The fleet entry `dotfiles-Kali` is renamed to `dotfiles-Offense`**, making the Role layer's
+  two repos symmetric (`dotfiles-Offense` red / `dotfiles-Defense` blue) and naming the repo
+  after the role it carries rather than the distro it happened to be built on. The GitHub
+  repo is renamed in place rather than recreated, so it keeps its stars, issues and PRs, and
+  existing clones and remotes keep working through GitHub's redirect.
+
+  The rename is a **four-file coordinated edit**, exactly as `scripts/os-repos.txt`'s own
+  header warns: the data file plus the hardcoded fallback arrays in `scripts/sync-core.sh`,
+  `scripts/fleet-drift.sh` and `scripts/core-integrity.sh` — the fallbacks being what runs
+  precisely when nobody is watching. `scripts/test-core.sh` asserts all four agree, so a
+  partial rename fails the audit rather than silently dropping a repo from the fan-out.
+  Fan-out order is unchanged: case-insensitively, `offense` sorts into the same slot `kali`
+  held, between `gentoo` and `opensuse`.
+
+  **Rename the GitHub repo and your local checkout together with this change.** The
+  entries in `scripts/os-repos.txt` are _directory_ names — `sync-core.sh` resolves each
+  against `REPOS_ROOT` on your disk — so a box still holding `~/…/dotfiles-Kali` gets
+  that repo skipped by the fan-out. It says so (`skip: dotfiles-Offense (not cloned at
+  …)`) rather than failing quietly, but a skipped repo is a repo that stops receiving
+  Core, and `fleet-drift.sh` will report it red until the directory is renamed.
+
+  Only the **repo name** moves. Every reference to Kali the _distro_ stays: `maint`'s
+  `OS_ID == kali` upgrade guard, the `kalilinux/kali-rolling` CI images, the `Kali (apt)`
+  columns in `PORTING-MATRIX.md`, and the Debian/Kali binary-name notes are all unaffected by
+  what a repository is called. Historical `CHANGELOG.md` entries keep the old name too — they
+  record what happened at the time.
+
+  This is the first step of a larger split: `dotfiles-Offense` still carries its own
+  OS-native layer today, and that half is moving to `dotfiles-Debian` so the role repo stacks
+  on an OS repo the way `dotfiles-Defense` already does. Core's docs describe the repo as it
+  is now, not as it will be.
+
+- **Corrected a stale claim that `dotfiles-Defense` does not source the shared bootstrap
+  scaffold** (`core.manifest`, `PORTING-MATRIX.md`). It does — and has since it stopped
+  hand-forking the shared half. Both documents called it "the one documented exception" to
+  `lib/bootstrap-lib.sh` and said its `bootstrap.sh` does not call `blib_link_core`; it calls
+  it directly. What a role repo actually skips is `blib_link_os_layer`, because the `80` band
+  belongs to the OS repo underneath — and `blib_link_role_layer` is what it will call in its
+  place. Both documents now separate that contract from today's reality: neither role repo has
+  adopted the helper yet (Defense still runs its own `wire_defense_stage`, Offense still calls
+  `blib_link_os_layer`), because the helper has to ship in a Core release and fan out first.
+
+- **CI's critical path drops from ~8 minutes to ~3, with no gate removed.** Measured, not
+  guessed: on a typical PR run every job starts in parallel, so wall-clock is the slowest —
+  `audit (macos-latest)` at 7m33, of which 7m08 is `audit-core.sh` itself and only ~25s is
+  checkout plus every tool install. The structure was already doing its job (parallel legs,
+  change detection, tool caching, the behavioral suite overlapped with the static gates,
+  `cancel-in-progress`); the cost was concentrated in the suite. Profiling
+  `scripts/test-core.sh` at **24% CPU** — waiting, not computing — put **247s of 286s in two
+  places**, with the remaining ~600 tests costing ~40s combined. Both are addressed below.
+  A plain shell change now runs the suite in **43s**.
+
+### Added
+
+- **A first-class Role band in the bootstrap scaffold and in tmux** — `blib_link_role_layer`
+  (`lib/bootstrap-lib.sh`) and a `role.conf` hook (`tmux/tmux.conf`). Core has always
+  documented a Role layer (band `85`–`94`) but shipped no wiring for one, so both role repos
+  hand-rolled it — and had already drifted apart doing so: dotfiles-Defense honoured
+  `BLIB_DRY` when dropping the stale pre-v4 unnumbered link and dotfiles-Offense did not, which
+  made `--dry-run` mutate the box in one repo and not the other.
+
+  `blib_link_role_layer <dotfiles> <config> <role>` is the twin of `blib_link_os_layer`, and
+  `<role>` names both the directory and the file stem exactly as `<os>` does — so
+  `offensive/offensive.zsh` and `defense/defense.zsh` are already where it expects them and
+  nothing has to move. It links `<role>/<role>.zsh` → `zsh/85-<role>.zsh`,
+  `<role>/<role>.conf` → `tmux/role.conf`, and `<role>/templates/` →
+  `<config>/<role>/templates`, all `blib_want`-gated and all honouring `BLIB_DRY`.
+
+  The tmux half is the part Core genuinely did not have. `tmux.conf` carried exactly ONE
+  overlay hook — `os.conf` — so a role's tmux bits had nowhere to go, and dotfiles-Offense's
+  `prefix + e` engagement popup was consequently smuggled into `os/kali.conf`, an OS overlay
+  a role repo has no business owning. `role.conf` is sourced **after the pop-up bindings**,
+  not beside `os.conf`, and the placement is load-bearing: `os.conf` only ever _sets_ options,
+  whereas a role layer BINDS KEYS, and tmux gives a key to its last binding. Sourced early,
+  any future Core `bind e` would silently take the key back.
+
+  **One destination moves, for consumers to handle deliberately.** Defense already lands
+  its templates at `<config>/defense/templates`, but the offensive repo hand-rolls
+  `<config>/kali/templates` — named for the distro, which is the naming this rename
+  retires. Adopting the helper there relocates them to `<config>/offensive/templates`, and
+  two shipped docs quote the old path by hand (`offensive/hacktheplanet`'s
+  `pseudo-shell.py` line, and `offensive/ippsec`); both need updating in the same change
+  that adopts the helper. Deliberately not papered over with a compat symlink — that would
+  preserve a `~/.config/kali/` on a repo no longer called Kali.
+
+  **One role per box.** Both roles land on band `85`, so a machine wired for Offense and then
+  Defense gets `85-offensive.zsh` and `85-defense.zsh` loading in glob order and a single
+  `tmux/role.conf` owned by whichever ran last. That is not a supported configuration — an
+  attacker station and an analyst station are different boxes — and spreading the roles across
+  separate bands would only make the breakage quieter. There is deliberately no role
+  `gitconfig` hook either: Core's `gitconfig` `[include]`s `os.gitconfig` and
+  `local.gitconfig` only, neither role repo has ever had one, and an unused include rots.
+
+- **`BLIB_SUDO_KEEPALIVE_INTERVAL` — the sudo keepalive's refresh interval is injectable**
+  (`lib/bootstrap-lib.sh`), defaulting to the shipped 50s. It exists as a TEST SEAM: the block
+  asserting that the background refresher uses `sudo -n -v` (validation mode, the
+  restricted-sudoers fix) was measured costing **exactly one refresh interval** — 50.02s against
+  the shipped default, and 3.02s / 7.02s when the interval was set to 3 and 7 — which was
+  **17% of the whole behavioral suite for a single test**, on every CI leg of every repo. It now
+  costs about a second.
+
+  The delay is not the poll: the loop refreshes _before_ it sleeps, so the test's grep for
+  `-n -v` matches on its first iteration. Something in that block waits out one sleeper anyway,
+  and the same block reproduced standalone completes in 0.02s — so the responsible construct is
+  suite-context-dependent and is deliberately **not** claimed here. The seam bounds the cost; it
+  does not explain it, and the underlying asymmetry is worth its own look.
+
+  The override is guarded **fail-safe, not fail-closed**: a zero, negative, non-numeric or
+  leading-zero value falls back to 50 rather than erroring, because the interval is the only
+  thing bounding that loop's rate and a typo in a test seam must not turn a provisioning run
+  into a busy-loop hammering `sudo`. Four new gates pin it — the honoured case first (a guard
+  that rejected everything would pass every fallback case and still have broken the seam), then
+  eight bad values, then the unset default. They assert on the argument the sleeper is actually
+  handed rather than on the source, since a regex that merely looks right is exactly how a
+  validator passes review and admits `0` anyway. The suite also pins the shipped default by
+  name, because its sleeper shim keys on it.
+- **An `atuin` scope axis, so the premise detector's self-test stops riding on every push.**
+  `scripts/ci-classify.sh` now emits a third `atuin=<true|false>` line alongside `shell`/`nvim`,
+  and `--scope atuin` gates the two hermetic sections that drive `scripts/verify-atuin-guard.sh`.
+  Those sections were **197s of a 286s suite — 68% of it**, and the largest single cost on the
+  fan-out's critical path, while testing the DETECTOR against stub binaries rather than testing
+  Core: the script is dev tooling, absent from `core.manifest` and vendored nowhere, and its real
+  job — measuring live upstream atuin — runs weekly in `atuin-guard-verify.yml`, never on a push.
+  A one-line edit to `zsh/10-ui.zsh` was paying all 197s for a harness it cannot reach.
+
+  Coverage is preserved rather than traded away, in three ways. The axis is reachable from
+  everything that can actually move it: `scripts/` (already infra → full run), `zsh/00-tools.zsh`
+  (which carries `_core_atuin_daemon_guard`, the guard the detector protects) and `atuin/`.
+  The Alpine and Arch legs receive the same classifier verdict through the environment — never
+  interpolated into a `run:` body, per #422 — so musl/busybox and rolling-glibc coverage of the
+  self-test is dropped only from pushes that could never move it. And `atuin-guard-verify.yml`
+  gains a `selftest` job that runs the whole thing **unconditionally, every week**, on the same
+  schedule as the measurement that trusts it: the measure jobs rely on the detector to tell a
+  real upstream move from a broken apparatus, so a regressed `unmeasurable` verdict would file a
+  confident issue claiming the premise MOVED when nothing had. It is wired into `notify-failure`
+  for that reason, and deliberately needs nothing and is needed by nothing — a red self-test must
+  sit beside the live measurement saying which to believe, not suppress it.
+
+  Skipping stays **fail-closed at the classifier**, as before: an unrecognised path, an empty
+  scope or an unparseable classifier line all force the full run. `_core_read_classify` validates
+  `atuin=` exactly as strictly as the other two axes, so a classifier this reader cannot parse can
+  never be read as "skip the most expensive gate".
+
+- **`dotfiles-Debian` joins the fleet as the ninth Core-vendoring repo.** It was planned
+  once, cancelled, and left a "no longer being pursued" note in `scripts/os-repos.txt`
+  on the grounds that `dotfiles-Kali` covered the Debian family. That reasoning does not
+  survive contact with a plain Ubuntu box: Kali is a rolling sid derivative carrying a
+  67-package offensive role layer. The note is removed and the repo registered — in
+  `scripts/os-repos.txt` **and** in the hardcoded fallback arrays in `sync-core.sh`,
+  `fleet-drift.sh` and `core-integrity.sh`, which are what actually run when the data
+  file is unreadable and would otherwise have silently omitted it.
+- **`claude-routines-call.yml` accepts `distro: debian`.** That allowlist is enforced at
+  runtime (`::error::unsupported distro`), not merely documented, so the new repo's
+  routine caller would have red-failed without this. `/os-package-availability` gains
+  the matching guidance, including the rule that on a frozen LTS "does the name resolve"
+  and "is it a version Core can use" are different questions.
+- **`PORTING-MATRIX.md` gains a Debian/Ubuntu column** in both tables, a quirks
+  paragraph, a clipboard row, and footnotes ²⁸ (pinned upstream release asset) and ²⁹
+  (deliberately not installed). **The column-order contract changed**: the last cell on
+  a package row is now Debian/Ubuntu, not Kali — `/os-package-availability` asserted the
+  old order and has been updated with it.
 
 ## [v4.12.2] - 2026-08-17
 
@@ -1166,6 +1631,20 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   give a working `git absorb` and an unset flag — no mainstream package does, and probing
   `git absorb --version` would add a `git` fork to every interactive shell, which
   `00-tools.zsh` exists to avoid.
+
+  **Correction (#424).** "No mainstream package does" was wrong when it shipped. Debian-family
+  packages do exactly this on both boxes anyone has checked — **Kali** `git-absorb`
+  0.6.17-2+b4, whose only binary is the one in git's exec-path, and **Ubuntu 24.04** 0.6.11
+  from the reporter's `dpkg -L` in #424 — so this release's `core-doctor` reported
+  `✗ git-absorb` on boxes where `git absorb` worked. **Debian proper is unverified**, then and
+  now; the claim is the packaging convention plus two confirmations of it, not a survey.
+  Fixed in the `[Unreleased]` entry above. Corrected inline
+  rather than rewritten, because it was wrong when shipped and the record should say so.
+
+  The same correction supersedes the version line below: **Kali was never on 0.9.0.** It
+  ships `git-absorb` 0.6.17-2+b4 — verified on-box 2026-08-17 — so "Homebrew and Debian/Kali
+  all on 0.9.0" reads one package-page figure onto two distros that had already diverged,
+  and openSUSE was therefore not the only laggard. Debian proper remains unverified.
 
   It is also the first `core-doctor --json` key that is not a bare identifier, so the
   function's docstring now says which parsers care: the key is emitted quoted and the JSON

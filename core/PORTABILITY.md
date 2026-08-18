@@ -1,6 +1,6 @@
 # PORTABILITY.md — what "portable" means in Core, concretely
 
-Core is authored once here and vendored into eight OS repos. A file in `core.manifest`
+Core is authored once here and vendored into nine OS repos. A file in `core.manifest`
 runs on **macOS (bash 3.2, BSD userland), glibc Linux, musl/busybox Alpine, and rolling
 Arch** — so "portable" is not a style preference here, it is the contract that keeps one
 tree correct on every machine.
@@ -8,7 +8,7 @@ tree correct on every machine.
 `CONTRIBUTING.md` answers _is it Core?_ This answers _how do I write Core that survives
 the fan-out?_ Both were previously only in scattered code comments, which is exactly how
 `maint/dotfiles-maint.sh` and `tmux/scripts/tmux-cheat.sh` ended up carrying
-`/opt/homebrew` paths into eight repos where seven of them do not exist.
+`/opt/homebrew` paths into nine repos where eight of them do not exist.
 
 When a rule here drifts from `README.md` or `CONTRIBUTING.md`, those win — fix this.
 

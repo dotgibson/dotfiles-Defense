@@ -5,7 +5,7 @@
 # each upstream's current default-branch HEAD. This is the runtime-plugin mirror of
 # `make update-hooks` (pre-commit autoupdate) and the manual SHELLCHECK_VERSION /
 # LUACHECK_VERSION bumps in ci.yml: pins exist so nothing floats silently into the
-# eight OS repos, and THIS is the one place they move — under review, not on their own.
+# nine OS repos, and THIS is the one place they move — under review, not on their own.
 #
 # Single source of truth: the ZPLUGIN_PINS associative array in zsh/45-plugins.zsh.
 # We parse the `owner/name  <40-hex sha>` rows straight out of it, `git ls-remote`
@@ -34,7 +34,7 @@ PLUGINS_FILE="zsh/45-plugins.zsh"
 # installs a pin), resolve the entry file (mirroring _zplugin_load's search order), and
 # `zsh -n` it. The behavioral suite pre-seeds EMPTY plugin dirs (no network), so it never
 # touches the real pinned code — a HEAD that 404s, vanished to GC, or won't parse would
-# otherwise sail through `make audit` and ship to eight repos. Returns 0 = loads; non-zero else.
+# otherwise sail through `make audit` and ship to nine repos. Returns 0 = loads; non-zero else.
 _verify_pin() {
   local slug="$1" sha="$2" d f src="" rc=0
   local name="${slug##*/}" # separate `local`: same-statement refs to slug don't take effect (SC2318)

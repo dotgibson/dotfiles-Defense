@@ -29,7 +29,7 @@ Run these cross-checks (skip any out of the requested scope):
    manifest↔filesystem halves mechanically, leaving the bootstrap-wiring half here.)
 2. **`aliases.md` ↔ its alias sources, in every repo that ships one.** Core's
    `aliases.md` against `zsh/20-aliases.zsh` + `zsh/25-git.zsh`; **and each role repo's
-   `aliases.md` against its own role source** — `dotfiles-Kali/aliases.md` ↔
+   `aliases.md` against its own role source** — `dotfiles-Offense/aliases.md` ↔
    `offensive/offensive.zsh`, `dotfiles-Defense/aliases.md` ↔ `defense/defense.zsh`.
    Every documented alias/function should exist in the source, and notable source
    aliases/helpers (e.g. a new `redup`, `gdft`) should be documented. Flag stale,

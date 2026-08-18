@@ -1,27 +1,47 @@
 name: ci
 
-# Core is authored once here, then vendored into all eight OS repos via git subtree.
+# Core is authored once here, then vendored into all nine OS repos via git subtree.
 # A defect that lands here fans out N-way — so gate every push/PR with the same
 # audit the maintainer runs locally. CI installs the linters that a bare box may
 # lack (shellcheck/shfmt/luacheck/zsh) and then hands off entirely to
 # scripts/audit-core.sh, so there is ONE definition of "Core is healthy".
 
+# push is main-ONLY, and pull_request covers everything else. Both used to fire on
+# every branch, which double-ran the whole matrix: 7 job-runs became 14, and — worse —
+# each check NAME then existed twice on one SHA, so the merge gate took whichever
+# finished last. dotgibson/dotfiles-core#531 was blocked exactly that way: its
+# pull_request `audit (ubuntu-latest)` passed at 17:36:49 and the push run's copy
+# concluded `cancelled` at 17:55:55, and the newer, worse result is the one the
+# ruleset saw.
+#
+# The two events are NOT redundant, which is why pull_request is the one kept: `push`
+# tests the branch head, `pull_request` tests an ephemeral merge of the branch into
+# main — the thing merging will actually produce. Keeping the weaker signal and
+# discarding the stronger one would have been the wrong trade.
+#
+# Cost: a branch pushed with no PR open now gets no CI until one exists. That is the
+# fleet's own convention — every OS repo already ships `branches: [main, master]`
+# here; this repo was the lone holdout.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
 
-# One in-flight run per ref. This both (a) cancels a superseded run when you push
-# again, and (b) dedupes the push-event + pull_request-event double-trigger on a
-# same-repo PR: both share this ref-keyed group, so only the latest survives.
+# One in-flight run per ref: pushing again cancels the superseded run.
+#
+# It does NOT, and never did, dedupe a push/pull_request double-trigger — the claim
+# that used to sit here was simply wrong. `github.ref` is `refs/heads/<branch>` on a
+# push and `refs/pull/<n>/merge` on a pull_request, so the two events land in DIFFERENT
+# groups and both run to completion. The trigger split above is what actually removes
+# the duplication; this key only ever collapsed successive pushes to one ref.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# The linters CI installs are pinned for a REPRODUCIBLE 9-repo gate — a new upstream
+# The linters CI installs are pinned for a REPRODUCIBLE 10-repo gate — a new upstream
 # release can't silently turn CI red with zero repo changes. Those pins now live in
 # ONE place, scripts/tool-versions.env, which each job loads into $GITHUB_ENV via the
 # "Load pinned tool versions" step below (no version literals left in this file). The
@@ -31,7 +51,7 @@ jobs:
   # Change detection so a docs- or nvim-only push doesn't pay the full matrix.
   # SAFE DEFAULT: if the diff base can't be resolved (first push, force-push, a
   # shallow checkout), every flag is 'true' and nothing downstream is skipped — a
-  # detection miss must never hide a needed check from the 9-repo fan-out. Infra
+  # detection miss must never hide a needed check from the 10-repo fan-out. Infra
   # changes (scripts/, .github/, the manifest, the pre-commit/Makefile config) are
   # cross-cutting and likewise force the full run.
   changes:
@@ -40,6 +60,7 @@ jobs:
     outputs:
       shell: ${{ steps.classify.outputs.shell }}
       nvim: ${{ steps.classify.outputs.nvim }}
+      atuin: ${{ steps.classify.outputs.atuin }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -68,7 +89,8 @@ jobs:
           # The path→gate mapping lives in scripts/ci-classify.sh — shellcheck'd,
           # unit-tested (scripts/test-core.sh), and FAIL-CLOSED on an unrecognised
           # path — instead of drift-prone greps inlined in this YAML. It prints
-          # `shell=…`/`nvim=…`, which we echo and append straight to $GITHUB_OUTPUT.
+          # `shell=…`/`nvim=…`/`atuin=…`, which we echo and append straight to
+          # $GITHUB_OUTPUT.
           out="$(printf '%s\n' "$files" | ./scripts/ci-classify.sh)"
           printf '→ %s\n' "$out" | tr '\n' ' '; echo
           echo "$out" >> "$GITHUB_OUTPUT"
@@ -137,7 +159,42 @@ jobs:
           # Drop GitHub's flaky third-party apt repos (packages.microsoft.com/azure) first:
           # they intermittently serve an unsigned InRelease and fail the whole update (exit 100).
           sudo find /etc/apt/sources.list.d -type f \( -iname '*microsoft*' -o -iname '*azure*' \) -delete 2>/dev/null || true
-          sudo apt-get update
+          # `apt-get update`, BOUNDED. Left bare it can hang until the JOB timeout kills
+          # it: on 2026-08-18 archive.ubuntu.com's noble-security index stalled mid-fetch
+          # and four CI legs died at 15 minutes each, every one in this install step with
+          # the audit never reaching a test. The Azure regional mirror was dark that day
+          # (every azure.archive.ubuntu.com index `Ign:`), so apt fell back to
+          # archive.ubuntu.com, fetched three of four indexes, and wedged on the fourth.
+          #
+          # Note the `find -delete` above does NOT cover that case and is not meant to:
+          # it drops THIRD-PARTY repos from sources.list.d, whereas azure.archive.ubuntu.com
+          # is Ubuntu's own regional mirror in the main sources list. Different repo class,
+          # different failure — hence this second layer.
+          #
+          # Three mechanisms, each covering what the previous one misses:
+          #   Acquire::*::Timeout — bounds a single connection's connect/read
+          #   Acquire::Retries    — re-attempts a failed index instead of failing the run
+          #   timeout(1)          — the backstop. A transfer that trickles keeps the socket
+          #                         warm and can evade apt's own timeout entirely, which is
+          #                         exactly what 15 minutes of no progress looked like.
+          #
+          # `sudo timeout`, not `timeout sudo`: timeout has to run as root to signal the
+          # root apt-get it spawns. `-k 10` follows the TERM with a KILL — #529 was a hang
+          # caused by a TERM that was accepted and never acted on; do not assume one lands.
+          #
+          # Retried once as a whole, because a wedged mirror is usually wedged per-connection.
+          # Still allowed to fail afterwards: a genuinely unreachable archive must go red,
+          # not be papered over.
+          #
+          # 120s, and the number is load-bearing. The bound has to be SMALL relative to the
+          # job's timeout-minutes or it just relocates the hang: two 300s attempts inside a
+          # 15-minute job would leave 5 minutes for an audit that needs ~7, and the job would
+          # still die — bounded, but no less red. A healthy update here is 5-15s, and apt's
+          # own Retries+Timeout cap it well under 120 anyway, so 2x120s is generous for the
+          # slowest honest run and still leaves 11 of the 15 minutes for the audit.
+          apt_update=(sudo timeout -k 10 120 apt-get -o Acquire::Retries=3
+                      -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update)
+          "${apt_update[@]}" || { echo "::warning::apt-get update failed or timed out — retrying once"; "${apt_update[@]}"; }
           sudo apt-get install -y --no-install-recommends zsh
 
       # ── macOS: shellcheck via Homebrew (no pinned-binary tarball published for
@@ -230,16 +287,27 @@ jobs:
       # Scope the audit to the areas the classifier flagged, so a docs- or nvim-only
       # push skips the gates it can't affect. The cheap structural/config/markdown/
       # workflow/version checks always run regardless of scope (see audit-core.sh).
-      # FAIL-CLOSED: the classifier forces BOTH flags true for infra/unknown changes,
-      # so this resolves to the full "shell,nvim" run there — never a narrowed audit.
+      # FAIL-CLOSED: the classifier forces ALL THREE flags true for infra/unknown changes,
+      # so this resolves to the full "shell,nvim,atuin" run there — never a narrowed audit.
+      # That explicitly INCLUDES the expensive atuin gate: an infra or unrecognised change is
+      # exactly the case where we cannot reason about what it can reach, so it pays for all
+      # of them.
       - name: Run Core audit (manifest, exec bits, syntax, lint, behavioral)
         env:
           SHELL_CHANGED: ${{ needs.changes.outputs.shell }}
           NVIM_CHANGED: ${{ needs.changes.outputs.nvim }}
+          ATUIN_CHANGED: ${{ needs.changes.outputs.atuin }}
         run: |
           scope=""
           [ "$SHELL_CHANGED" = true ] && scope="shell"
           [ "$NVIM_CHANGED" = true ] && scope="${scope:+$scope,}nvim"
+          # The atuin gate is the premise detector's hermetic self-test — the single most
+          # expensive thing the suite does (197s of 286s). It is reachable only from the
+          # detector itself (scripts/, which the classifier already treats as infra → full),
+          # zsh/00-tools.zsh, and atuin/. The LIVE measurement against upstream atuin is
+          # unaffected by this: it runs weekly in atuin-guard-verify.yml, which drives the
+          # same self-test unconditionally so the harness is never left ungated.
+          [ "$ATUIN_CHANGED" = true ] && scope="${scope:+$scope,}atuin"
           [ -z "$scope" ] && scope="none"
           # --strict on the Linux leg: every IN-SCOPE gate's tool is installed here, so a
           # SKIP would mean a tool silently failed to install — a false green this repo's
@@ -273,8 +341,19 @@ jobs:
         with:
           persist-credentials: false
       - name: Audit on Alpine (musl + busybox)
+        # The scope is passed through the ENVIRONMENT, never interpolated into the run:
+        # body — same rule as #422. It is our own classifier's true/false, but a `${{ }}`
+        # expanded inside a shell string is a code-injection shape regardless of who
+        # produced the value today, and `docker run -e` costs nothing to do correctly.
+        env:
+          ATUIN_CHANGED: ${{ needs.changes.outputs.atuin }}
         run: |
-          docker run --rm -v "$PWD:/core" -w /core alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d sh -euc '
+          # musl/busybox coverage of the premise detector's self-test is preserved: when the
+          # atuin gate is in play at all, this leg runs it too. It is only dropped from the
+          # pushes that could never move it — which is the entire point of the axis.
+          scope="shell"
+          [ "$ATUIN_CHANGED" = true ] && scope="shell,atuin"
+          docker run --rm -e CORE_SCOPE="$scope" -v "$PWD:/core" -w /core alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d sh -euc '
             apk add --no-cache bash zsh git shellcheck python3 py3-yaml
             # The repo is owned by the host runner uid but the container runs as root;
             # without this, git 2.35+ refuses it as "dubious ownership" and the audit
@@ -282,8 +361,9 @@ jobs:
             git config --global --add safe.directory /core
             # This leg exists to re-validate the SHELL layer on musl/busybox; it only
             # runs when shell changed (job-level if:), and nvim tooling is not installed
-            # here — so scope it to shell (the nvim sections skip as out-of-scope).
-            ./scripts/audit-core.sh --scope shell
+            # here — so the scope is shell, plus atuin when that gate is live (the nvim
+            # sections skip as out-of-scope). CORE_SCOPE arrives via docker run -e.
+            ./scripts/audit-core.sh --scope "$CORE_SCOPE"
           '
 
   # Arch (glibc, ROLLING release) is a named target repo, and the Alpine leg above
@@ -306,8 +386,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Audit on Arch (rolling glibc toolchain)
+        # Scope via the environment, not interpolated into the run: body — see the Alpine
+        # leg above and #422.
+        env:
+          ATUIN_CHANGED: ${{ needs.changes.outputs.atuin }}
         run: |
-          docker run --rm -v "$PWD:/core" -w /core archlinux:latest@sha256:681569955d1d17313ef7134acc8b5cd8adcda2fc24709bed472d95e1cf3d71a1 sh -euc '
+          scope="shell"
+          [ "$ATUIN_CHANGED" = true ] && scope="shell,atuin"
+          docker run --rm -e CORE_SCOPE="$scope" -v "$PWD:/core" -w /core archlinux:latest@sha256:681569955d1d17313ef7134acc8b5cd8adcda2fc24709bed472d95e1cf3d71a1 sh -euc '
             # -Syu (not bare -Sy): a partial upgrade is unsupported on Arch and can pull
             # mismatched libs. The container is ephemeral, so the full sync+upgrade is the
             # correct AND safe idiom here — the same rule dotfiles-Arch ships to real hosts.
@@ -315,10 +401,10 @@ jobs:
             # Same "dubious ownership" fix as the Alpine leg: repo is host-uid-owned but
             # the container runs as root, so git 2.35+ would refuse ls-files/ls-tree.
             git config --global --add safe.directory /core
-            # Shell scope only: this leg re-validates zsh/bash against the rolling
-            # toolchain; nvim/lua tooling is not installed here (skips out-of-scope) and
-            # is already covered on the glibc Ubuntu leg.
-            ./scripts/audit-core.sh --scope shell
+            # Shell scope (plus atuin when that gate is live): this leg re-validates
+            # zsh/bash against the rolling toolchain; nvim/lua tooling is not installed here
+            # (skips out-of-scope) and is already covered on the glibc Ubuntu leg.
+            ./scripts/audit-core.sh --scope "$CORE_SCOPE"
           '
 
   # Author-time hygiene gate. The .pre-commit-config.yaml hooks only fire for
@@ -359,7 +445,7 @@ jobs:
   # Startup-perf REGRESSION GATE. Core invests in startup speed (cached tool-init in
   # 00-tools.zsh, deferred plugins in 45-plugins.zsh); a gross regression — re-introducing a
   # per-shell subprocess, un-deferring heavy work, an uncached eval — would fan out to
-  # all eight repos silently. This job now ENFORCES a budget instead of only reporting:
+  # all nine repos silently. This job now ENFORCES a budget instead of only reporting:
   # bench-core.sh fails the build when the canonical-chain MEAN exceeds
   # CORE_BENCH_BUDGET_MS. The budget is deliberately GENEROUS (the hermetic chain runs
   # ~25 ms; 120 ms is ~5x headroom) and the mean is taken over 50 warmed runs, so
@@ -383,7 +469,11 @@ jobs:
           # Drop GitHub's flaky third-party apt repos (packages.microsoft.com/azure) first —
           # an unsigned InRelease there otherwise fails the whole update (exit 100).
           sudo find /etc/apt/sources.list.d -type f \( -iname '*microsoft*' -o -iname '*azure*' \) -delete 2>/dev/null || true
-          sudo apt-get update
+          # `apt-get update`, BOUNDED — a wedged mirror otherwise hangs to the job
+          # timeout. Full reasoning at ci.yml's "Install zsh (Linux)" step.
+          apt_update=(sudo timeout -k 10 120 apt-get -o Acquire::Retries=3
+                      -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update)
+          "${apt_update[@]}" || { echo "::warning::apt-get update failed or timed out — retrying once"; "${apt_update[@]}"; }
           sudo apt-get install -y --no-install-recommends zsh hyperfine
       - name: Benchmark Core startup (budget gate)
         env:

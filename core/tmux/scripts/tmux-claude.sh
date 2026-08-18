@@ -17,7 +17,7 @@
 #
 # ONE SESSION PER PROJECT, keyed on the git root (not the cwd): every pane inside a repo
 # shares one conversation, which is the granularity you actually think in. A single global
-# session would hand you dotfiles-Kali's thread while you're sitting in dotfiles-core — the
+# session would hand you dotfiles-Offense's thread while you're sitting in dotfiles-core — the
 # fleet is ten repos, so that would be wrong most of the time.
 # ──────────────────────────────────────────────────────────────────────────────
 set -u

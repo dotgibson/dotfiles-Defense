@@ -27,14 +27,14 @@ does this change *with*?
 | ------------- | ----------------------------------------------------- | -------------------- | --------------------------------------------------------------- |
 | **Core**      | `dotfiles-core`, vendored into each OS repo's `core/` | nothing — identical  | zsh modules, tmux base, Neovim, git, starship, mise             |
 | **OS-native** | one repo per platform                                 | the operating system | package manager, paths, clipboard backend                       |
-| **Role**      | `dotfiles-Kali` (red) · `dotfiles-Defense` (blue)     | you as an operator   | offensive engagement tooling · defensive detection/hunt tooling |
+| **Role**      | `dotfiles-Offense` (red) · `dotfiles-Defense` (blue)  | you as an operator   | offensive engagement tooling · defensive detection/hunt tooling |
 
 The boundary rule, stated as a test:
 
 - If it changes when the **operating system** changes, it is **OS-native** — it
   belongs in the platform repo.
 - If it changes when **you as an operator** change, it is **Role** — it belongs
-  in a role repo (`dotfiles-Kali` for offense, `dotfiles-Defense` for defense).
+  in a role repo (`dotfiles-Offense` for offense, `dotfiles-Defense` for defense).
 - Everything left over is **Core**, and it lives in `dotfiles-core` only.
 
 Core is not "the Neovim config" or "the shell config" — it is the entire
@@ -75,8 +75,8 @@ here rather than left to be rediscovered as drift:
 
 ## The fleet
 
-Ten repositories make up the configuration system (one Core plus nine machine
-repos), with `dotfiles-web` as an eleventh public repo that documents the system
+Eleven repositories make up the configuration system (one Core plus ten machine
+repos), with `dotfiles-web` as a twelfth public repo that documents the system
 rather than configuring a machine.
 
 | Repository          | Layer            | Vendors `core/`? | Notes                                                      |
@@ -85,20 +85,26 @@ rather than configuring a machine.
 | `dotfiles-MacBook`  | OS-native        | yes              | Homebrew; reference implementation, synced first.          |
 | `dotfiles-Fedora`   | OS-native        | yes              | dnf; the template the other Linux repos stamp from.        |
 | `dotfiles-Arch`     | OS-native        | yes              | pacman + AUR, rolling release.                             |
+| `dotfiles-Debian`   | OS-native        | yes              | apt; Ubuntu 24.04 LTS — the only frozen target.            |
 | `dotfiles-openSUSE` | OS-native        | yes              | zypper; Tumbleweed (`dup`) + Leap (`up`) aware.            |
 | `dotfiles-Alpine`   | OS-native        | yes              | musl + busybox + doas; the lean outlier.                   |
 | `dotfiles-Gentoo`   | OS-native        | yes              | emerge from source; USE flags, full atoms.                 |
-| `dotfiles-Kali`     | Role / offensive | yes              | Core + apt OS layer + the offensive role layer.            |
+| `dotfiles-Offense`  | Role / offensive | yes              | Core + apt OS layer + the offensive role layer.            |
 | `dotfiles-Defense`  | Role / defensive | yes              | Core + OS layer + the defensive detection/hunt role layer. |
 | `dotfiles-Windows`  | Native host      | no               | pwsh / scoop / winget; Core is reimplemented, not ported.  |
 | `dotfiles-web`      | Showcase (none)  | no               | Astro docs site; the system's public face.                 |
 
-The canonical Core-vendoring fleet is `scripts/os-repos.txt` — eight repos.
+The canonical Core-vendoring fleet is `scripts/os-repos.txt` — nine repos.
 `dotfiles-Windows` is deliberately absent from it: its host layer is replicated
 from scratch in PowerShell rather than ported one-to-one from the Unix Core, so
 it carries no vendored `core/` subtree and `sync-core.sh` must never fan out into
-it. (`dotfiles-Debian` was once planned but is no longer pursued — the Debian
-family is covered by `dotfiles-Kali`'s apt OS layer.)
+it.
+
+`dotfiles-Debian` and `dotfiles-Offense` are both Debian-family and both use apt, which
+is not duplication: `dotfiles-Offense` targets Kali, a *rolling* sid derivative, and
+exists for the offensive role layer stacked on top, while `dotfiles-Debian` is a plain
+OS-native layer for a *frozen* Ubuntu LTS. The freeze is the whole difference — it is why that
+repo carries version floors and a large pinned-asset set that no rolling repo needs.
 
 ## Vendoring topology
 
@@ -111,10 +117,10 @@ Core flows in one direction — authored here, copied out:
                     │   the contract)      │
                     └──────────┬───────────┘
                                │  git subtree pull --prefix=core … --squash
-        ┌──────────┬───────────┼───────────┬──────────┬──────────┐
-        ▼          ▼           ▼           ▼          ▼          ▼
-   MacBook     Fedora       Arch      openSUSE     Alpine     Gentoo
-   (+ Kali and Defense, which each stack a Role layer — offensive / defensive — on top of an OS layer)
+     ┌────────┬────────┬───┴────┬────────┬────────┬────────┐
+     ▼        ▼        ▼        ▼        ▼        ▼        ▼
+  MacBook  Fedora    Arch    Debian  openSUSE  Alpine   Gentoo
+   (+ Offense and Defense, which each stack a Role layer — offensive / defensive — on top of an OS layer)
 
    dotfiles-Windows  ──  no subtree; Core reimplemented natively in PowerShell
 ```

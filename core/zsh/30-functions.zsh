@@ -2,7 +2,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Cross-OS shell functions. Pure POSIX-ish where possible so they behave the
 # same on macOS zsh, Linux zsh, and Alpine's busybox-adjacent environment.
-# Nothing OS-specific or offensive here — those live in the OS / Kali repos.
+# Nothing OS-specific or offensive here — those live in the OS / Offense repos.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Resolved path to the vendored version stamp. core.version sits one dir ABOVE zsh/,
@@ -166,10 +166,71 @@ typeset -ga _CORE_DOCTOR_GROUPS=(
 # ONE definition, called by BOTH the render and --json, so the two cannot drift (same rule
 # as _CORE_DOCTOR_GROUPS above). The :- fallbacks keep the answer byte-identical when
 # 00-tools.zsh has not run — the unit harness sources ui+functions alone.
+# A SECOND class joined fd/bat later: a git SUBCOMMAND, which is not on $PATH at all on the
+# Debian family (the `git-*` arm below, #424). #447 proposed instead giving _core_have a
+# tri-state override hook; rejected, because _core_have is a general primitive that 05-ui.zsh
+# calls on every confirm/spin/gum probe — this taxes one command's inventory rather than
+# every call site — and because an override answering "present" for `git-absorb` would hand a
+# caller a name it cannot execute, where resolving to a path hands back something runnable.
+#
+# _core_git_exec_path → REPLY = git's exec-path (its libexec/git-core), "" when there is no
+# git or it will not answer. THE ONE FORK the tool probe is allowed, and it fires only when a
+# `git-*` row has already MISSED on $PATH, so a box that never had the bug pays nothing.
+# Cached so a report with several git subcommands, and the two renderers, ask at most once.
+# `${+_CORE_GIT_EXEC_PATH}` tests that the parameter EXISTS, not that it is non-empty: a box
+# with no git caches the EMPTY answer, and an emptiness test would re-fork on every later row.
+# typeset -g, because every caller is already inside a function that has `local`-ed its own
+# scratch (REPLY/bin/_v in _core_doctor_render, REPLY in _core_doctor_json) — a plain
+# assignment would die with that frame and the cache would not survive one loop iteration.
+# Lifetime is ONE REPORT, not one shell, and that is ENFORCED by core-doctor unsetting the
+# cache on entry — it cannot be left to the subshell. Only the TTY render runs inside a `$(…)`
+# capture; `--json` and the non-TTY path both run in the caller's shell, so without the unset
+# an interactive session would carry the answer — including a cached EMPTY one — across a git
+# install or a PATH/GIT_EXEC_PATH change and report the row wrong for the rest of the session.
+# `command git`, not `git`: the real binary's account of its own layout.
+_core_git_exec_path() {
+  if ((!${+_CORE_GIT_EXEC_PATH})); then
+    typeset -g _CORE_GIT_EXEC_PATH=""
+    _core_have git && _CORE_GIT_EXEC_PATH="$(command git --exec-path 2>/dev/null)"
+  fi
+  REPLY="$_CORE_GIT_EXEC_PATH"
+}
+
 _core_doctor_bin() {
   case "$1" in
   fd)  REPLY="${FD_BIN:-fd}" ;;
   bat) REPLY="${BAT_BIN:-bat}" ;;
+  git-*)
+    # A git SUBCOMMAND (#424) — the second shape where the canonical row name is not a name
+    # on $PATH. The Debian family packages these into git's exec-path and keeps that
+    # directory OFF $PATH deliberately, because git dispatches `git absorb` by looking there
+    # itself. Verified on Kali, git-absorb 0.6.17-2+b4: `dpkg -L` lists the exec-path binary
+    # and a man page and NOTHING in a PATH dir, `command -v git-absorb` finds nothing, and
+    # `git absorb` works. So the doctor printed `✗` for a tool the reader had just used —
+    # #418's failure one directory further out.
+    #
+    # PATH FIRST, always: where the bare name hits (Arch, Alpine, Gentoo, Homebrew, macOS)
+    # this costs one lookup and no fork, and only a MISS asks git where its subcommands live.
+    # Probed with _core_have and NOT a bare `command -v`, so that a stubbed _core_have stays
+    # authoritative — scripts/test-core.sh's git-absorb --json case stubs exactly that — and
+    # so the short-circuit is honoured in the unit harness.
+    #
+    # The answer is an ABSOLUTE path, which is what BOTH consumers need: `command -v` on a
+    # path succeeds for an executable file and fails for a non-executable one, so presence
+    # stays as honest as the PATH probe; and the -v readout forks `"$bin" --version`, which a
+    # bare `git-absorb` could not do at all on this family. It never reaches the report — the
+    # render and the --json keys both print $tool, the canonical name.
+    #
+    # REPLY doubles as the scratch for the exec-path (this function keeps no locals, so the
+    # `local`-in-a-loop hazard documented in _core_doctor_render cannot appear here); the
+    # else-branch re-states the canonical name on the miss path so an absent tool still
+    # reports under the name the reader would install.
+    REPLY="$1"
+    if ! _core_have "$1"; then
+      _core_git_exec_path
+      if [[ -n "$REPLY" && -x "$REPLY/$1" ]]; then REPLY="$REPLY/$1"; else REPLY="$1"; fi
+    fi
+    ;;
   *)   REPLY="$1" ;;
   esac
 }
@@ -232,6 +293,13 @@ _core_doctor_json() {
 
 core-doctor() {
   emulate -L zsh
+  # Drop the exec-path cache so THIS report re-derives it (at most once — see
+  # _core_git_exec_path). Only the TTY branch below runs the render in a `$(…)` subshell that
+  # would discard it anyway; --json and the non-TTY path run right here, so a cache left
+  # standing would outlive its report and answer for a box that has since installed git,
+  # installed the subcommand, or moved GIT_EXEC_PATH. A health check that goes stale is worse
+  # than one that forks once.
+  unset _CORE_GIT_EXEC_PATH
   # --json (anywhere on the line) → machine-readable, never paged (B12).
   local a
   for a in "$@"; do [[ "$a" == --json ]] && { _core_doctor_json; return 0; }; done
@@ -375,6 +443,13 @@ _core_doctor_render() {
   # a bare ✓/✗ hides (Debian's fd→fdfind/bat→batcat; which `up` manager fires here).
   print -r -- "${c}resolved${r}"
   print -r -- "  ${d}fd → ${FD_BIN:-(none)}    bat → ${BAT_BIN:-(none)}${r}"
+  # …and git's exec-path, but ONLY when it was consulted — i.e. some `git-*` row missed on
+  # $PATH and _core_doctor_bin asked git where its subcommands live (#424). Where the
+  # subcommand is on $PATH the cache is never populated and this prints nothing, so the
+  # common report is byte-identical. Same principle as the fd→fdfind line above it: show the
+  # behaviour-affecting resolution that a bare ✓ hides. Carries no ✓/✗ glyph, so the
+  # render⇄json set-equality test (which matches `[✓✗] <name>`) is blind to it by construction.
+  [[ -n ${_CORE_GIT_EXEC_PATH:-} ]] && print -r -- "  ${d}git exec-path → ${_CORE_GIT_EXEC_PATH}${r}"
   if (($+functions[_pkgup_mgr])); then
     print -r -- "  ${d}package manager → $(_pkgup_mgr)${r}"
   fi

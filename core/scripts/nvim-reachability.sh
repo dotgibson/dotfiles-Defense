@@ -8,7 +8,7 @@
 # per-file listing would be maintenance noise. The cost of that choice is that the
 # audit's §1 manifest⇄filesystem drift check cannot see an orphan here: any new path
 # under nvim/ is auto-"listed", so a lua module that nothing loads sits in the tree
-# indefinitely, gets vendored into all eight OS repos, and no gate says a word.
+# indefinitely, gets vendored into all nine OS repos, and no gate says a word.
 #
 # core.manifest said that gap was "covered by verify-core.sh instead". That script has
 # never existed in this repo (dotgibson/dotfiles-core#454) — so the backstop the comment

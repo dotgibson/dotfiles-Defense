@@ -10,13 +10,13 @@ the OS-repo rollout is the consumer side of the Core line, not its own version:
 
 | Flow | Versioned thing | Trigger | Fans out to | Section |
 | --- | --- | --- | --- | --- |
-| **Core** | `dotfiles-core` (`core.version`) | `make release` + push tag | the 8 OS repos' `core/` | [1](#1-cut-a-core-release) |
+| **Core** | `dotfiles-core` (`core.version`) | `make release` + push tag | the 9 OS repos' `core/` | [1](#1-cut-a-core-release) |
 | **OS-repo rollout** | not versioned (stamped `core.lock`) | merging the fan-out PRs | the live hosts (on bootstrap) | [2](#2-roll-a-core-release-out-to-the-os-repos) |
 | **dotfiles-Windows** | `dotfiles-Windows` (own `vX.Y.Z`) | mirror-sync `nvim/`+`starship/` (auto-patch) **or** a manual CHANGELOG promotion + tag (minor/major) | the Windows host (on bootstrap) | [3](#3-cut-a-dotfiles-windows-release) |
-| **htpx** | `htpx` (`CHANGELOG.md`) | push a CHANGELOG bump to `main` | `dotfiles-Kali` (`companion.lock`) | [4](#4-cut-an-htpx-release) |
+| **htpx** | `htpx` (`CHANGELOG.md`) | push a CHANGELOG bump to `main` | `dotfiles-Offense` (`companion.lock`) | [4](#4-cut-an-htpx-release) |
 
 These lines are independent and update different files, so they never collide: a Core
-release bumps each OS repo's `core.lock`; an htpx release bumps Kali's `companion.lock`;
+release bumps each OS repo's `core.lock`; an htpx release bumps Offense's `companion.lock`;
 and `dotfiles-Windows` carries its own version, advanced **two ways** — an automatic patch when
 the `nvim/`/`starship/` assets it mirrors from Core move, and a deliberate minor/major a human
 cuts for host work (both flows in §3). It vendors no `core/` subtree.
@@ -136,6 +136,28 @@ commit you just dropped — the failure the old recipe had to warn about (a plai
 `git fetch --tags` only *updates* tags origin already knows, so a newly minted `vN` on a
 MAJOR survived the fetch, pointing at a dead commit).
 
+> **Exception — a `make publish` that failed part-way.** The sentence above covers
+> abandoning *before* publish. `--publish` creates the immutable `vX.Y.Z` locally, then
+> moves `vN`, then pushes both atomically; if it dies between the first and last of those,
+> a local `vX.Y.Z` is left behind with **nothing pushed**. That is the safe side of the
+> failure — no tag reached origin, so neither `release.yml` nor `sync-fanout.yml` fired.
+>
+> **Just re-run `make publish`.** The local leftover does not block the retry: the publish
+> path checks only whether the tag exists **on origin**, and then force-creates the local
+> tag with `git tag -fa`, overwriting the leftover. (The "tag already exists" guard that
+> *does* consult a local tag belongs to phase 1, the commit path — not to `--publish`.)
+>
+> The check worth running first is about origin, not your clone:
+>
+> ```bash
+> git ls-remote --tags origin 'refs/tags/vX.Y.Z'   # no output = never published, retry freely
+> ```
+>
+> If that prints a SHA the release published: the tag is immutable, the version is spent,
+> and the fix is a new patch release rather than a retry. Seen for real in v4.12.2, where
+> the alias move aborted under `tag.gpgsign`
+> ([#506](https://github.com/dotgibson/dotfiles-core/issues/506)).
+
 If the release branch was already pushed and a PR opened, close the PR and delete the
 remote branch too — `git push origin --delete release/vX.Y.Z`.
 
@@ -189,7 +211,7 @@ What you do with the alias depends on the bump you chose in §1.0
   `@v4` picks the change up automatically on its next run. **No caller edits.** This
   auto-fan-out of guard/bootstrap fixes is the whole reason the alias moves.
 - **MAJOR** — you are minting a **new** major. In step 5, `vN` is the **new** alias (from
-  `v4` today, that is `v5`), created fresh at the merged tip (`git tag -f v5 origin/main &&
+  `v4` today, that is `v5`), created fresh at the merged tip (`git tag -fa v5 origin/main -m v5 &&
   git push -f origin v5`). **Leave the previous alias frozen:** do *not* run the `vN` line
   against `v4` — advancing it would push the breaking change onto every caller still pinned
   `@v4`. Then bump the callers that should adopt the new major from `@v4` to `@v5` **by hand** — that fleet-wide `uses:`
@@ -353,7 +375,7 @@ Then close the `release-readiness` / `release-notes` tracking issues for the cut
 Run in a clean `htpx` checkout. htpx versions itself from its `CHANGELOG.md`.
 
 **Which bump?** htpx is a content corpus, so read SemVer as impact on its consumers —
-`dotfiles-Kali` (which regenerates the marked `hacktheplanet` / `PURPLE-TEAM.md` blocks from
+`dotfiles-Offense` (which regenerates the marked `hacktheplanet` / `PURPLE-TEAM.md` blocks from
 the entries via `gen-views.sh`, drift-gated by `companion.yml`) and anyone browsing with the
 `htpx` picker:
 
@@ -362,9 +384,9 @@ the entries via `gen-views.sh`, drift-gated by `companion.yml`) and anyone brows
   `### Changed` "asrep-probing-4771 retargeted" line is patch-shaped work.)
 - **MINOR** — the corpus **grows** backward-compatibly: new red↔blue pairs, a new unpaired
   entry, a new tactic/technique covered. (v2.4.0's "+2 pairs, +1 recon entry" = minor.)
-- **MAJOR** — a change Kali's regeneration or the `htpx` picker must **adapt** to: the entry
+- **MAJOR** — a change Offense's regeneration or the `htpx` picker must **adapt** to: the entry
   frontmatter / `{{slot}}` format, the `gen-views.sh` marker contract, or the
-  `entries/red|blue/` layout. These break the `companion.yml` drift-gate until Kali re-syncs,
+  `entries/red|blue/` layout. These break the `companion.yml` drift-gate until Offense re-syncs,
   so flag them loudly.
 
 ```bash
@@ -394,10 +416,10 @@ git checkout main && git fetch origin && git pull --ff-only origin main
 
 3. The push to `main` triggers `auto-tag.yml`, which tags `vX.Y.Z` and publishes the
    Release. `sync-fanout.yml` then opens a `chore(companion): sync htpx -> vX.Y.Z` PR
-   against `dotfiles-Kali` (bumps `companion.lock` only — never `core.lock`).
-4. Review and merge that dotfiles-Kali PR.
+   against `dotfiles-Offense` (bumps `companion.lock` only — never `core.lock`).
+4. Review and merge that dotfiles-Offense PR.
 
-Requires the `FLEET_SYNC_TOKEN` secret on the **htpx** repo (write to dotfiles-Kali).
+Requires the `FLEET_SYNC_TOKEN` secret on the **htpx** repo (write to dotfiles-Offense).
 htpx is read with the built-in token, so `FLEET_SYNC_TOKEN` needs no htpx access.
 
 ### Backfill an already-released tag

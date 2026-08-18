@@ -17,7 +17,7 @@ Two secrets are long-lived PATs with broad scope and no automatic rotation:
 
 | Secret | Used by | What it authorises today |
 | --- | --- | --- |
-| `FLEET_SYNC_TOKEN` | `dotfiles-core` `sync-fanout.yml`, `htpx` `sync-fanout.yml` | Clone another repo, push a `sync/…` branch, and open a PR (contents + pull-requests + workflows **write** on the OS repos and `dotfiles-Kali`). Workflows is needed because the sync branch can carry `.github/workflows/*` pin moves — see Step 1. |
+| `FLEET_SYNC_TOKEN` | `dotfiles-core` `sync-fanout.yml`, `htpx` `sync-fanout.yml` | Clone another repo, push a `sync/…` branch, and open a PR (contents + pull-requests + workflows **write** on the OS repos and `dotfiles-Offense`). Workflows is needed because the sync branch can carry `.github/workflows/*` pin moves — see Step 1. |
 | `WEBHOOK_SECRET` | every source repo's `notify-web.yml` (via `notify-web-call.yml`) | A `Bearer` token POSTing a `repository_dispatch` to `dotfiles-web` to trigger a docs rebuild (contents **write** on `dotfiles-web`). |
 
 Both are the same anti-pattern: a **single broad token**, held as a secret in many
@@ -70,8 +70,8 @@ secret in Step 3. Store the `.pem` in your password manager and delete the downl
 On the App's page → **Install App** → install on **`dotgibson`**, and select **only the
 repos that RECEIVE cross-repo writes**:
 
-- The Core-vendoring OS repos + `dotfiles-Kali` (targets of `dotfiles-core`'s fan-out).
-- `dotfiles-Kali` (target of `htpx`'s companion fan-out — already in the list above).
+- The Core-vendoring OS repos + `dotfiles-Offense` (targets of `dotfiles-core`'s fan-out).
+- `dotfiles-Offense` (target of `htpx`'s companion fan-out — already in the list above).
 - `dotfiles-web` (target of the `notify-web` dispatch).
 - **`dotfiles-core`** — for its own **self-PRs**: `freshness.yml` opens a pin-bump PR *in
   Core*, and a PR opened by `GITHUB_TOKEN` has its CI held at `action_required` (GitHub's
@@ -128,7 +128,7 @@ Then, in the job:
           app-id: ${{ vars.FLEET_APP_ID }}
           private-key: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-          repositories: dotfiles-Kali # scope to the one target this job writes to
+          repositories: dotfiles-Offense # scope to the one target this job writes to
 
       # ... then wherever the job used the PAT, prefer the minted token:
       #   env:
@@ -147,7 +147,7 @@ Roll it out one consumer at a time, canary first, verifying a real run each time
 1. **`dotfiles-core/.github/workflows/sync-fanout.yml`** — the reference case (lives here;
    `make audit` / `check-modern.sh` validate the pinned action). Scope `repositories:` to
    the OS repo(s) a given run targets.
-2. **`htpx/.github/workflows/sync-fanout.yml`** — same pattern, `repositories: dotfiles-Kali`.
+2. **`htpx/.github/workflows/sync-fanout.yml`** — same pattern, `repositories: dotfiles-Offense`.
 3. **`notify-web-call.yml`** (reusable) — mint a `dotfiles-web`-scoped token and use it as
    the `Bearer` for the `dispatches` POST; drop the `WEBHOOK_SECRET` secret input. Fan the
    caller change out to every source repo's `notify-web.yml`.

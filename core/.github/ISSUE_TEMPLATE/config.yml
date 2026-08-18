@@ -1,5 +1,5 @@
 # Force a template choice — a blank issue on the keystone repo usually means it
-# belonged in an OS repo or dotfiles-Kali instead. The two templates above route
+# belonged in an OS repo or dotfiles-Offense instead. The two templates above route
 # that decision via the three-layer test.
 blank_issues_enabled: false
 contact_links:

@@ -4,7 +4,7 @@
 # Measure Core's contribution to interactive-shell startup time — the metric this
 # repo invests in (cached starship/zoxide/mise/atuin init in 00-tools.zsh, deferred
 # heavy plugins in 45-plugins.zsh) but never actually MEASURED, so a regression could
-# ship silently to all eight OS repos. This is the missing perf guard: run it before
+# ship silently to all nine OS repos. This is the missing perf guard: run it before
 # and after a change to the load path to see the delta.
 #
 # It benchmarks the SAME canonical load chain scripts/test-core.sh asserts, in the
@@ -19,7 +19,7 @@
 #
 # By default this only REPORTS the number (informational). Set CORE_BENCH_BUDGET_MS
 # to turn it into a GATE: the script exits non-zero if the mean startup exceeds the
-# budget, so a perf regression can fail CI instead of shipping silently to eight repos.
+# budget, so a perf regression can fail CI instead of shipping silently to nine repos.
 # Enforcement needs python3 to read hyperfine's JSON; with no budget set, behaviour
 # is unchanged (report only). Graceful skip still wins on a box with no zsh/hyperfine.
 #

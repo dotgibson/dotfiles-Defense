@@ -1,6 +1,6 @@
 # Release Strategy
 
-How and when changes ship across the ten-repo fleet. This is the **policy
+How and when changes ship across the eleven-repo fleet. This is the **policy
 layer** that ties together the machinery already in the tree — `core.version`,
 `scripts/release.sh`, `scripts/sync-core.sh`, the `core.lock` provenance stamp,
 `scripts/fleet-drift.sh`, and the weekly bots — into one cadence, one tagging
@@ -15,7 +15,7 @@ The short version: **Core is the only thing that is versioned and released. The
 OS and Role repos are consumers that pull a named Core version when they choose
 to.** Releases are cut on a predictable monthly rhythm (plus out-of-band for
 security), tagged `vX.Y.Z`, proven green by the audit before they fan out, and
-rolled out canary-first so a bad Core can never reach all eight operating
+rolled out canary-first so a bad Core can never reach all nine operating
 systems at once.
 
 ## 1. The unit of release
@@ -28,7 +28,7 @@ versioned thing (Core) vendored into thin per-OS consumers**:
   `core/` via `git subtree`. A defect here fans out N-way, so Core is the thing
   that earns a version number, a tag, and a changelog.
 - **OS-native repos** (`dotfiles-{MacBook,Fedora,Arch,openSUSE,Alpine,Gentoo}`)
-  and **Role repos** (`dotfiles-Kali`, `dotfiles-Defense`) are **not**
+  and **Role repos** (`dotfiles-Offense`, `dotfiles-Defense`) are **not**
   independently versioned. They are stamped with the Core they carry — the
   generated `core.lock` records `core_version`, `core_sha`, and `core_branch` —
   so "what Core does Alpine run?" is answerable offline without a release
@@ -40,8 +40,8 @@ versioned thing (Core) vendored into thin per-OS consumers**:
 - **`dotfiles-web`** documents the system; it ships when its content is true,
   not on this cadence.
 
-This is deliberate. Versioning eight repos independently would multiply the
-release surface eightfold for no benefit: the OS layer is a thin shim over
+This is deliberate. Versioning nine repos independently would multiply the
+release surface ninefold for no benefit: the OS layer is a thin shim over
 package manager, clipboard, and paths, and most of what changes a host is Core.
 
 ## 2. Release cadence
@@ -137,13 +137,13 @@ A **three-layer, multi-repo model with Core vendored by `git subtree`**:
 | --- | --- | --- |
 | **Core** | `dotfiles-core`, vendored into each OS repo's `core/` | zsh modules, tmux, nvim, git, starship — identical everywhere |
 | **OS-native** | one repo per OS | package manager, clipboard, paths, bootstrap |
-| **Role** | `dotfiles-Kali` (offensive), `dotfiles-Defense` (blue) | engagement / detection tooling layered on an OS |
+| **Role** | `dotfiles-Offense` (offensive), `dotfiles-Defense` (blue) | engagement / detection tooling layered on an OS |
 
 Each OS repo therefore carries **only** vendored Core plus its own thin OS layer
-— not the other seven OSes' files. The zsh **load order is the contract**
+— not the other eight OSes' files. The zsh **load order is the contract**
 (`tools → ui → options → history → aliases → git → functions → fzf → bindings →
 plugins → op → maint → update → os → local`); OS and Role repos extend it by
-appending stages (`… os offensive local` on Kali, `… os defense local` on
+appending stages (`… os offensive local` on Offense, `… os defense local` on
 Defense), never by editing Core.
 
 Why `git subtree` rather than a submodule: the vendored `core/` is present
@@ -258,7 +258,9 @@ GitHub's own recommended pattern for reusable workflows.
   Don't trust a frozen count of who pins what — `RELEASE-RUNBOOK.md` §"Step 5, by bump type"
   carries a one-liner that derives it from the callers.
 - **Bootstrapping a major:** `vN` is created/advanced by `make publish`; the very first
-  `vN` can also be stamped by hand (`git tag -f vN vN.0.0 && git push -f origin vN`).
+  `vN` can also be stamped by hand (`git tag -fa vN vN.0.0^{commit} -m vN && git push -f origin vN`  — peel the release
+  tag with `^{commit}`, or the alias becomes a *nested* tag pointing at a tag rather than
+  the direct-to-commit alias `make publish` creates).
 - **Trade vs. exact-SHA pinning:** a SHA is maximally deterministic but needs a manual
   caller bump fleet-wide on every change — rejected as too high-churn for a first-party,
   same-owner reusable workflow. `dotfiles-Windows` takes the opposite side of that trade for

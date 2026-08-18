@@ -4,7 +4,7 @@
 # Releasing was a manual, drift-prone TWO-file edit (bump core.version, then move
 # CHANGELOG's [Unreleased] under a dated heading), caught only REACTIVELY by the audit's
 # version/CHANGELOG coherence gate. This does both mechanically, then runs the audit so a
-# release is proven green BEFORE it's tagged and fanned out to the eight OS repos.
+# release is proven green BEFORE it's tagged and fanned out to the nine OS repos.
 #
 # It deliberately does NOT commit, tag, or push — those are the operator's call. It edits
 # the two files, runs the gate, and prints the exact git commands to finish. Safe to

@@ -179,8 +179,9 @@ if [[ -r "$_OS_REPOS_FILE" ]]; then
   done <"$_OS_REPOS_FILE"
 fi
 ((${#OS_REPOS[@]})) || OS_REPOS=(
-  dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Defense
-  dotfiles-Fedora dotfiles-Gentoo dotfiles-Kali dotfiles-openSUSE
+  dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian
+  dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense
+  dotfiles-openSUSE
 )
 
 # Read a `key=value` (core.lock) or `key = value` (.core-ref) value from a file.

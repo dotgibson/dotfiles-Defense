@@ -81,7 +81,7 @@ so stopping on exit 1 would refuse exactly the job this routine was written to d
    Claude Code flag, not a script flag — passing it to the script is a usage error.
 
    Also read this repo's `core.version` + latest `vX.Y.Z` tag.
-2. **Compute the gap** per repo. For the eight Core-vendoring repos: `core.lock`'s
+2. **Compute the gap** per repo. For the nine Core-vendoring repos: `core.lock`'s
    `core_tag` / `core_sha` vs the latest tag → how many releases it skipped. For a
    `•` row, the gap that matters is the two numbers in the row itself: commits ahead
    of the tag (a release is owed) and `behind its tip` (a sync is owed).

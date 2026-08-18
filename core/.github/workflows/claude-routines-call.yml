@@ -1,8 +1,8 @@
 name: claude-routines (reusable)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# REUSABLE OS-repo judgment routine. The six OS repos (Fedora/Arch/openSUSE/Alpine/
-# Gentoo/MacBook) have no judgment layer of their own; rather than 6× copy a full
+# REUSABLE OS-repo judgment routine. The seven OS repos (Fedora/Arch/Debian/openSUSE/
+# Alpine/Gentoo/MacBook) have no judgment layer of their own; rather than 7× copy a full
 # claude-routines.yml, each collapses to a ~5-line caller:
 #
 #   jobs:
@@ -28,7 +28,7 @@ on:
   workflow_call:
     inputs:
       distro:
-        description: "which OS repo is calling (fedora|arch|opensuse|alpine|gentoo|macbook)"
+        description: "which OS repo is calling (fedora|arch|debian|opensuse|alpine|gentoo|macbook)"
         required: true
         type: string
       routine:
@@ -113,14 +113,14 @@ jobs:
           # env: makes DISTRO shell-safe, but the prompt is an INSTRUCTION channel — an
           # arbitrary string there is a prompt-injection vector into a job holding
           # CLAUDE_CODE_OAUTH_TOKEN, and a typo would file a package audit for a target
-          # that does not exist. The input contract is six names, so enforce it before
+          # that does not exist. The input contract is seven names, so enforce it before
           # the agent runs. (Sanitised on the error path for the same workflow-command
           # reason as auto-tag-call.yml.)
           case "$DISTRO" in
-          fedora | arch | opensuse | alpine | gentoo | macbook) ;;
+          fedora | arch | debian | opensuse | alpine | gentoo | macbook) ;;
           *)
             safe="$(printf '%s' "$DISTRO" | tr -d '\r\n%:' | cut -c1-40)"
-            echo "::error::unsupported distro '${safe}' — expected one of: fedora, arch, opensuse, alpine, gentoo, macbook"
+            echo "::error::unsupported distro '${safe}' — expected one of: fedora, arch, debian, opensuse, alpine, gentoo, macbook"
             exit 2
             ;;
           esac
