@@ -130,13 +130,15 @@ hdr() { ((QUIET)) || printf '\n%s== %s ==%s\n' "$c_blu" "$*" "$c_rst"; }
 # Both gate scripts gate their SLOW per-area sections on these flags so a per-area run
 # pays only for what it touched. They carried BYTE-IDENTICAL copies of this parser — the
 # exact "two copies that drift" pattern this lib exists to kill — so it lives here once.
-# FAIL-CLOSED default: unset → both areas on (full run). An empty or unknown scope token
-# fails SAFE to the full run rather than silently narrowing a gate on the 9-repo fan-out.
+# FAIL-CLOSED default: unset → every area on (full run). An empty or unknown scope token
+# fails SAFE to the full run rather than silently narrowing a gate on the 10-repo fan-out.
 : "${SCOPE_SHELL:=1}"
 : "${SCOPE_NVIM:=1}"
-_set_scope() { # _set_scope <comma-list: shell,nvim | all | none>
+: "${SCOPE_ATUIN:=1}"
+_set_scope() { # _set_scope <comma-list: shell,nvim,atuin | all | none>
   SCOPE_SHELL=0
   SCOPE_NVIM=0
+  SCOPE_ATUIN=0
   local tok had=0 prog="${0##*/}"
   local IFS=,
   for tok in $1; do
@@ -144,15 +146,25 @@ _set_scope() { # _set_scope <comma-list: shell,nvim | all | none>
     case "$tok" in
     shell) SCOPE_SHELL=1 ;;
     nvim) SCOPE_NVIM=1 ;;
+    # `atuin` is the hermetic self-test of scripts/verify-atuin-guard.sh — the premise
+    # DETECTOR's own harness, not shipped Core (it is absent from core.manifest and nothing
+    # vendors it). Its own axis because it is by far the most expensive thing the suite
+    # does — measured at 197s of a 286s run, 68% — while being unreachable from almost
+    # every change that pays for it. The real measurement, against live upstream atuin,
+    # runs weekly in .github/workflows/atuin-guard-verify.yml; this axis only decides
+    # whether the STUB-driven self-test also runs on a given push.
+    atuin) SCOPE_ATUIN=1 ;;
     all | full)
       SCOPE_SHELL=1
       SCOPE_NVIM=1
+      SCOPE_ATUIN=1
       ;;
     none) ;;
     *) # unknown token → run EVERYTHING (fail-safe), matching ci.yml's safe default
       printf '%s: unknown scope %s — running full (fail-safe)\n' "$prog" "$tok" >&2
       SCOPE_SHELL=1
       SCOPE_NVIM=1
+      SCOPE_ATUIN=1
       ;;
     esac
   done
@@ -162,6 +174,7 @@ _set_scope() { # _set_scope <comma-list: shell,nvim | all | none>
     printf '%s: empty scope — running full (fail-safe)\n' "$prog" >&2
     SCOPE_SHELL=1
     SCOPE_NVIM=1
+    SCOPE_ATUIN=1
   }
 }
 
@@ -178,16 +191,22 @@ _seed_plugin_dirs() { # _seed_plugin_dirs <parent-dir>
   done
 }
 
-# Read ci-classify.sh's two-line `shell=<bool>`/`nvim=<bool>` contract into
-# CLASSIFY_SHELL/CLASSIFY_NVIM. Returns NON-ZERO when either key is missing or not a
-# clean true/false (a classifier error or garbage) — so the caller can fail SAFE to the
-# full run rather than trust a half-parsed verdict. ONE reader for the contract the audit
-# (`--changed`) consumes, instead of re-implementing the sed parse + validation per site.
+# Read ci-classify.sh's three-line `shell=<bool>`/`nvim=<bool>`/`atuin=<bool>` contract into
+# CLASSIFY_SHELL/CLASSIFY_NVIM/CLASSIFY_ATUIN. Returns NON-ZERO when ANY of the three keys is
+# missing or not a clean true/false (a classifier error or garbage) — so the caller can fail
+# SAFE to the full run rather than trust a half-parsed verdict. ONE reader for the contract the
+# audit (`--changed`) consumes, instead of re-implementing the sed parse + validation per site.
 _core_read_classify() { # _core_read_classify <classifier-output>
   CLASSIFY_SHELL="$(printf '%s\n' "$1" | sed -n 's/^shell=//p')"
   CLASSIFY_NVIM="$(printf '%s\n' "$1" | sed -n 's/^nvim=//p')"
+  CLASSIFY_ATUIN="$(printf '%s\n' "$1" | sed -n 's/^atuin=//p')"
   case "$CLASSIFY_SHELL" in true | false) ;; *) return 1 ;; esac
   case "$CLASSIFY_NVIM" in true | false) ;; *) return 1 ;; esac
+  # Validated exactly as strictly as the other two, deliberately. Defaulting a missing or
+  # malformed `atuin=` to false would read a classifier this reader cannot parse as
+  # "skip the most expensive gate" — the silent-skip failure mode ci-classify.sh's whole
+  # fail-closed design exists to invert. A garbage line fails here and the caller runs full.
+  case "$CLASSIFY_ATUIN" in true | false) ;; *) return 1 ;; esac
   return 0
 }
 

@@ -14,7 +14,7 @@ set -u
 
 # tmux pop-ups inherit the tmux SERVER's environment, which can be minimal; make sure
 # fzf and Core's `clip` resolve. Nothing here is hardcoded: this is portable Core, and
-# an absolute Homebrew-prefix path would be wrong on seven of the eight repos it ships to.
+# an absolute Homebrew-prefix path would be wrong on eight of the nine repos it ships to.
 #
 # $HOME/.local/bin is portable — bootstrap installs `clip` there on every OS. A brew
 # prefix, if this box has one, is DISCOVERED rather than named: $HOMEBREW_PREFIX is

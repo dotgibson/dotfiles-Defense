@@ -76,7 +76,7 @@ source "$ZSH_CFG/loader.zsh"
 
 `zsh/loader.zsh:38-44` iterates that list and sources `$ZSH_CFG/$_m.zsh`. OS and
 Role repos extend the chain **only by appending** stages (`… os offensive local`
-on Kali, `… os defense local` on Defense). There is no way to insert a fragment
+on Offense, `… os defense local` on Defense). There is no way to insert a fragment
 *between*, say, `aliases` and `git` — anything order-sensitive has to be
 smuggled into an existing module.
 
@@ -248,7 +248,7 @@ for undoing an adopted newer one.
 ## 7. Per-OS-repo migration runbook
 
 For each repo in `scripts/os-repos.txt` (which already includes the Role repos
-`dotfiles-Kali` and `dotfiles-Defense`), after `v4.0.0` is tagged:
+`dotfiles-Offense` and `dotfiles-Defense`), after `v4.0.0` is tagged:
 
 1. **Adopt the tag:**
    `git subtree pull --prefix=core <core-remote> v4.0.0 --squash`
@@ -266,7 +266,7 @@ For each repo in `scripts/os-repos.txt` (which already includes the Role repos
 
 3. **Symlink the OS/Role layer fragment** into its band: `blib_link_os_layer` links
    `os/<name>.zsh` → `$ZSH_CFG/80-os.zsh`; a role repo links its stage into the 85
-   band (Kali `85-offensive.zsh`, Defense `85-defense.zsh`) — the loader picks it up
+   band (Offense `85-offensive.zsh`, Defense `85-defense.zsh`) — the loader picks it up
    by glob, no module-list entry needed.
 4. **Migration is automatic:** `blib_migrate_v4` (called from `blib_link_core`) moves
    an existing `~/.config/zsh/.zsh_history` → `$XDG_STATE_HOME/zsh/history`, renames a

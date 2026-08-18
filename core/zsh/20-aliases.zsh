@@ -3,7 +3,7 @@
 # Aliases for the modern CLI stack. Every alias touching an optional tool is
 # GUARDED by a HAVE_* flag from 00-tools.zsh, so on a bare box (fresh server, rescue
 # shell) you transparently get the classic command. Load AFTER 00-tools.zsh.
-# Anything offensive/engagement-flavoured lives in dotfiles-Kali, not here.
+# Anything offensive/engagement-flavoured lives in dotfiles-Offense, not here.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ── ls -> eza ─────────────────────────────────────────────────────────────────
@@ -131,8 +131,11 @@ alias vim='nvim'
 # gated, not git-workflow aliases: the `lg` lazygit launcher and the HAVE_DIFFT-gated
 # `gdft` below.
 # git-absorb gets NO alias at all — it installs as the `git absorb` subcommand, so git
-# already dispatches it and there is nothing to shadow. 00-tools.zsh detects it
-# (HAVE_GIT_ABSORB) purely so core-doctor can report it; see git/gitconfig's `fix` alias.
+# already dispatches it and there is nothing to shadow; see git/gitconfig's `fix` alias.
+# 00-tools.zsh sets HAVE_GIT_ABSORB for symmetry with the other detected tools, and nothing
+# reads it today — core-doctor probes the tool itself rather than consulting the flag. The
+# two are kept in agreement anyway (#425): both look past $PATH, because the Debian family
+# keeps the subcommand in git's exec-path only (#424).
 alias lg='lazygit'
 
 # difftastic (difft): AST/structural diff — an OPT-IN companion to delta, never the
@@ -192,7 +195,7 @@ alias mkdir='mkdir -p'
 # tealdeer: `help <cmd>` → community-curated quick-reference (complement to man).
 [[ -n ${HAVE_TLDR:-} ]] && alias help='tldr'
 
-# ── network conveniences (stay in Core; anything engagement-flavored -> Kali)─
+# ── network conveniences (stay in Core; engagement-flavored -> Offense) ──────
 alias myip='curl -fsS https://ifconfig.me 2>/dev/null && echo'
 alias ports='ss -tulpn 2>/dev/null || netstat -tulpn'
 [[ -n ${HAVE_GPING:-} ]] && alias ping='gping'

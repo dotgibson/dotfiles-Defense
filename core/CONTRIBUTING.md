@@ -2,7 +2,7 @@
 
 This repo is the **Core layer** — the config that is identical on every machine —
 authored once here and vendored into each OS repo's `core/` via `git subtree`.
-A change here fans out to all eight OS repos, so the bar is: _is this truly Core,
+A change here fans out to all nine OS repos, so the bar is: _is this truly Core,
 and is it healthy?_
 
 ## Is it actually Core?
@@ -14,11 +14,11 @@ Before adding anything, run the README's test. It belongs here **only** if:
 
 Otherwise it lives elsewhere:
 
-| If it changes when…                                               | It belongs in…                                           |
-| ----------------------------------------------------------------- | -------------------------------------------------------- |
-| the **operating system** changes (pkg manager, paths, clipboard)  | the OS repo (`dotfiles-{MacBook,Fedora,Arch,…}`)         |
-| **you as an operator** change (C2/wordlists; or detections/hunts) | `dotfiles-Kali` (offense) / `dotfiles-Defense` (defense) |
-| neither — it's the same everywhere                                | **here**                                                 |
+| If it changes when…                                               | It belongs in…                                              |
+| ----------------------------------------------------------------- | ----------------------------------------------------------- |
+| the **operating system** changes (pkg manager, paths, clipboard)  | the OS repo (`dotfiles-{MacBook,Fedora,Arch,…}`)            |
+| **you as an operator** change (C2/wordlists; or detections/hunts) | `dotfiles-Offense` (offense) / `dotfiles-Defense` (defense) |
+| neither — it's the same everywhere                                | **here**                                                    |
 
 ## The manifest is the contract
 
@@ -124,6 +124,10 @@ same commit.
    out from it: the Core⇄OS boundary scan in `scripts/audit-core.sh` (§5c — a
    vendored config gets no OS-absolute paths either) and a bucket in
    `scripts/ci-classify.sh` (an unrecognised path fails closed to a full CI run),
-   with a matching `_classify_is` line in `scripts/test-core.sh`.
+   with a matching `_classify_is` line in `scripts/test-core.sh`. The classifier
+   emits three axes — `shell`, `nvim` and `atuin` — and `atuin` is narrow on
+   purpose: it gates the premise detector's hermetic self-test, the single most
+   expensive thing the suite does, so only `scripts/`, `zsh/00-tools.zsh` and
+   `atuin/` reach it. Widening it is a real cost on every push in the fleet.
 7. `./scripts/audit-core.sh` — green before you push.
 8. `./scripts/sync-core.sh` to vendor it into every OS repo.

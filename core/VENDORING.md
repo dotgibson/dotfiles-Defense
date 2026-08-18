@@ -2,7 +2,7 @@
 
 Every OS repo carries a `core/` directory that is a **vendored copy of this repo**,
 delivered by `git subtree`. This document is for the person working in
-`dotfiles-Fedora` / `dotfiles-Arch` / `dotfiles-Kali` / … who needs to know what they may
+`dotfiles-Fedora` / `dotfiles-Arch` / `dotfiles-Offense` / … who needs to know what they may
 touch, what will be overwritten, and how to get a fix upstream.
 
 `ARCHITECTURE.md` explains _why_ the system vendors. This explains _how to live with it_.
@@ -102,7 +102,7 @@ order. The band decides the owner:
 | --- | --- | --- |
 | `00`–`69` | **Core** | `20-aliases.zsh`, `60-update.zsh` |
 | `70`–`84` | **OS-native** | `80-os.zsh` ← symlinked from your `os/<os>.zsh` |
-| `85`–`94` | **Role** | Kali / Defense fragments |
+| `85`–`94` | **Role** | Offense / Defense fragments |
 | `95`–`99` | **host-local** | `99-local.zsh` (gitignored, never committed) |
 
 ### The footgun: `CORE_PROFILE` gates by NUMBER, not by authorship
@@ -166,8 +166,14 @@ Use `scripts/new-os-repo.sh`, which scaffolds the layout and runs:
 git subtree add --prefix=core <core-remote> main --squash
 ```
 
-Then add the repo to `scripts/os-repos.txt` **here**, which is the single source of the
-fan-out fleet. `dotfiles-Windows` is deliberately absent: it replicates the host config
+Then register the repo **here**, which takes **four coordinated edits**, not one:
+`scripts/os-repos.txt` (the source), plus the hardcoded fallback arrays in
+`scripts/sync-core.sh`, `scripts/fleet-drift.sh` and `scripts/core-integrity.sh`. Those
+fallbacks run when the data file is missing or unreadable, so a repo registered in the
+file alone silently disappears from the fan-out in exactly the situation you are least
+able to spot it. `scripts/test-core.sh` asserts all four agree.
+
+`dotfiles-Windows` is deliberately absent from all four: it replicates the host config
 natively in PowerShell and vendors no `core/` at all.
 
 **The scaffold is a starting point, not the finished contract.** A freshly generated repo

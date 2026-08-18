@@ -4,7 +4,7 @@ name: atuin-guard-verify
 # still hold? With the daemon enabled and its socket unreachable, atuin 18.19.0 exits 0,
 # prints a history id, writes nothing to stderr and DISCARDS the entry
 # (atuinsh/atuin#3561). A persistent precmd hook, a throttled connect(2) on the prompt
-# path, and a one-way degrade in every interactive shell across eight repos are justified
+# path, and a one-way degrade in every interactive shell across nine repos are justified
 # by that fact ALONE — and it has already moved once, in the direction that makes it harder
 # to notice (18.16.1 failed loudly). Nothing watched it: atuin is not pinned in
 # mise/config.toml, has no renovate.json entry, and /tool-scout's allowed-tools carry no
@@ -100,6 +100,48 @@ env:
   ASSET: atuin-x86_64-unknown-linux-gnu.tar.gz
 
 jobs:
+  # ── 0. the DETECTOR's own self-test, run unconditionally on this weekly schedule. ────
+  # scripts/test-core.sh's `atuin` scope drives scripts/verify-atuin-guard.sh against stub
+  # binaries: ~44 hermetic scenarios asserting that the detector reports moved/holds/
+  # unmeasurable correctly. That block is 197s of a 286s behavioral suite — 68% of it, and
+  # the largest single cost on the CI critical path — so ci.yml no longer runs it on every
+  # push, only when the detector, zsh/00-tools.zsh or atuin/ actually change.
+  #
+  # This job is the other half of that trade, and it is what keeps the harness from being
+  # merely LESS gated. The measure/measure-autostart jobs below trust the detector to tell a
+  # real upstream move from a broken apparatus; a detector whose `unmeasurable` verdict had
+  # quietly regressed would file a confident issue saying the premise MOVED when nothing had.
+  # So the self-test runs here every week regardless of what changed, on the same schedule as
+  # the measurement that depends on it.
+  #
+  # Hermetic and offline: stubs only, no atuin, no daemon, no network. It deliberately does
+  # NOT need `resolve`, and nothing downstream needs it — a red self-test must not suppress
+  # the live measurement, it must sit red next to it and say which of the two to believe.
+  selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install zsh (the suite's shell legs)
+        run: |
+          set -euxo pipefail
+          # Same flaky third-party apt repos as ci.yml drops before an update (see #422's
+          # neighbours): packages.microsoft.com/azure intermittently serve an unsigned
+          # InRelease and fail the whole update with exit 100.
+          sudo find /etc/apt/sources.list.d -type f \( -iname '*microsoft*' -o -iname '*azure*' \) -delete 2>/dev/null || true
+          # `apt-get update`, BOUNDED — a wedged mirror otherwise hangs to the job
+          # timeout. Full reasoning at ci.yml's "Install zsh (Linux)" step.
+          apt_update=(sudo timeout -k 10 120 apt-get -o Acquire::Retries=3
+                      -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update)
+          "${apt_update[@]}" || { echo "::warning::apt-get update failed or timed out — retrying once"; "${apt_update[@]}"; }
+          sudo apt-get install -y --no-install-recommends zsh
+      - name: Premise detector self-test (hermetic stubs)
+        run: ./scripts/test-core.sh --scope atuin
+
   # ── 1. resolve + verify. Token-bearing. Executes nothing it downloaded. ──────────────
   resolve:
     runs-on: ubuntu-latest
@@ -448,7 +490,11 @@ jobs:
   # is the workflow itself breaking — and a manual dispatch that goes red is a human who is
   # already watching the tab.
   notify-failure:
-    needs: [resolve, measure, report, measure-autostart, report-autostart]
+    # selftest is in this list on purpose. A regressed DETECTOR is not routed to the moved/
+    # unmeasurable issues — those are verdicts the detector itself produces, and a broken one
+    # cannot be trusted to produce them — so its failure is exactly the "the workflow itself
+    # is broken, and the guard's justification is going unchecked" case this job reports.
+    needs: [selftest, resolve, measure, report, measure-autostart, report-autostart]
     if: failure() && github.event_name == 'schedule'
     permissions:
       contents: read

@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 # core/bin/clip-paste — cross-OS "paste from clipboard" to stdout.
 # Mirror of `clip`. Detection order: WSL -> macOS -> Wayland -> X11.
+#
+# There is deliberately NO OSC 52 fallback here, though `clip` has one. OSC 52 can copy
+# blind, but reading requires QUERYING the terminal and waiting for it to answer — and
+# that answer arrives on stdin, racing whatever else is reading the tty. Most terminals
+# also refuse the read outright (letting a remote host exfiltrate your clipboard is a
+# real hazard, so it is off by default in xterm, and unimplemented in many others), and
+# a terminal that simply never replies leaves this blocking forever. A paste that hangs
+# is worse than one that fails.
+#
+# The good news is that nothing is actually lost: pasting INTO a remote shell is what
+# the terminal's own paste already does — it types the characters. The direction that
+# genuinely needed help was copying OUT, which is what `clip`'s OSC 52 branch fixes.
 set -euo pipefail
 # Same hot-path WSL probe as `clip`: a fork-free `$(<file)` read of /proc/version
 # (overridable via CLIP_PROC_VERSION for the tests) instead of a per-invocation grep.
@@ -17,11 +29,15 @@ elif [[ "$(uname -s)" == "Darwin" ]]; then
   exec pbpaste
 elif [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-paste >/dev/null; then
   exec wl-paste --no-newline
-elif command -v xclip >/dev/null; then
+elif [[ -n "${DISPLAY:-}" ]] && command -v xclip >/dev/null; then
   exec xclip -selection clipboard -o
-elif command -v xsel >/dev/null; then
+elif [[ -n "${DISPLAY:-}" ]] && command -v xsel >/dev/null; then
   exec xsel --clipboard --output
 else
-  echo "clip-paste: no clipboard backend found (install wl-clipboard or xclip)" >&2
+  # Name the asymmetry, so nobody reads this as `clip` being broken too.
+  echo "clip-paste: no clipboard backend found (install wl-clipboard or xclip)." >&2
+  echo "  On a headless/ssh box there is nothing to read from: OSC 52 has no safe read" >&2
+  echo "  path (see the note at the top of this file), so copying OUT works via clip but" >&2
+  echo "  pasting IN is your terminal's own paste, not this script." >&2
   exit 1
 fi

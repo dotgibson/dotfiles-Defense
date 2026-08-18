@@ -29,7 +29,7 @@
 # Usage:
 #   ./scripts/core-integrity.sh                 # check siblings of this repo
 #   ./scripts/core-integrity.sh --root ~/src    # fleet lives elsewhere
-#   ./scripts/core-integrity.sh --self ../dotfiles-Kali   # check just ONE repo (per-repo CI guard)
+#   ./scripts/core-integrity.sh --self ../dotfiles-Offense   # check just ONE repo (per-repo CI guard)
 #   ./scripts/core-integrity.sh --strict        # a not-checked-out repo FAILS, not skips
 #   ./scripts/core-integrity.sh --quiet         # suppress the ✓ rows; show only problems + summary
 #
@@ -99,8 +99,9 @@ else
     done <"$_OS_REPOS_FILE"
   fi
   ((${#OS_REPOS[@]})) || OS_REPOS=(
-    dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Defense
-    dotfiles-Fedora dotfiles-Gentoo dotfiles-Kali dotfiles-openSUSE
+    dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian
+    dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense
+    dotfiles-openSUSE
   )
 fi
 

@@ -16,10 +16,10 @@ tooling. Confirm it passes the three-layer test (see CONTRIBUTING.md):
 
 - [ ] It is identical on every machine (not OS-specific: no package manager,
       paths, or clipboard logic).
-- [ ] It is not offensive/engagement tooling (that lives in `dotfiles-Kali`).
+- [ ] It is not offensive/engagement tooling (that lives in `dotfiles-Offense`).
 - [ ] If it's a new file, I'll add its path to `core.manifest` (the contract).
 
 ## Why
 
 What this enables, or what pain it removes. Since a change here fans out to all
-eight OS repos, note any blast radius worth weighing.
+nine OS repos, note any blast radius worth weighing.

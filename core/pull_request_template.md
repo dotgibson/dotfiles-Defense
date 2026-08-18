@@ -1,4 +1,4 @@
-<!-- Core fans out to all 8 OS repos via git subtree — a defect here is an N-way
+<!-- Core fans out to all 9 OS repos via git subtree — a defect here is an N-way
      defect. Keep changes truly Core, and green before merge. -->
 
 ## What & why
@@ -22,7 +22,7 @@
 ## Is it actually Core?
 
 - [ ] Identical on every machine — **not** OS-specific (pkg manager, paths, clipboard → the OS repo)
-- [ ] **Not** offensive/engagement tooling (→ `dotfiles-Kali`)
+- [ ] **Not** offensive/engagement tooling (→ `dotfiles-Offense`)
 
 ## Contract & checks
 

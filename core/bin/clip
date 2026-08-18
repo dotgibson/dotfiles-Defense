@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # core/bin/clip — cross-OS "copy to clipboard". Reads stdin, copies it.
 # ONE clipboard implementation, shared by zsh (pbcopy), tmux (copy-pipe), and
-# nvim (clipboard provider). Detection order: WSL -> macOS -> Wayland -> X11.
+# nvim (clipboard provider).
+# Detection order: WSL -> macOS -> Wayland -> X11 -> OSC 52.
 set -euo pipefail
 
 # Hot path: nvim/tmux re-exec this on EVERY yank/paste (the clipboard provider runs
@@ -10,6 +11,61 @@ set -euo pipefail
 # `grep` per invocation — on ordinary (non-WSL) Linux that grep ran every single time.
 # nocasematch makes the glob case-insensitive; CLIP_PROC_VERSION lets the test suite
 # point the probe at a fixture instead of the host's real /proc/version (hermetic).
+
+# ── OSC 52: the last resort, and the only one that works over plain SSH ───────
+# A headless box reached only by ssh has no Wayland, no X11 and no clip.exe, so every
+# branch below used to fall through to an error — which meant `pbcopy`, tmux's
+# copy-pipe and nvim's "+y were all dead on exactly the machines where copying out of
+# the terminal matters most. OSC 52 is the terminal's own answer: write the payload as
+# an escape sequence and the TERMINAL EMULATOR puts it on the clipboard of the machine
+# you are sitting at, with nothing installed on the remote end.
+#
+# Deliberately LAST. A real backend is bidirectional and does not depend on terminal
+# support, so wl-copy/xclip/pbcopy win wherever they can actually work.
+#
+# It goes to /dev/tty, never stdout: `clip` is used in pipelines (`… | clip`) and as
+# nvim's provider, so stdout may be a pipe, a file, or /dev/null — writing the escape
+# there would corrupt the caller's data and copy nothing. CLIP_TTY overrides the target
+# for the test suite, the same seam CLIP_PROC_VERSION provides above.
+#
+# Inside tmux this needs no special handling: Core's tmux.conf sets `set-clipboard on`,
+# so tmux consumes a pane's OSC 52 and forwards it to the outer terminal itself. No DCS
+# passthrough wrapping — that is for sequences tmux does NOT understand, and wrapping
+# one it does understand would break it.
+_osc52_copy() {
+  local tty="${CLIP_TTY:-/dev/tty}" b64
+
+  # `base64 | tr -d '\n'` and not `base64 -w0`: -w is GNU-only and macOS's BSD base64
+  # rejects it. The payload must be one unbroken line — a newline inside the sequence
+  # terminates it early and the terminal copies a truncated value.
+  b64="$(base64 | tr -d '\n')" || {
+    echo "clip: base64 failed — nothing copied" >&2
+    return 1
+  }
+
+  # Terminals cap the sequence length (xterm's default is around 100 KB of base64) and
+  # the usual failure is a SILENT drop: the escape is ignored and the user believes the
+  # copy worked. Warn rather than refuse — the limit is per-terminal and some are much
+  # more generous, so the copy may well succeed.
+  if ((${#b64} > 100000)); then
+    echo "clip: ${#b64} bytes of base64 — many terminals silently drop an OSC 52 payload this large, so the copy may not have landed" >&2
+  fi
+
+  # `c` is the clipboard selection (as opposed to `p`, primary). BEL terminates rather
+  # than ST: both are legal, BEL is accepted by more terminals.
+  #
+  # ATTEMPT the write rather than probing with `[[ -w ]]` first. When a process has no
+  # controlling terminal (cron, a daemon, anything setsid'd) /dev/tty still EXISTS and
+  # still passes the permission test — opening it is what fails, with ENXIO. A probe
+  # would report success and then lose the copy. This also avoids the TOCTOU gap
+  # between probing and writing.
+  if ! { printf '\033]52;c;%s\a' "$b64" >"$tty"; } 2>/dev/null; then
+    echo "clip: no clipboard backend, and no terminal at $tty for the OSC 52 fallback" >&2
+    echo "  (install wl-clipboard or xclip, or run this from a terminal session)" >&2
+    return 1
+  fi
+}
+
 shopt -s nocasematch
 _pv=""
 [[ -z "${WSL_DISTRO_NAME:-}" && -r "${CLIP_PROC_VERSION:-/proc/version}" ]] && _pv="$(<"${CLIP_PROC_VERSION:-/proc/version}")"
@@ -19,11 +75,15 @@ elif [[ "$(uname -s)" == "Darwin" ]]; then
   exec pbcopy # macOS native
 elif [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-copy >/dev/null; then
   exec wl-copy # Wayland
-elif command -v xclip >/dev/null; then
+# The DISPLAY guards mirror the WAYLAND_DISPLAY one above, and they are what make the
+# OSC 52 fallback reachable in the case that actually happens: a desktop distro has
+# xclip installed as a dependency of something else, so `command -v xclip` succeeds
+# over ssh — but with no DISPLAY the exec just fails, and it failed INSTEAD of falling
+# through to a fallback that would have worked.
+elif [[ -n "${DISPLAY:-}" ]] && command -v xclip >/dev/null; then
   exec xclip -selection clipboard # X11
-elif command -v xsel >/dev/null; then
+elif [[ -n "${DISPLAY:-}" ]] && command -v xsel >/dev/null; then
   exec xsel --clipboard --input # X11 fallback
 else
-  echo "clip: no clipboard backend found (install wl-clipboard or xclip)" >&2
-  exit 1
+  _osc52_copy
 fi

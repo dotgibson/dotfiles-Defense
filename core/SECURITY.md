@@ -3,7 +3,7 @@
 `dotfiles-core` ships **configuration only** — shell modules, a Neovim tree, tmux,
 git, starship, and mise. It is not a running service and stores no credentials or
 machine state (see `.gitignore`: secrets, `*.bak`, and `zsh/99-local.zsh` never get
-tracked). Even so, this repo is the keystone of a ten-repo system: it is vendored
+tracked). Even so, this repo is the keystone of an eleven-repo system: it is vendored
 into every OS repo via `git subtree`, so a defect here **fans out N-way**. That
 makes two classes of issue worth a security report rather than a normal issue:
 
@@ -30,5 +30,5 @@ first, then propagates to each OS repo on the next `./scripts/sync-core.sh`.
 ## Scope
 
 In scope: anything tracked in this repository. Out of scope: the OS-native repos
-(`dotfiles-{MacBook,Windows,Fedora,…}`) and `dotfiles-Kali` — report issues that
+(`dotfiles-{MacBook,Windows,Fedora,…}`) and `dotfiles-Offense` — report issues that
 are specific to those layers in their own repositories.

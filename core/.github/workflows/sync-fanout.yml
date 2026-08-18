@@ -160,7 +160,11 @@ jobs:
         if: steps.resolve.outputs.skip != 'true'
         run: |
           set -euxo pipefail
-          sudo apt-get update
+          # `apt-get update`, BOUNDED — a wedged mirror otherwise hangs to the job
+          # timeout. Full reasoning at ci.yml's "Install zsh (Linux)" step.
+          apt_update=(sudo timeout -k 10 120 apt-get -o Acquire::Retries=3
+                      -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update)
+          "${apt_update[@]}" || { echo "::warning::apt-get update failed or timed out — retrying once"; "${apt_update[@]}"; }
           sudo apt-get install -y --no-install-recommends shellcheck zsh python3-yaml
 
       - name: Configure git + fleet auth
@@ -238,7 +242,7 @@ jobs:
 
             # Push per repo, and NEVER let one repo's failure deny the others their PR.
             # This ran unguarded under `set -e`, so the first bad push aborted the whole
-            # loop: on the v4.12.1 cut dotfiles-MacBook was refused and the remaining seven
+            # loop: on the v4.12.1 cut dotfiles-MacBook was refused and the remaining eight
             # repos — five of them already synced and ready — got no PR at all. A release
             # reached NONE of the fleet over one repo's permission problem. The loop
             # already treats every other per-repo error this way (fail=1 + continue); the

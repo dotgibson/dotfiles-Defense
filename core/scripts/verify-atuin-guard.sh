@@ -6,7 +6,7 @@
 # absent or stale, `atuin history start` exits 0, prints a well-formed history id, writes
 # nothing to stderr — and DISCARDS the entry (atuinsh/atuin#3561). A persistent precmd
 # hook, a throttled connect(2) on the prompt path, and a one-way degrade in every
-# interactive shell across eight repos are ALL justified by that single fact. Nothing else.
+# interactive shell across nine repos are ALL justified by that single fact. Nothing else.
 #
 # The fact has already moved once, in the direction that makes it harder to notice (18.16.1
 # failed LOUDLY — an empty ATUIN_HISTORY_ID, which then crashed `history end`). So it can
@@ -540,7 +540,7 @@ trap 'cleanup; exit 143' TERM
 # this premise against that version — emit_report says exactly that, and refuses to treat
 # moving it as a version bump. Sharing one line between the two premises would make that
 # sentence ambiguous about which premise was re-measured, and would let a green autostart
-# run silently re-date the silent-discard claim that eight repos' prompt hooks rest on.
+# run silently re-date the silent-discard claim that nine repos' prompt hooks rest on.
 # The autostart key is allowed to be ABSENT: see anchor_optional below.
 read_anchor() {
   local key="$1" raw valid

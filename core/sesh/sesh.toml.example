@@ -2,8 +2,8 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # sesh (joshmedeski/sesh) config. PORTABLE defaults only — anything engagement-
 # flavoured (per-client window layouts, ~/engagements/* startup commands) belongs
-# in dotfiles-Kali's own sesh.toml, NOT here. sesh merges multiple configs via
-# [[import]] if you want to layer the Kali one on top.
+# in dotfiles-Offense's own sesh.toml, NOT here. sesh merges multiple configs via
+# [[import]] if you want to layer the Offense one on top.
 #
 # Docs: https://github.com/joshmedeski/sesh
 # ──────────────────────────────────────────────────────────────────────────────
@@ -34,6 +34,6 @@ preview_command = "eza --all --icons --tree --level=1 --color=always {}"
 # name = "editor"
 # startup_script = "nvim ."
 
-# Layer the offensive config on top (only exists on Kali; missing = ignored):
+# Layer the offensive config on top (only on an Offense box; missing = ignored):
 # [[import]]
 # path = "~/.config/sesh/sesh.offensive.toml"

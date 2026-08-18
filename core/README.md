@@ -83,7 +83,7 @@ role layer — each building on the one below:
 | --- | --- | --- |
 | **Core** | this repo → vendored into every OS repo's `core/` | zsh, tmux, nvim, git, starship — identical everywhere |
 | **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,…}` | package manager, clipboard, paths |
-| **Role** | `dotfiles-Kali`, `dotfiles-Defense` | offensive / defensive tooling |
+| **Role** | `dotfiles-Offense`, `dotfiles-Defense` | offensive / defensive tooling |
 
 The rationale (why subtree, how a sync fans out) lives on the [docs site][docs]; this
 README is the quick tour.
@@ -145,9 +145,9 @@ setup notes live in each OS repo's README and the [docs site][docs]; the essenti
    git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-MacBook ~/dotfiles-MacBook
    cd ~/dotfiles-MacBook
 
-   # Kali
-   git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Kali ~/dotfiles-Kali
-   cd ~/dotfiles-Kali
+   # Offense (Kali / WSL2)
+   git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Offense ~/dotfiles-Offense
+   cd ~/dotfiles-Offense
 
    # Linux distros (Fedora, Arch, openSUSE, Alpine, Gentoo)
    git clone --branch vX.Y.Z https://github.com/dotgibson/dotfiles-Fedora ~/dotfiles-Fedora
@@ -178,7 +178,7 @@ setup notes live in each OS repo's README and the [docs site][docs]; the essenti
    ./bootstrap.sh
    exec zsh
 
-   # Kali
+   # Offense
    ./bootstrap.sh
 
    # Linux Distros
@@ -197,7 +197,7 @@ setup notes live in each OS repo's README and the [docs site][docs]; the essenti
    # Apply system defaults
    ./bootstrap.sh --macos-defaults
 
-   # Kali
+   # Offense (Kali / WSL2)
    # Enable mirrored networking on the windows side
    # Drop windows.wslconfig.example at %UserProfile%\.wslconfig, then from Windows:
    wsl.exe --shutdown

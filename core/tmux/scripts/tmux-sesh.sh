@@ -3,7 +3,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Replaces the old tmux-sessionizer.sh. If `sesh` (joshmedeski/sesh) is installed
 # it drives the picker — zoxide-aware, git-repo-named sessions, sesh.toml configs
-# (engagement layouts live in dotfiles-Kali's sesh config). If sesh ISN'T present
+# (engagement layouts live in dotfiles-Offense's sesh config). If sesh ISN'T present
 # yet, we degrade to the classic find+fzf behaviour so the prefix+f popup and the
 # Ctrl-G shell widget keep working during the transition. PORTABLE CORE.
 #

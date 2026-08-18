@@ -1,6 +1,6 @@
 ---
 description: Audit an OS repo's package list against upstream availability + PORTING-MATRIX.md (report-first)
-argument-hint: "<distro> — fedora | arch | opensuse | alpine | gentoo | macbook"
+argument-hint: "<distro> — fedora | arch | debian | opensuse | alpine | gentoo | macbook"
 allowed-tools: Read, Grep, Glob, Bash(git ls-files:*), Bash(ls:*), WebSearch, WebFetch
 ---
 
@@ -14,7 +14,7 @@ renamed upstream, dropped from the repos, moved to a secondary channel
 (AUR / COPR / RPM Fusion / Packman / Alpine edge), or now shipped only as a
 binary / `cargo install` / `go install`.
 
-Distro for this run: **$ARGUMENTS** (one of `fedora`, `arch`, `opensuse`,
+Distro for this run: **$ARGUMENTS** (one of `fedora`, `arch`, `debian`, `opensuse`,
 `alpine`, `gentoo`, `macbook`). The calling OS repo is checked out beside this one
 and exposed to the CLI via `--add-dir` (as `caller/`). Read its
 `install/packages.txt` (for macbook, its `Brewfile`), and read `PORTING-MATRIX.md`
@@ -41,9 +41,24 @@ the list still resolve upstream*.
 
    Pick targets by **release model**, not from a fixed distro → branch map:
 
-   - **Versioned** (Fedora, openSUSE Leap, Alpine stable) — every currently-supported
-     stable release, **plus** that distro's own development branch where it has one
-     (Fedora → rawhide, Alpine → edge).
+   - **Versioned** (Fedora, Debian/Ubuntu, openSUSE Leap, Alpine stable) — every
+     currently-supported stable release, **plus** that distro's own development branch
+     where it has one (Fedora → rawhide, Alpine → edge, Debian → sid).
+
+     `debian` is the sharpest case in the fleet and needs its own handling. The repo
+     targets **Ubuntu 24.04 LTS**, frozen in April 2024, and also claims **Debian
+     trixie** — so "which release" is never optional there, and the archive is split
+     into pockets (`main` vs `universe`, plus `-updates`, `-security`, `-backports`)
+     that a name can move between. Two further rules for it:
+
+     - **Resolving is not the same as usable.** Ubuntu LTS carries packages years
+       behind upstream. `install/packages.txt` declares `# min:X.Y.Z` floors for that
+       reason, and a candidate below its floor is a finding even though apt installs
+       it happily. Check the floor, not just the name.
+     - **The out-of-band set is the other half of the audit.** That repo installs a
+       dozen tools from pinned upstream assets *because* apt cannot supply them. When
+       one of them appears in a supported release, say so — that is a promotion
+       opportunity, and it is the finding that shrinks the repo's trust surface.
    - **Rolling** (Arch, Gentoo, Homebrew, Kali, openSUSE Tumbleweed) — a single
      current target, and that one query is the complete answer.
 
@@ -67,21 +82,23 @@ the list still resolve upstream*.
      drop. This anchor does not apply to rolling targets: absence there is simply
      absence, and belongs under Broken.
 2. **Cross-check `PORTING-MATRIX.md`.** Its package-name table has columns for
-   **Arch, openSUSE, Alpine, Gentoo, and Kali only** — `fedora` and `macbook` have
-   **no column** (Fedora is the template the others are stamped from; macOS is
-   Homebrew). So for `fedora`/`macbook`, do **not** cite or invent a matrix column —
+   **Arch, openSUSE, Alpine, Gentoo, Kali, and Debian/Ubuntu only** — `fedora` and
+   `macbook` have **no column** (Fedora is the template the others are stamped from;
+   macOS is Homebrew). So for `fedora`/`macbook`, do **not** cite or invent a matrix
+   column —
    verify names against the upstream index (Fedora Packages / Homebrew formulae) plus
-   the matrix's distro-general **footnotes**. For the other four, compare the caller's
+   the matrix's distro-general **footnotes**. For the other five, compare the caller's
    list against its column *and* footnotes, and flag a tool the matrix says is packaged
    that isn't (or vice-versa), or a footnote gone stale — e.g. a "cargo³" note for a
    tool now first-class in the repos, or a rename the matrix hasn't recorded.
 
    Two anchors, because both have produced false findings:
 
-   - **Count columns from the header row, not from the end of the line.** The five
+   - **Count columns from the header row, not from the end of the line.** The six
      package columns are in a fixed order — `Arch | openSUSE | Alpine | Gentoo |
-     Kali` — and the *last* cell on a row is **Kali**, not the distro you're
-     auditing. Before citing a cell as drifted, quote the **whole row** and name the
+     Kali | Debian/Ubuntu` — and the *last* cell on a row is **Debian/Ubuntu**, not
+     the distro you're auditing. (It was Kali until `dotfiles-Debian` was added; a
+     habit of reading the last cell as Kali is now wrong by one.) Before citing a cell as drifted, quote the **whole row** and name the
      column header you're reading. If the value you're flagging sits in another
      distro's column, that's a misread, not a finding.
    - **Quote a footnote's current text before calling it stale.** Read the footnote

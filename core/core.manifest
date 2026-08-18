@@ -1,7 +1,7 @@
 # core.manifest — the canonical inventory of the Core layer.
 # Every path here is authored ONCE in this repo and vendored into each OS repo
 # under core/. If a file isn't listed here, it isn't Core — it belongs to an
-# OS repo (OS-native) or to dotfiles-Kali (offensive).
+# OS repo (OS-native) or to dotfiles-Offense (offensive).
 #
 # This list is the contract. Audit scripts and the promotion checklist read it.
 # ── version stamp — the human-readable Core version, vendored so an OS repo can
@@ -86,12 +86,16 @@ bin/clip-paste
 #    bootstrap.sh (the pre-shell installer can't source the zsh 05-ui.zsh) ──────
 lib/ux.sh
 # ── shared BASH provisioning scaffold — link/read_pkgs/WSL-detect/Core-symlink/
-#    .zshrc-loader/login-shell helpers; SOURCED by every OS repo's bootstrap.sh so
-#    the shared half of the bootstrap stops being hand-forked across the fleet.
-#    EXCEPTION: dotfiles-Defense does NOT source it — it is a role layer that
-#    stacks onto an already-provisioned host (the OS repo underneath has already
-#    run this scaffold), so it hand-rolls the partial re-link it needs. That is
-#    deliberate, not drift; see PORTING-MATRIX.md's "Repo status" note. ─────────
+#    .zshrc-loader/login-shell helpers; SOURCED by every repo's bootstrap.sh —
+#    role repos included — so the shared half of the bootstrap stops being
+#    hand-forked across the fleet. What differs is which helpers a repo CALLS:
+#    an OS repo calls blib_link_core + blib_link_os_layer; the CONTRACT for a
+#    role repo is blib_link_core + blib_link_role_layer and never
+#    blib_link_os_layer, because the OS band belongs to the repo underneath it.
+#    TODAY neither role repo is there yet: dotfiles-Defense hand-rolls the band
+#    in its own wire_defense_stage, and dotfiles-Offense still calls
+#    blib_link_os_layer because it still owns the Kali OS layer. Both adopt
+#    blib_link_role_layer once this Core release fans out. ─────────────────────
 lib/bootstrap-lib.sh
 # ── jujutsu (jj) — OPT-IN colocated git companion; symlinked to ~/.config/jj/config.toml.
 #    Additive — never replaces git. Inert without the jj binary; zsh aliases are HAVE_JJ-gated.
@@ -106,10 +110,11 @@ atuin/config.toml
 # ── mise — polyglot runtime manager; global tool versions (portable) ──────────
 mise/config.toml
 # ── sesh — portable session-manager config (SEEDED to ~/.config/sesh/sesh.toml;
-#    copied, not symlinked — engagement layouts live in dotfiles-Kali) ──────────
+#    copied, not symlinked — engagement layouts live in dotfiles-Offense) ──────────
 sesh/sesh.toml.example
 # ── tmux — base conf + keybinding layer; OS-specific bits -> os/<os>.conf ──────
-tmux/tmux.conf            # main config; sources tmux.reset.conf first, os.conf last
+tmux/tmux.conf            # main config; sources tmux.reset.conf first, then os.conf,
+                          # then role.conf (the Role layer's tmux bits) last
 tmux/tmux.reset.conf      # the keybinding layer (prefix C-a lives here) — MUST be symlinked
 # tmux popup + status scripts. Listed PER-FILE (not as `tmux/scripts/`) so an added or
 # removed script is caught offline (B10) — this is the exact gap that let an orphaned

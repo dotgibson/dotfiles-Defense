@@ -1,8 +1,14 @@
 # scripts/os-repos.txt — the canonical OS-repo fleet that vendors Core.
 # ──────────────────────────────────────────────────────────────────────────────
-# ONE list of the repos Core fans out into, so adding a new OS target is a single
-# edit here instead of a hardcoded array buried in sync-core.sh (B9). Read by
-# scripts/sync-core.sh as the default TARGETS when no repos are named on the CLI.
+# ONE list of the repos Core fans out into (B9). Read by scripts/sync-core.sh as the
+# default TARGETS when no repos are named on the CLI.
+#
+# THIS FILE IS THE SOURCE, BUT IT IS NOT THE ONLY EDIT. sync-core.sh, fleet-drift.sh
+# and core-integrity.sh each keep a hardcoded fallback array for when this file is
+# missing or unreadable — and that fallback is what runs in exactly the situation you
+# are least likely to notice. Adding or removing a target means FOUR coordinated edits:
+# this file plus those three arrays. scripts/test-core.sh asserts they all agree, so a
+# partial change fails the audit rather than silently dropping a repo from the fan-out.
 #
 # Format: one repo directory name per line. Blank lines and `#` comments ignored.
 # Order is the fan-out order. Keep it case-insensitively alphabetical after
@@ -13,15 +19,13 @@
 #   dotfiles-Windows — the native Windows host layer is replicated from scratch
 #     (PowerShell; not a one-to-one port of the Unix Core), so it carries no
 #     vendored core/ subtree and sync-core.sh must never fan out into it.
-#   dotfiles-Debian — was planned, never created, and is no longer being pursued.
-#     The Debian family is covered by dotfiles-Kali (apt, Debian-family). Do not
-#     re-add unless a standalone Debian OS repo is actually stood up.
 # ──────────────────────────────────────────────────────────────────────────────
 dotfiles-MacBook
 dotfiles-Alpine
 dotfiles-Arch
+dotfiles-Debian
 dotfiles-Defense
 dotfiles-Fedora
 dotfiles-Gentoo
-dotfiles-Kali
+dotfiles-Offense
 dotfiles-openSUSE

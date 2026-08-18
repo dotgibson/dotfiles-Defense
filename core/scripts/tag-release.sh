@@ -160,7 +160,15 @@ if [[ "$MODE" == publish ]]; then
   # after the release merged) but the operator should know `git describe` on main will
   # now report commits-since, not a clean tag.
   if [[ "$RELEASE_SHA" != "$(git rev-parse origin/main)" ]]; then
-    note "origin/main has advanced $(git rev-list --count "$RELEASE_SHA..origin/main") commit(s) since the release — tagging the release commit, not the tip"
+    # `skip`, not `note` — there is no note() in scripts/lib/common.sh (it defines
+    # pass/skip/fail/hdr/have), so this line printed "note: command not found" and the
+    # operator never saw the notice. It survived because this branch only runs when main
+    # has ADVANCED past the release commit — an uncommon path — and because a bare word
+    # that might be some command on PATH is not something the linter can flag. It fired
+    # for real publishing v4.12.2, swallowing the very message it exists to give.
+    # scripts/test-core.sh now drives this branch and asserts BOTH that the notice appears
+    # and that no "command not found" does, so the gap that hid this is closed.
+    skip "origin/main has advanced $(git rev-list --count "$RELEASE_SHA..origin/main") commit(s) since the release — tagging the release commit, not the tip"
   fi
 
   # The Release BODY comes from this commit's [vX.Y.Z] section (release.yml extracts it),
@@ -246,7 +254,15 @@ if [[ "$MODE" == publish ]]; then
   # The moving MAJOR alias reusable-workflow callers pin to (RELEASE-STRATEGY.md
   # §"Pinning reusable workflows"). Force-moved to each new vN.x so callers pick up
   # patch/minor guard fixes without a manual bump.
-  if ! git tag -f "$MAJOR" "$RELEASE_SHA" >/dev/null; then
+  #
+  # ANNOTATED with a message (-fa … -m), exactly like the immutable tag above, and not a
+  # bare `git tag -f`. Under `tag.gpgsign = true` git makes any tag SIGNED — therefore
+  # annotated — so the message-less form aborts with "fatal: no tag message?" and the
+  # publish dies here. That is invisible on a box with signing off, which is why it
+  # survived: it broke the first time an operator with signing enabled cut a release
+  # (v4.12.2, #506). Annotating is also the better artefact for a force-moved pointer:
+  # it records who moved the alias and when, which a lightweight ref cannot.
+  if ! git tag -fa "$MAJOR" "$RELEASE_SHA" -m "$MAJOR" >/dev/null; then
     fail "tag-release.sh: could not move major tag $MAJOR"
     exit 1
   fi

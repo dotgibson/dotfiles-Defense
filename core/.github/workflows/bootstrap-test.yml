@@ -4,6 +4,10 @@
 # in each OS repo (workflow_call) so the OS repos get CI WITHOUT each carrying a
 # duplicated copy of this logic (the same fan-out the Core layer exists to kill).
 #
+# ROLE repos call it too. dotfiles-Offense and dotfiles-Defense wire Core plus a band-85
+# role stage and NO band-80 OS layer, so the 80-os.zsh assertion below arms itself on
+# whether the caller actually ships an os/*.zsh rather than assuming every caller does.
+#
 # Two jobs:
 #   1. lint        — shellcheck -x + bash -n + --help, on the runner (deterministic,
 #                    no container). Catches the syntax/guard class of bug directly.
@@ -27,7 +31,10 @@
 #       with:
 #         image: alpine:3.20
 #         prep:  apk add --no-cache bash zsh
-#         offensive: false        # true only for dotfiles-Kali
+#         offensive: false        # true only for dotfiles-Offense
+#
+# A role repo passes the same inputs; nothing extra. Band 80 is skipped automatically
+# because it has no os/*.zsh — see the note above.
 # ──────────────────────────────────────────────────────────────────────────────
 name: bootstrap-test
 
@@ -43,7 +50,7 @@ on:
         type: string
         required: true
       offensive:
-        description: Assert the Kali offensive role layer (offensive symlinks + loader stage).
+        description: Assert the offensive role layer (offensive symlinks + loader stage).
         type: boolean
         default: false
 
@@ -107,7 +114,6 @@ jobs:
             echo "── asserting symlink graph + generated ~/.zshrc ──"
             for link in \
               "$HOME/.config/zsh/loader.zsh" \
-              "$HOME/.config/zsh/80-os.zsh" \
               "$HOME/.config/starship.toml" \
               "$HOME/.config/lazygit/config.yml" \
               "$HOME/.config/nvim" \
@@ -115,6 +121,16 @@ jobs:
               "$HOME/.gitconfig"; do
               if [ ! -L "$link" ]; then echo "MISSING symlink: $link" >&2; exit 1; fi
             done
+            # Band 80 is the OS-NATIVE layer, and only an OS repo has one. A ROLE repo
+            # (dotfiles-Offense, dotfiles-Defense) ships no os/*.zsh, stacks on whatever
+            # OS layer the box already runs, and correctly links nothing at 80 — so an
+            # unconditional check here reds a repo doing exactly the right thing.
+            # Self-arming on the caller tree, the same way the atuin check below is, rather
+            # than a new input every role repo would have to remember to pass: the presence
+            # of os/*.zsh IS the question being asked, so derive it instead of declaring it.
+            if ls os/*.zsh >/dev/null 2>&1 && [ ! -L "$HOME/.config/zsh/80-os.zsh" ]; then
+              echo "MISSING symlink: $HOME/.config/zsh/80-os.zsh" >&2; exit 1
+            fi
             # The vendored loader must resolve to the repo copy (not a dangling link).
             if [ ! -e "$HOME/.config/zsh/loader.zsh" ]; then echo "loader.zsh symlink is dangling" >&2; exit 1; fi
             # sesh is SEEDED (copied, not symlinked) — assert the real file landed. Re-added now
