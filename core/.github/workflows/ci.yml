@@ -183,8 +183,22 @@ jobs:
           # caused by a TERM that was accepted and never acted on; do not assume one lands.
           #
           # Retried once as a whole, because a wedged mirror is usually wedged per-connection.
-          # Still allowed to fail afterwards: a genuinely unreachable archive must go red,
-          # not be papered over.
+          #
+          # AND THEN ALLOWED TO FAIL, which reverses what this comment said until 2026-08-19.
+          # The old rule — "a genuinely unreachable archive must go red, not be papered over" —
+          # sounds right and gates the wrong thing. This step exists to put zsh on the runner.
+          # It was gating on "did the index refresh succeed", and under `set -e` the second
+          # failed update killed the step before `apt-get install` was ever attempted.
+          #
+          # The same stall recurred on 2026-08-19 and red the ubuntu audit lane twice, both
+          # times exit 124 here with no test executed — while the logs showed
+          # `Hit: … noble InRelease` succeeding every time. Only noble-SECURITY wedged, and
+          # zsh lives in noble/MAIN. So the archive was reachable for everything this job
+          # actually needs, and the job failed anyway: a false negative, not a caught defect.
+          #
+          # The gate is therefore the INSTALL below, not the refresh. A stale index we do not
+          # read is not this job's problem; not having zsh is, and that still goes red — the
+          # install is bounded by its own timeout(1) so it cannot hang in the refresh's place.
           #
           # 120s, and the number is load-bearing. The bound has to be SMALL relative to the
           # job's timeout-minutes or it just relocates the hang: two 300s attempts inside a
@@ -194,8 +208,13 @@ jobs:
           # slowest honest run and still leaves 11 of the 15 minutes for the audit.
           apt_update=(sudo timeout -k 10 120 apt-get -o Acquire::Retries=3
                       -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update)
-          "${apt_update[@]}" || { echo "::warning::apt-get update failed or timed out — retrying once"; "${apt_update[@]}"; }
-          sudo apt-get install -y --no-install-recommends zsh
+          # Best-effort, NOT the gate — see the install below. A second failure is a warning,
+          # not a step failure: the job needs zsh, not a fresh index.
+          if ! "${apt_update[@]}"; then
+            echo "::warning::apt-get update failed or timed out — retrying once"
+            "${apt_update[@]}" || echo "::warning::apt-get update failed twice — continuing on the image's cached lists; the install below is the real gate"
+          fi
+          sudo timeout -k 10 180 apt-get install -y --no-install-recommends zsh
 
       # ── macOS: shellcheck via Homebrew (no pinned-binary tarball published for
       # macOS the way Linux gets one; brew is the supported path). zsh is preinstalled
@@ -473,8 +492,13 @@ jobs:
           # timeout. Full reasoning at ci.yml's "Install zsh (Linux)" step.
           apt_update=(sudo timeout -k 10 120 apt-get -o Acquire::Retries=3
                       -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update)
-          "${apt_update[@]}" || { echo "::warning::apt-get update failed or timed out — retrying once"; "${apt_update[@]}"; }
-          sudo apt-get install -y --no-install-recommends zsh hyperfine
+          # Best-effort, NOT the gate — see the install below. A second failure is a warning,
+          # not a step failure: the job needs zsh, not a fresh index.
+          if ! "${apt_update[@]}"; then
+            echo "::warning::apt-get update failed or timed out — retrying once"
+            "${apt_update[@]}" || echo "::warning::apt-get update failed twice — continuing on the image's cached lists; the install below is the real gate"
+          fi
+          sudo timeout -k 10 180 apt-get install -y --no-install-recommends zsh hyperfine
       - name: Benchmark Core startup (budget gate)
         env:
           CORE_BENCH_RUNS: "50"

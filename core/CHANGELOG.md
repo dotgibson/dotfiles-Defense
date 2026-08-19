@@ -13,6 +13,92 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.13.2] - 2026-08-19
+
+### Fixed
+
+- **`make audit` no longer reds `blib_user_bindirs_on_path` for anyone with `CARGO_HOME`
+  set.** The helper resolves the cargo bindir through `${CARGO_HOME:-$HOME/.cargo}/bin`
+  deliberately — hard-coding `~/.cargo/bin` would break a box that relocates it, which is the
+  bug it exists to prevent. Its fixture asserts the `$HOME`-relative defaults, and those are
+  reached only when the vars are absent; but the subshell pinned just `HOME` and `PATH`, so an
+  exported `CARGO_HOME` retargeted the lookup and the fixture's own `.cargo/bin` never landed.
+  A developer with Rust configured — most operators, and exactly who `make audit` runs for —
+  saw a failure on a healthy tree, while no CI runner exports it and all four lanes stayed
+  green.
+
+  The fixture now unsets `CARGO_HOME`, `GOBIN` and `GOPATH`. Worth noting where the leak
+  actually lived: the relocation block further down the same file sets these vars explicitly
+  and was always immune — it was the default-path cases that inherited. A gap between two
+  blocks rather than a coverage hole, and the same shape as the `GHOSTTY_SHELL_FEATURES` leak
+  fixed one release earlier.
+
+- **A stalled Ubuntu security index no longer reds CI lanes that never needed it.** The Linux
+  setup step gated on `apt-get update` succeeding, and under `set -euxo pipefail` a second
+  failed refresh killed the step before `apt-get install zsh` was ever attempted. On both
+  2026-08-18 and 2026-08-19 `archive.ubuntu.com`'s `noble-security` index stalled mid-fetch
+  (with the Azure regional mirror dark, every index `Ign:`), and the job died at `timeout(1)`'s
+  exit 124 with no test executed — while the same logs showed `Hit: … noble InRelease`
+  succeeding. Only the _security_ pocket wedged; `zsh` lives in `noble/main`. The archive was
+  reachable for everything the job actually needed, and it failed anyway.
+
+  The refresh is now best-effort and the **install is the gate** — a stale index nothing reads
+  is not this job's problem, whereas not having `zsh` still fails it. The install carries its
+  own `timeout(1)` bound so it cannot hang in the refresh's place. The block was duplicated
+  verbatim across five workflows (`ci.yml` twice, plus `lint-call.yml`, `sync-fanout.yml`,
+  `atuin-guard-verify.yml`); all five are fixed, since fixing one would have left the same
+  stall live on four other lanes.
+
+- **`make audit` no longer reds 7 OSC 133 assertions when it is run from inside Ghostty.**
+  `00-tools.zsh` deliberately stands the marks down when `GHOSTTY_SHELL_FEATURES` is set and
+  `$TMUX` is empty — Ghostty injects its own prompt marking outside tmux, so Core must not
+  double-mark. Every mark-ON case in `scripts/test-core.sh`'s OSC 133 section pins `TERM` and
+  `TMUX` explicitly for exactly that reason, but `ucheck` ran a bare `env`, which inherits the
+  caller's environment. Auditing from the terminal this repo ships a config for therefore
+  cleared `_CORE_OSC133`, left `_core_osc133_prompt` undefined, and failed 7 assertions about
+  the shell layer while proving nothing about it.
+
+  `ucheck` now runs `env -u GHOSTTY_SHELL_FEATURES`; the per-case assignments come after the
+  option, so the two cases that set it deliberately still win. **CI could not have caught
+  this** — no runner is hosted in Ghostty, so all four audit lanes were green on the identical
+  tree — which is why the regression gate added alongside drives a mark-ON case with the
+  variable genuinely exported rather than passed as an argument.
+
+- **A repo renamed upstream is no longer skipped by the whole fleet toolchain because its
+  clone directory still carries the old name.** `scripts/os-repos.txt` names the fleet by
+  repo NAME, and `sync-core.sh`, `fleet-drift.sh` and `core-integrity.sh` each turned that
+  name into a path by string-joining it onto the fleet root. Git follows a GitHub rename on
+  its own; a directory name does not. So a machine that cloned `dotfiles-Kali` before it
+  became `dotfiles-Offense` had a correct remote, a correct `core/` subtree and a correct
+  `core.lock` — and the fan-out skipped it as "not cloned", drift reported "not checked out",
+  and the integrity sweep could not have seen a tampered `core/` there at all. Two of those
+  three are false-CLEAN results on gates whose entire job is to notice, and the only remedy
+  on offer was "go `mv` the directory", on every machine, for every future rename.
+
+  All three now resolve through one shared `resolve_repo_dir` (`scripts/lib/common.sh`):
+  the directory-name lookup stays the fast path and keeps precedence, and only when no such
+  directory exists does it ask each sibling clone what it actually is, matching on the repo
+  slug in `origin`'s URL. Both URL shapes parse (`https://host/owner/repo` and
+  `git@host:owner/repo`, with or without `.git`) and matching is case-insensitive, as GitHub
+  itself is. A clone whose origin names a different repo is not adopted, one with no origin
+  is stepped over rather than aborting the sweep, and a genuinely absent repo still reports
+  against the conventional path so the advice names where it looked. `sync-core.sh` prints
+  the resolved path when it isn't the conventional one, so a fan-out into a pre-rename
+  directory is visible in the log instead of a surprise underneath the git output.
+
+### Documentation
+
+- **`blib_link_role_layer`'s migration note described a migration that has since
+  happened.** It read, in the present tense, that "the offensive repo hand-rolls
+  `<config>/kali/templates`" and instructed a consumer to relocate them and update two
+  shipped docs "in the same change that adopts the helper". dotfiles-Offense adopted the
+  helper and did exactly that, so the instruction now describes work that is done —
+  misleading anyone reading the helper to decide what a consumer still owes it. Rewritten
+  as the record of a completed move, keeping the reasoning that matters (why the
+  destination is named for the ROLE rather than the distro, and why neither a compat
+  symlink nor a namespace parameter was the answer). Comment only — no behaviour changes,
+  but it is vendored into all nine consuming repos, so the stale text was live fleet-wide.
+
 ## [v4.13.1] - 2026-08-18
 
 ### Fixed

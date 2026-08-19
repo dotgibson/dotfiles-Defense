@@ -84,8 +84,13 @@ jobs:
           # timeout. Full reasoning at ci.yml's "Install zsh (Linux)" step.
           apt_update=(sudo timeout -k 10 120 apt-get -o Acquire::Retries=3
                       -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update)
-          "${apt_update[@]}" || { echo "::warning::apt-get update failed or timed out — retrying once"; "${apt_update[@]}"; }
-          sudo apt-get install -y --no-install-recommends zsh
+          # Best-effort, NOT the gate — see the install below. A second failure is a warning,
+          # not a step failure: the job needs zsh, not a fresh index.
+          if ! "${apt_update[@]}"; then
+            echo "::warning::apt-get update failed or timed out — retrying once"
+            "${apt_update[@]}" || echo "::warning::apt-get update failed twice — continuing on the image's cached lists; the install below is the real gate"
+          fi
+          sudo timeout -k 10 180 apt-get install -y --no-install-recommends zsh
 
       - name: Put core-tools bin on PATH
         run: |

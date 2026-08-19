@@ -215,7 +215,10 @@ if ((!DRY)) && ((SYNC_JOBS > 1)) && [[ "$CORE_SHA" != unknown ]]; then
   echo ":: prefetching Core into up to $SYNC_JOBS repos in parallel (merge stays sequential)"
   _pf=0
   for repo in "${TARGETS[@]}"; do
-    path="$REPOS_ROOT/$repo"
+    # Resolved, not string-joined: a repo renamed upstream may still be cloned under its
+    # old directory name (scripts/lib/common.sh :: resolve_repo_dir). Falling back to the
+    # conventional path keeps the "nothing there" case looking exactly as it did.
+    path="$(resolve_repo_dir "$REPOS_ROOT" "$repo")" || path="$REPOS_ROOT/$repo"
     [[ -d "$path/.git" && -d "$path/core" ]] || continue
     git -C "$path" fetch -q "$CORE_REMOTE" "$CORE_BRANCH" >/dev/null 2>&1 &
     _pf=$((_pf + 1))
@@ -321,7 +324,7 @@ _sync_pin_workflows() { # <repo-path> <full-sha> <tag> → prints how many files
 # failure), else updated if its subtree pull ran, else skipped.
 repos_updated=0 repos_skipped=0 repos_failed=0
 for repo in "${TARGETS[@]}"; do
-  path="$REPOS_ROOT/$repo"
+  path="$(resolve_repo_dir "$REPOS_ROOT" "$repo")" || path="$REPOS_ROOT/$repo"
   if [[ ! -d "$path/.git" ]]; then
     skip "$repo (not cloned at $path)"
     repos_skipped=$((repos_skipped + 1))
@@ -342,7 +345,10 @@ for repo in "${TARGETS[@]}"; do
     repos_failed=$((repos_failed + 1))
     continue
   fi
-  echo ":: $repo"
+  # Name the path whenever it ISN'T the conventional one, so a fan-out into a clone
+  # sitting under a pre-rename directory name is visible in the log rather than a
+  # surprise the next time someone reads the git output underneath it.
+  if [[ "$path" == "$REPOS_ROOT/$repo" ]]; then echo ":: $repo"; else echo ":: $repo (at $path)"; fi
   # Snapshot the line-level FAIL counter: any err() emitted inside this repo's body
   # (pull failure, core.lock commit failure) flips the whole repo into the failed bucket.
   _repo_fail0=$FAIL
