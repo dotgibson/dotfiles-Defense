@@ -10,7 +10,13 @@
 # this file plus those three arrays. scripts/test-core.sh asserts they all agree, so a
 # partial change fails the audit rather than silently dropping a repo from the fan-out.
 #
-# Format: one repo directory name per line. Blank lines and `#` comments ignored.
+# Format: one repo NAME per line. Blank lines and `#` comments ignored. The name is the
+# GitHub repo, not a path: the fleet scripts look for a sibling directory of that name
+# first, and fall back to whichever sibling clone's `origin` URL says it IS that repo
+# (scripts/lib/common.sh :: resolve_repo_dir). So a repo RENAMED upstream keeps working
+# from a clone still sitting under its old directory name — rename the line here, not
+# every checkout in the fleet.
+#
 # Order is the fan-out order. Keep it case-insensitively alphabetical after
 # dotfiles-MacBook (the reference implementation), which stays first so a smoke sync
 # hits it soonest — i.e. Alpine sorts before Arch ('l' before 'r').

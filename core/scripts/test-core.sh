@@ -1867,6 +1867,92 @@ if [ "$_fd_deg_rc" -eq 0 ] && grep -q 'Unavailable in this run' <<<"$_fd_degrade
   pass "dashboard: degrades to the 'unavailable' note without gh/token"
 else fail "dashboard: GH_OK=0 degradation path broken (rc=$_fd_deg_rc)"; fi
 
+# ── F4b. fleet-member resolution (scripts/lib/common.sh :: resolve_repo_dir) ──
+# sync-core.sh, fleet-drift.sh and core-integrity.sh all turn a repo NAME from
+# scripts/os-repos.txt into a path. They used to do it by string-joining onto the fleet
+# root, which is right until a repo is RENAMED upstream: git follows the rename, the
+# directory name does not, and all three scripts then reported "not cloned"/"not checked
+# out" for a repo that was present, vendored and pristine. The fan-out SKIPPED it.
+#
+# Driven here rather than only through the fixtures because the failure is entirely in
+# this one function, and the sharp edges (URL shapes, case-folding, precedence, a clone
+# with no origin) are cheap to enumerate directly and expensive to stage end-to-end.
+if have git; then
+  hdr "fleet-member resolution (resolve_repo_dir)"
+  RRD="$SANDBOX/repodir"
+  rm -rf "$RRD"
+  mkdir -p "$RRD/root"
+  _rrd_repo() { # _rrd_repo <dir-name> [origin-url] — a clone, optionally with an origin
+    local d="$RRD/root/$1"
+    mkdir -p "$d"
+    git -C "$d" init -q >/dev/null 2>&1
+    [[ -n "${2:-}" ]] && git -C "$d" remote add origin "$2"
+    return 0
+  }
+  _rrd_is() { # _rrd_is <label> <asked-name> <want-dir-or-empty>
+    local got rc
+    got="$(resolve_repo_dir "$RRD/root" "$2")" || rc=1
+    rc="${rc:-0}"
+    if [[ "$got" == "${3:+$RRD/root/$3}" ]] && [[ "$rc" == "$([[ -n "$3" ]] && echo 0 || echo 1)" ]]; then
+      pass "$1"
+    else
+      fail "$1 (got='$got' rc=$rc, want='${3:-<unresolved>}')"
+    fi
+  }
+
+  # 1) The fast path: a directory of the right name resolves with no remote at all — the
+  #    conventional layout must not acquire a dependency on having an origin configured.
+  mkdir -p "$RRD/root/dotfiles-Plain"
+  _rrd_is "resolve: a directory matching the name wins outright (no git needed)" dotfiles-Plain dotfiles-Plain
+
+  # 2) THE regression: no directory of that name, but a clone whose origin says it IS
+  #    that repo. This is the dotfiles-Kali → dotfiles-Offense shape.
+  _rrd_repo old-name https://github.com/dotgibson/dotfiles-Renamed.git
+  _rrd_is "resolve: a renamed repo is found by its origin URL" dotfiles-Renamed old-name
+
+  # 3) Both URL shapes. An scp-style remote (git@host:owner/repo) has no slash before the
+  #    owner, so a naive ${url##*/} works on one form and silently fails on the other.
+  _rrd_repo scp-clone git@github.com:dotgibson/dotfiles-Scp.git
+  _rrd_is "resolve: an scp-style git@host:owner/repo remote parses" dotfiles-Scp scp-clone
+  _rrd_repo bare-clone https://github.com/dotgibson/dotfiles-NoSuffix
+  _rrd_is "resolve: an https remote with no .git suffix parses" dotfiles-NoSuffix bare-clone
+
+  # 4) GitHub repo names are case-insensitive, so a clone of dotfiles-offense IS
+  #    dotfiles-Offense. Matching case-sensitively would reintroduce the same false miss.
+  _rrd_repo lower-clone https://github.com/dotgibson/dotfiles-mixedcase.git
+  _rrd_is "resolve: matching is case-insensitive, like GitHub itself" dotfiles-MixedCase lower-clone
+
+  # 5) Precedence. With BOTH a correctly-named directory and some other clone claiming the
+  #    name via its origin, the directory must win — otherwise adding the fallback could
+  #    silently move an existing, working fan-out onto a different tree.
+  mkdir -p "$RRD/root/dotfiles-Both"
+  _rrd_repo decoy-clone https://github.com/dotgibson/dotfiles-Both.git
+  _rrd_is "resolve: the directory-name match takes precedence over a URL match" dotfiles-Both dotfiles-Both
+
+  # 6) Nothing matches → return 1 and print nothing, so a caller's `|| path=<conventional>`
+  #    fallback fires and the "not cloned at <path>" advice still names the expected path.
+  _rrd_is "resolve: an absent repo is unresolved (rc 1, no output)" dotfiles-Absent ""
+
+  # 7) A clone with NO origin must be stepped over, not crash the sweep. The scripts run
+  #    under `set -euo pipefail`, so a bare `git remote get-url` failure inside the loop is
+  #    a live abort risk, not a cosmetic one — and a fleet root routinely holds unrelated
+  #    checkouts (dotfiles-web, a scratch clone) that have nothing to say about the fleet.
+  _rrd_repo orphan-clone
+  # rc captured off the `||`, not read back from `$?`: the distinction that matters is
+  # 1 (searched, found nothing) vs anything else (aborted mid-scan), and only an explicit
+  # capture keeps those apart.
+  _rrd_orphan_rc=0
+  (
+    set -euo pipefail
+    resolve_repo_dir "$RRD/root" dotfiles-Absent
+  ) >/dev/null 2>&1 || _rrd_orphan_rc=$?
+  if [[ "$_rrd_orphan_rc" -eq 1 ]]; then
+    pass "resolve: a remote-less clone is skipped, not fatal under set -e"
+  else
+    fail "resolve: scanning a clone with no origin exited $_rrd_orphan_rc (want 1)"
+  fi
+fi
+
 # ── F5. fleet drift classifier (scripts/fleet-drift.sh) ───────────────────────
 # The sweep's verdict function had never been driven by a test. It flagged ANY recorded
 # commit that wasn't byte-identical to the reference — but the reference DEFAULTS to the
@@ -2004,6 +2090,52 @@ if have git; then
   if [[ $_fdd_strict -eq 1 && $_fdd_plain -eq 0 ]]; then
     pass "drift: --strict fails on a not-checked-out repo, plain mode still skips"
   else fail "drift: --strict exit code wrong (strict=$_fdd_strict plain=$_fdd_plain)"; fi
+
+  # --- a repo RENAMED upstream, still cloned under its old directory name -------
+  # The fleet is named by repo NAME (scripts/os-repos.txt) and every fleet script used to
+  # turn that name into a path by string-joining it onto the root. So a box that cloned
+  # dotfiles-Kali and never renamed the directory after it became dotfiles-Offense reported
+  # "not checked out" for a repo sitting right there, fully vendored — a false CLEAN row on
+  # the one sweep whose job is to notice staleness, and one `make sync` cannot repair.
+  # resolve_repo_dir (scripts/lib/common.sh) falls back to origin's URL, which follows a
+  # GitHub rename on its own. Assert the real verdict comes back, not the skip.
+  mv "$FDF/dotfiles-Test" "$FDF/dotfiles-OldName"
+  git -C "$FDF/dotfiles-OldName" init -q >/dev/null 2>&1
+  git -C "$FDF/dotfiles-OldName" remote add origin https://github.com/dotgibson/dotfiles-Test.git
+  _fdd_lock2() { printf '%s\n' "$@" >"$FDF/dotfiles-OldName/core.lock"; }
+  _fdd_lock2 "core_sha=$FD_REL"
+  _fdd_renamed="$(_fdd_run)"; _fdd_ren_rc=$?
+  # Two halves, and both matter: the row must classify (proving the clone was FOUND) and it
+  # must not still be reported as absent (proving the fallback replaced the skip rather than
+  # printing alongside it).
+  if ((_fdd_ren_rc == 0)) && grep -qE 'dotfiles-Test.*current' <<<"$_fdd_renamed" &&
+    ! grep -qE 'dotfiles-Test.*not checked out' <<<"$_fdd_renamed"; then
+    pass "drift: a repo cloned under its PRE-RENAME directory name is found via origin's URL"
+  else
+    fail "drift: renamed-clone lookup failed (rc=$_fdd_ren_rc; row='$(grep 'dotfiles-Test' <<<"$_fdd_renamed" | head -n1)')"
+  fi
+  # ...and --strict must not red it either: "NOT CHECKED OUT" is the one drift verdict that
+  # sets DRIFT while `make sync` cannot clear it, so a false positive there is an
+  # unactionable red build. Asserted on the ROW, not the exit code: fleet-drift.sh also
+  # checks dotfiles-Windows unconditionally (line ~383, outside the os-repos loop) and this
+  # one-repo fixture root has no such clone, so --strict exits 1 here no matter what the
+  # dotfiles-Test row says. An rc assertion would pass for entirely the wrong reason.
+  _fdd_strict_ren="$(bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --strict --color never 2>&1)"
+  if grep -qE 'dotfiles-Test.*current' <<<"$_fdd_strict_ren" &&
+    ! grep -qE 'dotfiles-Test.*NOT CHECKED OUT' <<<"$_fdd_strict_ren"; then
+    pass "drift: --strict does not red a found-by-URL renamed clone"
+  else
+    fail "drift: --strict still reported the renamed clone as NOT CHECKED OUT"
+  fi
+  # An origin that points somewhere ELSE must NOT be adopted — the fallback has to identify
+  # the repo, not merely find any clone lying around, or it would silently sync the wrong one.
+  git -C "$FDF/dotfiles-OldName" remote set-url origin https://github.com/dotgibson/dotfiles-Unrelated.git
+  if grep -qE 'dotfiles-Test.*not checked out' <<<"$(_fdd_run)"; then
+    pass "drift: a clone whose origin names a DIFFERENT repo is not adopted"
+  else fail "drift: the URL fallback adopted an unrelated repo"; fi
+  # Restore the fixture: later legs assert on the plain directory, with no remote to find.
+  rm -rf "$FDF/dotfiles-OldName/.git"
+  mv "$FDF/dotfiles-OldName" "$FDF/dotfiles-Test"
 
   # Fail-CLOSED leg: with no mainline ref at all, an ahead-only marker is unverifiable and
   # must NOT be waved through as current. Last — it deletes the branch the fixture rides on.
@@ -5593,7 +5725,18 @@ ucheck() { # ucheck <label> <zsh-body> [VAR=VAL ...]
   local label="$1" body="$2"
   shift 2
   local out
-  if out="$(HOME="$SANDBOX" env "$@" "$_real_zsh" -fic "$body" 2>&1)"; then
+  # `env -u GHOSTTY_SHELL_FEATURES`, and it is NOT cosmetic. 00-tools.zsh stands the OSC 133
+  # marks down when that variable is set and $TMUX is empty (line ~263), which is exactly the
+  # environment every mark-ON case below pins: they pass TMUX= explicitly and say nothing
+  # about Ghostty. A bare `env` inherits the caller's, so running `make audit` from a Ghostty
+  # window — the reference terminal this repo ships a config for — cleared _CORE_OSC133,
+  # left _core_osc133_prompt undefined, and red 7 assertions on a tree CI called green.
+  # The section header already claims TERM and TMUX are pinned "wherever they matter"
+  # BECAUSE env would otherwise leak the real values; this is the third variable that
+  # reasoning applies to and it was the one missed.
+  # Order is load-bearing: -u is an OPTION, "$@" the assignments after it, so cases (e)/(f)
+  # setting GHOSTTY_SHELL_FEATURES=... explicitly still win over the unset.
+  if out="$(HOME="$SANDBOX" env -u GHOSTTY_SHELL_FEATURES "$@" "$_real_zsh" -fic "$body" 2>&1)"; then
     pass "$label"
   else
     fail "$label"
@@ -6437,6 +6580,29 @@ ucheck "osc133: hooks registered without starship, and precmd stays first (outpu
 ucheck "osc133: no hooks at all when the marks stand down and starship is absent" \
   "source '$TOOLS_FILE'; [[ -z \${precmd_functions[(r)_cmd_block_precmd]} && -z \${preexec_functions[(r)_cmd_block_preexec]} && -z \${precmd_functions[(r)_core_osc133_prompt]} ]]" \
   TERM=dumb TMUX= PATH="$OSCEMPTY"
+
+# (j) THE REGRESSION GATE on the harness itself, not on the shell layer — and the reason it
+#     is here rather than left to CI: this bug was INVISIBLE to CI by construction. No runner
+#     is hosted in Ghostty, so every mark-ON case above passed on ubuntu, macos, arch and
+#     alpine while the identical tree red 7 assertions for an operator running `make audit`
+#     from the terminal this repo ships a config for. A green CI lane was not evidence.
+#
+#     Drive one mark-ON assertion with GHOSTTY_SHELL_FEATURES genuinely EXPORTED — exactly
+#     what a Ghostty-hosted audit does — and require the same verdict. This fails loudly if
+#     anyone drops the `env -u` from ucheck. Exported for real, not passed as an argument:
+#     an argument is the thing cases (e)/(f) already do and would test nothing, because the
+#     leak is about what `env` INHERITS.
+_osc_amb_set=0
+[[ -n ${GHOSTTY_SHELL_FEATURES+x} ]] && _osc_amb_set=1
+_osc_amb_saved="${GHOSTTY_SHELL_FEATURES-}"
+export GHOSTTY_SHELL_FEATURES=cursor,title
+ucheck "osc133: the harness is insulated from an ambient GHOSTTY_SHELL_FEATURES (an audit run inside Ghostty cannot red a green tree)" \
+  "source '$TOOLS_FILE'; _core_osc133_prompt; [[ \$PROMPT == '%{'*']133;A'*'%}'* ]]" \
+  TERM=xterm-256color TMUX=
+# Restore rather than blanket-unset: the caller's environment is not ours to edit, and a
+# later section reading it would otherwise see a value this block invented.
+if ((_osc_amb_set)); then export GHOSTTY_SHELL_FEATURES="$_osc_amb_saved"; else unset GHOSTTY_SHELL_FEATURES; fi
+unset _osc_amb_set _osc_amb_saved
 
 # ── atuin: ATUIN_NOBIND + the OPT-IN daemon guard (00-tools.zsh) ──────────────
 # Two things were ungated here. (1) ATUIN_NOBIND=true is what keeps atuin from grabbing
@@ -8049,9 +8215,23 @@ if [[ "$(BLIB_SU='' blib_priv printf 'ran-%s' direct)" == "ran-direct" ]]; then 
 if [[ "$(BLIB_SU='env' blib_priv printf 'ran-%s' viasu)" == "ran-viasu" ]]; then pass "blib_priv routes through a non-empty BLIB_SU"; else fail "blib_priv did not route through BLIB_SU"; fi
 
 # blib_user_bindirs_on_path: adds only EXISTING dirs, never duplicates.
+#
+# CARGO_HOME/GOBIN/GOPATH are UNSET here, as deliberately as HOME and PATH are pinned. These
+# cases assert the $HOME-RELATIVE DEFAULTS, and the helper reaches those defaults only when
+# the vars are absent — `${CARGO_HOME:-$HOME/.cargo}/bin`. Inherit an exported CARGO_HOME
+# from the caller and the lookup retargets, so the fixture's own .cargo/bin never lands and
+# the case reports "missed ~/.cargo/bin" on a perfectly healthy tree.
+#
+# Note where the leak actually lived: the RELOCATION block further down (search `_relo_home`)
+# sets these vars explicitly and was always immune. It was the DEFAULT-path cases here that
+# inherited. A gap between two blocks, not a coverage hole — and invisible to CI, because no
+# runner exports CARGO_HOME while most developers' shells do. Same shape as the
+# GHOSTTY_SHELL_FEATURES leak in the OSC 133 section: a fixture pins what it varies and
+# inherits what it does not, so the ambient environment decides the verdict.
 _bindirs_path() { (
   HOME="$1"
   PATH="/usr/bin"
+  unset CARGO_HOME GOBIN GOPATH
   blib_user_bindirs_on_path
   blib_user_bindirs_on_path
   printf '%s' "$PATH"

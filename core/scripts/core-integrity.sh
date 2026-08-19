@@ -134,7 +134,10 @@ printf '%-22s %-14s %s\n' "----" "------" "------"
 
 PROBLEM=0
 _check_repo() { # _check_repo <repo-dir-name>
-  local name="$1" dir="$ROOT/$1" file rec status tag shown
+  local name="$1" dir file rec status tag shown
+  # Same resolution as fleet-drift.sh / sync-core.sh: directory name first, then origin's
+  # URL, so a pre-rename clone directory can't hide a TAMPERED core/ behind "not checked out".
+  dir="$(resolve_repo_dir "$ROOT" "$name")" || dir="$ROOT/$name"
   if [[ ! -d "$dir" ]]; then
     if ((STRICT)); then fail "$(printf '%-22s %-14s %s' "$name" "-" "NOT CHECKED OUT")"; PROBLEM=1
     else skip "$(printf '%-22s %-14s %s' "$name" "-" "not checked out")"; fi

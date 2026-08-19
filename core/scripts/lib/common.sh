@@ -353,3 +353,57 @@ _audit_ls() { # _audit_ls <pathspec>… — content-gate file set, deduped
     git ls-files --others --exclude-standard -- "$@" 2>/dev/null
   } | sort -u
 }
+
+# ── fleet-member resolution: by DIRECTORY NAME, then by REMOTE URL ─────────────
+# scripts/os-repos.txt names the fleet by repo NAME, and sync-core.sh, fleet-drift.sh
+# and core-integrity.sh all turned that name into a path by string-joining it onto the
+# repos root. That coupling is invisible right up until a repo is RENAMED upstream: a
+# box still holding the clone under its old directory name has the right remote, the
+# right subtree and the right core.lock, and the fan-out skips it anyway — reporting
+# "not cloned" for a repo that is sitting right there. dotfiles-Kali → dotfiles-Offense
+# hit exactly this, and the only remedy on offer was "go `mv` the directory", on every
+# machine, forever, for every future rename.
+#
+# So: keep the directory-name lookup as the fast path (it is right ~always, and costs no
+# process), and fall back to asking each sibling clone what it actually IS. git remotes
+# follow a rename automatically, so the clone's origin URL is the durable identity that
+# the directory name only approximates.
+#
+# bash 3.2-safe (no associative arrays, no ${var,,}) — this runs on macOS too.
+
+_repo_slug_of() { # _repo_slug_of <dir> — lowercased repo name from <dir>'s origin URL
+  local url
+  url="$(git -C "$1" remote get-url origin 2>/dev/null)" || return 1
+  [[ -n "$url" ]] || return 1
+  url="${url%/}"      # a trailing slash would otherwise eat the whole name
+  url="${url##*[/:]}" # both URL shapes at once: https://host/owner/repo AND git@host:owner/repo
+  url="${url%.git}"
+  [[ -n "$url" ]] || return 1
+  # Case-fold: GitHub repo names are case-INSENSITIVE, so a clone of `dotfiles-offense`
+  # is the same repo as `dotfiles-Offense` and must not read as a different one.
+  printf '%s' "$url" | tr '[:upper:]' '[:lower:]'
+}
+
+resolve_repo_dir() { # resolve_repo_dir <root> <repo-name> — echo the clone path, or return 1
+  local root="$1" name="$2" want dir slug
+  [[ -n "$root" && -n "$name" ]] || return 1
+  # Fast path, and deliberately `-d` on the directory rather than on its .git: this must
+  # stay byte-identical to the string-join it replaces, so a conventional layout resolves
+  # exactly as before (including to a path that exists but is not a repo — the callers
+  # each have their own .git/core.lock checks and must keep making that call themselves).
+  [[ -d "$root/$name" ]] && {
+    printf '%s\n' "$root/$name"
+    return 0
+  }
+  # Fallback: no directory of that name, so look for a clone that says it IS this repo.
+  want="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
+  for dir in "$root"/*; do
+    # `-e`, not `-d`: .git is a FILE in a worktree or a submodule checkout.
+    [[ -e "$dir/.git" ]] || continue
+    slug="$(_repo_slug_of "$dir")" || continue
+    [[ "$slug" == "$want" ]] || continue
+    printf '%s\n' "$dir"
+    return 0
+  done
+  return 1
+}
