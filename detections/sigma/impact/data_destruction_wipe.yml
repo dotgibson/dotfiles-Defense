@@ -16,7 +16,7 @@ description: |
   workstation is an incident.
   Generic `category: process_creation` so it matches both Security-4688 and Sysmon-1.
   Validate (purple): run the destruction commands alongside the ransomware-precursor
-  fold from dotfiles-Kali (htpx pair inhibit-recovery-vssadmin). Requires the Process
+  fold from dotfiles-Offense (htpx pair inhibit-recovery-vssadmin). Requires the Process
   Creation audit subcategory (4688) or Sysmon EventID 1.
 references:
   - https://attack.mitre.org/techniques/T1485/

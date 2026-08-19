@@ -13,7 +13,7 @@
 ##! peer. Baseline out monitoring pollers (Nagios/Zabbix/SmartPing) that legitimately
 ##! ping a lot — allowlist those source addresses.
 ##!
-##! Validate (purple): run icmpsh / ptunnel from dotfiles-Kali (hacktheplanet
+##! Validate (purple): run icmpsh / ptunnel from dotfiles-Offense (hacktheplanet
 ##! "Exfil / C2" folds; htpx pair icmp-tunnel-c2). Uses only conn.log fields — no
 ##! add-on analyzer.
 ##!

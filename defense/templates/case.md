@@ -13,7 +13,7 @@
 
 ## Hypotheses
 
-<!-- "an attacker doing X would leave Y" — pull from ATT&CK / Kali hacktheplanet -->
+<!-- "an attacker doing X would leave Y" — pull from ATT&CK / Offense hacktheplanet -->
 
 ## Timeline
 

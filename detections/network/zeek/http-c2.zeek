@@ -46,7 +46,7 @@
 ##!     destination rather than raising the threshold.
 ##!
 ##! Validate (purple): run a Sliver/Havoc HTTPS beacon with a long sleep and jitter from
-##! dotfiles-Kali (htpx pair https-beacon-sliver).
+##! dotfiles-Offense (htpx pair https-beacon-sliver).
 ##!
 ##! Load:  add `@load ./http-c2.zeek` to local.zeek (or drop in site/).
 

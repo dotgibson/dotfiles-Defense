@@ -8,7 +8,7 @@
 ##! low-level message layouts.
 ##!
 ##! Validate (purple): run impacket-GetUserSPNs / "nxc --kerberoasting" from
-##! dotfiles-Kali and confirm this notice fires in the lab (htpx pair
+##! dotfiles-Offense and confirm this notice fires in the lab (htpx pair
 ##! kerberoast-getuserspns <-> kerberoasting-4769).
 ##!
 ##! Load:  add `@load ./kerberoast-rc4.zeek` to local.zeek (or drop in site/).

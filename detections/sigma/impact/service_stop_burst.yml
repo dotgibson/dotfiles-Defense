@@ -71,7 +71,7 @@ description: |
   Counting DISTINCT command lines makes a retry loop against one stubborn service
   count once, while a walk through many services trips it. Tune to your build: patch
   windows and application-deployment hosts are the baseline that shifts it.
-  Validate (purple): run the ransomware-precursor fold from dotfiles-Kali alongside
+  Validate (purple): run the ransomware-precursor fold from dotfiles-Offense alongside
   the recovery-inhibition commands (htpx pair inhibit-recovery-vssadmin). Requires the
   Process Creation audit subcategory (4688) or Sysmon EventID 1.
 references:

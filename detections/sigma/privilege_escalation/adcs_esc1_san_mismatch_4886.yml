@@ -10,7 +10,7 @@ description: |
   (pull the requested UPN from the 4886 and compare to Requester). It is therefore
   a broad triage surface, not a high-fidelity alert on its own - pair it with a
   baseline of enrollment agents and watch 5136 writes to userCertificate.
-  Validate (purple): run "certipy-ad req ... -upn administrator" from dotfiles-Kali
+  Validate (purple): run "certipy-ad req ... -upn administrator" from dotfiles-Offense
   (hacktheplanet "AD CS abuse" fold; htpx pair adcs-esc1-certipy). Requires CA
   request auditing (auditpol / CA "Issued requests" logging) to populate 4886/4887.
 references:

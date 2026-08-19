@@ -9,7 +9,7 @@ description: |
   initial foothold. It also fires for legitimate IaC, so allowlist the automation
   principals and triage the rest by the granted role and the added member - a binding to
   a personal account, an external domain, or a public principal is the tell.
-  Validate (purple): add an IAM binding from dotfiles-Kali (htpx pair
+  Validate (purple): add an IAM binding from dotfiles-Offense (htpx pair
   gcp-iam-policy-backdoor).
 references:
   - https://attack.mitre.org/techniques/T1098/

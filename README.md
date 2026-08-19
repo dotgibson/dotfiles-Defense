@@ -61,7 +61,7 @@
 ## About The Project
 
 **`dotfiles-Defense` is the defensive (blue) Role layer** — the mirror of
-[`dotfiles-Kali`](https://github.com/dotgibson/dotfiles-Kali). Where Kali carries
+[`dotfiles-Offense`](https://github.com/dotgibson/dotfiles-Offense). Where Offense carries
 the offensive engagement layer, this repo carries **detection engineering &
 investigation**: hunt/triage tooling, version-controlled detection content
 (Sigma, Sysmon, Zeek/Suricata, SIEM), and a Dockerized detection lab. The shared
@@ -74,7 +74,7 @@ containers, so host tools come from your OS layer and the lab comes up via
 
 > **The one rule that matters:** this is a public repo, so **case, evidence, and
 > log data never live in it.** All investigation data lives under `~/cases/`
-> (outside the repo), exactly like Kali keeps engagements in `~/engagements/`.
+> (outside the repo), exactly like Offense keeps engagements in `~/engagements/`.
 > `mkcase` scaffolds a case outside the repo by design; the `.gitignore` is a
 > backstop.
 
@@ -142,7 +142,7 @@ holds workflow helpers only — all `HAVE_*`-guarded:
 - `DEFENSE-METHODOLOGY.md` — the ATT&CK → data-source → detection map
 - `core/` — vendored from `dotfiles-core` (read-only here; edit upstream)
 
-The attack-paired mirror — what each detection is _looking for_ — lives in Kali's
+The attack-paired mirror — what each detection is _looking for_ — lives in Offense's
 `PURPLE-TEAM.md` and on the hub's red↔blue view:
 
 > **[→ Offensive methodology (the red mirror)][methodology]** · **[dotfiles-Defense on the hub][repo-docs]**
@@ -159,7 +159,7 @@ This is a **Role layer** stacked on Core + an OS layer:
 2. **Defensive config goes in the `defense` stage**, not in `core/`. Keep it
    distro-agnostic — host tools come from the OS layer.
 3. **Keep the split and the discipline.** Attacker-authored detections stay in
-   Kali's `PURPLE-TEAM.md` (cross-link, don't copy); case/evidence data never
+   Offense's `PURPLE-TEAM.md` (cross-link, don't copy); case/evidence data never
    enters the repo. **Green the lint gate** (shellcheck + `bash -n` / `zsh -n`;
    vendored `core/` excluded).
 

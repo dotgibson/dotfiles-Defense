@@ -12,7 +12,7 @@ description: |
   out. Correlate with the 4728/4732 group-add and the creator's SubjectUserName for
   triage: a new account created by an unexpected principal, then promoted, is the
   high-confidence shape.
-  Validate (purple): run net user /add (or nxc -x "net user ...") from dotfiles-Kali
+  Validate (purple): run net user /add (or nxc -x "net user ...") from dotfiles-Offense
   (hacktheplanet "Persistence" fold; PURPLE-TEAM rogue-account row). Requires the
   Account Management > User Account Management audit subcategory.
 references:

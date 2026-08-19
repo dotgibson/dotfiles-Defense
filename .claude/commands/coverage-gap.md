@@ -58,7 +58,7 @@ Focus for this run: **$ARGUMENTS** (empty = the whole matrix).
    (TA0009), so closing it moves the Collection row and leaves Exfiltration untouched.
    Rank on the tactic ATT&CK actually assigns, or the ranking rationale is wrong even
    when the gap is real.
-4. **Red↔blue holes** — if a `../dotfiles-Kali` sibling is present, attacks in its
+4. **Red↔blue holes** — if a `../dotfiles-Offense` sibling is present, attacks in its
    `PURPLE-TEAM.md` / `offensive/companion` red entries with no detection here. (Skip
    with a note if the sibling isn't checked out.)
 

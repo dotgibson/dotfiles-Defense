@@ -9,7 +9,7 @@ description: |
   scope (api, write_repository), or an out-of-band creation is the tell (T1098). Reconcile
   new tokens against known CI integrations, prefer short expirations, and review any
   created during an incident.
-  Validate (purple): mint a project access / deploy token from dotfiles-Kali (htpx pair
+  Validate (purple): mint a project access / deploy token from dotfiles-Offense (htpx pair
   gl-token-backdoor).
 references:
   - https://attack.mitre.org/techniques/T1098/

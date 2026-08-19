@@ -9,7 +9,7 @@ description: |
   ships a trojanized version that every downstream `npm install` then runs (T1195.002). Pin
   releases to the CI identity and allowlist it; a publish right after an owner_add or a 2FA
   change is the high-signal sequence.
-  Validate (purple): publish a package as a non-CI user from dotfiles-Kali (htpx pair
+  Validate (purple): publish a package as a non-CI user from dotfiles-Offense (htpx pair
   npm-malicious-publish).
 references:
   - https://attack.mitre.org/techniques/T1195/002/

@@ -10,7 +10,7 @@ description: |
   images are rare outside retention/GC, so a manual delete - especially of a trusted
   tag, by a robot, or shortly after a push to the same repo (push-then-delete) - is the
   tell. Enable tag immutability + retention so trusted tags can't be removed.
-  Validate (purple): delete a trusted artifact via the Harbor API from dotfiles-Kali
+  Validate (purple): delete a trusted artifact via the Harbor API from dotfiles-Offense
   (htpx pair harbor-artifact-delete).
 references:
   - https://attack.mitre.org/techniques/T1070/

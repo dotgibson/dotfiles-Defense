@@ -8,7 +8,7 @@ description: |
   passwords and MFA, the technique behind several high-profile Okta tenant
   compromises. IdP changes are rare and high-impact, so any create/activate by an
   unexpected actor warrants immediate review; pair with the source-anomaly profile.
-  Validate (purple): add a rogue IdP via the admin API from dotfiles-Kali (htpx pair
+  Validate (purple): add a rogue IdP via the admin API from dotfiles-Offense (htpx pair
   okta-idp-backdoor).
 references:
   - https://attack.mitre.org/techniques/T1556/

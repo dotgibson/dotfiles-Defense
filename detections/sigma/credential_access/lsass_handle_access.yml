@@ -9,7 +9,7 @@ description: |
   0x143a, 0x1fffff). 0x1fffff is PROCESS_ALL_ACCESS - the broadest of the set and the one
   most likely to be a legitimate agent opening LSASS with a full-rights handle, so if this
   rule stays noisy after the allowlist below is populated, that mask is where the noise is.
-  Validate (purple): run "nxc -M lsassy" / a remote LSASS dump from dotfiles-Kali
+  Validate (purple): run "nxc -M lsassy" / a remote LSASS dump from dotfiles-Offense
   (hacktheplanet "Lateral movement" fold; htpx pair lsass-dump-lsassy). Tune the
   SourceImage allowlist to your EDR/AV.
 references:

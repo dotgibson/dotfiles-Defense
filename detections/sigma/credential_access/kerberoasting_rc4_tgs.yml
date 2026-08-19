@@ -7,7 +7,7 @@ description: |
   normal - roasting tools force RC4 to keep the hash crackable. Detect on the
   downgrade, not the tool name or count.
   Validate (purple): run the "Microsoft Windows Kerberos" Kerberoast fold in
-  dotfiles-Kali/offensive/hacktheplanet (htpx pair: kerberoast-getuserspns <-> this);
+  dotfiles-Offense/offensive/hacktheplanet (htpx pair: kerberoast-getuserspns <-> this);
   confirm the 4769 fires with Ticket_Encryption_Type 0x17.
 references:
   - https://attack.mitre.org/techniques/T1558/003/

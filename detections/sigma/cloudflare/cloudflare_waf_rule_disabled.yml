@@ -11,7 +11,7 @@ description: |
   review; a delete followed by a re-create is the cover-tracks shape. Manage rules as code
   and alert on out-of-band changes.
   Validate (purple): delete/disable a firewall rule via the Cloudflare API from
-  dotfiles-Kali (htpx pair cf-waf-disable).
+  dotfiles-Offense (htpx pair cf-waf-disable).
 references:
   - https://attack.mitre.org/techniques/T1562/001/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/cf-waf-disable-audit.md

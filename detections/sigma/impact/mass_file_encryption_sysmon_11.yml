@@ -78,7 +78,7 @@ description: |
   Pair with T1490 recovery inhibition (recovery_inhibition_process), the two T1489
   service-stop rules, and T1485 data destruction: those inside one window are a ransomware
   event, not a busy host.
-  Validate (purple): run the file-encryption simulation from dotfiles-Kali (htpx pair
+  Validate (purple): run the file-encryption simulation from dotfiles-Offense (htpx pair
   ransomware-encrypt-files). Requires FileCreate (EventID 11) in the Sysmon config.
 references:
   - https://attack.mitre.org/techniques/T1486/

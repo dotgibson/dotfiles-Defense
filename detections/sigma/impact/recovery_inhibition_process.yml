@@ -16,7 +16,7 @@ description: |
   BitLocker-from-the-command-line case), and data_destruction_wipe is the no-ransom
   variant (T1485). Any two of those on one host inside a window is a ransomware event in
   progress, not two maintenance tasks.
-  Validate (purple): run the recovery-inhibition commands from dotfiles-Kali (htpx pair
+  Validate (purple): run the recovery-inhibition commands from dotfiles-Offense (htpx pair
   inhibit-recovery-vssadmin).
 references:
   - https://attack.mitre.org/techniques/T1490/

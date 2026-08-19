@@ -72,7 +72,7 @@ description: |
   Counting distinct Computer per principal is the invariant - breadth across hosts, not
   volume against one. Normal use re-touches a small set of file servers all day and stays
   at one or two distinct hosts; an enumeration pass touches each host once.
-  Validate (purple): run the SMB enumeration fold from dotfiles-Kali (htpx pair
+  Validate (purple): run the SMB enumeration fold from dotfiles-Offense (htpx pair
   smb-enum-nxc), or walk `net view \\host` across a host list. Requires the Detailed
   File Share audit subcategory (5145).
 references:

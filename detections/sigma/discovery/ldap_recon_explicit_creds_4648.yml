@@ -49,7 +49,7 @@ description: |
   known hosts, not a broad sweep. Tune the threshold to your admin workflow; jump
   hosts and orchestration accounts that legitimately fan out should be allowlisted.
   Validate (purple): run LDAP recon / host sweep under explicit creds from
-  dotfiles-Kali (hacktheplanet recon fold; PURPLE-TEAM "LDAP recon by one principal"
+  dotfiles-Offense (hacktheplanet recon fold; PURPLE-TEAM "LDAP recon by one principal"
   4648 row). Requires Logon auditing (success) with explicit-credential logging.
 references:
   - https://attack.mitre.org/techniques/T1087/002/

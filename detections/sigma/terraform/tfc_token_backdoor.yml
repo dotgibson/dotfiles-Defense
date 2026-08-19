@@ -9,7 +9,7 @@ description: |
   so one minted by an unexpected actor is a persistence tell after a control-plane
   compromise (T1098). Reconcile new tokens against known CI integrations and prefer
   short-lived team tokens scoped to a workspace.
-  Validate (purple): mint an org/team token via the TFC API from dotfiles-Kali (htpx pair
+  Validate (purple): mint an org/team token via the TFC API from dotfiles-Offense (htpx pair
   tfc-token-backdoor).
 references:
   - https://attack.mitre.org/techniques/T1098/

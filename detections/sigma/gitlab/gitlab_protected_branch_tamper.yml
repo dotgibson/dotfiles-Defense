@@ -9,7 +9,7 @@ description: |
   pipeline that deploys it - a supply-chain evasion (T1562.001). The action is rare and
   legitimately maps to a change ticket, so a removal outside the approved window, or a
   remove-then-recreate around a push to the same branch, warrants review.
-  Validate (purple): delete protected-branch rules from dotfiles-Kali (htpx pair
+  Validate (purple): delete protected-branch rules from dotfiles-Offense (htpx pair
   gl-protected-branch-off).
 references:
   - https://attack.mitre.org/techniques/T1562/001/

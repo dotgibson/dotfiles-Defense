@@ -1,7 +1,7 @@
 ##! dns-c2.zeek — DNS-based C2: tunneling and DGA beaconing on the wire.
 ##!
 ##! Closes the Command-and-Control DNS half of the "Exfil / C2" methodology row.
-##! Network mirror of two htpx pairs (dotfiles-Kali PURPLE-TEAM.md):
+##! Network mirror of two htpx pairs (dotfiles-Offense PURPLE-TEAM.md):
 ##!   dns-tunnel-c2  <-> dns-tunnel-sysmon-22   (T1071.004, DNS as an app-layer C2)
 ##!   dga-c2-domains <-> dga-nxdomain-entropy   (T1568.002, DGA rendezvous)
 ##! The Sysmon-22 twins attribute the queries to a process; this is the resolver /
@@ -20,7 +20,7 @@
 ##! CDNs that legitimately fan out many subdomains (allowlist by src or parent zone).
 ##!
 ##! Validate (purple): run iodine/dnscat2 (tunnel) or a DGA generator from
-##! dotfiles-Kali (hacktheplanet "Exfil / C2" folds; htpx pairs dns-tunnel-c2,
+##! dotfiles-Offense (hacktheplanet "Exfil / C2" folds; htpx pairs dns-tunnel-c2,
 ##! dga-c2-domains). Needs Zeek's DNS analyzer (base/protocols/dns) — no add-on.
 ##!
 ##! Load:  add `@load ./dns-c2.zeek` to local.zeek (or drop in site/).

@@ -10,7 +10,7 @@ description: |
   system-config submits (also /configSubmit) don't trip it. Job changes are routine, so
   triage on an unexpected actor, a sensitive job, edits outside config-as-code
   (JCasC / pipeline-in-SCM), or a change immediately followed by a build.
-  Validate (purple): create a job via /createItem from dotfiles-Kali (htpx pair
+  Validate (purple): create a job via /createItem from dotfiles-Offense (htpx pair
   jenkins-job-backdoor).
 references:
   - https://attack.mitre.org/techniques/T1072/

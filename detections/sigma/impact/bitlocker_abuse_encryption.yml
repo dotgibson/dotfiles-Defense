@@ -20,7 +20,7 @@ description: |
   here is the BitLocker-abuse path only. Turning on 11 is the ingestion ticket.
   Generic `category: process_creation` so it matches both Security-4688 and Sysmon-1.
   Validate (purple): enable BitLocker with an attacker-held protector on a lab VM
-  alongside the ransomware-precursor fold from dotfiles-Kali. Requires the Process
+  alongside the ransomware-precursor fold from dotfiles-Offense. Requires the Process
   Creation audit subcategory (4688) or Sysmon EventID 1.
 references:
   - https://attack.mitre.org/techniques/T1486/

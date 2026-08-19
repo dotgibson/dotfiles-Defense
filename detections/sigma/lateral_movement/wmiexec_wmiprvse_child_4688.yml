@@ -11,7 +11,7 @@ description: |
   to keep the rule high-confidence. Redirect-less wmiexec variants (a custom
   --exec-method or a hand-rolled client that skips the ADMIN$ tee) fall to a
   separate, lower-confidence hunt on the WmiPrvSE-parent shape alone.
-  Validate (purple): run impacket-wmiexec from dotfiles-Kali (hacktheplanet "Lateral
+  Validate (purple): run impacket-wmiexec from dotfiles-Offense (hacktheplanet "Lateral
   movement & remote execution" fold; htpx pair wmiexec-impacket).
 references:
   - https://attack.mitre.org/techniques/T1047/

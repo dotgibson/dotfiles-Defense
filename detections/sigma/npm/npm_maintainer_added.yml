@@ -9,7 +9,7 @@ description: |
   stolen token (T1098). Ownership changes are rare and map to a known onboarding, so an
   unfamiliar account or an out-of-band grant is the tell; an owner_add followed by a publish
   is the takeover-then-ship shape.
-  Validate (purple): add a maintainer via `npm owner add` from dotfiles-Kali (htpx pair
+  Validate (purple): add a maintainer via `npm owner add` from dotfiles-Offense (htpx pair
   npm-owner-add).
 references:
   - https://attack.mitre.org/techniques/T1098/

@@ -17,7 +17,7 @@
 ##! it's cheap and self-contained. Baseline out sanctioned long-haul sessions (backups,
 ##! replication, VPN concentrators, software mirrors) by dst or (src,dst,port).
 ##!
-##! Validate (purple): run chisel/ligolo reverse tunnel from dotfiles-Kali
+##! Validate (purple): run chisel/ligolo reverse tunnel from dotfiles-Offense
 ##! (hacktheplanet "Exfil / C2" / pivot folds; htpx pair reverse-tunnel-chisel).
 ##! Enrich with a JA3 tunneling fingerprint + destination reputation to raise fidelity.
 ##!

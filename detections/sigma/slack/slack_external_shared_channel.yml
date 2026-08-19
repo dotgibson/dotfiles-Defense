@@ -9,7 +9,7 @@ description: |
   touches an egress proxy (T1567). Shares are legitimate but bounded to known partners, so an
   invite naming an unknown external org, on a sensitive channel, or by an unexpected actor is
   the tell; an invite quickly followed by bulk file access is the drain shape.
-  Validate (purple): invite an external org via conversations.inviteShared from dotfiles-Kali
+  Validate (purple): invite an external org via conversations.inviteShared from dotfiles-Offense
   (htpx pair slack-external-share).
 references:
   - https://attack.mitre.org/techniques/T1567/

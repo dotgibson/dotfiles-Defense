@@ -1,10 +1,10 @@
 # Defense Methodology — the detection map behind the tool layer
 
 The "why" for `defense/defense.zsh`, `detections/`, and `docker/`: how the blue
-tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Kali's
+tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Offense's
 `OFFENSIVE-METHODOLOGY.md` — same ATT&CK through-line, opposite chair.
 
-> The validation half lives across the fence: Kali's `PURPLE-TEAM.md` pairs each
+> The validation half lives across the fence: Offense's `PURPLE-TEAM.md` pairs each
 > attack with the detection it trips. Detection engineering here + attack-paired
 > detections there = the full purple loop.
 
@@ -24,7 +24,7 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Kali's
 
 ## ATT&CK tactic → data source → detection
 
-| ATT&CK tactic            | Primary data sources    | Where detections live | Validate with (Kali)        |
+| ATT&CK tactic            | Primary data sources    | Where detections live | Validate with (Offense)        |
 | ------------------------ | ----------------------- | --------------------- | --------------------------- |
 | Recon / Discovery        | Zeek, 4688/4769, 4798/4799, 5145 | network, sigma | recon / Kerberoast folds  |
 | Credential Access        | Sysmon 10, 4625/4771    | sysmon, sigma         | Responder / cracking folds  |
@@ -35,7 +35,7 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Kali's
 | Exfil / C2               | Suricata, Zeek conn/dns/ssl | network           | reverse-shell / pivot folds |
 | Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn | sigma, network | ransomware chain (teardown → recovery → payload); cryptomining pair |
 
-The right-hand column is the point: every row has a Kali fold that proves the
+The right-hand column is the point: every row has a Offense fold that proves the
 detection works.
 
 **Collection** is the newest row and the weakest one, which is worth knowing before you
@@ -53,7 +53,7 @@ rather than reading `sigma, network` as a formatting quirk. Most of the tactic i
 work — the T1489 teardown, T1490 recovery inhibition, and T1485/T1486 payload rules under
 `detections/sigma/impact/`. But T1496.001 Compute Hijacking has no host invariant this
 repo can reach: the giveaway is a conversation with a mining pool, and the corroborating
-tell the Kali companion asks for — a process pegged near 100% CPU — needs resource
+tell the Offense companion asks for — a process pegged near 100% CPU — needs resource
 telemetry no Sysmon config emits at any level. So it lives on the wire, in
 `detections/network/zeek/cryptomine-pool.zeek`, and the `network` in that column is that
 one detection.
@@ -109,7 +109,7 @@ re-deriving them, each with the condition that would reopen it:
   telemetry. *Reopen when* the Sysmon baseline graduates to a production config that
   carries Event 3 anyway.
 - **T1526, T1580, T1069.003 cloud discovery** — declined on the red side's own assessment:
-  the Kali entry ships unpaired because the activity is read-only, low-signal, and lands in
+  the Offense entry ships unpaired because the activity is read-only, low-signal, and lands in
   GCP Data Access telemetry that is off by default. *Reopen when* Data Access logging is
   enabled in the lab project.
 
@@ -133,10 +133,10 @@ Every other ATT&CK id in this document is checked against the corpus on each cha
 
 ## The detection-engineering lifecycle
 
-1. **Hypothesis** — "an attacker doing X leaves Y" (from ATT&CK or a Kali fold).
+1. **Hypothesis** — "an attacker doing X leaves Y" (from ATT&CK or a Offense fold).
 2. **Data check** — do we collect Y? If not, that's an ingestion ticket.
 3. **Author** — write it as code in `detections/` (Sigma is the source of truth).
-4. **Validate (purple)** — run the technique from Kali, confirm the rule fires.
+4. **Validate (purple)** — run the technique from Offense, confirm the rule fires.
 5. **Tune** — allowlist known-good, threshold the noise.
 6. **Deploy + document** — record data source, ATT&CK ID, and the validation.
 

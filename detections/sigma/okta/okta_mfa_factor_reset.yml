@@ -9,7 +9,7 @@ description: |
   help-desk resets, so the signal is correlation: a reset NOT preceded by a verified
   support ticket, or one immediately followed by a new-factor enrollment + sign-in
   from a new device/geo.
-  Validate (purple): run the reset_factors admin-API call from dotfiles-Kali (htpx
+  Validate (purple): run the reset_factors admin-API call from dotfiles-Offense (htpx
   pair okta-mfa-reset).
 references:
   - https://attack.mitre.org/techniques/T1556/006/

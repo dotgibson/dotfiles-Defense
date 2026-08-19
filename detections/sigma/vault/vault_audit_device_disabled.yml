@@ -9,7 +9,7 @@ description: |
   device), so the delete is a reliable, high-severity tripwire. Audit devices are removed
   almost never outside planned maintenance; alert in real time and pair with an audit-volume
   heartbeat (a gap right after the delete is the exfil-under-cover shape).
-  Validate (purple): disable an audit device from dotfiles-Kali (htpx pair
+  Validate (purple): disable an audit device from dotfiles-Offense (htpx pair
   vault-audit-disable).
 references:
   - https://attack.mitre.org/techniques/T1562/001/

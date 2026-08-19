@@ -25,7 +25,7 @@ description: |
   unconstrained delegation on anything that is not a DC (TRUSTED_FOR_DELEGATION on
   userAccountControl). This catches it when that isn't in place.
   Validate (purple): coerce a DC to a delegation-enabled host and monitor for the TGT
-  from dotfiles-Kali (hacktheplanet "Poisoning & relay" fold; PURPLE-TEAM
+  from dotfiles-Offense (hacktheplanet "Poisoning & relay" fold; PURPLE-TEAM
   unconstrained-deleg-4624 row). Requires Logon auditing (success) on member servers,
   which is where this event is written - not on the DC.
 references:

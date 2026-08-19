@@ -10,7 +10,7 @@ description: |
   credentials (AWS_*, ARM_*, GOOGLE_*), and the Terraform state (T1543). Pools are
   provisioned rarely by a small set of admins, so a new one by an unexpected actor -
   especially just before a workspace is switched to agent execution mode - warrants review.
-  Validate (purple): create an agent pool via the TFC API from dotfiles-Kali (htpx pair
+  Validate (purple): create an agent pool via the TFC API from dotfiles-Offense (htpx pair
   tfc-agent-hijack).
 references:
   - https://attack.mitre.org/techniques/T1543/

@@ -16,7 +16,7 @@ description: |
   normally administers roles, and whether the grant follows a new-user or new-service-
   principal creation. Application Administrator and Privileged Authentication Administrator
   are the quiet escalation paths - they aren't Global Admin but they reach it.
-  Validate (purple): assign a directory role via Graph from dotfiles-Kali (htpx pair
+  Validate (purple): assign a directory role via Graph from dotfiles-Offense (htpx pair
   entra-directory-role).
 references:
   - https://attack.mitre.org/techniques/T1098/003/

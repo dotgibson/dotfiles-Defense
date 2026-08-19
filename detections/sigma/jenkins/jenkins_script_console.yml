@@ -9,7 +9,7 @@ description: |
   used outside break-glass, so any hit - especially outside a change window, from a service
   account, or right before a credential-store read - is high-signal for RCE / credential
   theft.
-  Validate (purple): POST Groovy to /scriptText from dotfiles-Kali (htpx pair
+  Validate (purple): POST Groovy to /scriptText from dotfiles-Offense (htpx pair
   jenkins-script-console).
 references:
   - https://attack.mitre.org/techniques/T1059/

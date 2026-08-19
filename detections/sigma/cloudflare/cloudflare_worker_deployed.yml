@@ -10,7 +10,7 @@ description: |
   controlled CI, so one by a human/unexpected actor, outside the deploy pipeline, or on a
   sensitive zone is the tell for edge interception/exfil. Alert on API-side script writes
   that bypass CI and diff the deployed script against its source.
-  Validate (purple): deploy a Worker via the Cloudflare API from dotfiles-Kali (htpx pair
+  Validate (purple): deploy a Worker via the Cloudflare API from dotfiles-Offense (htpx pair
   cf-worker-deploy).
 references:
   - https://attack.mitre.org/techniques/T1648/

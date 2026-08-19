@@ -3,7 +3,7 @@
 - **Hypothesis:** <!-- "an attacker doing X would leave Y" -->
 - **ATT&CK technique(s):** <!-- Txxxx -->
 - **Data source(s):** <!-- Sysmon 1/10, Zeek conn, 4769, ... -->
-- **Validation:** <!-- which Kali hacktheplanet fold reproduces X -->
+- **Validation:** <!-- which Offense hacktheplanet fold reproduces X -->
 
 ## Query / logic
 

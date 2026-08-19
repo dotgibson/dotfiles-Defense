@@ -2,9 +2,9 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # The DEFENSE (blue) layer. Sourced by the Defense .zshrc loader in its own stage:
 #   tools → … → op → maint → update → os → DEFENSE → local
-# (mirror of Kali's `offensive` stage — the blue role no other repo has.)
+# (mirror of Offense's `offensive` stage — the blue role no other repo has.)
 #
-# Same discipline as Core/Kali: every alias/function touching an optional tool is
+# Same discipline as Core/Offense: every alias/function touching an optional tool is
 # GUARDED by a HAVE_* flag, so this file is inert on a box where the tool isn't
 # installed instead of erroring on shell start. Distro-agnostic — tools come from
 # whatever OS-native layer you run; the heavy stack runs in Docker (siemup).
@@ -138,7 +138,7 @@ mkcase() {
   ${EDITOR:-nvim} "$root/case.md"
 }
 
-# gocase — fzf-jump between existing cases (mirrors Kali's `eng` widget). NOT named
+# gocase — fzf-jump between existing cases (mirrors Offense's `eng` widget). NOT named
 # `case`: that's a zsh reserved word, so a `case` function can be defined but never called.
 gocase() {
   [[ -d "$CASES_DIR" ]] || { echo "no $CASES_DIR yet — run mkcase" >&2; return 1; }

@@ -81,7 +81,7 @@ description: |
   allowed to destroy). Weight both when the alert lands.
   Structural defence beats detection here: S3 Object Lock, MFA-delete, and cross-account
   backup copies the compromised principal cannot reach.
-  Validate (purple): run the snapshot/bucket destruction fold from dotfiles-Kali (htpx pair
+  Validate (purple): run the snapshot/bucket destruction fold from dotfiles-Offense (htpx pair
   cloud-snapshot-destroy).
 references:
   - https://attack.mitre.org/techniques/T1485/

@@ -16,7 +16,7 @@
 ##! (abuse.ch SSLBL JA3 by default). An empty feed = empty set = matches nothing, so this
 ##! is safe to load before the first refresh and can't false-positive on stale hashes.
 ##!
-##! Validate (purple): beacon a Sliver / Cobalt Strike mTLS implant from dotfiles-Kali,
+##! Validate (purple): beacon a Sliver / Cobalt Strike mTLS implant from dotfiles-Offense,
 ##! capture its JA3 into the feed, and confirm this notice fires (htpx pair mtls-c2-sliver).
 ##!
 ##! Load:  add `@load ./tls-c2-ja3.zeek` to local.zeek AFTER the ja3 package.

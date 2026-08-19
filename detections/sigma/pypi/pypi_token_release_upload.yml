@@ -9,7 +9,7 @@ description: |
   or the package is imported (T1195.002), and it bypasses the OIDC path entirely. Alert on
   token uploads to projects that normally publish via trusted publishing, and on any first-ever
   uploader of a widely depended-on package.
-  Validate (purple): `twine upload -u __token__ -p <token> dist/*` from dotfiles-Kali (htpx
+  Validate (purple): `twine upload -u __token__ -p <token> dist/*` from dotfiles-Offense (htpx
   pair pypi-malicious-publish).
 references:
   - https://attack.mitre.org/techniques/T1195/002/

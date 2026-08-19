@@ -8,7 +8,7 @@ description: |
   reset: a clean tenant-persistence backdoor after an admin compromise. API tokens
   should come from a small, known set of service integrations; one minted by an
   unexpected actor (especially a human admin during an incident) is the tell.
-  Validate (purple): mint an API token from dotfiles-Kali (htpx pair okta-api-token).
+  Validate (purple): mint an API token from dotfiles-Offense (htpx pair okta-api-token).
 references:
   - https://attack.mitre.org/techniques/T1098/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/okta-api-token-audit.md

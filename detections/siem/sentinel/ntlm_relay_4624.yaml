@@ -13,7 +13,7 @@ description: |
   Until it exists the join returns nothing and this rule is inert (fails safe, no false
   positives). Populate from DHCP/DNS/AD or your CMDB; normalize case (WorkstationName is
   usually upper-case). htpx pair: ntlm-relay-ntlmrelayx / ntlm-relay-4624. Cross-links
-  the red side in dotfiles-Kali/PURPLE-TEAM.md.
+  the red side in dotfiles-Offense/PURPLE-TEAM.md.
 severity: High
 status: Available
 requiredDataConnectors:

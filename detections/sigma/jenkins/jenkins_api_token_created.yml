@@ -8,7 +8,7 @@ description: |
   account's password reset, so one minted by an unexpected actor - or against a
   privileged/service account, or during an incident - is the persistence tell (T1098).
   Reconcile new tokens against known CI integrations and prefer short-lived tokens.
-  Validate (purple): mint an API token via generateNewToken from dotfiles-Kali (htpx pair
+  Validate (purple): mint an API token via generateNewToken from dotfiles-Offense (htpx pair
   jenkins-api-token).
 references:
   - https://attack.mitre.org/techniques/T1098/

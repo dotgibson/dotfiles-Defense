@@ -16,7 +16,7 @@ description: |
   iam:*, PassRole, or any wildcard action/resource), on the target principal, and on
   actor != target, the same actor-vs-target call the sibling IAM rules leave to the
   analyst.
-  Validate (purple): run the Pacu iam__privesc_scan policy-attach path from dotfiles-Kali
+  Validate (purple): run the Pacu iam__privesc_scan policy-attach path from dotfiles-Offense
   (htpx pair aws-iam-privesc-policy).
 references:
   - https://attack.mitre.org/techniques/T1098/003/
