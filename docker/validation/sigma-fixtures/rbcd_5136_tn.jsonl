@@ -1,1 +1,0 @@
-{"Event": {"System": {"EventID": 5136, "Channel": "Security", "Computer": "DC01"}, "EventData": {"AttributeLDAPDisplayName": "msDS-AllowedToActOnBehalfOfOtherIdentity", "SubjectUserName": "svc_delegation", "ObjectDN": "CN=APP01,OU=Computers"}}}

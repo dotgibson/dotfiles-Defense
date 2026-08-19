@@ -1,4 +1,0 @@
-{"Event": {"System": {"EventID": 4741, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "attacker", "TargetUserName": "PC0$"}}}
-{"Event": {"System": {"EventID": 4741, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "attacker", "TargetUserName": "PC1$"}}}
-{"Event": {"System": {"EventID": 4741, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "attacker", "TargetUserName": "PC2$"}}}
-{"Event": {"System": {"EventID": 4741, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "attacker", "TargetUserName": "PC3$"}}}

@@ -1,1 +1,0 @@
-{"query_type": "GRANT", "query_text": "GRANT SELECT ON t TO ROLE analyst"}
