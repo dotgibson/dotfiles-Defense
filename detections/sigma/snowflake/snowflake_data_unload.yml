@@ -14,7 +14,7 @@ description: |
   named stages via filter_known_stages below (a named INTERNAL stage would otherwise
   alert). Still worth the volume/role triage the backend adds (large ROWS_UNLOADED, an
   unusual role/warehouse, a first-time destination).
-  Validate (purple): COPY INTO an external stage from dotfiles-Kali (htpx pair
+  Validate (purple): COPY INTO an external stage from dotfiles-Offense (htpx pair
   snowflake-exfil-stage).
 references:
   - https://attack.mitre.org/techniques/T1567/002/

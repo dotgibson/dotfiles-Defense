@@ -127,7 +127,7 @@ description: |
   rule under the other channel's pipeline; the burst is a property of the host
   anyway. Tune the threshold to your build: imaging, patch, and inventory windows are
   the baseline that shifts it.
-  Validate (purple): run the discovery fold from dotfiles-Kali (hacktheplanet
+  Validate (purple): run the discovery fold from dotfiles-Offense (hacktheplanet
   "Situational awareness" / post-exploitation recon; the seatbelt/winPEAS and manual
   `whoami`/`net`/`nltest` sweeps). Requires the Process Creation audit subcategory
   (4688) or Sysmon EventID 1.

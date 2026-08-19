@@ -9,7 +9,7 @@ description: |
   - and the pipeline that deploys it - a supply-chain evasion. Both actions are rare
   and legitimately map to a change ticket, so a destroy quickly followed by a
   re-create (cover-tracks) or any override outside the approved window warrants review.
-  Validate (purple): delete/override branch protection from dotfiles-Kali (htpx pair
+  Validate (purple): delete/override branch protection from dotfiles-Offense (htpx pair
   gh-branch-protection-off).
 references:
   - https://attack.mitre.org/techniques/T1562/001/

@@ -6,7 +6,7 @@ description: |
   DS-Replication-Get-Changes-All extended right. Legitimate replication comes from
   DC machine accounts, so a user/admin principal requesting it is the anomaly -
   the replication right is the invariant the technique cannot avoid.
-  Validate (purple): run impacket-secretsdump -just-dc from dotfiles-Kali
+  Validate (purple): run impacket-secretsdump -just-dc from dotfiles-Offense
   (hacktheplanet "DCSync / NTDS dump" fold; htpx pair dcsync-secretsdump).
   Requires the Directory Service Access audit subcategory + a SACL on the domain
   head granting auditing of the replication right.

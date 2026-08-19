@@ -8,7 +8,7 @@ description: |
   is the tell for hands-on-keyboard activity, debugging-as-a-foothold, or post-
   compromise lateral movement. Scope to production namespaces and alert on
   exec/attach by human users (not controllers/service accounts).
-  Validate (purple): run "kubectl exec -it <pod> -- sh" from dotfiles-Kali (htpx pair
+  Validate (purple): run "kubectl exec -it <pod> -- sh" from dotfiles-Offense (htpx pair
   k8s-exec). Requires the kube-apiserver audit policy logging the exec subresource.
 references:
   - https://attack.mitre.org/techniques/T1609/

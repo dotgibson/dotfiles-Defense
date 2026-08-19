@@ -12,7 +12,7 @@ description: |
   can legitimately hold these scopes, so allowlist its app ID in filter_known_apps
   (deploy-time); triage the rest by app, scope, and whether the app is newly registered/
   unverified. Restricting user consent to verified publishers turns this into prevention.
-  Validate (purple): run an illicit-consent grant from dotfiles-Kali (htpx pair
+  Validate (purple): run an illicit-consent grant from dotfiles-Offense (htpx pair
   consent-grant; companion-only, M365/Entra section).
 references:
   - https://attack.mitre.org/techniques/T1528/

@@ -9,7 +9,7 @@ description: |
   change is rare and high-impact, so any disable warrants review - especially one paired with
   new logins or a fresh admin grant; a disable followed by anomalous sign-ins is the
   takeover-enabling shape.
-  Validate (purple): turn off "Require two-factor authentication" from dotfiles-Kali (htpx pair
+  Validate (purple): turn off "Require two-factor authentication" from dotfiles-Offense (htpx pair
   slack-2fa-disable).
 references:
   - https://attack.mitre.org/techniques/T1562/001/

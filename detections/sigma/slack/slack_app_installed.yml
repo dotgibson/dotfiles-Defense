@@ -9,7 +9,7 @@ description: |
   so one installed by an unexpected actor, requesting broad read scopes, or added during an
   incident is the persistence tell; an app_installed followed by bulk conversations.history
   reads is the collect shape.
-  Validate (purple): authorize a broad-scope app from dotfiles-Kali (htpx pair
+  Validate (purple): authorize a broad-scope app from dotfiles-Offense (htpx pair
   slack-malicious-app).
 references:
   - https://attack.mitre.org/techniques/T1098/

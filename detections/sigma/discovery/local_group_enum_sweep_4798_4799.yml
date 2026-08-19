@@ -82,7 +82,7 @@ description: |
   Tune the threshold to your estate: ten hosts in ten minutes is a sweep in a small
   domain and a rounding error in a large one.
   Validate (purple): run SharpHound with the LocalGroup collection method, or walk
-  `net localgroup administrators \\host` across a host list, from dotfiles-Kali
+  `net localgroup administrators \\host` across a host list, from dotfiles-Offense
   (hacktheplanet BloodHound / situational-awareness folds). Requires Audit User Account
   Management (4798) and Audit Security Group Management (4799).
 references:

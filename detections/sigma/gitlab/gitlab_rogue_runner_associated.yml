@@ -10,7 +10,7 @@ description: |
   password reset (T1543). Runners are attached to projects rarely and by a small set of
   maintainers, so an association by an unexpected actor, of an instance/group runner, or
   onto a sensitive project is the tell.
-  Validate (purple): enable a rogue runner on a project from dotfiles-Kali (htpx pair
+  Validate (purple): enable a rogue runner on a project from dotfiles-Offense (htpx pair
   gl-runner-hijack).
 references:
   - https://attack.mitre.org/techniques/T1543/

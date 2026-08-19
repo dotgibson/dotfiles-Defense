@@ -37,7 +37,7 @@ description: |
   GetNPUsers probing). A real user fat-fingers their own name, not five-plus others.
   This catches the enumeration sweep; the successful roast itself (4768 pre-auth type
   0) is detected by asrep_roast_4768.yml.
-  Validate (purple): run "kerbrute userenum" / GetNPUsers from dotfiles-Kali
+  Validate (purple): run "kerbrute userenum" / GetNPUsers from dotfiles-Offense
   (hacktheplanet "Microsoft Windows Kerberos" fold; htpx pair asreproast-getnpusers).
 references:
   - https://attack.mitre.org/techniques/T1558/004/

@@ -9,7 +9,7 @@ description: |
   downgrade is rare and high-impact, so any change to none warrants review - especially one
   soon followed by a package.publish; a disable-then-publish-then-re-enable is the cover-tracks
   shape.
-  Validate (purple): run `npm access set mfa=none <package>` from dotfiles-Kali (htpx pair
+  Validate (purple): run `npm access set mfa=none <package>` from dotfiles-Offense (htpx pair
   npm-2fa-disable).
 references:
   - https://attack.mitre.org/techniques/T1562/001/

@@ -40,7 +40,7 @@ bind-only PCAP parsed but never alerted; the fix was realizing `dce_iface` match
 handshake → bind → bind_ack → request per vector, and all four fire. Remaining, deferred to
 Phase-3 captured fixtures: TLS self-signed / JA3 (real handshake + X.509) and Kerberoast
 (ASN.1 TGS-REP) — those need a real TLS/Kerberos exchange too heavy to fake, so capture them
-from the real Kali attack instead.
+from the real Offense attack instead.
 
 **Phase 2 — host / Sigma plane.** *(started)*
 `run-sigma-validation.sh` runs the real Sigma rule against a committed JSON-lines event
@@ -68,7 +68,7 @@ true-positive fires, a benign true-negative near-miss stays silent. Host-plane t
 authoring environment, so every rule+fixture is verified locally before CI.
 
 **Phase 3 — fixtures from the real attacks.** *(not CI)*
-A documented `regen-fixtures.sh` that runs the paired Kali attacks (the htpx pairs)
+A documented `regen-fixtures.sh` that runs the paired Offense attacks (the htpx pairs)
 against lab targets and captures the PCAP/EVTX, so fixtures are reproducible from source.
 Needs a real lab network + targets (and Windows for the host plane), so it stays a
 manually-run step, never a gate.

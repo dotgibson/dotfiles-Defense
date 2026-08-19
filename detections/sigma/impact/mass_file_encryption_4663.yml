@@ -61,7 +61,7 @@ description: |
   (BitLocker driven from the command line). Pair both with T1490 recovery inhibition
   (recovery_inhibition_process) and the two T1489 service-stop rules: those inside one
   window are a ransomware event, not a noisy host.
-  Validate (purple): run the file-encryption simulation from dotfiles-Kali (htpx pair
+  Validate (purple): run the file-encryption simulation from dotfiles-Offense (htpx pair
   ransomware-encrypt-files) against a SACL'd share.
 references:
   - https://attack.mitre.org/techniques/T1486/

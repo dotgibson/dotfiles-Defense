@@ -6,7 +6,7 @@ and `core/CONTRIBUTING.md`.
 ## What this repo is
 
 `dotfiles-Defense` is the **defensive (blue) Role layer** of the dotfiles system
-(Core → OS-native → Role). It is the mirror of `dotfiles-Kali`: detection
+(Core → OS-native → Role). It is the mirror of `dotfiles-Offense`: detection
 engineering & investigation instead of offense — hunt/triage tooling,
 version-controlled detection content, and a Dockerized detection lab. It is
 **distro-agnostic**: host tools come from the OS-native layer, heavy stack in
@@ -21,7 +21,7 @@ containers.
 - **Case/evidence data NEVER lives in the repo.** It lives in `~/cases/`; the
   `.gitignore` is only a backstop. `mkcase` scaffolds outside the repo.
 - **Red vs blue is a split, not a merge.** Attacker-authored detections stay in
-  Kali's `PURPLE-TEAM.md`; defender-authored capability lives here. Cross-link.
+  Offense's `PURPLE-TEAM.md`; defender-authored capability lives here. Cross-link.
 
 ## Where things are
 

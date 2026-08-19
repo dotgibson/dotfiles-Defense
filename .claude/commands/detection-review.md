@@ -53,8 +53,8 @@ sync. It does **not** mean they're good detections. That's this routine's job.
    to this repo's stated threat model — not by raw ATT&CK breadth. Verify any
    technique ID you cite against live MITRE ATT&CK (it moves; sub-techniques get
    renumbered).
-4. **Red↔blue pairing gaps (the mirror).** Defense is the blue mirror of `dotfiles-Kali`.
-   If a sibling `../dotfiles-Kali` checkout is present, scan its `PURPLE-TEAM.md` and
+4. **Red↔blue pairing gaps (the mirror).** Defense is the blue mirror of `dotfiles-Offense`.
+   If a sibling `../dotfiles-Offense` checkout is present, scan its `PURPLE-TEAM.md` and
    the `offensive/companion` red entries for attacks that have **no** corresponding
    detection here. A documented attack with no blue answer is the highest-value gap.
    (Skip this dimension with a note if the sibling checkout isn't available.)
@@ -87,5 +87,5 @@ The change is detection content: a new/edited rule under `detections/sigma/`. Wh
 picks it up must regenerate the drift-gated artifacts (`gen-navigator.sh`,
 `gen-coverage.sh`, `gen-siem.sh` — bare form) and let `sigma.yml` gate the result, per
 the repo's normal flow. Keep the red↔blue split intact: attacker-authored detections
-belong in Kali's `PURPLE-TEAM.md`, defender-authored capability here. Propose only —
+belong in Offense's `PURPLE-TEAM.md`, defender-authored capability here. Propose only —
 do not edit rules unless asked.

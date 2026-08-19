@@ -3,7 +3,7 @@
 # Signature companion to ../zeek/cryptomine-pool.zeek, and the WEAKER half of the pair
 # by design. Read this before relying on it:
 #
-#   The documented attack these detections pair with (dotfiles-Kali companion entry
+#   The documented attack these detections pair with (dotfiles-Offense companion entry
 #   resource-hijack-xmrig) runs xmrig with `--tls`. Against that command, every rule in
 #   this file matches nothing, because there is no plaintext to match. The Zeek script
 #   is what covers it — it keys on the shape of the conversation (Stratum port, long

@@ -8,7 +8,7 @@ description: |
   full-tenant login that survives the victim's password reset (T1136.003). Both are rare,
   admin-level changes, so one by an unexpected actor - especially a create immediately
   followed by an ACCOUNTADMIN grant - warrants review.
-  Validate (purple): create a user + grant ACCOUNTADMIN from dotfiles-Kali (htpx pair
+  Validate (purple): create a user + grant ACCOUNTADMIN from dotfiles-Offense (htpx pair
   snowflake-rogue-user).
 references:
   - https://attack.mitre.org/techniques/T1136/003/

@@ -73,7 +73,7 @@ description: |
   staging directory, that catches the archive it gets packed into. Both on one host
   inside a window is collection in progress; if egress follows, so is exfiltration.
   Validate (purple): sweep a SACL'd share with a copy/collection script from
-  dotfiles-Kali (hacktheplanet collection/exfil fold; htpx pair local-data-collection).
+  dotfiles-Offense (hacktheplanet collection/exfil fold; htpx pair local-data-collection).
 references:
   - https://attack.mitre.org/techniques/T1005/
 correlation:

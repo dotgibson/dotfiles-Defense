@@ -99,7 +99,7 @@ bound context — one flow each for MS-EFSRPC (PetitPotam), MS-RPRN (PrinterBug)
 
 **Known gaps — deferred to Phase-3 captured fixtures**, not silently uncovered. These
 depend on protocol state a faithful synthetic can't cheaply fake, so a captured PCAP from
-the real Kali attack is the honest fixture:
+the real Offense attack is the honest fixture:
 
 - `zeek/tls-c2.zeek` (self-signed cert) and `zeek/tls-c2-ja3.zeek` (JA3) — need a real TLS
   handshake + X.509 chain for Zeek's SSL analyzer and the ja3 add-on.

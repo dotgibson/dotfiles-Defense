@@ -11,7 +11,7 @@ description: |
   sigma/. Set queryPeriod to your ticket-renewal cadence: too short and a legitimate
   TGT from an earlier window looks absent (false positive); too long and you dilute
   the signal. htpx pair: golden-ticket / golden-ticket-4769. Cross-links the red side
-  in dotfiles-Kali/PURPLE-TEAM.md.
+  in dotfiles-Offense/PURPLE-TEAM.md.
 severity: High
 status: Available
 requiredDataConnectors:

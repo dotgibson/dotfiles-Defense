@@ -9,7 +9,7 @@ description: |
   or UpdateLoginProfile where actor != target is the tell. Pairs with the
   CreateAccessKey alert for the full console+API takeover.
   Validate (purple): run "aws iam create-login-profile --user-name <other>" from
-  dotfiles-Kali (htpx pair aws-console-login-profile).
+  dotfiles-Offense (htpx pair aws-console-login-profile).
 references:
   - https://attack.mitre.org/techniques/T1098/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/aws-loginprofile-cloudtrail.md

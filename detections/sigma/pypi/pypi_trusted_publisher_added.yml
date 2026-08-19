@@ -10,7 +10,7 @@ description: |
   rare and high-impact, so one naming an unfamiliar org/repo, or added by an unexpected actor,
   warrants review.
   Validate (purple): add a trusted publisher naming an attacker repo in the PyPI console from
-  dotfiles-Kali (htpx pair pypi-trusted-publisher).
+  dotfiles-Offense (htpx pair pypi-trusted-publisher).
 references:
   - https://attack.mitre.org/techniques/T1098/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/pypi-trusted-publisher-audit.md

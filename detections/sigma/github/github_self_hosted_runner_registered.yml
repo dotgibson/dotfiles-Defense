@@ -10,7 +10,7 @@ description: |
   compromised admin's password reset. Self-hosted runners are rare and long-lived, so
   a new registration by an unexpected actor, on a public repo, or with a shadowing
   label is the tell.
-  Validate (purple): register a rogue runner from dotfiles-Kali (htpx pair
+  Validate (purple): register a rogue runner from dotfiles-Offense (htpx pair
   gh-self-hosted-runner).
 references:
   - https://attack.mitre.org/techniques/T1543/

@@ -34,7 +34,7 @@
 ##!   matches nothing — the same can't-go-stale choice suricata/c2.rules makes.
 ##!
 ##! Validate (purple): stand up a Sliver mTLS / self-signed HTTPS listener from
-##! dotfiles-Kali and beacon to it (hacktheplanet "Exfil / C2" folds; htpx pair
+##! dotfiles-Offense and beacon to it (hacktheplanet "Exfil / C2" folds; htpx pair
 ##! mtls-c2-sliver).
 ##!
 ##! Load:  add `@load ./tls-c2.zeek` to local.zeek (or drop in site/).

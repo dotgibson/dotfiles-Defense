@@ -8,7 +8,7 @@ description: |
   ALLOWED_IP_LIST like 0.0.0.0/0) or dropping the enforced one lets stolen credentials work
   from anywhere - the control gap behind the 2024 credential-stuffing (T1562.007). These are
   rare and high-impact, so any change warrants review; read-only SHOW is excluded.
-  Validate (purple): open/drop a network policy from dotfiles-Kali (htpx pair
+  Validate (purple): open/drop a network policy from dotfiles-Offense (htpx pair
   snowflake-network-policy).
 references:
   - https://attack.mitre.org/techniques/T1562/007/

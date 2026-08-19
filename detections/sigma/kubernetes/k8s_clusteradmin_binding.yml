@@ -12,7 +12,7 @@ description: |
   RequestResponse level) - roleRef.name lives in the request body, so at Metadata
   level this rule will not match even though audit events exist.
   Validate (purple): run "kubectl create clusterrolebinding ... --clusterrole=
-  cluster-admin --serviceaccount=default:default" from dotfiles-Kali (htpx pair
+  cluster-admin --serviceaccount=default:default" from dotfiles-Offense (htpx pair
   k8s-clusteradmin-binding).
 references:
   - https://attack.mitre.org/techniques/T1098/

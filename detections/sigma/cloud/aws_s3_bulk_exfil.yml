@@ -67,7 +67,7 @@ description: |
   would claim coverage that does not exist. That path is caught on the source bucket's S3
   server access logs (which record the read) and by the GetObject volume signal above.
   Tune the threshold to your largest legitimate consumer before paging on it.
-  Validate (purple): drain a bucket with an assumed role from dotfiles-Kali (htpx pair
+  Validate (purple): drain a bucket with an assumed role from dotfiles-Offense (htpx pair
   aws-s3-mass-exfil).
 references:
   - https://attack.mitre.org/techniques/T1530/

@@ -9,7 +9,7 @@ description: |
   provisioned rarely by a small set of admins, so one created by an unexpected actor -
   especially a system-level robot or one scoped across all projects - warrants review.
   Reconcile new robots against known CI integrations and prefer short expirations.
-  Validate (purple): mint a wide-scope robot via the Harbor API from dotfiles-Kali
+  Validate (purple): mint a wide-scope robot via the Harbor API from dotfiles-Offense
   (htpx pair harbor-robot-backdoor).
 references:
   - https://attack.mitre.org/techniques/T1098/

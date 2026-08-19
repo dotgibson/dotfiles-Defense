@@ -471,13 +471,13 @@ contains "an unmatched path is listed" "$out" "| unmatched | 1 |"
 
 # ── sibling repos ────────────────────────────────────────────────────────────
 # /detection-review reads the offensive twin (claude-routines.yml clones it to
-# ../dotfiles-Kali for the red↔blue mirror), so its reports legitimately cite files that
+# ../dotfiles-Offense for the red↔blue mirror), so its reports legitimately cite files that
 # live over there. A fixture stands in for the clone, so the suite needs no network and
 # no sibling checkout on the developer's box.
 SIBROOT="$TMPROOT/sib"
-mkdir -p "$SIBROOT/dotfiles-Kali/offensive/companion/.github/workflows"
-: >"$SIBROOT/dotfiles-Kali/PURPLE-TEAM.md"
-: >"$SIBROOT/dotfiles-Kali/offensive/companion/.github/workflows/auto-tag.yml"
+mkdir -p "$SIBROOT/dotfiles-Offense/offensive/companion/.github/workflows"
+: >"$SIBROOT/dotfiles-Offense/PURPLE-TEAM.md"
+: >"$SIBROOT/dotfiles-Offense/offensive/companion/.github/workflows/auto-tag.yml"
 
 vrr_sib() { # same as vrr, but with the sibling fixture visible
   local f="$TMPROOT/vrr-sib.md"
@@ -493,13 +493,13 @@ vrr_sib() { # same as vrr, but with the sibling fixture visible
 out="$(vrr_sib 'Mirror check against `PURPLE-TEAM.md` is clean.')"
 contains "a sibling-repo citation resolves" "$out" "| resolved in a sibling repo | 1 |"
 contains "it is not reported as unmatched" "$out" "| unmatched | 0 |"
-contains "the sibling is named" "$out" "in dotfiles-Kali"
+contains "the sibling is named" "$out" "in dotfiles-Offense"
 
 # The bug the noise was masking, and the reason siblings are resolved BEFORE the
-# correction branch: this path exists only in Kali, but its BASENAME exists here too, so
+# correction branch: this path exists only in Offense, but its BASENAME exists here too, so
 # without sibling awareness it was rewritten to this repo's file — a citation confidently
-# pointing at the wrong repository. 15 real Kali paths fall into this class.
-cross='Kali ships `offensive/companion/.github/workflows/auto-tag.yml` for the companion.'
+# pointing at the wrong repository. 15 real Offense paths fall into this class.
+cross='Offense ships `offensive/companion/.github/workflows/auto-tag.yml` for the companion.'
 out="$(vrr_sib "$cross")"
 contains "a cross-repo path is not auto-corrected" "$out" "| **auto-corrected** | **0** |"
 if printf '%s' "$out" | sed -n '/---BODY---/,$p' |
@@ -516,9 +516,9 @@ contains "no sibling present is not an error" "$out" "rc=0"
 # Discovery is announced either way. Without this, a run where nothing needed a sibling is
 # indistinguishable from one where the glob silently matched nothing — both print
 # "0 in a sibling repo". Two live routine runs hit exactly that ambiguity and could not
-# confirm the real ../dotfiles-Kali clone was being found at all.
+# confirm the real ../dotfiles-Offense clone was being found at all.
 out="$(vrr_sib 'Nothing external cited here.')"
-contains "indexed siblings are announced" "$out" "indexed sibling repo(s): dotfiles-Kali"
+contains "indexed siblings are announced" "$out" "indexed sibling repo(s): dotfiles-Offense"
 contains "the indexed file count is reported" "$out" "files)"
 
 out="$(ROUTINE_SIBLING_GLOB="$TMPROOT/no-such-*" bash "$VRR" "$TMPROOT/vrr-sib.md" "$REPO" 2>&1)"

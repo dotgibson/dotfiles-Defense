@@ -9,7 +9,7 @@ description: |
   backend. Compare userIdentity (actor) to requestParameters.userName (target);
   alert when they differ or the target is privileged.
   Validate (purple): run "aws iam create-access-key --user-name <other>" / Pacu
-  iam__backdoor_users_keys from dotfiles-Kali (htpx pair aws-iam-backdoor-key).
+  iam__backdoor_users_keys from dotfiles-Offense (htpx pair aws-iam-backdoor-key).
 references:
   - https://attack.mitre.org/techniques/T1098/001/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/aws-createaccesskey-cloudtrail.md

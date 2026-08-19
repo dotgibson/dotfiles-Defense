@@ -41,7 +41,7 @@ description: |
   Set MachineAccountQuota to 0 and delegate machine-account creation as the durable
   control - this catches it when that isn't in place.
   Validate (purple): run impacket-addcomputer (or the rbcd/noPac chain) from
-  dotfiles-Kali (hacktheplanet "Active Directory - attack paths" fold; htpx pair
+  dotfiles-Offense (hacktheplanet "Active Directory - attack paths" fold; htpx pair
   rbcd-impacket). Requires the Computer Account Management audit subcategory.
 references:
   - https://attack.mitre.org/techniques/T1136/002/

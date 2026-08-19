@@ -8,7 +8,7 @@ description: |
   (T1114.003). Enabling out-of-domain forwarding is uncommon and rarely legitimate, so alert
   on any occurrence, prioritize forwarding to new/free-mail domains, and pair with the admin
   setting that disables automatic external forwarding org-wide.
-  Validate (purple): enable external auto-forwarding via the Gmail API from dotfiles-Kali
+  Validate (purple): enable external auto-forwarding via the Gmail API from dotfiles-Offense
   (htpx pair gws-mail-forward).
 references:
   - https://attack.mitre.org/techniques/T1114/003/

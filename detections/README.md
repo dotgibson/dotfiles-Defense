@@ -3,7 +3,7 @@
 Detection as code. **Sigma is the portable source of truth** — author once,
 compile down to whatever SIEM the lab runs. Each rule carries its ATT&CK
 technique, its data source, and a validation note that names the **exact
-`dotfiles-Kali` hacktheplanet fold and `htpx` pair** that reproduces it — so the
+`dotfiles-Offense` hacktheplanet fold and `htpx` pair** that reproduces it — so the
 purple loop is closed in the file itself: run the attack there, confirm the rule
 fires here.
 
@@ -16,7 +16,7 @@ fires here.
 | `navigator/` | ATT&CK Navigator layer (heatmap) + `COVERAGE.md` report | generate from `sigma/`                       |
 
 Workflow: write Sigma → convert to your backend → stand up the lab (`siemup`) →
-run the matching attack from Kali → confirm it fires → tune → commit rule +
+run the matching attack from Offense → confirm it fires → tune → commit rule +
 validation note. Real IOC values from cases stay in `~/cases/*/iocs`, never here.
 
 ## CI gate — the rules are validated as code
@@ -86,14 +86,14 @@ and packaged-analytics deploys a bare compile can't emit.
 ## What ships today (the starter pack)
 
 The first content drop mirrors the **htpx red↔blue corpus**: each rule below
-detects a technique that `dotfiles-Kali` can execute on demand, so every one is
+detects a technique that `dotfiles-Offense` can execute on demand, so every one is
 purple-validatable out of the box.
 
 ### `sigma/` — 94 rules / 111 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
-| Rule | Event / source | ATT&CK | Validate with (Kali fold · htpx pair) |
+| Rule | Event / source | ATT&CK | Validate with (Offense fold · htpx pair) |
 | ---- | -------------- | ------ | ------------------------------------- |
 | `kerberoasting_rc4_tgs` | 4769 RC4 (0x17) | T1558.003 | Kerberos · kerberoast-getuserspns |
 | `asrep_roast_probing_4771` | 4771 0x18 (correlation) | T1558.004 | Kerberos · asreproast-getnpusers |
@@ -566,7 +566,7 @@ point and prefer your own threat intel via `--url`.
   field comparison, which Sigma can't express cleanly. They ship as **deployable
   Splunk correlation searches** in `siem/splunk/correlation_searches.conf` and as
   **Microsoft Sentinel KQL** in `siem/sentinel/{golden_ticket_4769,silver_ticket_4624,
-  ntlm_relay_4624}.yaml` (and as SPL in Kali's `PURPLE-TEAM.md` via their htpx pairs).
+  ntlm_relay_4624}.yaml` (and as SPL in Offense's `PURPLE-TEAM.md` via their htpx pairs).
   For Silver Ticket the durable control remains PAC validation.
 - **T1486 Data Encrypted for Impact — closed, on both data sources.** The honest invariant
   is mass file modification. This shipped first as `impact/mass_file_encryption_4663`
@@ -582,7 +582,7 @@ point and prefer your own threat intel via `--url`.
   see. What remains is a deployment trade, not a coverage hole: event 11 is the loudest
   block in the Sysmon config, and narrowing it narrows this rule's reach with it.
 - **T1496.001 Compute Hijacking — the network half shipped; the other half never will.**
-  The pair is documented in **`dotfiles-Kali`**, under that repo's
+  The pair is documented in **`dotfiles-Offense`**, under that repo's
   `offensive/companion/entries/` — red `resource-hijack-xmrig`, blue
   `cryptomine-pool-detect`. The blue companion asks for **two** converging tells: a
   Stratum connection to a mining pool, and a process pegged near 100% CPU for a sustained
@@ -644,7 +644,7 @@ point and prefer your own threat intel via `--url`.
   (a Sysmon Event 3 *host* detection, not wire work as the report framed it; Event 3 is not
   enabled here and is the loudest event Sysmon emits — and `http-c2.zeek` already catches a
   beacon *to* a trusted web service on cadence alone), and **T1526 / T1580 / T1069.003**
-  (declined on the red side's own assessment — the Kali entry ships unpaired because the
+  (declined on the red side's own assessment — the Offense entry ships unpaired because the
   activity is read-only, low-signal, and lands in GCP Data Access logs that are off by
   default). The marker makes this ledger self-policing: ship a Sigma rule tagged with any
   of them and CI fails until the prose is updated.

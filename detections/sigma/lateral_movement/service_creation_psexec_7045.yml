@@ -12,11 +12,11 @@ description: |
   that registers a service from a temp path, and a rule that fires on routine software
   installs gets muted. If you want drop-directory coverage, add it as a separate lower-
   confidence rule gated on a service-name or signed-binary allowlist.
-  Validate (purple): run impacket-psexec from dotfiles-Kali (hacktheplanet "Lateral
+  Validate (purple): run impacket-psexec from dotfiles-Offense (hacktheplanet "Lateral
   movement & remote execution" / "Active Directory" folds; pairs with pth-lateral-nxc).
 references:
   - https://attack.mitre.org/techniques/T1569/002/
-  - https://github.com/dotgibson/dotfiles-Kali/blob/main/PURPLE-TEAM.md
+  - https://github.com/dotgibson/dotfiles-Offense/blob/main/PURPLE-TEAM.md
 author: dotfiles-Defense
 date: 2026-06-30
 tags:

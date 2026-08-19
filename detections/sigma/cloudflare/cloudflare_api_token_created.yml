@@ -9,7 +9,7 @@ description: |
   unexpected actor is a persistence tell after an account compromise (T1098). Tokens are
   issued rarely and by a known set of admins/automation; reconcile new tokens against
   known integrations, scope them tightly, and alert on creation outside change control.
-  Validate (purple): mint an API token via the Cloudflare API from dotfiles-Kali (htpx
+  Validate (purple): mint an API token via the Cloudflare API from dotfiles-Offense (htpx
   pair cf-api-token).
 references:
   - https://attack.mitre.org/techniques/T1098/

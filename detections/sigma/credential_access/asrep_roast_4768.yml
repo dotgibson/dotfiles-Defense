@@ -11,7 +11,7 @@ description: |
   AS-REPs via 4768 type 0 and generates zero 4771 failures, sailing past that rule. This
   is the primary vector and is near-zero-FP - almost no modern account legitimately runs
   without pre-auth, so a honey no-preauth account makes it a pure tripwire.
-  Validate (purple): run GetNPUsers / Rubeus asreproast from dotfiles-Kali (hacktheplanet
+  Validate (purple): run GetNPUsers / Rubeus asreproast from dotfiles-Offense (hacktheplanet
   "Microsoft Windows Kerberos" fold; htpx pair asreproast-getnpusers).
 references:
   - https://attack.mitre.org/techniques/T1558/004/

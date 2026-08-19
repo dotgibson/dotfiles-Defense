@@ -9,7 +9,7 @@ description: |
   value logging-tamper signal (T1562.008). Sink lifecycle changes are rare and should
   come from IaC; a delete/update from an interactive principal is the anomaly. Alert and
   corroborate with the sink/bucket name and the caller.
-  Validate (purple): delete a logging sink from dotfiles-Kali (htpx pair
+  Validate (purple): delete a logging sink from dotfiles-Offense (htpx pair
   gcp-audit-log-disable).
 references:
   - https://attack.mitre.org/techniques/T1562/008/

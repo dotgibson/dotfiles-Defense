@@ -9,7 +9,7 @@ description: |
   (T1528). Most grants are for known apps, so triage on a first-seen/low-reputation
   client_id or app_name, broad/sensitive scopes (mail.google.com, drive, gmail.readonly),
   or a burst of authorize events across users (a campaign).
-  Validate (purple): authorize a scoped OAuth app from dotfiles-Kali (htpx pair
+  Validate (purple): authorize a scoped OAuth app from dotfiles-Offense (htpx pair
   gws-oauth-grant).
 references:
   - https://attack.mitre.org/techniques/T1528/

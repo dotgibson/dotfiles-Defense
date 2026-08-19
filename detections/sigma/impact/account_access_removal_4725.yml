@@ -69,7 +69,7 @@ description: |
   becomes near-zero-FP, because the accounts that legitimately do this in bulk are a short,
   knowable list. Best paired with a standing alert on ANY change to break-glass accounts,
   which no threshold should ever suppress.
-  Validate (purple): run the defender lock-out fold from dotfiles-Kali (htpx pair
+  Validate (purple): run the defender lock-out fold from dotfiles-Offense (htpx pair
   account-lockout-defenders). Requires the Audit User Account Management subcategory.
 references:
   - https://attack.mitre.org/techniques/T1531/

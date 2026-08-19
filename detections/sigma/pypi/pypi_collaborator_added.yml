@@ -8,7 +8,7 @@ description: |
   revocation, the persistent form of a stolen token (T1098). Role changes are rare and map to
   a known onboarding, so an unfamiliar account or an out-of-band grant is the tell; an
   add-Owner followed by a `new release` is the takeover-then-ship shape.
-  Validate (purple): invite a collaborator as Owner in the PyPI console from dotfiles-Kali
+  Validate (purple): invite a collaborator as Owner in the PyPI console from dotfiles-Offense
   (htpx pair pypi-role-add).
 references:
   - https://attack.mitre.org/techniques/T1098/

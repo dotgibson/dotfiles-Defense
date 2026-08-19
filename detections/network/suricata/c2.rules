@@ -7,9 +7,9 @@
 # oversized ICMP payloads, and known-implant TLS fingerprints. Together they close the
 # Command-and-Control (TA0011) tactic that was scaffolded here but empty.
 #
-# Mirrors the htpx C2 pairs in dotfiles-Kali PURPLE-TEAM.md (dns-tunnel-c2,
+# Mirrors the htpx C2 pairs in dotfiles-Offense PURPLE-TEAM.md (dns-tunnel-c2,
 # icmp-tunnel-c2, mtls-c2-sliver). Validate by running the matching implant/tunnel
-# from dotfiles-Kali (hacktheplanet "Exfil / C2" folds).
+# from dotfiles-Offense (hacktheplanet "Exfil / C2" folds).
 #
 # sids are in the same local/custom range as coercion.rules (9_000_1xx here);
 # renumber if it collides with your ruleset. These are alert-and-investigate, not

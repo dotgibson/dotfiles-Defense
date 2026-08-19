@@ -5,7 +5,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # The navigator/ and siem/ artifacts are GENERATED and drift-gated by regenerating and
 # diffing. DEFENSE-METHODOLOGY.md can't work that way: two of its table's four columns
-# (the prose data-source summary and the Kali fold names) are editorial judgement that no
+# (the prose data-source summary and the Offense fold names) are editorial judgement that no
 # generator can emit. So this is a CHECKER, not a generator — it asserts the subset of
 # the document's claims that ARE machine-checkable and leaves the prose alone.
 #
@@ -27,7 +27,7 @@
 #
 #   <!-- methodology-check: known-absent = T1496.001 -->
 #
-# Deliberately NOT checked: the "Primary data sources" and "Validate with (Kali)"
+# Deliberately NOT checked: the "Primary data sources" and "Validate with (Offense)"
 # columns. The first is a generalised prose summary on purpose — enumerating every
 # command primitive there is what made it go stale in the first place — and the second
 # names folds in a repo this gate can't see. Gating either would produce a brittle check
@@ -70,7 +70,7 @@ failures = []
 # ── 1. paths ──────────────────────────────────────────────────────────────────
 # Only backticked tokens that look like repo-relative paths: they contain a "/" and
 # don't start with ~ (home), / (absolute) or a scheme. Bare filenames are skipped on
-# purpose — PURPLE-TEAM.md and OFFENSIVE-METHODOLOGY.md live in the Kali repo, which
+# purpose — PURPLE-TEAM.md and OFFENSIVE-METHODOLOGY.md live in the Offense repo, which
 # this gate cannot see, and guessing at them would fail on a correct document.
 for tok in sorted(set(re.findall(r'`([^`\s]+)`', text))):
     if "/" not in tok or tok.startswith(("~", "/", "http://", "https://")):

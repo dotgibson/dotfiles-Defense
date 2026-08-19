@@ -64,11 +64,11 @@ git ls-files >"$tracked" 2>/dev/null || : >"$tracked"
 
 # ── sibling repos ─────────────────────────────────────────────────────────────
 # /detection-review reads the OFFENSIVE twin as well as this repo — claude-routines.yml
-# clones dotfiles-Kali to ../dotfiles-Kali precisely so the red↔blue mirror dimension can
+# clones dotfiles-Offense to ../dotfiles-Offense precisely so the red↔blue mirror dimension can
 # run — so its reports legitimately cite files that live over there. Without this, every
 # such citation reports as unmatched, week after week, until a reader learns to skip the
-# section. Worse than noise: Kali vendors the same core/ subtree, so ~40 basenames are
-# common to both repos, and a Kali citation whose basename also exists here would be
+# section. Worse than noise: Offense vendors the same core/ subtree, so ~40 basenames are
+# common to both repos, and a Offense citation whose basename also exists here would be
 # silently "corrected" into this repo or blocked as ambiguous. Resolving siblings BEFORE
 # either of those branches is what prevents that.
 #
@@ -93,7 +93,7 @@ done
 # citation happened to need a sibling looks identical to a run where discovery silently
 # failed: both print "0 in a sibling repo". Two live routine runs proved that ambiguity is
 # not hypothetical — neither cited a cross-repo path, so neither could confirm the glob
-# resolves the real ../dotfiles-Kali clone in the runner's layout. One line makes every
+# resolves the real ../dotfiles-Offense clone in the runner's layout. One line makes every
 # future run self-evidencing regardless of what the report happens to cite.
 if [ -n "$_sib_report" ]; then
   echo "::notice::indexed sibling repo(s): ${_sib_report}"
@@ -152,8 +152,8 @@ for p in "${cites[@]}"; do
   fi
 
   # 4. a sibling repo has it. Must come BEFORE the correct/ambiguous branches below:
-  #    Kali vendors the same core/, so a citation like `zsh/00-tools.zsh` exists in both
-  #    trees, and letting it fall through would rewrite a Kali reference into a Defense
+  #    Offense vendors the same core/, so a citation like `zsh/00-tools.zsh` exists in both
+  #    trees, and letting it fall through would rewrite a Offense reference into a Defense
   #    path — a confidently wrong citation, which is exactly what this script exists to
   #    prevent. Not rewritten: the path is correct in the sibling's context.
   #    Literal tab in an -E pattern rather than -P: \t is a GNU/PCRE extension, and this

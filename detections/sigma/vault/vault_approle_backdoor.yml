@@ -9,7 +9,7 @@ description: |
   tokens after the compromised operator's token is revoked (T1098). These are rare,
   admin-level changes, so one by an unexpected token - especially a role bound to root/a
   broad policy - warrants review.
-  Validate (purple): create a rogue AppRole from dotfiles-Kali (htpx pair
+  Validate (purple): create a rogue AppRole from dotfiles-Offense (htpx pair
   vault-approle-backdoor).
 references:
   - https://attack.mitre.org/techniques/T1098/

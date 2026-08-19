@@ -7,7 +7,7 @@ description: |
   this is a near-zero-false-positive tell - admins almost never tscon to another
   session's RDP endpoint by hand, and the SYSTEM-via-service variant
   (sc create ... tscon) is even louder.
-  Validate (purple): run the tscon/sc-create hijack from dotfiles-Kali (hacktheplanet
+  Validate (purple): run the tscon/sc-create hijack from dotfiles-Offense (hacktheplanet
   "Lateral movement & remote execution" fold; htpx pair rdp-hijack-tscon).
 references:
   - https://attack.mitre.org/techniques/T1563/002/

@@ -11,7 +11,7 @@ description: |
   push outside the CI service account / build window. Compare the new digest to the last
   known-good and enforce image signing (cosign / content trust) so an unsigned overwrite
   is blocked, not just logged.
-  Validate (purple): push over a trusted tag from dotfiles-Kali (htpx pair
+  Validate (purple): push over a trusted tag from dotfiles-Offense (htpx pair
   harbor-image-backdoor).
 references:
   - https://attack.mitre.org/techniques/T1525/

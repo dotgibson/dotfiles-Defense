@@ -27,7 +27,7 @@ description: |
   The keyword list is the scoping: it is the difference between "someone stopped a service"
   (constant) and "someone stopped the things that protect the data" (an incident). Extend
   it with your own backup/AV/line-of-business service names.
-  Validate (purple): run the pre-ransom service-stop batch from dotfiles-Kali (htpx pair
+  Validate (purple): run the pre-ransom service-stop batch from dotfiles-Offense (htpx pair
   service-stop-preransom).
 references:
   - https://attack.mitre.org/techniques/T1489/

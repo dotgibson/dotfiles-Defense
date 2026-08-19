@@ -9,7 +9,7 @@ description: |
   - surviving the victim admin's password reset (T1098.003). Admin grants are rare and
   high-impact, so one by an unexpected actor, or a grant quickly following a new-user
   creation, warrants review.
-  Validate (purple): promote a user to super admin via the Admin SDK from dotfiles-Kali
+  Validate (purple): promote a user to super admin via the Admin SDK from dotfiles-Offense
   (htpx pair gws-super-admin).
 references:
   - https://attack.mitre.org/techniques/T1098/003/

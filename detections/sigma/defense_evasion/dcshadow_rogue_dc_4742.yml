@@ -8,7 +8,7 @@ description: |
   object (5137). The GC SPN write onto an account that isn't an established domain
   controller is the cleanest invariant. Corroborate with 5137 creating an
   nTDSDSA/server object and 4662 replication sourced from outside your DC inventory.
-  Validate (purple): run mimikatz lsadump::dcshadow from dotfiles-Kali (hacktheplanet
+  Validate (purple): run mimikatz lsadump::dcshadow from dotfiles-Offense (hacktheplanet
   "Active Directory - attack paths" fold; htpx pair dcshadow). Allowlist your real
   DC computer accounts below.
 references:

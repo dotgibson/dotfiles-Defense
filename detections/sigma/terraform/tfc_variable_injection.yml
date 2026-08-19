@@ -10,7 +10,7 @@ description: |
   execution across the estate with no config PR or review (T1072). Most variable changes
   are benign CI, so triage on an unexpected actor, env-var changes that alter run behavior,
   or a change immediately before a run.
-  Validate (purple): inject a workspace env variable via the TFC API from dotfiles-Kali
+  Validate (purple): inject a workspace env variable via the TFC API from dotfiles-Offense
   (htpx pair tfc-var-injection).
 references:
   - https://attack.mitre.org/techniques/T1072/

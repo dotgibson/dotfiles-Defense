@@ -12,7 +12,7 @@ description: |
   Detection posture: narrow but real - near-zero-FP on DCs, which is why it stays a
   single-selection alert rather than a volume correlation.
   Validate (purple): run SharpDPAPI backupkey or mimikatz lsadump::backupkeys from
-  dotfiles-Kali (hacktheplanet "Credential access" fold; htpx pair dpapi-backupkey).
+  dotfiles-Offense (hacktheplanet "Credential access" fold; htpx pair dpapi-backupkey).
   Requires detailed file-share auditing (5145) on domain controllers.
 references:
   - https://attack.mitre.org/techniques/T1555/

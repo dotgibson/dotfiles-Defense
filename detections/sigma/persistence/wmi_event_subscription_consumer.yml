@@ -11,7 +11,7 @@ description: |
   Destination, so treat any *new* binding as its own separate low-volume alert
   rather than folding it in here. Legitimate permanent consumers are rare and
   usually from known management software; allowlist those and alert on the rest.
-  Validate (purple): run "nxc -M wmi-event" / PowerLurk from dotfiles-Kali
+  Validate (purple): run "nxc -M wmi-event" / PowerLurk from dotfiles-Offense
   (hacktheplanet "Persistence" fold; htpx pair wmi-subscription). Requires Sysmon
   with WMI eventing enabled (config schema >= 4.1).
 references:

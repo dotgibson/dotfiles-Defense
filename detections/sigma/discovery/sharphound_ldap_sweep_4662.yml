@@ -47,7 +47,7 @@ description: |
   broad fan-out over users, groups, computers, and ACLs rather than repeated hits
   on one object. Tune the threshold to your directory size and audit SACL scope;
   a small directory or a broad SACL both shift the normal baseline.
-  Validate (purple): run SharpHound / bloodhound-python from dotfiles-Kali
+  Validate (purple): run SharpHound / bloodhound-python from dotfiles-Offense
   (hacktheplanet "Active Directory enumeration" fold; htpx pair bloodhound-sharphound).
 references:
   - https://attack.mitre.org/techniques/T1087/002/

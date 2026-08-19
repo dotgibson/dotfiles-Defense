@@ -51,7 +51,7 @@ description: |
   Tune the threshold to your environment; scanners, vuln assessors, and admin
   tooling legitimately fan out and should be allowlisted by source address.
   Validate (purple): run nxc/crackmapexec with -H (pass-the-hash) across a subnet
-  from dotfiles-Kali (hacktheplanet "Lateral movement & remote execution" fold;
+  from dotfiles-Offense (hacktheplanet "Lateral movement & remote execution" fold;
   htpx pair pth-lateral-nxc). Requires Logon auditing (success) on the targets.
 references:
   - https://attack.mitre.org/techniques/T1550/002/

@@ -14,7 +14,7 @@ description: |
   legitimate domain traffic, so this fires on benign access too - scope by threshold,
   source, or pipe subset per environment, and pair with a coercion tripwire host.
   Prefer efsrpc/spoolss as the higher-signal subset if the full set is too noisy.
-  Validate (purple): run PetitPotam / coercer / printerbug from dotfiles-Kali
+  Validate (purple): run PetitPotam / coercer / printerbug from dotfiles-Offense
   (hacktheplanet "Poisoning & relay" fold; htpx pair coerce-petitpotam). Requires
   detailed file-share auditing (5145) on DCs and servers.
 references:

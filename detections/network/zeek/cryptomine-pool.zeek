@@ -1,7 +1,7 @@
 ##! cryptomine-pool.zeek — cryptomining pool sessions (resource hijacking).
 ##!
 ##! Closes the Impact tactic's one wire-side technique: T1496.001 Compute Hijacking.
-##! Network mirror of the dotfiles-Kali companion pair resource-hijack-xmrig <->
+##! Network mirror of the dotfiles-Offense companion pair resource-hijack-xmrig <->
 ##! cryptomine-pool-detect. Every other Impact detection in this repo is a Sigma rule on
 ##! host telemetry; this one cannot be, because the invariant is a conversation with a
 ##! mining pool, not anything the endpoint does to itself.
@@ -45,7 +45,7 @@
 ##! Evaluated per-connection at teardown (connection_state_remove) — no windowing, so
 ##! it's cheap and self-contained, matching reverse-tunnel.zeek.
 ##!
-##! Validate (purple): run xmrig against a pool from dotfiles-Kali (companion pair
+##! Validate (purple): run xmrig against a pool from dotfiles-Offense (companion pair
 ##! resource-hijack-xmrig). Synthetic coverage ships too — see
 ##! docker/validation/fixtures/gen_cryptomine.py.
 ##!

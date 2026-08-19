@@ -14,7 +14,7 @@ description: |
   handling process, not a tool name, so it fires on hand-rolled exfil the same as on
   tooling. It is the first-class *nix half of the Kerberos-forgery coverage whose
   Windows/AD side lives in the credential_access Sigma rules and the Golden/Silver
-  absence searches - the forged tickets in dotfiles-Kali's golden-ticket / silver-
+  absence searches - the forged tickets in dotfiles-Offense's golden-ticket / silver-
   ticket flows are written to and used from an Administrator.ccache, which is exactly
   what this catches when it is copied or exfiltrated.
   Complementary hardening (not this rule): enable an auditd file watch on the ccache
@@ -22,7 +22,7 @@ description: |
   KRB5CCNAME / /etc/krb5.conf tampering.
   Validate (purple): after minting a ticket to Administrator.ccache in the
   hacktheplanet "Microsoft Windows Kerberos" fold, run `cp Administrator.ccache /tmp/x`
-  or `base64 Administrator.ccache` from dotfiles-Kali and confirm this fires.
+  or `base64 Administrator.ccache` from dotfiles-Offense and confirm this fires.
 references:
   - https://attack.mitre.org/techniques/T1558/005/
   - https://attack.mitre.org/detectionstrategies/DET0024/

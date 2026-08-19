@@ -8,7 +8,7 @@ description: |
   breakout (the three the detection below actually matches). Almost nothing in a
   hardened cluster legitimately requests privileged/hostPID; gate them with admission
   control (PSA restricted) and alert on the rest.
-  Validate (purple): run the privileged-pod/nsenter breakout from dotfiles-Kali
+  Validate (purple): run the privileged-pod/nsenter breakout from dotfiles-Offense
   (htpx pair k8s-privileged-pod). Requires the kube-apiserver audit policy logging
   pod create at RequestResponse level (so requestObject is present).
 

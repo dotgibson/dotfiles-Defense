@@ -18,7 +18,7 @@ description: |
   common case; the trade is a blind spot when the forged principal is itself a
   machine/gMSA. Drop the filter (accepting more machine-to-machine Kerberos noise) if
   that case is in your threat model. htpx pair: silver-ticket / silver-ticket-4769.
-  Cross-links the red side in dotfiles-Kali/PURPLE-TEAM.md.
+  Cross-links the red side in dotfiles-Offense/PURPLE-TEAM.md.
 severity: Medium
 status: Available
 requiredDataConnectors:

@@ -15,7 +15,7 @@ description: |
   single pysigma pipeline (the pipeline that can't resolve one field drops the whole
   rule), so it silently never fires. Deploy both; whichever channel your hosts forward
   will match.
-  Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Kali (hacktheplanet
+  Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate).
 references:
   - https://attack.mitre.org/techniques/T1134/001/

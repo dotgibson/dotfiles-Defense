@@ -7,7 +7,7 @@ description: |
   vssadmin/diskshadow/wbadmin creating a shadow copy to copy NTDS.dit + the SYSTEM
   hive out. Almost nothing legitimately runs "ntdsutil ... ifm" outside a planned
   DC backup/migration. Corroborate with event 8222 (shadow copy created).
-  Validate (purple): run the ntdsutil/VSS dump from dotfiles-Kali (hacktheplanet
+  Validate (purple): run the ntdsutil/VSS dump from dotfiles-Offense (hacktheplanet
   "DCSync / NTDS dump" fold; htpx pair ntds-ntdsutil). Scope to DC hosts.
 references:
   - https://attack.mitre.org/techniques/T1003/003/
