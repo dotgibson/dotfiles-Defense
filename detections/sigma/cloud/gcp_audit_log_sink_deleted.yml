@@ -6,13 +6,13 @@ description: |
   (google.logging.v2.ConfigServiceV2.DeleteSink / UpdateSink) or deleting a log bucket
   (DeleteBucket). Killing the export/sink path is the cloud equivalent of clearing the
   event log - it defeats every other cloud detection downstream, so it is the highest-
-  value logging-tamper signal (T1562.008). Sink lifecycle changes are rare and should
+  value logging-tamper signal (T1685.002). Sink lifecycle changes are rare and should
   come from IaC; a delete/update from an interactive principal is the anomaly. Alert and
   corroborate with the sink/bucket name and the caller.
   Validate (purple): delete a logging sink from dotfiles-Offense (htpx pair
   gcp-audit-log-disable).
 references:
-  - https://attack.mitre.org/techniques/T1562/008/
+  - https://attack.mitre.org/techniques/T1685/002/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/gcp-audit-log-tamper-audit.md
 author: dotfiles-Defense
 date: 2026-07-22
