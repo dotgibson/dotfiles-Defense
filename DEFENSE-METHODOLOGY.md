@@ -79,6 +79,27 @@ the distribution, so a low coefficient of variation over enough samples survives
 jitter, a rotated domain, and TLS. Same caveat as T1496.001 — it will read "0" in
 `COVERAGE.md` forever, and that is the report being honest about what it counts.
 
+**The `detections/siem/` absence detections are the third kind, and the ledger below was
+missing them.** Four techniques are covered by this repo and will never appear in
+`COVERAGE.md` for the same reason the network plane does not — the roll-up reads
+`detections/sigma/` only:
+
+- **T1558.001 Golden Ticket** (4769 with no preceding 4768) and **T1558.002 Silver Ticket**
+  (4624 with no preceding 4769) — `detections/siem/sentinel/golden_ticket_4769.yaml`,
+  `detections/siem/sentinel/silver_ticket_4624.yaml`, and the matching stanzas in
+  `detections/siem/splunk/correlation_searches.conf`.
+- **T1557.001 Name Resolution Poisoning and SMB Relay** (4624 workstation/source mismatch) —
+  `detections/siem/sentinel/ntlm_relay_4624.yaml` and the same correlation file.
+- **T1568.002 DGA** (vowel-poor NXDOMAIN bursts) — `detections/network/zeek/dns-c2.zeek`.
+
+The first three are there because **Sigma cannot express an absence**: "this event without
+that other event inside a window" is a backend-correlation shape, not a detection block. So
+they live where the correlation engine does, and the coverage report reads zero for them
+forever. That is the report being honest about what it counts, exactly as it is for the C2
+corner — but until now the ledger recorded only the `detections/network/` half of that story, which is
+why the weekly `/coverage-gap` routine could keep re-deriving these four as holes. Recording
+them here is the whole purpose of the ledger.
+
 **Discovery no longer rests on one data source.** Nine of its techniques used to hang on
 `detections/sigma/discovery/host_recon_command_burst.yml` alone, so a tuned-out
 process-creation policy or one EDR-blind host took most of the tactic with it. Two rules
@@ -128,14 +149,21 @@ re-deriving them, each with the condition that would reopen it:
   GCP Data Access telemetry that is off by default. *Reopen when* Data Access logging is
   enabled in the lab project.
 
-<!-- methodology-check: known-absent = T1069.003, T1071.001, T1071.004, T1090.004, T1095, T1102.002, T1496.001, T1526, T1572, T1573.002, T1580 -->
+<!-- methodology-check: known-absent = T1069.003, T1071.001, T1071.004, T1090.004, T1095, T1102.002, T1496.001, T1526, T1557.001, T1558.001, T1558.002, T1568.002, T1572, T1573.002, T1580 -->
 <!-- Techniques this document names but the SIGMA corpus does not cover — which is not
      the same as "no detection exists". Two classes live here:
-       (a) COVERED, but not by Sigma — the whole network/ plane. T1496.001
-           (zeek/cryptomine-pool.zeek), T1071.001 (zeek/http-c2.zeek), T1071.004
-           (zeek/dns-c2.zeek), T1095 (zeek/icmp-tunnel.zeek), T1572
-           (zeek/reverse-tunnel.zeek), T1573.002 (zeek/tls-c2.zeek). This gate reads
-           detections/sigma/ only, so dropping any of them would fail the build.
+       (a) COVERED, but not by Sigma — two planes, both invisible to this gate and to
+           COVERAGE.md, which read detections/sigma/ only. Dropping any id here would
+           fail the build.
+             network/  — T1496.001 (zeek/cryptomine-pool.zeek), T1071.001
+                         (zeek/http-c2.zeek), T1071.004 and T1568.002 (zeek/dns-c2.zeek),
+                         T1095 (zeek/icmp-tunnel.zeek), T1572 (zeek/reverse-tunnel.zeek),
+                         T1573.002 (zeek/tls-c2.zeek).
+             siem/     — the ABSENCE detections, which Sigma cannot express at all:
+                         T1558.001 (sentinel/golden_ticket_4769.yaml), T1558.002
+                         (sentinel/silver_ticket_4624.yaml), T1557.001
+                         (sentinel/ntlm_relay_4624.yaml), each with a matching stanza in
+                         splunk/correlation_searches.conf.
        (b) DECLINED, reasons and reopen-conditions in "Declined coverage" above —
            T1090.004, T1102.002, T1526, T1580, T1069.003.
      Every other technique id in this file must be tagged by a rule in detections/sigma/.
