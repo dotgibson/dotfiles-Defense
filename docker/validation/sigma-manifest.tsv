@@ -25,7 +25,7 @@
 # (no pysigma pipeline — they have no EventID and match raw field names).
 rogue-account-4720	windows-audit	docker/validation/sigma-fixtures/rogue_account_4720.jsonl	detections/sigma/persistence/rogue_account_creation_4720.yml	7394f3ba-a17c-47eb-8b74-9fb709d0283f	docker/validation/sigma-fixtures/rogue_account_4720_tn.jsonl
 dpapi-backupkey-5145	windows-audit	docker/validation/sigma-fixtures/dpapi_backupkey_5145.jsonl	detections/sigma/credential_access/dpapi_backupkey_5145.yml	d2280db3-54ba-4329-8cc7-de905fac62ac	docker/validation/sigma-fixtures/dpapi_backupkey_5145_tn.jsonl
-coercion-5145	windows-audit	docker/validation/sigma-fixtures/coercion_5145.jsonl	detections/sigma/credential_access/coercion_named_pipes_5145.yml	29ac7a00-b6fe-48d8-8c65-f62a8b83808d	-
+coercion-5145	windows-audit	docker/validation/sigma-fixtures/coercion_5145.jsonl	detections/sigma/credential_access/coercion_named_pipes_5145.yml	29ac7a00-b6fe-48d8-8c65-f62a8b83808d	docker/validation/sigma-fixtures/coercion_5145_tn.jsonl
 dcsync-4662	windows-audit	docker/validation/sigma-fixtures/dcsync_4662.jsonl	detections/sigma/credential_access/dcsync_replication_4662.yml	bc81c0e5-f587-4b57-bee4-e29d1848dbfa	docker/validation/sigma-fixtures/dcsync_4662_tn.jsonl
 lsass-access-10	sysmon	docker/validation/sigma-fixtures/lsass_access_sysmon10.jsonl	detections/sigma/credential_access/lsass_handle_access.yml	4e9ec480-5e5f-4e7d-b986-a10d0caedebc	docker/validation/sigma-fixtures/lsass_access_sysmon10_tn.jsonl
 password-spray-4625	windows-audit	docker/validation/sigma-fixtures/password_spray_4625.jsonl	detections/sigma/credential_access/password_spray_4625.yml	0b553ead-484c-4569-9e14-55439cecd62d	docker/validation/sigma-fixtures/password_spray_4625_tn.jsonl

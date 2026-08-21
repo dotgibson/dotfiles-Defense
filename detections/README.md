@@ -344,7 +344,7 @@ the rule gets muted, and a muted rule is a blind spot.
 | ---- | -------------- | ------ | ------------- |
 | `slack_app_installed` | `app_installed` (broad read scopes) | T1098 | Slack · slack-malicious-app |
 | `slack_external_shared_channel` | `shared_channel_invite_sent` / `_accepted` | T1567 | Slack · slack-external-share |
-| `slack_2fa_enforcement_disabled` | `pref.two_factor_auth_changed` `two_factor_required=false` | T1562.001 | Slack · slack-2fa-disable |
+| `slack_2fa_enforcement_disabled` | `pref.two_factor_auth_changed` (fires on the change; the direction lives in Slack's `details`) | T1562.001 | Slack · slack-2fa-disable |
 
 `password_spray`, `asrep_roast_probing`, `sharphound_ldap_sweep`,
 `ldap_recon_explicit_creds_4648`, `host_recon_command_burst`,

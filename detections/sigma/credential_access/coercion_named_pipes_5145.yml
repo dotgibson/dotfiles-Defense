@@ -10,10 +10,14 @@ description: |
   change even as the coercion technique does. This is the trigger half of the
   coercion -> relay chain; the relayed logon is caught separately (see the 4624
   fan-out rule).
-  Detection posture: broad triage surface. netlogon and lsarpc in particular carry
-  legitimate domain traffic, so this fires on benign access too - scope by threshold,
-  source, or pipe subset per environment, and pair with a coercion tripwire host.
-  Prefer efsrpc/spoolss as the higher-signal subset if the full set is too noisy.
+  Detection posture: broad triage surface even after filtering. netlogon and lsarpc carry
+  legitimate domain traffic, so this still fires on benign access by real users - scope by
+  threshold, source, or pipe subset per environment, and pair with a coercion tripwire host.
+  Prefer efsrpc/spoolss as the higher-signal subset if the full set is too noisy; those two
+  are genuinely rare over IPC$, where netlogon and lsarpc are not. Splitting them into an
+  alerting subset plus a distinct-target fan-out correlation for the noisy pair (the shape
+  host_enum_srvsvc_wkssvc_5145 already uses) is the next step if the machine-account filter
+  alone does not bring the volume down.
   Validate (purple): run PetitPotam / coercer / printerbug from dotfiles-Offense
   (hacktheplanet "Poisoning & relay" fold; htpx pair coerce-petitpotam). Requires
   detailed file-share auditing (5145) on DCs and servers.
@@ -38,9 +42,19 @@ detection:
       - 'lsarpc'
       - 'netlogon'
       - 'lsass'
-  condition: selection
+  filter_machine:
+    # The same machine-account filter both 5145 siblings carry (dpapi_backupkey_5145,
+    # gpp_cpassword_sysvol_5145). Domain members bind netlogon and lsarpc to each other
+    # as routine business under their COMPUTER account, and that traffic is the bulk of
+    # what made this rule an estate-wide firehose. Coercion is driven from a user or an
+    # unauthenticated context, so it survives this filter.
+    SubjectUserName|endswith: '$'
+  condition: selection and not filter_machine
 falsepositives:
-  - Legitimate RPC over these pipes (spooler, netlogon secure channel, EFS) is
-    routine - triage on the source principal/host and volume, allowlist known
-    infrastructure, or narrow to the efsrpc/spoolss subset.
+  - Legitimate RPC over these pipes (spooler, netlogon secure channel, EFS) by a real
+    USER account - filter_machine removes the computer-account bulk, not this. Triage on
+    the source principal/host and volume, allowlist known infrastructure, or narrow to
+    the efsrpc/spoolss subset.
+  - Service accounts that bind these pipes as part of a management or backup product
+    (allowlist the specific principal).
 level: medium

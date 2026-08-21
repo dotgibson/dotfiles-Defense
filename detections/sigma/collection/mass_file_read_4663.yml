@@ -12,6 +12,16 @@ description: |
   masks are what separate "someone is copying the file share" from "someone is
   encrypting it"; the ingestion requirement is identical, so if you already turned on
   auditing for that rule you already have this one's data.
+  The AccessMask value is the single-bit ReadData form (0x1). 4663 logs the access mask
+  actually EXERCISED, and depending on how the SACL is authored many environments emit a
+  combined mask (e.g. 0x120089, ReadData|ReadAttributes|ReadEA|ReadControl|Synchronize)
+  rather than the isolated bit - where that is true this base rule matches nothing and the
+  correlation below silently never fires, which is worse than firing too often. Confirm
+  against your own 4663 stream before trusting this detection, and if your SACL emits
+  combined masks widen this list rather than lowering the correlation threshold. Same
+  caveat the write-side twin (mass_file_encryption_4663) already carries; it is repeated
+  here because the read side is the half nobody checks. The alternative anchor, if your
+  pipeline preserves it, is the AccessList SDDL strings 4663 also emits (%%4416 ReadData).
   Requires the Object Access > File System audit subcategory + a SACL on the
   directories you care about. Without it 4663 is not emitted at all, and the SACL's
   scope - not the rule - sets this detection's reach.
@@ -30,7 +40,7 @@ detection:
   selection:
     EventID: 4663
     ObjectType: 'File'
-    AccessMask: '0x1' # ReadData — the single-bit read form
+    AccessMask: '0x1' # ReadData — the single-bit read form; see the combined-mask caveat above
   filter_indexers:
     # DEPLOY-REQUIRED: replace with the backup, indexing, AV, and sync agents that read
     # your SACL'd trees continuously. This filter matters MORE than the equivalent on the

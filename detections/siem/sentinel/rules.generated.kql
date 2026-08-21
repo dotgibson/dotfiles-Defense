@@ -61,7 +61,7 @@ OperationName in~ ("Add service principal credentials", "Add application credent
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // credential_access/coercion_named_pipes_5145.yml — Authentication coercion - named-pipe access over IPC$ (5145)
-EventID == 5145 and ShareName contains "IPC$" and (RelativeTargetName contains "spoolss" or RelativeTargetName contains "efsrpc" or RelativeTargetName contains "lsarpc" or RelativeTargetName contains "netlogon" or RelativeTargetName contains "lsass")
+(EventID == 5145 and ShareName contains "IPC$" and (RelativeTargetName contains "spoolss" or RelativeTargetName contains "efsrpc" or RelativeTargetName contains "lsarpc" or RelativeTargetName contains "netlogon" or RelativeTargetName contains "lsass")) and (not(SubjectUserName endswith "$"))
 
 // credential_access/dcsync_replication_4662.yml — DCSync - directory replication right requested by a non-DC
 (EventID == 4662 and (Properties contains "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2" or Properties contains "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2" or Properties contains "89e95b76-444d-4c62-991a-0facbeda640c")) and (not((SubjectUserName endswith "$" or SubjectUserSid =~ "S-1-5-18")))
@@ -214,7 +214,7 @@ eventType in~ ("user.mfa.factor.reset_all", "user.mfa.factor.deactivate", "syste
 EventID == 4720 and (not(SubjectUserName =~ "svc_iam_provisioning"))
 
 // persistence/scheduled_task_suspicious_4698.yml — Scheduled task created with a suspicious action
-EventID == 4698 and (TaskContent contains "-enc" or TaskContent contains "-EncodedCommand" or TaskContent contains "-w hidden" or TaskContent contains "-WindowStyle Hidden" or TaskContent contains "FromBase64String" or TaskContent contains "\\Users\\" or TaskContent contains "\\Temp\\" or TaskContent contains "\\mshta.exe" or TaskContent contains "\\regsvr32.exe" or TaskContent contains "\\rundll32.exe" or TaskContent contains "DownloadString" or TaskContent contains "IEX")
+EventID == 4698 and (TaskContent contains "-enc" or TaskContent contains "-EncodedCommand" or TaskContent contains "-w hidden" or TaskContent contains "-WindowStyle Hidden" or TaskContent contains "FromBase64String" or TaskContent contains "\\mshta.exe" or TaskContent contains "\\regsvr32.exe" or TaskContent contains "\\rundll32.exe" or TaskContent contains "DownloadString" or TaskContent contains "IEX")
 
 // persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line consumer
 EventID == 20 and (Destination contains "powershell" or Destination contains "cmd.exe" or Destination contains "mshta" or Destination contains "wscript" or Destination contains "cscript" or Destination contains "rundll32" or Destination contains "-enc" or Destination contains "FromBase64String")
@@ -252,8 +252,8 @@ operation =~ "delete" and (resource_type in~ ("artifact", "repository"))
 // registry/harbor_robot_account_created.yml — Harbor robot account created (durable registry credential)
 operation =~ "create" and resource_type =~ "robot"
 
-// slack/slack_2fa_enforcement_disabled.yml — Slack 2FA enforcement disabled (workspace auth weakened)
-action =~ "pref.two_factor_auth_changed" and two_factor_required == false
+// slack/slack_2fa_enforcement_disabled.yml — Slack workspace 2FA enforcement setting changed
+action =~ "pref.two_factor_auth_changed"
 
 // slack/slack_app_installed.yml — Slack app installed (durable data-access foothold)
 action =~ "app_installed"
