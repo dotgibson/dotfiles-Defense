@@ -165,7 +165,7 @@ purple-validatable out of the box.
 | Rule | Event / source | ATT&CK | Validate with |
 | ---- | -------------- | ------ | ------------- |
 | `scheduled_task_suspicious_4698` | 4698 task created | T1053.005 | Persistence · schtask-persist |
-| `wmi_event_subscription_consumer` | Sysmon 19/20/21 | T1546.003 | Persistence · wmi-subscription |
+| `wmi_event_subscription_consumer` | Sysmon 20 | T1546.003 | Persistence · wmi-subscription |
 | `rogue_account_creation_4720` | 4720 account created | T1136.002 / T1136.001 | Persistence · rogue-account |
 | `machine_account_creation_burst_4741` | 4741 burst (value_count correlation) | T1136.002 | AD attack paths · rbcd-impacket |
 
