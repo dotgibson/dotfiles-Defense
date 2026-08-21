@@ -144,12 +144,30 @@ re-deriving them, each with the condition that would reopen it:
   catches a beacon *to* a legitimate web service on cadence alone, with no new host
   telemetry. *Reopen when* the Sysmon baseline graduates to a production config that
   carries Event 3 anyway.
+- **T1041 Exfiltration Over C2 Channel, T1048 Exfiltration Over Alternative Protocol** —
+  declined because the only invariant this repo can reach does not separate them from what
+  it already claims. `detections/network/zeek/reverse-tunnel.zeek` fires on duration plus
+  bidirectional volume: a single external session that lives far longer and moves far more
+  bytes than a normal client flow. That shape is a tunnel (T1572, which the script does
+  claim), or exfil over the C2 channel (T1041), or exfil over a different protocol (T1048),
+  and the wire evidence is identical in all three. Tagging the script with T1041/T1048
+  would assert a discrimination the detection does not make — coverage reading as more
+  specific than it is, which is the failure the `known-absent` ledger exists to prevent,
+  pointed the other way. The script says as much itself: it "fires on the shape and lets
+  triage split them". Triage splits them; the detection does not.
+  A dedicated rule is not the answer either, for the same reason T1102.002 is declined:
+  there is no host-side invariant in the ingestion set. Separating exfil from tunneling
+  needs either content inspection or per-process network byte counts, and the Sysmon
+  baseline carries no Event 3 at all. *Reopen when* the stack gains content inspection (a
+  DLP or TLS-inspecting proxy — the same trigger as T1090.004) or per-process network
+  volume telemetry, either of which makes the split expressible rather than assumed. Note
+  the egress corner is watched meanwhile: the shape fires, it is just filed under T1572.
 - **T1526, T1580, T1069.003 cloud discovery** — declined on the red side's own assessment:
   the Offense entry ships unpaired because the activity is read-only, low-signal, and lands in
   GCP Data Access telemetry that is off by default. *Reopen when* Data Access logging is
   enabled in the lab project.
 
-<!-- methodology-check: known-absent = T1069.003, T1071.001, T1071.004, T1090.004, T1095, T1102.002, T1496.001, T1526, T1557.001, T1558.001, T1558.002, T1568.002, T1572, T1573.002, T1580 -->
+<!-- methodology-check: known-absent = T1041, T1048, T1069.003, T1071.001, T1071.004, T1090.004, T1095, T1102.002, T1496.001, T1526, T1557.001, T1558.001, T1558.002, T1568.002, T1572, T1573.002, T1580 -->
 <!-- Techniques this document names but the SIGMA corpus does not cover — which is not
      the same as "no detection exists". Two classes live here:
        (a) COVERED, but not by Sigma — two planes, both invisible to this gate and to
@@ -165,7 +183,9 @@ re-deriving them, each with the condition that would reopen it:
                          (sentinel/ntlm_relay_4624.yaml), each with a matching stanza in
                          splunk/correlation_searches.conf.
        (b) DECLINED, reasons and reopen-conditions in "Declined coverage" above —
-           T1090.004, T1102.002, T1526, T1580, T1069.003.
+           T1090.004, T1102.002, T1526, T1580, T1069.003, and T1041/T1048 (detected in
+           effect by zeek/reverse-tunnel.zeek, but not claimed: its shape cannot separate
+           exfil from the tunneling it already reports as T1572).
      Every other technique id in this file must be tagged by a rule in detections/sigma/.
      Adding an id here is a deliberate act. Remove one only when a SIGMA rule starts
      covering it — and note the gate enforces that in both directions, so the decline
