@@ -6,14 +6,14 @@ description: |
   (resource.type=firewall_rule or ruleset, action.type=delete/update). The WAF and
   firewall rules gate what reaches the origin; deleting a rule or flipping a ruleset's
   rules to disabled exposes the origin to traffic it was dropping - no origin change
-  needed, just an API call (T1562.001). These changes are rare and high-impact, so any by
+  needed, just an API call (T1686.001). These changes are rare and high-impact, so any by
   an unexpected actor, or a disable quickly followed by anomalous origin traffic, warrants
   review; a delete followed by a re-create is the cover-tracks shape. Manage rules as code
   and alert on out-of-band changes.
   Validate (purple): delete/disable a firewall rule via the Cloudflare API from
   dotfiles-Offense (htpx pair cf-waf-disable).
 references:
-  - https://attack.mitre.org/techniques/T1562/001/
+  - https://attack.mitre.org/techniques/T1686/001/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/cf-waf-disable-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
