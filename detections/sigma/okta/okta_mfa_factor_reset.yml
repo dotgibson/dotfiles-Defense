@@ -17,7 +17,7 @@ references:
 author: dotfiles-Defense
 date: 2026-06-30
 tags:
-  - attack.credential_access
+  - attack.credential-access
   - attack.persistence
   - attack.t1556.006
 logsource:

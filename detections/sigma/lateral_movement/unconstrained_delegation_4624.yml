@@ -39,10 +39,10 @@ tags:
   # it into one would misstate the coverage. T1187 is the forced authentication that
   # produces the logon, T1558 is the TGT the attacker walks away with (this rule detects
   # the CAPTURE, which is theft), and T1550.003 is the pass-the-ticket use that follows.
-  - attack.credential_access
+  - attack.credential-access
   - attack.t1187
   - attack.t1558
-  - attack.lateral_movement
+  - attack.lateral-movement
   - attack.t1550.003
 logsource:
   product: windows

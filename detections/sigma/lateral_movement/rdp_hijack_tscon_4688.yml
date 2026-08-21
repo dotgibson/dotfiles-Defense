@@ -15,7 +15,7 @@ references:
 author: dotfiles-Defense
 date: 2026-06-30
 tags:
-  - attack.lateral_movement
+  - attack.lateral-movement
   - attack.t1563.002
 logsource:
   category: process_creation

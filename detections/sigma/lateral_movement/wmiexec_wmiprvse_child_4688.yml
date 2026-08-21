@@ -20,7 +20,7 @@ author: dotfiles-Defense
 date: 2026-06-30
 tags:
   - attack.execution
-  - attack.lateral_movement
+  - attack.lateral-movement
   - attack.t1047
 logsource:
   category: process_creation

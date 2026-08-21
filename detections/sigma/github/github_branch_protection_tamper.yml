@@ -17,8 +17,8 @@ references:
 author: dotfiles-Defense
 date: 2026-07-02
 tags:
-  - attack.defense_evasion
-  - attack.t1562.001
+  - attack.defense-impairment
+  - attack.t1685
 logsource:
   product: github
   service: audit
