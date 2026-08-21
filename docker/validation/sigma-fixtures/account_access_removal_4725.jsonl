@@ -1,5 +1,0 @@
-{"Event": {"System": {"EventID": 4725, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "attacker", "TargetUserName": "ir-analyst1"}}}
-{"Event": {"System": {"EventID": 4725, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "attacker", "TargetUserName": "ir-analyst2"}}}
-{"Event": {"System": {"EventID": 4724, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "attacker", "TargetUserName": "soc-manager"}}}
-{"Event": {"System": {"EventID": 4726, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "attacker", "TargetUserName": "breakglass-admin"}}}
-{"Event": {"System": {"EventID": 4725, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "attacker", "TargetUserName": "backup-operator"}}}

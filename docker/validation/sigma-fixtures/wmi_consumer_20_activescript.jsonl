@@ -1,1 +1,0 @@
-{"Event": {"System": {"EventID": 20, "Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "DC01"}, "EventData": {"RuleName": "-", "EventType": "WmiConsumerEvent", "UtcTime": "2026-06-30 12:00:05.000", "Operation": "Created", "User": "NT AUTHORITY\\SYSTEM", "Name": "ScriptConsumer", "Type": "Script", "Destination": "C:\\ProgramData\\update.vbs"}}}
