@@ -93,6 +93,9 @@ resource.type:api_token AND action.type:create
 // discovery/host_recon_command_burst.yml — Host discovery command base - built-in recon utility execution
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
+// discovery/host_recon_powershell_4104.yml — PowerShell discovery cmdlet base (4104)
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
 // discovery/ldap_recon_explicit_creds_4648.yml — Explicit-credential logon base - 4648 with a named target
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 

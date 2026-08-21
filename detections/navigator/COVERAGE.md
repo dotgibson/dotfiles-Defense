@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**94 rules · 111 detection documents · 70 techniques · 11 tactics · 24 logsources.**
+**95 rules · 113 detection documents · 70 techniques · 11 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
@@ -14,7 +14,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Stealth | TA0005 | 1 | 1 |
 | Defense Impairment | TA0112 | 6 | 10 |
 | Credential Access | TA0006 | 15 | 17 |
-| Discovery | TA0007 | 13 | 5 |
+| Discovery | TA0007 | 13 | 6 |
 | Lateral Movement | TA0008 | 9 | 7 |
 | Collection | TA0009 | 5 | 4 |
 | Exfiltration | TA0010 | 2 | 2 |
@@ -28,24 +28,24 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1003.003 | 1 | `ntds_dump_ntdsutil_vss_4688` |
 | T1003.006 | 1 | `dcsync_replication_4662` |
 | T1005 | 1 | `mass_file_read_4663` |
-| T1007 | 1 | `host_recon_command_burst` |
-| T1016 | 1 | `host_recon_command_burst` |
-| T1018 | 1 | `host_recon_command_burst` |
+| T1007 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
+| T1016 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
+| T1018 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1021 | 1 | `passthehash_4624_fanout` |
-| T1033 | 2 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst` |
+| T1033 | 3 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1046 | 1 | `ldap_recon_explicit_creds_4648` |
 | T1047 | 1 | `wmiexec_wmiprvse_child_4688` |
-| T1049 | 2 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst` |
+| T1049 | 3 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1053.005 | 1 | `scheduled_task_suspicious_4698` |
-| T1057 | 1 | `host_recon_command_burst` |
+| T1057 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1059 | 1 | `jenkins_script_console` |
 | T1069.001 | 1 | `local_group_enum_sweep_4798_4799` |
 | T1069.002 | 1 | `sharphound_ldap_sweep_4662` |
 | T1070 | 1 | `harbor_artifact_deleted` |
 | T1072 | 2 | `jenkins_job_backdoor`, `tfc_variable_injection` |
 | T1074.001 | 1 | `archive_staging_utility` |
-| T1082 | 1 | `host_recon_command_burst` |
-| T1087.001 | 2 | `host_recon_command_burst`, `local_group_enum_sweep_4798_4799` |
+| T1082 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
+| T1087.001 | 3 | `host_recon_command_burst`, `host_recon_powershell_4104`, `local_group_enum_sweep_4798_4799` |
 | T1087.002 | 2 | `ldap_recon_explicit_creds_4648`, `sharphound_ldap_sweep_4662` |
 | T1098 | 16 | `aws_login_profile_created`, `cloudflare_api_token_created`, `gcp_iam_policy_backdoor`, `github_credential_backdoor`, `gitlab_token_backdoor`, `harbor_robot_account_created`, `jenkins_api_token_created`, `k8s_clusteradmin_binding`, `npm_maintainer_added`, `okta_api_token_created`, `pypi_collaborator_added`, `pypi_trusted_publisher_added`, `rbcd_allowedtoact_5136`, `slack_app_installed`, `tfc_token_backdoor`, `vault_approle_backdoor` |
 | T1098.001 | 3 | `aws_iam_access_key_created`, `entra_sp_credential_backdoor`, `gcp_service_account_key_created` |
@@ -53,7 +53,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1110.003 | 1 | `password_spray_4625` |
 | T1114.003 | 1 | `gws_external_mail_forwarding` |
 | T1134.001 | 2 | `potato_seimpersonate_4688`, `potato_seimpersonate_sysmon_1` |
-| T1135 | 2 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst` |
+| T1135 | 3 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1136.001 | 1 | `rogue_account_creation_4720` |
 | T1136.002 | 2 | `machine_account_creation_burst_4741`, `rogue_account_creation_4720` |
 | T1136.003 | 1 | `snowflake_user_created` |
@@ -104,7 +104,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `collection` | `windows` | 2 |
 | `credential_access` | `windows` | 10 |
 | `defense_impairment` | `windows` | 1 |
-| `discovery` | `windows` | 5 |
+| `discovery` | `windows` | 6 |
 | `github` | `github` | 3 |
 | `gitlab` | `gitlab` | 3 |
 | `google_workspace` | `google_workspace` | 3 |

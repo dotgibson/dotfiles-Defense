@@ -181,6 +181,17 @@ purple-validatable out of the box.
 | `host_recon_command_burst` | proc create, distinct discovery commands per host (value_count correlation) | T1033 / T1082 / T1018 / T1016 / T1049 / T1057 / T1007 / T1087.001 / T1135 | Situational awareness · `whoami`/`net`/`nltest` sweep |
 | `local_group_enum_sweep_4798_4799` | 4798/4799 local group membership enumerated, distinct hosts per principal (value_count correlation) | T1069.001 / T1087.001 | AD enumeration · SharpHound LocalGroup / `net localgroup \\host` |
 | `host_enum_srvsvc_wkssvc_5145` | 5145 IPC$ to the srvsvc/wkssvc pipes, distinct hosts per principal (value_count correlation) | T1135 / T1049 / T1033 | SMB enumeration · smb-enum-nxc |
+| `host_recon_powershell_4104` | 4104 script blocks, distinct discovery cmdlets per host (value_count correlation) | T1033 / T1082 / T1018 / T1016 / T1049 / T1057 / T1007 / T1087.001 / T1135 | Situational awareness · the same sweep from an **interactive** PowerShell session |
+
+`host_recon_powershell_4104` is the independent-feed twin of `host_recon_command_burst`,
+not a keyword variant of it. Every selection in that rule needs a **process** with a known
+`Image` basename, so recon done inside one PowerShell session emits nothing there — no
+process, no 4688, no Sysmon 1. 4104 sees it, and is immune to a renamed binary because a
+cmdlet name is not a file on disk. It carries **no `Path` exclusion on purpose**: 4104
+emits an empty `Path` for an interactive console, and a `not filter` on an empty field
+nulls the whole match — so the obvious tuning move would suppress exactly the
+hands-on-keyboard case and keep the inventory scripts. Tune it with the threshold, triage
+on `Path` at alert time.
 
 **`persistence/`**
 

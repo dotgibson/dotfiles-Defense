@@ -85,8 +85,23 @@ process-creation policy or one EDR-blind host took most of the tactic with it. T
 on independent feeds now sit beside it — `local_group_enum_sweep_4798_4799.yml` (SAM-R
 local-group enumeration, the path SharpHound takes in-process without writing a 4688 at
 all) and `host_enum_srvsvc_wkssvc_5145.yml` (the srvsvc/wkssvc enumeration pipes, on a
-5145 feed the coercion rules already require). Five techniques still depend on that one
-file; that is better, not solved.
+5145 feed the coercion rules already require), and `host_recon_powershell_4104.yml` closes
+the last of it: the five techniques that still hung on that one file (T1007, T1016, T1018,
+T1057, T1082) now have a second feed in PowerShell script-block logging.
+
+That last one is worth a sentence, because it is not a duplicate of the 4688 rule with
+different keywords. Every selection in `host_recon_command_burst` requires a PROCESS to be
+created with a known `Image` basename, so an operator running their situational awareness
+inside one PowerShell session — `Get-Process`, `Get-ComputerInfo`, `Get-NetIPConfiguration`
+— creates no process and emits nothing there at all. 4104 sees it, survives a renamed
+binary (a cmdlet name is not a file on disk), and survives the process-creation feed being
+off. It needs Script Block Logging turned on, the same shape of ingestion precondition the
+4663 rules carry for their SACL.
+
+Its own limit, recorded so it is not rediscovered: 4104 logs a script BLOCK, so a
+monolithic `.ps1` doing all the recon at once is one event and will not trip a
+distinct-block count. The interactive operator is what it adds; a scripted one is caught by
+the 4688 twin only if the script shells out.
 
 ### Declined coverage (recorded, not planned)
 
