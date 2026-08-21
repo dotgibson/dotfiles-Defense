@@ -1,1 +1,0 @@
-{"eventSource": "s3.amazonaws.com", "eventName": "GetObject", "userIdentity": {"type": "AssumedRole", "arn": "arn:aws:sts::111122223333:assumed-role/backup-replication/nightly-8412"}, "requestParameters": {"bucketName": "crown-jewels-prod", "key": "customers/2026/export-0417.csv"}, "sourceIPAddress": "10.0.4.12"}

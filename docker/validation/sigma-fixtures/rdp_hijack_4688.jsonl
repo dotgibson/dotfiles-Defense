@@ -1,1 +1,0 @@
-{"Event": {"System": {"EventID": 1, "Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "DC01"}, "EventData": {"Image": "C:\\Windows\\System32\\tscon.exe", "CommandLine": "tscon 2 /dest:rdp-tcp#1", "ParentImage": "C:\\Windows\\System32\\cmd.exe", "User": "NT AUTHORITY\\SYSTEM"}}}

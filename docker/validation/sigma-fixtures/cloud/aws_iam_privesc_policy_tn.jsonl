@@ -1,1 +1,0 @@
-{"eventSource": "iam.amazonaws.com", "eventName": "AttachUserPolicy", "userIdentity": {"type": "AssumedRole", "arn": "arn:aws:sts::111122223333:assumed-role/terraform-apply/ci-run-8412"}, "requestParameters": {"userName": "app-deployer", "policyArn": "arn:aws:iam::111122223333:policy/AppDeployReadOnly"}}

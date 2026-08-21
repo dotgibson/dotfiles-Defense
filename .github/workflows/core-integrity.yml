@@ -1,17 +1,98 @@
 name: core-integrity
 
-# Per-repo core-guard: block a hand-edit to this repo's vendored core/ at PR time.
-# Delegates to the reusable workflow in dotfiles-core (single definition of the
-# content-addressed tree-SHA check); the central sweep there also catches drift
-# weekly. The durable replacement for the un-versioned .git/hooks core-guard.
+# Tamper check for the fleet: every OS repo's vendored core/ is a git-subtree copy of
+# dotfiles-core, overwritten on the next `make sync` — so a hand-edit there is silent
+# (works until a sync clobbers it, never reaches the source of truth). The only guard
+# was a LOCAL .git/hooks/pre-commit (blib_install_core_guard), which isn't
+# version-controlled and so doesn't exist on a fresh clone or in CI. This is the
+# durable, CI-runnable replacement: it clones the fleet and runs
+# scripts/core-integrity.sh, which compares each repo's `HEAD:core` tree object to
+# dotfiles-core's tree at the commit that repo's core.lock pins (content-addressed, so
+# any edit diverges the hash). Fails red + writes a job summary on any tamper.
+#
+# Companion to fleet-drift.yml (staleness), not a duplicate: this checks INTEGRITY
+# (is core/ pristine?), drift checks CURRENCY (is core/ the latest?). Read-only — it
+# never pushes. First-party only: anonymous shallow clones of the public repos + the
+# job's own checkout; no third-party action to trust.
+
 on:
-  pull_request:
-  push:
-    branches: [main]
+  schedule:
+    - cron: "30 6 * * 1" # Mondays 06:30 UTC, just after fleet-drift's 06:00 run
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
+concurrency:
+  group: core-integrity
+  cancel-in-progress: true
+
 jobs:
-  guard:
-    uses: dotgibson/dotfiles-core/.github/workflows/core-integrity-call.yml@v4
+  integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Full history (fetch-depth: 0) so every repo's locked core_sha resolves to a
+      # tree object here; a shallow checkout would miss older locked commits and the
+      # script would report UNVERIFIABLE for repos that are actually fine.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Clone the fleet (public, anonymous, shallow)
+        run: |
+          set -euo pipefail
+          fleet="$RUNNER_TEMP/fleet"
+          mkdir -p "$fleet"
+          # The core/-vendoring fleet from scripts/os-repos.txt. depth 1 is plenty:
+          # the check only needs each repo's current HEAD:core tree object + core.lock.
+          # (dotfiles-Windows is excluded — it has no vendored core/ subtree.)
+          repos=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' scripts/os-repos.txt)
+          for r in $repos; do
+            echo "::group::clone $r"
+            git clone --depth 1 "https://github.com/${GITHUB_REPOSITORY_OWNER}/${r}.git" "$fleet/$r"
+            echo "::endgroup::"
+          done
+
+      - name: Check vendored core/ integrity vs core.lock
+        run: |
+          set -o pipefail
+          # Merge stderr into the pipe: core-integrity.sh emits its TAMPERED rows + the
+          # failure line via fail() → stderr, so a stdout-only tee would drop exactly
+          # the problem repos from the job summary below.
+          ./scripts/core-integrity.sh --root "$RUNNER_TEMP/fleet" --color never 2>&1 \
+            | tee "$RUNNER_TEMP/integrity.txt"
+        continue-on-error: true
+        id: check
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "### Core integrity — vendored core/ vs each core.lock"
+            echo ""
+            echo '```'
+            cat "$RUNNER_TEMP/integrity.txt" 2>/dev/null || echo "(no output captured)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail on tamper
+        if: steps.check.outcome != 'success'
+        run: |
+          echo "Core integrity failure — a vendored core/ was hand-edited or its core.lock points at a phantom commit. Fix upstream in dotfiles-core, then 'make sync'." >&2
+          exit 1
+
+  # Turn a red run into a deduplicated issue (G1).
+  notify-failure:
+    needs: integrity
+    if: failure()
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/notify-failure-call.yml
+    with:
+      workflow: core-integrity
+      title: "ci-failure: core-integrity sweep is red"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      details: "The weekly tamper sweep failed. A vendored `core/` may have been hand-edited or a `core.lock` points at a phantom commit — fix upstream in dotfiles-core then `make sync`, or the sweep itself may be broken."
