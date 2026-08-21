@@ -26,6 +26,13 @@ name: lint (reusable)
 # Same scoping decisions as before: core/ is excluded (gated by its own CI), no Lua
 # leg (all Lua lives under core/), shfmt is advisory. Tools are SHA-256-verified by
 # the shared composite action against pinned checksums in scripts/tool-versions.env.
+#
+# ONE leg needs no pinned tool and is not a linter: RETURN-trap discipline, a grep. It is
+# here rather than in SHELLCHECK_OPTS because shellcheck genuinely cannot see the bug —
+# the broken line is valid bash — and because bootstrap-test.yml never runs provision(),
+# so no gate in the fleet executes the code where it detonates (#512, #461). See the long
+# note on that step. It is BLOCKING, and was verified against all nine fleet repos plus
+# Core before landing: every one is green today, so nobody is red on arrival.
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -149,6 +156,65 @@ jobs:
           rc=0
           for f in "${files[@]}"; do echo "bash -n $f"; bash -n "$f" || rc=1; done
           exit $rc
+
+      # ── BLOCKING: a leaked RETURN trap. shellcheck and `bash -n` CANNOT see this one,
+      # which is why it needs its own leg rather than another SHELLCHECK_OPTS entry.
+      #
+      # A bash RETURN trap is a GLOBAL slot, not a function-scoped one. Arm one inside a
+      # function and it stays armed in the CALLER's frame, firing a SECOND time when the
+      # caller returns — where the local it was cleaning up is out of scope and `set -u`
+      # makes that fatal. That is dotgibson/dotfiles-Debian#2: every fresh-box run died the
+      # instant provision() returned, AFTER installing everything but BEFORE wire_links —
+      # a box carrying the whole stack and not one symlink. It shipped green because the
+      # broken line is VALID BASH and because bootstrap-test.yml only ever runs
+      # --links-only, so no gate in the fleet executes provision() at all (#512, #461).
+      #
+      # THE RULE ITSELF LIVES IN ONE PLACE: scripts/lib/common.sh :: _core_return_trap_hits,
+      # in the dotfiles-core checkout this workflow already puts at the workspace root. It is
+      # the SAME function audit-core.sh §5e runs over Core's own tree, and it is covered by
+      # ten fixtures in scripts/test-core.sh — both the shapes it must catch and the ones it
+      # must ignore. This leg shipped with the pattern inlined and #555 added the helper
+      # separately, which left the rule written twice with only the Core-facing copy tested;
+      # the fleet-facing one was the half that could silently drift. Calling the helper is
+      # what makes "one definition" true. The reasoning behind the pattern — why `trap` is
+      # matched as a word anywhere on the line, why the signal is a token, why comment lines
+      # are filtered — is documented there, once, rather than restated here.
+      - name: RETURN-trap discipline (repo-owned bash/sh)
+        working-directory: caller
+        env:
+          CORE_ROOT: ${{ github.workspace }}
+        run: |
+          excludes=(':!:core/**')
+          # shellcheck disable=SC2206
+          [ -n "$EXTRA_EXCLUDES" ] && excludes+=($EXTRA_EXCLUDES)
+          mapfile -t files < <(git ls-files '*.sh' "${excludes[@]}")
+          if [ ${#files[@]} -eq 0 ]; then echo "no repo-owned .sh"; exit 0; fi
+          # common.sh is a sourced library: idempotent, no shebang, and it resolves its own
+          # ux.sh sibling via ${BASH_SOURCE}, so sourcing it from caller/ is safe.
+          # shellcheck source=scripts/lib/common.sh
+          . "$CORE_ROOT/scripts/lib/common.sh"
+          # The helper returns line NUMBERS (same contract as _core_pipefail_hits, so
+          # audit-core.sh can format them its own way). Re-read the line here: in a CI log
+          # the offending text is what makes the finding actionable without a checkout.
+          rc=0
+          for f in "${files[@]}"; do
+            while IFS= read -r hit; do
+              [ -n "$hit" ] || continue
+              echo "    $f:$hit:$(sed -n "${hit}p" "$f")"
+              rc=1
+            done < <(_core_return_trap_hits "$f")
+          done
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::a RETURN trap is armed without disarming itself (see the lines above)"
+            echo "A bash RETURN trap is a GLOBAL slot, not a function-scoped one: armed inside a"
+            echo "function it survives into the CALLER frame and fires again on ITS return, where"
+            echo "the local it cleans up is out of scope and set -u makes that fatal."
+            echo "Disarm first, and keep the disarm first:"
+            echo "    trap 'trap - RETURN; rm -rf \"\$tmp\"' RETURN"
+            echo "Background: dotgibson/dotfiles-Debian#2, dotgibson/dotfiles-core#512."
+            exit 1
+          fi
+          echo "${#files[@]} repo-owned .sh — every RETURN trap disarms itself"
 
       - name: zsh -n (syntax, repo-owned zsh modules)
         working-directory: caller

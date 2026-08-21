@@ -351,15 +351,24 @@ jobs:
   audit-alpine:
     needs: changes
     # Alpine re-validates the SHELL layer against musl/busybox; a docs- or nvim-only
-    # change can't affect that, so skip the whole container spin unless shell changed.
-    if: needs.changes.outputs.shell == 'true'
+    # change can't affect that, so the container spin is skipped — but at STEP level,
+    # not job level. This context is a REQUIRED status check on main, and a job skipped
+    # by a job-level `if:` reports the `skipped` conclusion, which a ruleset does NOT
+    # accept as satisfied. That made every docs-only PR permanently unmergeable. Running
+    # the job with guarded steps reports `success` instead, at the cost of one runner
+    # boot, while still never spinning the container for a change that can't reach it.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Not applicable to this change
+        if: needs.changes.outputs.shell != 'true'
+        run: echo "shell unchanged — musl/busybox re-validation cannot be affected; reporting success for the required check."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.changes.outputs.shell == 'true'
         with:
           persist-credentials: false
       - name: Audit on Alpine (musl + busybox)
+        if: needs.changes.outputs.shell == 'true'
         # The scope is passed through the ENVIRONMENT, never interpolated into the run:
         # body — same rule as #422. It is our own classifier's true/false, but a `${{ }}`
         # expanded inside a shell string is a code-injection shape regardless of who
@@ -396,15 +405,21 @@ jobs:
   audit-arch:
     needs: changes
     # Arch re-validates the SHELL layer against the rolling GNU toolchain; a docs- or
-    # nvim-only change can't affect that, so skip the container spin unless shell changed.
-    if: needs.changes.outputs.shell == 'true'
+    # nvim-only change can't affect that, so the container spin is skipped at STEP level.
+    # Same reason as audit-alpine above: this is a REQUIRED check on main, and a
+    # job-level skip reports `skipped`, which a ruleset refuses to count as satisfied.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Not applicable to this change
+        if: needs.changes.outputs.shell != 'true'
+        run: echo "shell unchanged — rolling-toolchain re-validation cannot be affected; reporting success for the required check."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.changes.outputs.shell == 'true'
         with:
           persist-credentials: false
       - name: Audit on Arch (rolling glibc toolchain)
+        if: needs.changes.outputs.shell == 'true'
         # Scope via the environment, not interpolated into the run: body — see the Alpine
         # leg above and #422.
         env:

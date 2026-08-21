@@ -33,8 +33,9 @@ Documentation=https://docs.atuin.sh/reference/daemon/
 # whichever repos guessed wrong. All three real locations are listed below:
 #   %h/.atuin/bin   atuin's OWN installer (`curl -fsSL https://setup.atuin.sh | sh`) — this is
 #                   what dotfiles-Fedora's bootstrap runs, and atuin's install.sh hard-codes
-#                   $HOME/.atuin/bin. It is FIRST because it is the one Core's own PATH setup
-#                   (zsh/00-tools.zsh adds only ~/.local/bin) does not cover.
+#                   $HOME/.atuin/bin. It is FIRST here because that is the order Core itself
+#                   uses: zsh/00-tools.zsh prepends this dir ahead of ~/.local/bin (#425).
+#                   A user unit inherits no shell PATH, so this list must still stand alone.
 #   %h/.local/bin   where the fleet's bootstrap puts binary-distributed tools (starship, mise,
 #                   carapace, Core's clip helpers).
 #   /usr/bin        where a distro packages it (Arch, openSUSE, Gentoo, Alpine).

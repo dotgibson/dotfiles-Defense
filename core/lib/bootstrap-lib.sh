@@ -886,9 +886,16 @@ blib_sudo_keepalive_stop() {
 # Without this those guards are answered by the PATH of whatever shell launched the
 # bootstrap — on a fresh box, bash, which has none of these entries. `cargo install` writes
 # ~/.cargo/bin and `go install` writes $GOBIN (~/.local/bin by convention here), while
-# ~/.cargo/bin reaches PATH only via the OS zsh layer — i.e. only inside a Core shell that
-# does not exist yet. So every guard reported "missing" and every re-run rebuilt the whole
-# from-source tool set: minutes of work, silently discarded, on every single bootstrap.
+# ~/.cargo/bin reaches PATH only inside a Core shell, which does not exist yet. So every
+# guard reported "missing" and every re-run rebuilt the whole from-source tool set: minutes
+# of work, silently discarded, on every single bootstrap.
+#
+# zsh/00-tools.zsh now prepends this SAME four-dir list, resolved the same way, before it
+# probes for HAVE_* flags (#425 — it used to add only ~/.local/bin, and cargo-installed
+# tools reached PATH a whole load-order band too late to be detected). The duplication is
+# deliberate and the two must stay in step: this file is bash and runs before any Core shell
+# exists, that one is zsh and runs in every interactive shell, so neither can source the
+# other. Change the dirs or their resolution here, change them there.
 #
 # Only directories that EXIST are added, and never twice, so this is safe to call more than
 # once and cannot inject a bogus PATH entry.
