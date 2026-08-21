@@ -1,1 +1,1 @@
-{"action": "pref.two_factor_auth_changed", "two_factor_required": true}
+{"action": "pref.two_factor_prevent_sms_changed"}

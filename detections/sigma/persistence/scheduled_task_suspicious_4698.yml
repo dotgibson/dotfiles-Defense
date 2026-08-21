@@ -3,10 +3,16 @@ id: 8ae44ad2-6331-4444-97f4-b2eac893717c
 status: experimental
 description: |
   Detects scheduled-task persistence: a 4698 task-created event whose task XML runs
-  encoded/hidden PowerShell, a LOLBin (mshta/regsvr32/rundll32), or something from a
-  user-writable/temp path. Detect on the action, not the task name; 4702 catches the
-  modify-an-existing-task variant. Baseline your software's legit tasks and alert on
-  the rest.
+  encoded/hidden PowerShell or a LOLBin (mshta/regsvr32/rundll32). Detect on the action,
+  not the task name; 4702 catches the modify-an-existing-task variant. Baseline your
+  software's legit tasks and alert on the rest.
+  Scoped to the interpreter/LOLBin shapes on purpose: bare '\Users\' and '\Temp\'
+  TaskContent matches were REMOVED for the same reason service_creation_psexec_7045
+  removed them from ImagePath - per-user updaters (Chrome, Edge, OneDrive, Teams) and
+  third-party installers register tasks from those paths at volume, and a path match that
+  common turns a high-severity rule into a mute button. If you want drop-directory
+  coverage, add it as a separate lower-confidence rule gated on a task-name or
+  signed-binary allowlist rather than folding it back into this OR.
   Validate (purple): run schtasks /create (or nxc -M schtask_as) from dotfiles-Offense
   (hacktheplanet "Persistence" fold; htpx pair schtask-persist). Requires the
   Object Access > Other Object Access Events audit subcategory.
@@ -32,8 +38,6 @@ detection:
       - '-w hidden'
       - '-WindowStyle Hidden'
       - 'FromBase64String'
-      - '\Users\'
-      - '\Temp\'
       - '\mshta.exe'
       - '\regsvr32.exe'
       - '\rundll32.exe'

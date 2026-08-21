@@ -101,8 +101,8 @@ docker/validation/sigma-fixtures/cloud/pypi_token_release_upload_tn.jsonl	unveri
 docker/validation/sigma-fixtures/cloud/pypi_token_release_upload_tp.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud/pypi_trusted_publisher_added_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud/pypi_trusted_publisher_added_tp.jsonl	unverified	-
-docker/validation/sigma-fixtures/cloud/slack_2fa_enforcement_disabled_tn.jsonl	unverified	-
-docker/validation/sigma-fixtures/cloud/slack_2fa_enforcement_disabled_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/slack_2fa_enforcement_disabled_tn.jsonl	vendor-documented	action names from Slack Audit Logs actions reference (docs.slack.dev/reference/audit-logs-api/methods-actions-reference/); pref.two_factor_auth_changed + sibling pref.two_factor_prevent_sms_changed
+docker/validation/sigma-fixtures/cloud/slack_2fa_enforcement_disabled_tp.jsonl	vendor-documented	action names from Slack Audit Logs actions reference (docs.slack.dev/reference/audit-logs-api/methods-actions-reference/); pref.two_factor_auth_changed + sibling pref.two_factor_prevent_sms_changed
 docker/validation/sigma-fixtures/cloud_slack_app_installed.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud_slack_external_shared_channel.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud/snowflake_data_unload_tn.jsonl	unverified	Snowflake column casing unconfirmed — flagged by /detection-review
@@ -124,6 +124,7 @@ docker/validation/sigma-fixtures/cloud/vault_audit_device_disabled_tp.jsonl	unve
 docker/validation/sigma-fixtures/cloud/vault_bulk_secret_read_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud/vault_bulk_secret_read_tp.jsonl	unverified	-
 docker/validation/sigma-fixtures/coercion_5145.jsonl	unverified	-
+docker/validation/sigma-fixtures/coercion_5145_tn.jsonl	unverified	hand-authored near-miss of the TP; machine-account form of the same 5145 event
 docker/validation/sigma-fixtures/data_destruction_4688.jsonl	unverified	-
 docker/validation/sigma-fixtures/dcshadow_4742.jsonl	unverified	-
 docker/validation/sigma-fixtures/dcshadow_4742_tn.jsonl	unverified	-
