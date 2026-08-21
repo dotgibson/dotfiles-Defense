@@ -1,0 +1,19 @@
+# splunk-precedence-allowlist.tsv — Splunk searches that mix OR and NOT in one paren
+# scope, each reviewed once and signed off.
+#
+# WHY. pySigma's Splunk backend does not parenthesise a top-level OR against a top-level
+# NOT, so `(a) OR (b) NOT (filter)` is correct only under the search command's documented
+# precedence (parentheses, NOT, OR, AND). It is right today; it is one reading away from
+# letting a branch escape its filter, and eval/where evaluate AND before OR. See #166.
+#
+# check-splunk-precedence.sh flags every such search and fails unless it has a row here,
+# so the next one is a review conversation rather than a silent behaviour change. A row
+# is NOT a suppression — it is a record that someone traced the binding and found it
+# sound. The reason column is required and may not be '-'.
+#
+# FORMAT: <file><TAB><stanza title><TAB><reason>
+#
+# Keyed on stanza title because the generated conf carries no rule path. Retitling a rule
+# drops it out of this list and fails the gate, which is the right direction to be wrong.
+detections/siem/splunk/savedsearches.generated.conf	Collected data staged into an archive (T1560.001)	sigma condition is `selection_password or (1 of selection_staging_* and not filter_backup_tooling)`; the backend groups the outer OR but leaves `(staging) OR (compress-archive) NOT ParentImage=backup-agent` ungrouped inside it. Under search precedence that is (staging OR compress) AND NOT backup-agent, which is the intent: the password branch is deliberately unfiltered, the two staging-path branches are both filtered. Predates #166 and is unchanged by it
+detections/siem/splunk/savedsearches.generated.conf	Mass file read - local data collection sweep (T1005)	sigma condition is `(selection_list or selection_mask) and not filter_indexers`; the backend emits `source= (list) OR (mask) NOT (indexers)`. Under search precedence the leading source= term AND the filter both bind to both branches, which is the intent. Long-form note lives in the rule's own description (#165)
