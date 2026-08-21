@@ -5,8 +5,6 @@
 # with the given title already exists, append the report as a comment; otherwise
 # open a new one. Keeps a weekly bot from stacking duplicate issues. Invoked by
 # .github/workflows/claude-routines.yml via `bash …` (so it needs no exec bit).
-# (Mirrors dotfiles-core's helper of the same name — Defense doesn't vendor Core's
-# scripts/, so the blue role layer carries its own copy.)
 #
 # Usage: file-routine-issue.sh <issue-title> <report-file>
 # Requires: gh (preinstalled on GitHub runners) + GH_TOKEN in the environment.
@@ -26,11 +24,7 @@ body="${RUNNER_TEMP:-/tmp}/routine-issue-body.md"
 {
   printf '## %s — %s\n\n' "$title" "$(date -u +%Y-%m-%d)"
   cat "$report"
-  # Attribute to the workflow that actually invoked this, not a hard-coded name: the
-  # helper is shared (claude-routines and core-drift both call it), so a fixed footer
-  # would misattribute every report from any caller but the first.
-  printf '\n_Filed by the %s workflow. Report-first: review and act — nothing was changed._\n' \
-    "${GITHUB_WORKFLOW:-claude-routines}"
+  printf '\n_Filed by the claude-routines workflow. Report-first: review and act — nothing was changed._\n'
 } >"$body"
 
 # gh search is fuzzy, so re-check the title exactly before deciding to dedup.

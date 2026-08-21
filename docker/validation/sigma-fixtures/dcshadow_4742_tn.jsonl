@@ -1,1 +1,0 @@
-{"Event": {"System": {"EventID": 4742, "Channel": "Security", "Computer": "DC01"}, "EventData": {"ServicePrincipalNames": "GC/dc1.corp.local/corp.local", "TargetUserName": "DC1$", "SubjectUserName": "admin"}}}
