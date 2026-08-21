@@ -191,7 +191,7 @@ purple-validatable out of the box.
 | `rogue_account_creation_4720` | 4720 account created | T1136.002 / T1136.001 | Persistence · rogue-account |
 | `machine_account_creation_burst_4741` | 4741 burst (value_count correlation) | T1136.002 | AD attack paths · rbcd-impacket |
 
-**`defense_evasion/`**
+**`defense_impairment/`**
 
 | Rule | Event / source | ATT&CK | Validate with |
 | ---- | -------------- | ------ | ------------- |
@@ -445,7 +445,7 @@ comment isn't enforcement, so this is the discoverable checklist instead.)
 | Rule | Substitute | Until you do |
 | ---- | ---------- | ------------ |
 | `privilege_escalation/rbcd_allowedtoact_5136` | `filter_delegation_admins` → your delegation-admin accounts | can't tell admin from user; pair with `machine_account_creation_burst_4741` for fidelity that doesn't need it |
-| `defense_evasion/dcshadow_rogue_dc_4742` | `filter_real_dcs` → your real DC computer accounts | a `GC/` SPN write onto another real DC would alert (low risk — rare regardless) |
+| `defense_impairment/dcshadow_rogue_dc_4742` | `filter_real_dcs` → your real DC computer accounts | a `GC/` SPN write onto another real DC would alert (low risk — rare regardless) |
 | `lateral_movement/unconstrained_delegation_4624` | `TargetUserName` → your DC computer accounts, **and** `filter_dc_destinations` → those DCs' hostnames | **inert** — the rule matches only the `DC1$`/`DC2$` examples, so a coerced logon from any other DC is missed entirely. This is the one placeholder that makes its rule a no-op rather than merely noisy; fill it first. |
 | `cloud/entra_illicit_consent_grant` | `filter_known_apps` → sanctioned app (client) IDs | verified LOB apps holding mail/file scopes alert (the high-risk-scope match still scopes it) |
 | `snowflake/snowflake_data_unload` | `filter_known_stages` → sanctioned named stages | a named *internal* stage (not `@%`/`@~`) alerts alongside external ones |

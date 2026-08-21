@@ -103,7 +103,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `cloudflare` | `cloudflare` | 3 |
 | `collection` | `windows` | 2 |
 | `credential_access` | `windows` | 10 |
-| `defense_evasion` | `windows` | 1 |
+| `defense_impairment` | `windows` | 1 |
 | `discovery` | `windows` | 5 |
 | `github` | `github` | 3 |
 | `gitlab` | `gitlab` | 3 |
