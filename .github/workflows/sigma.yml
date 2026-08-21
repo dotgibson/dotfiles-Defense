@@ -108,7 +108,7 @@ jobs:
         # exclusion that quietly stopped matching keeps every TP green while the rule
         # floods the analyst.
         #
-        # Adopted while green — 94/94 rules covered, 34/34 filtered rules carrying a true
+        # Adopted while green — 94/94 rules covered, 35/35 filtered rules carrying a true
         # negative — so it enforces the standard already being met rather than imposing a
         # new one. Genuine exceptions go in no-fixture-allowlist.tsv, with a reason.
         run: ./docker/validation/check-rule-coverage.sh

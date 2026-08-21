@@ -22,7 +22,7 @@ validation note. Real IOC values from cases stay in `~/cases/*/iocs`, never here
 ## CI gate — the rules are validated as code
 
 The Sigma rules are gated on every change by `.github/workflows/sigma.yml` (the
-repo's `lint.yml` only covers shell). Six hard checks, one advisory:
+repo's `lint.yml` only covers shell). Eight hard checks, one advisory:
 
 1. **Structural lint** (hermetic) —
    `sigma check --fail-on-issues -c detections/sigma-validation-config.yml`.
@@ -54,7 +54,23 @@ repo's `lint.yml` only covers shell). Six hard checks, one advisory:
    `methodology-check: known-absent` marker. The inverse direction is the useful one — a
    technique the doc calls a gap quietly becoming covered makes the prose around it wrong,
    and this fails the build at that moment.
-7. **ATT&CK-tag validity** — advisory (`continue-on-error`); checks each
+7. **Validation coverage** — `docker/validation/check-rule-coverage.sh`. The gates above
+   prove a rule *parses* and *compiles*; firing is proved by `run-sigma-validation.sh`,
+   which iterates the **manifests**, not the corpus — so a rule nobody listed is silently
+   never run against a fixture: it compiles, it ships, and nothing ever demonstrated it
+   fires. This closes that loop and the matching one for exclusions: a true positive shows
+   a rule *can* fire and says nothing about whether a `filter_*` still excludes, so every
+   rule carrying one must also ship a true negative. Genuine exceptions go in
+   `no-fixture-allowlist.tsv`, with a reason.
+8. **Fixture provenance** — `docker/validation/check-fixture-provenance.sh`. The coverage
+   gate proves every rule *has* a fixture; it cannot prove the fixture reflects the
+   provider's schema. Where a fixture was hand-written from the same belief that produced
+   the rule, the test is circular — the rule passes its true positive *and* its true
+   negative while being inert in production (#149). No gate can tell a plausible invented
+   field from a real one, so this enforces only that the distinction is never lost: every
+   fixture a manifest references declares whether its field names are `captured`,
+   `vendor-documented`, or `unverified`.
+9. **ATT&CK-tag validity** — advisory (`continue-on-error`); checks each
    `attack.tXXXX` is a real published technique, but never breaks the build on a
    transient MITRE download failure.
 
@@ -70,6 +86,8 @@ detections/siem/gen-siem.sh --check                                             
 detections/navigator/gen-navigator.sh --check                                              # ATT&CK Navigator layer drift
 detections/navigator/gen-coverage.sh --check                                               # ATT&CK coverage report (COVERAGE.md) drift
 detections/check-methodology.sh                                                             # DEFENSE-METHODOLOGY.md claims still true
+docker/validation/check-rule-coverage.sh                                                   # every rule fixtured; every filter_* has a true negative
+docker/validation/check-fixture-provenance.sh                                              # every fixture declares where its schema came from
 ```
 
 `convert.sh` is the reproducible "Sigma → backend" *compile check*: it compiles each
