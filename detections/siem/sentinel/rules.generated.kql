@@ -84,7 +84,7 @@ OperationName in~ ("Add service principal credentials", "Add application credent
 // credential_access/password_spray_4625.yml — Password spray base - failed network logon (4625)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
-// defense_evasion/dcshadow_rogue_dc_4742.yml — DCShadow - rogue DC registration (GC SPN added to a non-DC)
+// defense_impairment/dcshadow_rogue_dc_4742.yml — DCShadow - rogue DC registration (GC SPN added to a non-DC)
 (EventID == 4742 and ServicePrincipalNames contains "GC/") and (not((TargetUserName in~ ("DC1$", "DC2$"))))
 
 // discovery/host_enum_srvsvc_wkssvc_5145.yml — Host enumeration base - IPC$ access to the srvsvc / wkssvc pipes
