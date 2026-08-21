@@ -221,7 +221,7 @@ Two techniques carry a deliberate set of rules, covering different halves:
 
 | Rule | Event / source | ATT&CK | Validate with |
 | ---- | -------------- | ------ | ------------- |
-| `mass_file_read_4663` | 4663 read handles (`0x1`), distinct files per host+process (value_count correlation) | T1005 | collection/exfil · local-data-collection |
+| `mass_file_read_4663` | 4663 read handles (`AccessList` `%%4416`, or `AccessMask` `0x1`), distinct files per host+process (value_count correlation) | T1005 | collection/exfil · local-data-collection |
 | `archive_staging_utility` | proc create (rar/7z/tar/makecab under a password or into a staging path) | T1560.001 / T1074.001 | collection/exfil · archive-staging-rar |
 
 The two are the halves of one step, and they chain: `mass_file_read_4663` catches the
@@ -231,9 +231,16 @@ progress; if egress follows (the `network/` C2 and exfil detections), exfiltrati
 already is.
 
 `mass_file_read_4663` is the read-side twin of `impact/mass_file_encryption_4663` —
-same event, same SACL, different `AccessMask`. The masks are what separate *someone is
+same event, same SACL, different access rights. The rights are what separate *someone is
 copying the file share* from *someone is encrypting it*, so if you turned on Object
-Access auditing for the impact rule, this one's data is already flowing. It is also
+Access auditing for the impact rule, this one's data is already flowing. Both rules match
+those rights on **two** fields: `AccessList`, which names one right per `%%NNNN` token and
+is therefore unaffected by whatever else the same operation touched, and `AccessMask`,
+which is the hexadecimal OR of all of them and so only equals the isolated bit when that
+right was the only one used. `AccessList` is the anchor; the mask is the fallback for
+pipelines that drop it. Keying on the mask alone is how both correlations came to be
+[silently inert](https://github.com/dotgibson/dotfiles-Defense/issues/159) — they matched
+nothing, fired never, and passed every CI gate doing it. It is also
 **the noisiest rule in the corpus**, which is said in the rule itself rather than left
 to be discovered: reads are orders of magnitude more common than writes, so its
 threshold is higher (200 vs 100) *and* its base event ships a `filter_indexers`
