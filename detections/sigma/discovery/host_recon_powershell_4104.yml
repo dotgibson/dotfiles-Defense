@@ -38,6 +38,20 @@ description: |
   threshold and with triage on Path at alert time, never with a Path exclusion in the rule.
   (Same family as the k8s array-traversal note and the Splunk OR/NOT precedence note: a
   predicate that looks like coverage and is silently none.)
+  Second residual, at the feed level rather than this rule's: 4104 is a PowerShell 5.0+
+  event, and an operator can step off the feed entirely. "powershell -Version 2" runs the
+  pre-5 engine, which has neither script-block logging nor AMSI and emits no 4104 at all
+  (it needs .NET 2.0/3.5 present on the host, often true on servers); patching AMSI or the
+  ScriptBlockLogging ETW provider in-process does the same to the current engine. Either
+  way this rule, and every 4104 rule, goes dark - the same shape as the 4663 rules losing
+  their SACL, except the attacker can remove this precondition rather than the deployment
+  forgetting to set it. What that costs the attacker is a louder artifact somewhere else:
+  the downgrade is itself a process creation carrying "-version 2" (or "-v 2") on a
+  powershell command line, which the 4688/Sysmon-1 feed sees - but by a launcher-focused
+  rule this repo does not yet carry, not by this one or its process-creation twin, both of
+  which key on the recon primitives (cmdlet names / utility image names) rather than the
+  interpreter's own flags. Named here so the gap is visible; closing it is a separate rule
+  on the process-creation feed, not a keyword this one can add.
   Requires Script Block Logging (Computer Configuration > Administrative Templates >
   Windows Components > Windows PowerShell > Turn on PowerShell Script Block Logging).
   Without it 4104 is not emitted at all and this rule is inert - the same ingestion
