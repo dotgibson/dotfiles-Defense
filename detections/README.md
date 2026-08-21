@@ -22,7 +22,7 @@ validation note. Real IOC values from cases stay in `~/cases/*/iocs`, never here
 ## CI gate — the rules are validated as code
 
 The Sigma rules are gated on every change by `.github/workflows/sigma.yml` (the
-repo's `lint.yml` only covers shell). Eight hard checks, one advisory:
+repo's `lint.yml` only covers shell). Nine hard checks, one advisory:
 
 1. **Structural lint** (hermetic) —
    `sigma check --fail-on-issues -c detections/sigma-validation-config.yml`.
@@ -70,7 +70,14 @@ repo's `lint.yml` only covers shell). Eight hard checks, one advisory:
    field from a real one, so this enforces only that the distinction is never lost: every
    fixture a manifest references declares whether its field names are `captured`,
    `vendor-documented`, or `unverified`.
-9. **ATT&CK-tag validity** — advisory (`continue-on-error`); checks each
+9. **README gate-list correspondence** — `detections/check-readme-gates.sh`. This list
+   and the block below are a second copy of the workflow's steps, and a copy that nothing
+   compares is a copy that drifts — which is how the two gates above went undocumented
+   while this section claimed six. Asserts every hard gate appears in the local block,
+   that the block contains no command CI doesn't run, and that these counts match. The
+   prose describing each gate is deliberately left alone; that's editorial, the same way
+   `check-methodology.sh` leaves the methodology table's judgement columns alone.
+10. **ATT&CK-tag validity** — advisory (`continue-on-error`); checks each
    `attack.tXXXX` is a real published technique, but never breaks the build on a
    transient MITRE download failure.
 
@@ -88,6 +95,7 @@ detections/navigator/gen-coverage.sh --check                                    
 detections/check-methodology.sh                                                             # DEFENSE-METHODOLOGY.md claims still true
 docker/validation/check-rule-coverage.sh                                                   # every rule fixtured; every filter_* has a true negative
 docker/validation/check-fixture-provenance.sh                                              # every fixture declares where its schema came from
+detections/check-readme-gates.sh                                                            # this gate list still matches sigma.yml
 ```
 
 `convert.sh` is the reproducible "Sigma → backend" *compile check*: it compiles each

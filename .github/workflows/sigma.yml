@@ -126,6 +126,18 @@ jobs:
         # vendor-documented, or assumed.
         run: ./docker/validation/check-fixture-provenance.sh
 
+      - name: README gate-list correspondence (hard gate)
+        # The gate list above exists twice: as these steps, and as the numbered prose +
+        # copy-pasteable block in detections/README.md that contributors run before
+        # pushing. Nothing tied them together, so they drifted — the two gates added in
+        # #145 and #150 went undocumented and the README kept saying "Six hard checks".
+        #
+        # That is the one drift with a direct cost: the local block's promise is "run
+        # these and CI will agree", so a stale block sends someone green locally into a
+        # red CI run on a gate they were never told about. Same class as the artifact
+        # drift gates above — a second copy of the truth, now checked instead of trusted.
+        run: ./detections/check-readme-gates.sh
+
       - name: ATT&CK tag validity (advisory — needs live MITRE data)
         continue-on-error: true
         run: sigma check --fail-on-issues detections/sigma/
