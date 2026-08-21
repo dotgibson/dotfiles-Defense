@@ -7,17 +7,43 @@ description: |
   actionable alone - every save, every log line, every temp file is one of these. The
   ransomware shape is one process touching a large, diverse set of files in minutes,
   expressed by the correlation rule.
-  The AccessMask values are the single-bit write/append/delete forms (0x2 WriteData,
-  0x4 AppendData, 0x6 both, 0x10000 DELETE); if your SACL emits combined masks, widen
-  this list rather than the correlation threshold.
+  WRITE/APPEND/DELETE are matched on BOTH fields 4663 emits for them, because neither is
+  dependable alone. AccessMask is the hexadecimal OR of every right the operation
+  exercised, so the isolated 0x2/0x4/0x6/0x10000 forms appear only where that right was
+  the ONLY one used - a real write is more often something like 0x120196
+  (READ_CONTROL|SYNCHRONIZE|WriteAttributes|ReadAttributes|WriteEA|AppendData|WriteData),
+  and against that an equality test on the isolated bits matches nothing at all while the
+  correlation below silently never fires. That is worse than firing too often: it is the
+  T1486 payload half of the ransomware pair going dark with every CI check still green.
+  AccessList carries the same information one right per token (%%4417 WriteData, %%4418
+  AppendData, %%1537 DELETE), so matching the tokens is the SAME predicate written in the
+  projection that does not depend on what else the operation happened to touch. It is not
+  a widened mask list - nothing is guessed - and upstream SigmaHQ keys 4663 on AccessList
+  alone for this reason. See #159.
+  The mask branch is kept rather than replaced because the residual sits on the other side.
+  AccessList is unambiguously in the event - Microsoft's own 4663 example is AccessList
+  "%%4417 %%4418" against AccessMask "0x6" - and Winlogbeat ships the raw %%NNNN tokens
+  through unchanged, but a normalising pipeline may drop or decode the field. Where it
+  does, the mask branch is what still fires; where it does not, the token branch is.
+  Confirm which of the two your own 4663 stream supports before trusting this detection,
+  and if neither matches, fix the anchor rather than lowering the correlation threshold.
+  Same caveat the read-side twin (collection/mass_file_read_4663) carries, on the same
+  event and the same SACL.
+  Shape note for whoever edits this next: EventID and ObjectType are repeated in both
+  selections rather than factored into a third one. Factoring them out is the tidier rule
+  and compiles to an ungrouped "EventID=4663 ... A OR B" on the Splunk backend; the
+  repetition compiles to explicit groups on all three backends. Same reason
+  persistence/wmi_event_subscription_consumer repeats its EventID.
   Requires the Object Access > File System audit subcategory + a SACL on the directories
   you care about (document shares, user profiles); without it 4663 is not emitted at all,
   and the SACL's scope - not the rule - sets this detection's noise floor.
 references:
   - https://attack.mitre.org/techniques/T1486/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/mass-encrypt-4663.md
+  - https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4663
 author: dotfiles-Defense
 date: 2026-08-05
+modified: 2026-08-21
 name: file_write_handle_4663
 tags:
   - attack.impact
@@ -26,15 +52,27 @@ logsource:
   product: windows
   service: security
 detection:
-  selection:
+  selection_list:
     EventID: 4663
     ObjectType: 'File'
+    # The projection-independent anchor: one token per right exercised, so this holds
+    # whatever else the same operation touched. Preferred over the mask; see above.
+    AccessList|contains:
+      - '%%4417' # WriteData (or AddFile)
+      - '%%4418' # AppendData (or AddSubdirectory)
+      - '%%1537' # DELETE
+  selection_mask:
+    EventID: 4663
+    ObjectType: 'File'
+    # For pipelines that drop AccessList — fallback, not the anchor. Isolated bits only:
+    # widening this list means inventing combined values, which is what the token branch
+    # exists to avoid.
     AccessMask:
-      - '0x2'
-      - '0x4'
-      - '0x6'
-      - '0x10000'
-  condition: selection
+      - '0x2' # WriteData
+      - '0x4' # AppendData
+      - '0x6' # both
+      - '0x10000' # DELETE
+  condition: selection_list or selection_mask
 falsepositives:
   - Any normal file write (defeated by the distinct-file count below).
 level: informational

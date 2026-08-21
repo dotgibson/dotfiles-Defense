@@ -3,32 +3,59 @@ id: 6d1a94c7-30fb-4e58-9c2a-8b7f05e3d146
 status: experimental
 description: |
   Base event for the local-collection correlation below: a 4663 object-access event
-  where a process actually used READ access on a file (AccessMask 0x1, ReadData).
-  Not actionable alone - opening a file to read it is what computers do. The
-  collection shape is one process reading a large, diverse set of files in minutes,
-  expressed by the correlation rule.
+  where a process actually used READ access on a file. Not actionable alone - opening a
+  file to read it is what computers do. The collection shape is one process reading a
+  large, diverse set of files in minutes, expressed by the correlation rule.
   This is the read-side twin of impact/mass_file_encryption_4663, which keys on the
-  WRITE/DELETE masks (0x2/0x4/0x6/0x10000) from the same event and the same SACL. The
-  masks are what separate "someone is copying the file share" from "someone is
-  encrypting it"; the ingestion requirement is identical, so if you already turned on
-  auditing for that rule you already have this one's data.
-  The AccessMask value is the single-bit ReadData form (0x1). 4663 logs the access mask
-  actually EXERCISED, and depending on how the SACL is authored many environments emit a
-  combined mask (e.g. 0x120089, ReadData|ReadAttributes|ReadEA|ReadControl|Synchronize)
-  rather than the isolated bit - where that is true this base rule matches nothing and the
-  correlation below silently never fires, which is worse than firing too often. Confirm
-  against your own 4663 stream before trusting this detection, and if your SACL emits
-  combined masks widen this list rather than lowering the correlation threshold. Same
-  caveat the write-side twin (mass_file_encryption_4663) already carries; it is repeated
-  here because the read side is the half nobody checks. The alternative anchor, if your
-  pipeline preserves it, is the AccessList SDDL strings 4663 also emits (%%4416 ReadData).
+  WRITE/DELETE rights from the same event and the same SACL. The rights are what separate
+  "someone is copying the file share" from "someone is encrypting it"; the ingestion
+  requirement is identical, so if you already turned on auditing for that rule you already
+  have this one's data.
+  READ is matched on BOTH fields 4663 emits for it, because neither is dependable alone.
+  AccessMask is the hexadecimal OR of every right the operation exercised, so the isolated
+  0x1 form appears only when ReadData was the ONLY right used - a normal file open is more
+  often 0x120089 (READ_CONTROL|SYNCHRONIZE|ReadData|ReadEA|ReadAttributes), and against
+  that an equality test on 0x1 matches nothing at all while the correlation below silently
+  never fires. AccessList carries the same information one right per token, %%4416 being
+  ReadData, so matching the token is the SAME predicate written in the projection that does
+  not depend on what else the operation happened to touch. It is not a widened mask list:
+  nothing is guessed, and upstream SigmaHQ keys 4663 on AccessList alone for this reason.
+  The mask branch is kept rather than replaced because the residual sits on the other side.
+  AccessList is unambiguously in the event - Microsoft's own 4663 example is AccessList
+  "%%4417 %%4418" against AccessMask "0x6" - and Winlogbeat ships the raw %%NNNN tokens
+  through unchanged, but a normalising pipeline may drop or decode the field. Where it
+  does, the mask branch is what still fires; where it does not, the token branch is.
+  Confirm which of the two your own 4663 stream supports before trusting this detection.
+  Volume, said out loud: the token branch matches any operation that INCLUDED ReadData,
+  not only the ones where it was the sole right, so wherever combined masks are emitted
+  this rule now counts events it previously missed entirely. That is the point, but it
+  lands on the noisiest rule in the corpus - filter_indexers below is mandatory, and the
+  correlation threshold stays where it is. Do not raise it to compensate.
+  Two shape notes for whoever edits this next. EventID and ObjectType are repeated in both
+  selections rather than factored into a third one: factoring them out is the tidier rule
+  and compiles to an ungrouped "EventID=4663 ... A OR B" on the Splunk backend, while the
+  repetition compiles to explicit groups on all three. Same reason
+  persistence/wmi_event_subscription_consumer repeats its EventID.
+  The second note matters more here, because this is the rule with a filter. The Splunk
+  backend compiles the whole thing to "(A) OR (B) NOT (filter)" with no parentheses around
+  the OR, and the generated saved search prepends source="WinEventLog:Security" to that.
+  It is correct as a search command, whose documented evaluation order is parentheses, then
+  NOT, then OR, then AND - OR binding tighter than the implicit ANDs is exactly what makes
+  the source term and the filter apply to both branches. But it is one precedence rule away
+  from reading as (source AND A) OR (B AND NOT filter), which would let the token branch
+  fire on every backup agent in the estate, off any source. Kusto and Lucene both emit
+  "((A) OR (B)) AND NOT (filter)" explicitly and need no such reasoning. If this search is
+  ever moved into a where or eval clause, which evaluate AND before OR, add the parentheses
+  by hand.
   Requires the Object Access > File System audit subcategory + a SACL on the
   directories you care about. Without it 4663 is not emitted at all, and the SACL's
   scope - not the rule - sets this detection's reach.
 references:
   - https://attack.mitre.org/techniques/T1005/
+  - https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4663
 author: dotfiles-Defense
 date: 2026-08-05
+modified: 2026-08-21
 name: file_read_handle_4663
 tags:
   - attack.collection
@@ -37,10 +64,16 @@ logsource:
   product: windows
   service: security
 detection:
-  selection:
+  selection_list:
     EventID: 4663
     ObjectType: 'File'
-    AccessMask: '0x1' # ReadData — the single-bit read form; see the combined-mask caveat above
+    # The projection-independent anchor: one token per right exercised, so this holds
+    # whatever else the same operation touched. Preferred over the mask; see above.
+    AccessList|contains: '%%4416' # ReadData (or ListDirectory)
+  selection_mask:
+    EventID: 4663
+    ObjectType: 'File'
+    AccessMask: '0x1' # ReadData, for pipelines that drop AccessList — fallback, not the anchor
   filter_indexers:
     # DEPLOY-REQUIRED: replace with the backup, indexing, AV, and sync agents that read
     # your SACL'd trees continuously. This filter matters MORE than the equivalent on the
@@ -53,7 +86,7 @@ detection:
       - '\SearchIndexer.exe'
       - '\MsMpEng.exe'
       - '\backup-agent.exe' # example — replace with your backup/sync agents
-  condition: selection and not filter_indexers
+  condition: (selection_list or selection_mask) and not filter_indexers
 falsepositives:
   - Any normal file read (defeated by the distinct-file count below).
 level: informational

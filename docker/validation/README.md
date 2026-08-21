@@ -128,7 +128,10 @@ protected-service stop, data destruction, BitLocker abuse, mass encryption),
 unconstrained-delegation abuse, host-side collection (the 4663 read sweep and the archive
 staging step), and the correlation rules (password-spray, pass-the-hash, LDAP-recon,
 SharpHound, host-recon burst, local-SAM enumeration sweep, share/session enumeration
-sweep, mass-encryption on both 4663 and Sysmon 11, mass-read).
+sweep, mass-encryption on both 4663 and Sysmon 11, mass-read). The two 4663 rules each
+carry a second row whose events use combined access masks — the shape a real SACL emits —
+so the `AccessList` branch that makes them fire there is a standing regression test rather
+than an assertion.
 Each was verified firing against the real engine locally.
 
 ### True negatives — how a filter is proven
