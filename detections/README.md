@@ -22,7 +22,7 @@ validation note. Real IOC values from cases stay in `~/cases/*/iocs`, never here
 ## CI gate — the rules are validated as code
 
 The Sigma rules are gated on every change by `.github/workflows/sigma.yml` (the
-repo's `lint.yml` only covers shell). Ten hard checks, one advisory:
+repo's `lint.yml` only covers shell). Eleven hard checks, no advisory:
 
 1. **Structural lint** (hermetic) —
    `sigma check --fail-on-issues -c detections/sigma-validation-config.yml`.
@@ -88,15 +88,24 @@ repo's `lint.yml` only covers shell). Ten hard checks, one advisory:
    in `splunk-precedence-allowlist.tsv`. Both instances today are correct and signed off;
    the point is that the third one is a review conversation rather than a silent
    behaviour change (#166).
-11. **ATT&CK-tag validity** — advisory (`continue-on-error`); checks each
-   `attack.tXXXX` is a real published technique, but never breaks the build on a
-   transient MITRE download failure.
+11. **ATT&CK-tag validity** — `detections/check-attack-tags.sh`. Checks every
+   `attack.*` tag against a **pinned** ATT&CK release. This was advisory until #172, and
+   why it stopped being one is the useful part: pySigma ≥ 1.5.0 resolves tags against a
+   STIX bundle it downloads at check time from the HEAD of `attack-stix-data`, dropping
+   revoked objects — so the same commit reported 0 issues one run and 52 the next with
+   nothing in the repo changed, and `continue-on-error` hid the flip. It was the only
+   step here whose answer moved on its own, and the only one whose failures were
+   invisible by design. `detections/attack-data.pin` now names an immutable per-version
+   bundle and its SHA-256, verified every run and injected through pySigma's own
+   `set_url()`. Reproducible, therefore a gate: an ATT&CK release fails the build when
+   someone bumps the pin, in a PR that gets read, rather than silently on an unrelated
+   Tuesday.
 
 Run it locally (any pySigma backend):
 
 ```sh
 # pinned, matching CI (splunk + elasticsearch + kusto backends)
-pip install "sigma-cli==3.0.2" "pysigma-backend-splunk==2.1.0" \
+pip install "pysigma==1.5.0" "sigma-cli==3.0.2" "pysigma-backend-splunk==2.1.0" \
             "pysigma-backend-elasticsearch==2.1.0" "pysigma-backend-kusto==1.0.1"
 sigma check --fail-on-issues -c detections/sigma-validation-config.yml detections/sigma/   # lint
 detections/sigma/convert.sh splunk                                                         # compile → SPL
@@ -108,6 +117,7 @@ docker/validation/check-rule-coverage.sh                                        
 docker/validation/check-fixture-provenance.sh                                              # every fixture declares where its schema came from
 detections/check-readme-gates.sh                                                            # this gate list still matches sigma.yml
 detections/siem/check-splunk-precedence.sh                                                  # no Splunk search leans on OR/NOT precedence
+detections/check-attack-tags.sh                                                             # every ATT&CK tag valid against the pinned release
 ```
 
 `convert.sh` is the reproducible "Sigma → backend" *compile check*: it compiles each

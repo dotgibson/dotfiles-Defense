@@ -167,7 +167,8 @@ for k, cmd in sorted(block_keys.items()):
             "it should be a gate and isn't.".format(k))
 
 # ── 3. COUNTS ─────────────────────────────────────────────────────────────────
-WORDS = {"one":1,"two":2,"three":3,"four":4,"five":5,"six":6,"seven":7,"eight":8,
+WORDS = {"no":0,"zero":0,
+         "one":1,"two":2,"three":3,"four":4,"five":5,"six":6,"seven":7,"eight":8,
          "nine":9,"ten":10,"eleven":11,"twelve":12}
 m = re.search(r'\b([A-Za-z]+) hard checks?, (\w+) advisory\b', doc)
 if not m:

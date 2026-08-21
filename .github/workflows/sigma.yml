@@ -59,7 +59,11 @@ jobs:
       - name: Install sigma-cli + backends (pinned — this is a hard gate)
         # splunk drives the compile gate + savedsearches deploy form; elasticsearch (lucene)
         # and kusto (Sentinel KQL) drive the multi-SIEM deploy forms in gen-siem.sh.
-        run: pip install "sigma-cli==3.0.2" "pysigma-backend-splunk==2.1.0" "pysigma-backend-elasticsearch==2.1.0" "pysigma-backend-kusto==1.0.1"
+        #
+        # pySigma itself is pinned too, not just the CLI and backends. It used to float,
+        # and 1.5.0 is the release that swapped the static ATT&CK table for a download —
+        # so the tag gate's behaviour changed underneath CI with no repo change (#172).
+        run: pip install "pysigma==1.5.0" "sigma-cli==3.0.2" "pysigma-backend-splunk==2.1.0" "pysigma-backend-elasticsearch==2.1.0" "pysigma-backend-kusto==1.0.1"
 
       - name: Structural lint (hard gate, hermetic)
         # --fail-on-issues: `sigma check` exits 0 on validator *issues* by default
@@ -157,6 +161,23 @@ jobs:
         # behaviour change. See #166.
         run: ./detections/siem/check-splunk-precedence.sh
 
-      - name: ATT&CK tag validity (advisory — needs live MITRE data)
-        continue-on-error: true
-        run: sigma check --fail-on-issues detections/sigma/
+      - name: Cache the pinned ATT&CK bundle
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/dotfiles-Defense/attack
+          key: attack-stix-${{ hashFiles('detections/attack-data.pin') }}
+
+      - name: ATT&CK tag validity (hard gate — pinned ATT&CK release)
+        # This was advisory, and the reason it stopped being one is the point. pySigma
+        # >= 1.5.0 resolves tags against a STIX bundle downloaded at check time from the
+        # HEAD of attack-stix-data, dropping revoked objects — so the same commit reported
+        # 0 issues one run and 52 the next with nothing changed, and continue-on-error hid
+        # the flip. It was the only step here whose answer moved on its own and the only
+        # one whose failures were invisible by design (#172).
+        #
+        # detections/attack-data.pin names an immutable per-version bundle and its
+        # SHA-256; the gate verifies the digest every run and injects the file through
+        # pySigma's own set_url(). That makes the verdict reproducible, which is what earns
+        # it hard-gate status: an ATT&CK release now fails the build when someone bumps the
+        # pin, in a PR that gets read, instead of silently on an unrelated Tuesday.
+        run: ./detections/check-attack-tags.sh
