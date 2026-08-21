@@ -226,7 +226,7 @@ jobs:
   # (dotgibson/dotfiles-Debian#2).
   #
   # This runs the REAL bootstrap, no --links-only, with the package managers and downloaders
-  # replaced by logging no-ops from core/scripts/provision-shim.sh. Most of that bug class is
+  # replaced by logging no-ops built inline in the job below. Most of that bug class is
   # control flow rather than I/O — a leaked trap, a bare refresh aborting under `set -e`, an
   # unchecked GPG import, a tool assumed present on a minimal image — and all of it executes
   # here without installing a package or touching the network.
@@ -261,19 +261,90 @@ jobs:
               echo "prep attempt $n failed (mirror timeout?), retrying in $((n*10))s..." >&2
               sleep $((n*10))
             done
-            # The shim is VENDORED, so a repo whose core/ predates it simply has no such file.
-            # Skip loudly rather than silently passing a job that never ran the thing it names.
-            if [ ! -f core/scripts/provision-shim.sh ]; then
-              echo "core/scripts/provision-shim.sh missing — vendored Core predates it; sync Core first" >&2
-              exit 1
-            fi
             # Same tpm pre-seed as links-only: skip the first-run clone, stay offline.
             mkdir -p "$HOME/.config/tmux/plugins/tpm"
 
-            PROVISION_SHIM_LOG=/tmp/provision-shim.log
+            # THE SHIM IS BUILT HERE, INLINE, AND THAT IS THE POINT. It was previously a
+            # vendored script (core/scripts/) and then a second checkout of Core pinned at
+            # github.job_workflow_sha. Both put the shim on a DIFFERENT distribution channel
+            # from the workflow that uses it, and both went wrong: the vendored copy lagged a
+            # release behind and hard-failed every repo, and the pinned checkout silently ran
+            # an older revision of the script than the workflow reported using — five debug
+            # rounds on dotgibson/dotfiles-Debian#11 between them. Inline, there is exactly one
+            # artifact distributed at exactly one ref, and the class of bug is gone.
+            SHIM=/tmp/provision-shim
+            LOG=/tmp/provision-shim.log
+            mkdir -p "$SHIM"; : >"$LOG"
+
+            # curl/wget/gpg HONOUR -o and create the target. A stub that returns 0 while
+            # writing nothing manufactures a state the real tool cannot produce, and fails a
+            # correctly-guarded caller — dotfiles-Debian _add_vendor_repo guards its chmod
+            # behind the curl|gpg pipeline exactly as it should, and still died on that lie.
+            # The bytes are deliberately NOT a valid asset, so a checksum-verifying caller
+            # still refuses them; faking a passing checksum would hide the refusal path.
+            for c in curl wget gpg gpg2; do
+              { echo "#!/bin/sh"
+                echo "echo \"$c \$*\" >>$LOG"
+                echo "out="
+                echo "while [ \$# -gt 0 ]; do case \$1 in"
+                echo "  -o|--output) out=\$2; shift 2 ;;"
+                echo "  --output=*) out=\${1#--output=} ; shift ;;"
+                echo "  *) shift ;;"
+                echo "esac; done"
+                echo "[ -n \"\$out\" ] && { mkdir -p \"\$(dirname \"\$out\")\" 2>/dev/null; printf shim > \"\$out\" 2>/dev/null; }"
+                echo "exit 0"
+              } >"$SHIM/$c"
+              chmod +x "$SHIM/$c"
+            done
+
+            # Package managers and the rest: logged no-ops. git is deliberately absent —
+            # bootstraps clone real things the caller pre-seeds, and stubbing it would mask
+            # wiring bugs this job should still catch.
+            for c in apt-get apt apt-key add-apt-repository dpkg debconf-set-selections \
+                     dnf yum rpm pacman paru yay zypper apk emerge eselect layman brew \
+                     snap flatpak gpgconf systemctl update-alternatives unattended-upgrade \
+                     pipx go cargo npm; do
+              { echo "#!/bin/sh"
+                echo "echo \"$c \$*\" >>$LOG"
+                echo "exit 0"
+              } >"$SHIM/$c"
+              chmod +x "$SHIM/$c"
+            done
+
+            # sudo/doas drop the escalation and re-exec, so the wrapped command still reaches
+            # its stub and still gets logged. Swallowing them would skip the command under test.
+            for c in sudo doas; do
+              { echo "#!/bin/sh"
+                echo "while [ \$# -gt 0 ]; do case \$1 in -n|-E|-H|-k) shift ;; -u) shift 2 ;; --) shift; break ;; *) break ;; esac; done"
+                echo "[ \$# -eq 0 ] && exit 0"
+                echo "exec \"\$@\""
+              } >"$SHIM/$c"
+              chmod +x "$SHIM/$c"
+            done
+
+            PROVISION_SHIM_LOG="$LOG"
             export PROVISION_SHIM_LOG
-            PATH="$(sh core/scripts/provision-shim.sh):$PATH"
+            PATH="$SHIM:$PATH"
             export PATH
+
+            echo "── shim active at: $(command -v curl) ──"
+            echo "── the curl stub the run will actually use ──"
+            cat "$(command -v curl)"
+
+            # A FUNCTION, not an inline trap body. This whole script is already inside a
+            # single-quoted `sh -euc ...`, so a trap body containing its own single quotes
+            # closes the outer quote and dash rejects it with "trap: echo: bad trap" — which
+            # under `set -e` killed the run before bootstrap.sh even started. A function name
+            # needs no quoting at all.
+            #
+            # Print the intercept log WHATEVER happens: a failed run is exactly when you need
+            # to know which commands the shim actually saw, and without it a red job cannot be
+            # told apart from a shim that never engaged.
+            _shim_dump() {
+              echo "── what provision() would have done (intercepted) ──"
+              cat "$PROVISION_SHIM_LOG" 2>/dev/null || echo "(nothing intercepted — did the shim engage?)"
+            }
+            trap _shim_dump EXIT
 
             echo "── running the FULL bootstrap with provisioning stubbed ──"
             ./bootstrap.sh
@@ -288,7 +359,5 @@ jobs:
               fi
             done
 
-            echo "── what provision() would have done (intercepted) ──"
-            cat "$PROVISION_SHIM_LOG" 2>/dev/null || echo "(nothing intercepted)"
             echo "bootstrap with stubbed provisioning OK"
           '

@@ -829,24 +829,35 @@ rather than trust a remembered path. Neither is go-installed by any `bootstrap.s
 (the Debian/Kali cells use Charm's apt repo, see ¹⁵), so these two are for the reader
 installing by hand.
 
-³² direnv: per-directory environment loader — **the one row in this table Core neither
-installs nor detects.** There is no `HAVE_DIRENV`, no alias, and no `core-doctor` row; what
-makes it work is each OS repo's `os/<distro>.zsh` at band 80, where
-`_cache_eval direnv direnv hook zsh` installs the `precmd`/`chpwd` hook — Arch, openSUSE,
-Alpine, Debian, Fedora, Gentoo and macOS all carry that block. Core's one stake is
-`starship/starship.toml`'s **`[direnv]` module**, which Core switches on (`disabled = false`;
-starship ships this module **off** by default): it renders `.envrc` state on the `srf1` band so
-a directory waiting on `direnv allow` is visible rather than silently unloaded. The module only
-draws inside a direnv-controlled tree, so a box without the binary loses a segment, not the
-prompt.
+³² direnv: per-directory environment loader — **Core wires it but neither installs nor
+detects it.** There is no `HAVE_DIRENV`, no alias and no `core-doctor` row: `_cache_eval`
+already bails on an absent binary, so the hook needs no flag to guard it. Since **v4.14.1**
+the `direnv hook zsh` that makes it work lives in Core, at `zsh/00-tools.zsh` **band 00**,
+where #449 pulled seven byte-drifted `os/*.zsh` copies up into one. Band 00 and not 45 with
+the gh/uv/ty completions, because this registers a hook rather than a compdef and band 00
+loads under every `CORE_PROFILE` while 45 is ceilinged out of `minimal`; filed under 45 it
+would silently stop `.envrc` files loading on minimal hosts. It is sourced **last** of the
+four inits on purpose: direnv prepends `_direnv_hook` to `precmd_functions` and
+`chpwd_functions`, so sourcing it after mise reproduces the order these hooks had at band 80
+— direnv's per-directory env resolves before mise's, which is what an `.envrc` that pins tool
+versions expects. An OS repo that still carries the old band-80 block is harmless but
+redundant, and drops out on its next Core sync.
+
+Core's other stake is `starship/starship.toml`'s **`[direnv]` module**, which Core switches on
+(`disabled = false`; starship ships this module **off** by default): it renders `.envrc` state
+on the `srf1` band so a directory waiting on `direnv allow` is visible rather than silently
+unloaded. The module only draws inside a direnv-controlled tree, so a box without the binary
+loses a segment, not the prompt.
 
 **Installed, not merely available** — the inverse of ²¹. Six of the seven package lists carry
 it outright (`dotfiles-Arch`, `-openSUSE`, `-Alpine`, `-Debian`, `-Fedora`, and the MacBook
 `Brewfile`), and `dotfiles-Gentoo` emerges `app-shells/direnv` in its `guru_install` pass per
 ¹². **`dotfiles-Offense` (Kali) is the single gap, and it is structural rather than a call
-about direnv**: that repo carries no `install/packages.txt`, and since band 80 moved to the OS
-repo underneath it, no `os/` layer either — so nothing there installs the package or evaluates
-the hook. The Kali cell above is the apt name you would install by hand.
+about direnv**: that repo carries no `install/packages.txt`, so nothing there installs the
+package. It does now get the **hook** — that arrives from Core at band 00 like everywhere
+else, which is a change from the band-80 arrangement, where Offense missed it too for having
+no `os/` layer at all. So the hook is live there and simply finds no binary. The Kali cell
+above is the apt name you would install by hand.
 
 Verified 2026-08-21 against each distro's own index: **Arch `extra`** 2.37.1-1, **Alpine
 `community`** 2.37.1-r7 (v3.24 — a Go binary, so a native musl build), **openSUSE** Tumbleweed
