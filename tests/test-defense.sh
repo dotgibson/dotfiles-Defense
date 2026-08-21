@@ -57,6 +57,13 @@ contains() {
   *) no "$1" "expected to find [$3]" ;;
   esac
 }
+# lacks <description> <haystack> <needle>
+lacks() {
+  case "$2" in
+  *"$3"*) no "$1" "expected NOT to find [$3]" ;;
+  *) ok "$1" ;;
+  esac
+}
 # isnt_empty <description> <value>
 isnt_empty() {
   if [ -n "$2" ]; then ok "$1"; else no "$1" "value was empty"; fi
@@ -702,6 +709,80 @@ contains "but the stale row is reported" "$out" "stale row"
 # rather than merely recording a value.
 contains "the npm fixtures carry the #149 caveat" \
   "$(cat "$REPO/docker/validation/fixture-provenance.tsv")" "see #149"
+
+# ─────────────────────────────────────────────────────────────────────────────
+group "check-splunk-precedence.sh — no deploy form leans on OR/NOT precedence"
+
+CSP="$REPO/detections/siem/check-splunk-precedence.sh"
+[ -x "$CSP" ] && ok "precedence gate is executable" || no "precedence gate is executable"
+
+out="$("$CSP" "$REPO" 2>&1)"
+is "the corpus is signed off today" "0" "$?"
+contains "it reports what it found" "$out" "splunk precedence:"
+
+# Every failure mode, against throwaway copies so the real deploy forms are untouched.
+GEN="detections/siem/splunk/savedsearches.generated.conf"
+ALLOW="detections/siem/splunk-precedence-allowlist.tsv"
+
+# A new ungrouped OR/NOT must be caught. This is the whole point of the gate.
+SP1="$TMPROOT/sp1"
+mkdir -p "$SP1"
+cp -r "$REPO/detections" "$SP1/"
+printf '\n[Probe rule]\nsearch = source="X" (A=1) OR (B=2) NOT (C=3)\n' >>"$SP1/$GEN"
+out="$(bash "$SP1/detections/siem/check-splunk-precedence.sh" "$SP1" 2>&1)"
+rc=$?
+is "a new un-allowlisted OR/NOT fails the gate" "1" "$rc"
+contains "the offending stanza is named" "$out" "Probe rule"
+contains "it says the finding is not automatically a bug" "$out" "not automatically a bug"
+
+# The safe shape — OR strictly INSIDE the NOT group — must NOT be flagged, or the gate
+# becomes noise and gets allowlisted into uselessness.
+SP2="$TMPROOT/sp2"
+mkdir -p "$SP2"
+cp -r "$REPO/detections" "$SP2/"
+printf '\n[Safe probe]\nsearch = source="X" A=1 NOT (B=2 OR C=3)\n' >>"$SP2/$GEN"
+out="$(bash "$SP2/detections/siem/check-splunk-precedence.sh" "$SP2" 2>&1)"
+rc=$?
+is "NOT (a OR b) is not flagged" "0" "$rc"
+lacks "the safe stanza is not reported" "$out" "Safe probe"
+
+# where/eval invert the precedence, so an offender there is not merely fragile — it reads
+# the opposite way. The message has to say so rather than treating it as the same finding.
+SP3="$TMPROOT/sp3"
+mkdir -p "$SP3"
+cp -r "$REPO/detections" "$SP3/"
+printf '\n[Where probe]\nsearch = source="X" A=1 | where (P=1) OR (Q=2) NOT (R=3)\n' >>"$SP3/$GEN"
+out="$(bash "$SP3/detections/siem/check-splunk-precedence.sh" "$SP3" 2>&1)"
+contains "a where-clause offender is called out as inverted" "$out" "INVERTED"
+
+# Retitling an allowlisted rule drops it out of the list. That must fail rather than
+# silently un-review a search someone signed off.
+SP4="$TMPROOT/sp4"
+mkdir -p "$SP4"
+cp -r "$REPO/detections" "$SP4/"
+sed -i 's/^\[Mass file read - local data collection sweep (T1005)\]$/[Mass file read - renamed]/' "$SP4/$GEN"
+out="$(bash "$SP4/detections/siem/check-splunk-precedence.sh" "$SP4" 2>&1)"
+rc=$?
+is "retitling an allowlisted rule fails loud" "1" "$rc"
+contains "the renamed stanza is named" "$out" "Mass file read - renamed"
+
+# A row with no reason is not a sign-off. Accepting it would make the allowlist a mute
+# button, which is the one thing it must not be.
+SP5="$TMPROOT/sp5"
+mkdir -p "$SP5"
+cp -r "$REPO/detections" "$SP5/"
+printf 'somefile\tSomething\t-\n' >>"$SP5/$ALLOW"
+out="$(bash "$SP5/detections/siem/check-splunk-precedence.sh" "$SP5" 2>&1)"
+rc=$?
+is "an allowlist row with no reason fails" "1" "$rc"
+contains "the malformed row is reported" "$out" "malformed"
+
+# Both current instances must stay signed off with a real reason, so the list keeps
+# pointing at the reasoning rather than merely listing titles.
+contains "the allowlist explains the 4663 read rule" \
+  "$(cat "$REPO/$ALLOW")" "selection_list or selection_mask"
+contains "the allowlist explains the archive-staging rule" \
+  "$(cat "$REPO/$ALLOW")" "password branch is deliberately unfiltered"
 
 # ─────────────────────────────────────────────────────────────────────────────
 group "lint-shell.sh — CI-identical shell lint"

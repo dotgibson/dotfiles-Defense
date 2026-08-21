@@ -22,7 +22,7 @@ validation note. Real IOC values from cases stay in `~/cases/*/iocs`, never here
 ## CI gate — the rules are validated as code
 
 The Sigma rules are gated on every change by `.github/workflows/sigma.yml` (the
-repo's `lint.yml` only covers shell). Nine hard checks, one advisory:
+repo's `lint.yml` only covers shell). Ten hard checks, one advisory:
 
 1. **Structural lint** (hermetic) —
    `sigma check --fail-on-issues -c detections/sigma-validation-config.yml`.
@@ -77,7 +77,18 @@ repo's `lint.yml` only covers shell). Nine hard checks, one advisory:
    that the block contains no command CI doesn't run, and that these counts match. The
    prose describing each gate is deliberately left alone; that's editorial, the same way
    `check-methodology.sh` leaves the methodology table's judgement columns alone.
-10. **ATT&CK-tag validity** — advisory (`continue-on-error`); checks each
+10. **Splunk precedence** — `detections/siem/check-splunk-precedence.sh`. pySigma's
+   Splunk backend does not parenthesise a top-level `OR` against a top-level `NOT`, so
+   `(a) OR (b) NOT (filter)` is correct *only* under the search command's documented
+   evaluation order (parentheses, NOT, OR, AND). Read with AND binding first — which is
+   what `eval` and `where` do — branch `(a)` escapes the filter entirely. Nothing else
+   catches it: zircolite evaluates the Sigma condition, where the parentheses are
+   explicit, and the drift gate compares the generated file byte-for-byte rather than
+   semantically. This flags every such search and fails unless it carries a reviewed row
+   in `splunk-precedence-allowlist.tsv`. Both instances today are correct and signed off;
+   the point is that the third one is a review conversation rather than a silent
+   behaviour change (#166).
+11. **ATT&CK-tag validity** — advisory (`continue-on-error`); checks each
    `attack.tXXXX` is a real published technique, but never breaks the build on a
    transient MITRE download failure.
 
@@ -96,6 +107,7 @@ detections/check-methodology.sh                                                 
 docker/validation/check-rule-coverage.sh                                                   # every rule fixtured; every filter_* has a true negative
 docker/validation/check-fixture-provenance.sh                                              # every fixture declares where its schema came from
 detections/check-readme-gates.sh                                                            # this gate list still matches sigma.yml
+detections/siem/check-splunk-precedence.sh                                                  # no Splunk search leans on OR/NOT precedence
 ```
 
 `convert.sh` is the reproducible "Sigma → backend" *compile check*: it compiles each

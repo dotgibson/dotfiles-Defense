@@ -138,6 +138,25 @@ jobs:
         # drift gates above — a second copy of the truth, now checked instead of trusted.
         run: ./detections/check-readme-gates.sh
 
+      - name: Splunk precedence gate (hard gate)
+        # pySigma's Splunk backend does not parenthesise a top-level OR against a
+        # top-level NOT, so `(a) OR (b) NOT (filter)` is correct only under the search
+        # command's documented precedence (parens, NOT, OR, AND). Read the other way it
+        # is `(a) OR (b AND NOT filter)` — one branch escapes its filter entirely, and
+        # eval/where DO evaluate AND before OR.
+        #
+        # Nothing above sees it: zircolite evaluates the Sigma condition, where the
+        # parentheses are explicit, and the drift gate compares the generated file
+        # byte-for-byte rather than semantically. So the rule lints, compiles, fires on
+        # its TP and stays silent on its TN while the deployed form rests on a precedence
+        # rule nobody wrote down.
+        #
+        # Adopted while green — both instances present today are correct and signed off
+        # in splunk-precedence-allowlist.tsv — so it holds the line rather than raising
+        # it. The value is the third one: a review conversation instead of a silent
+        # behaviour change. See #166.
+        run: ./detections/siem/check-splunk-precedence.sh
+
       - name: ATT&CK tag validity (advisory — needs live MITRE data)
         continue-on-error: true
         run: sigma check --fail-on-issues detections/sigma/
