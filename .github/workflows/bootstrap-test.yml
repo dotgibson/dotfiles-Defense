@@ -1,0 +1,294 @@
+# .github/workflows/bootstrap-test.yml
+# ──────────────────────────────────────────────────────────────────────────────
+# REUSABLE bootstrap integration test — authored once here, called by a thin stub
+# in each OS repo (workflow_call) so the OS repos get CI WITHOUT each carrying a
+# duplicated copy of this logic (the same fan-out the Core layer exists to kill).
+#
+# ROLE repos call it too. dotfiles-Offense and dotfiles-Defense wire Core plus a band-85
+# role stage and NO band-80 OS layer, so the 80-os.zsh assertion below arms itself on
+# whether the caller actually ships an os/*.zsh rather than assuming every caller does.
+#
+# Two jobs:
+#   1. lint        — shellcheck -x + bash -n + --help, on the runner (deterministic,
+#                    no container). Catches the syntax/guard class of bug directly.
+#   2. links-only  — run `bootstrap.sh --links-only` inside the target distro's
+#                    container and assert the symlink graph + the generated ~/.zshrc.
+#                    --links-only skips provision() (no package installs, no Gentoo
+#                    source builds); the tpm dir is pre-seeded so its first-run clone
+#                    is skipped (offline + deterministic). The actual zsh module LOAD
+#                    is already covered hermetically by dotfiles-core's test-core.sh,
+#                    so this asserts the part bootstrap.sh OWNS: the wiring it produces.
+#
+# WHAT THIS DOES NOT COVER — read this before trusting a green run.
+#
+# `--links-only` returns before provision() is entered, and NO GATE IN THE FLEET RUNS
+# provision() AT ALL. Package installation, retries, upstream installers, repo/key setup
+# and every failure path around them — the whole first half of each of the nine bootstraps
+# — is executed by nothing, here or anywhere else. A green `bootstrap` check means the
+# WIRING is sound. It says nothing about whether the box can be provisioned.
+#
+# That is a deliberate trade (provisioning is slow, network-bound, and mostly asserts other
+# people's package archives), but the cost has been paid for real and is worth naming. A
+# `trap … RETURN` leaked from verified_install into provision()'s frame and aborted every
+# fresh-box run AFTER installing everything but BEFORE wire_links — a box carrying the whole
+# stack and not one symlink. It stayed green through review in two repos, because the broken
+# line is valid bash and because this job never reached the function it was in
+# (dotgibson/dotfiles-Debian#2; the analysis is in the closed #461 and #512).
+#
+# One shape of that bug is now blocked statically — see _core_return_trap_hits, wired into
+# lint-call.yml and audit-core.sh §5e. That is a guard for ONE shape, not coverage of the
+# path. Anything else living only in provision() is still invisible to CI: if you are
+# changing that half of a bootstrap, the gate below will not tell you whether it works.
+#
+# A caller stub (in an OS repo) looks like — pinned to the moving MAJOR tag @vN per the
+# `@vN` policy in RELEASE-STRATEGY.md, NOT @main: a caller's contract then changes only via
+# a Core release, and a MAJOR bump is the one intentional, reviewed caller edit — so a repo
+# pinned @vN keeps that major's assertions until it deliberately moves to @vN+1 as part of the
+# fan-out (re-vendoring the new major's Core + updating its bootstrap together). The fleet is
+# on @v4 today:
+#   jobs:
+#     test:
+#       uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v4
+#       with:
+#         image: alpine:3.20
+#         prep:  apk add --no-cache bash zsh
+#         offensive: false        # true only for dotfiles-Offense
+#
+# A role repo passes the same inputs; nothing extra. Band 80 is skipped automatically
+# because it has no os/*.zsh — see the note above.
+# ──────────────────────────────────────────────────────────────────────────────
+name: bootstrap-test
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Container image for the target distro (matching /etc/os-release).
+        type: string
+        required: true
+      prep:
+        description: Shell run INSIDE the container to install bootstrap's deps (at least bash).
+        type: string
+        required: true
+      offensive:
+        description: Assert the offensive role layer (offensive symlinks + loader stage).
+        type: boolean
+        default: false
+      provision_stub:
+        description: >-
+          Also run a FULL bootstrap with package managers and downloaders replaced by logging
+          no-ops, to execute provision() without installing anything (#575). OPT-IN: a repo
+          enables it once its provision() tolerates a stub that returns 0 and writes no file.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # SHELLCHECK_OPTS must match lint-call.yml's, and scripts/test-core.sh asserts that it
+      # does. Both gates lint the SAME bootstrap.sh, and until now only lint-call.yml set the
+      # fleet's curated exclusions — so the four codes Core has explicitly decided are not
+      # defects were still blocking, just in the other gate (#517). SC2088 is the one that
+      # actually fires: "tildes in messages" is exactly what a bootstrap does, since every
+      # user-facing string names ~/.zshrc, ~/.config/…, ~/.local/bin.
+      #
+      # The failure mode is nasty because the two gates run on different triggers — `lint` on
+      # every push and PR, `bootstrap` only when bootstrap.sh/core/ change. A repo stays green
+      # for weeks, then a bootstrap-touching PR reds with an error naming a rule the fleet
+      # documented as excluded. The natural reading is "the exclusion list is wrong" and the
+      # natural fix is to weaken the message — which is what happened in dotfiles-Gentoo
+      # before anyone noticed the two gates simply disagreed.
+      #
+      # Three repos (Arch, Debian, Fedora) had independently worked around this with a
+      # copy-pasted `disable=` line in their own .shellcheckrc — the N-way drift the reusable
+      # workflows exist to end. Setting it here fixes all nine at once, including the six that
+      # have no .shellcheckrc, or one without that line.
+      - name: shellcheck + syntax + --help
+        env:
+          SHELLCHECK_OPTS: "-e SC1090 -e SC1091 -e SC2015 -e SC2088"
+        run: |
+          shellcheck -x bootstrap.sh
+          bash -n bootstrap.sh
+          bash bootstrap.sh --help >/dev/null
+
+  links-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: bootstrap --links-only (${{ inputs.image }})
+        env:
+          IMAGE: ${{ inputs.image }}
+          PREP: ${{ inputs.prep }}
+          OFFENSIVE: ${{ inputs.offensive }}
+        run: |
+          # BLIB_SU= : the container runs as root, so no privilege escalation is
+          # needed. Without this, blib_set_login_shell defaults BLIB_SU=sudo and a
+          # distro whose image HAS chsh but NOT sudo (Arch/openSUSE/Kali base images)
+          # would run `sudo chsh` and abort. Empty = run chsh/tee directly as root.
+          # (Alpine/Gentoo bootstraps already export their own BLIB_SU; this is a no-op
+          # there and the correct default for the rest.)
+          docker run --rm -e PREP -e OFFENSIVE -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
+            # Install bootstrap deps, WITH RETRY: some distro mirrors (notably openSUSE
+            # Tumbleweed OSS) intermittently time out in CI (curl error 28), and a single
+            # prep failure should not red every fan-out PR fleet-wide. The until-condition
+            # is exempt from set -e so a failed attempt loops instead of aborting; an `if`
+            # (not `&&`) guards the cap for the same reason. After 5 tries we exit 1 so a
+            # genuinely broken prep still fails LOUD (no false green).
+            n=0
+            until eval "$PREP"; do
+              n=$((n+1))
+              if [ "$n" -ge 5 ]; then echo "prep failed after $n attempts" >&2; exit 1; fi
+              echo "prep attempt $n failed (mirror timeout?), retrying in $((n*10))s..." >&2
+              sleep $((n*10))
+            done
+            # Pre-seed the tpm dir so blib_link_core skips its network git clone — the
+            # same "seed the plugin dir to skip the first-run clone" trick test-core.sh
+            # uses to stay offline + deterministic.
+            mkdir -p "$HOME/.config/tmux/plugins/tpm"
+
+            ./bootstrap.sh --links-only
+
+            echo "── asserting symlink graph + generated ~/.zshrc ──"
+            for link in \
+              "$HOME/.config/zsh/loader.zsh" \
+              "$HOME/.config/starship.toml" \
+              "$HOME/.config/lazygit/config.yml" \
+              "$HOME/.config/nvim" \
+              "$HOME/.vimrc" \
+              "$HOME/.gitconfig"; do
+              if [ ! -L "$link" ]; then echo "MISSING symlink: $link" >&2; exit 1; fi
+            done
+            # Band 80 is the OS-NATIVE layer, and only an OS repo has one. A ROLE repo
+            # (dotfiles-Offense, dotfiles-Defense) ships no os/*.zsh, stacks on whatever
+            # OS layer the box already runs, and correctly links nothing at 80 — so an
+            # unconditional check here reds a repo doing exactly the right thing.
+            # Self-arming on the caller tree, the same way the atuin check below is, rather
+            # than a new input every role repo would have to remember to pass: the presence
+            # of os/*.zsh IS the question being asked, so derive it instead of declaring it.
+            if ls os/*.zsh >/dev/null 2>&1 && [ ! -L "$HOME/.config/zsh/80-os.zsh" ]; then
+              echo "MISSING symlink: $HOME/.config/zsh/80-os.zsh" >&2; exit 1
+            fi
+            # The vendored loader must resolve to the repo copy (not a dangling link).
+            if [ ! -e "$HOME/.config/zsh/loader.zsh" ]; then echo "loader.zsh symlink is dangling" >&2; exit 1; fi
+            # sesh is SEEDED (copied, not symlinked) — assert the real file landed. Re-added now
+            # that the lazygit/vim/sesh wiring is vendored fleet-wide (every adopter core.lock is
+            # at a Core that includes it), so this @main test can assert it without false reds.
+            # atuin config — asserted CONDITIONALLY, on whether this repo has vendored the
+            # Core that carries it. An OS repo still on an older core/ has no such file, and
+            # its bootstrap correctly skips the link, so an unconditional check would red a
+            # repo doing nothing wrong (the false-red the sesh note below records). The
+            # check arms itself the moment that repo syncs Core.
+            if [ -f core/atuin/config.toml ] && [ ! -L "$HOME/.config/atuin/config.toml" ]; then
+              echo "MISSING symlink: $HOME/.config/atuin/config.toml" >&2; exit 1
+            fi
+            if [ ! -f "$HOME/.config/sesh/sesh.toml" ]; then echo "sesh.toml not seeded" >&2; exit 1; fi
+            if [ -L "$HOME/.config/sesh/sesh.toml" ]; then echo "sesh.toml should be a copy, not a symlink" >&2; exit 1; fi
+            # NOTE: keep this block apostrophe-free — it lives inside the single-quoted sh -euc script.
+
+            grep -q "dotfiles-managed v4" "$HOME/.zshrc" || { echo "~/.zshrc not managed" >&2; exit 1; }
+            # v4: the .zshrc no longer lists modules — it just sources the vendored loader,
+            # which globs the numbered fragments itself.
+            grep -q "source .*loader.zsh" "$HOME/.zshrc" || { echo "~/.zshrc does not source the vendored loader" >&2; exit 1; }
+            # It must NOT assign CORE_PROFILE (only mention it in a comment): the loader owns
+            # resolution (env, else $ZSH_CFG/profile, else full), and a pre-set would disable
+            # the profile file. Strip comment lines first, then reject any CORE_PROFILE= / :=.
+            if grep -vE "^[[:space:]]*#" "$HOME/.zshrc" | grep -qE "CORE_PROFILE[[:space:]]*:?="; then
+              echo "~/.zshrc must NOT assign CORE_PROFILE (v4 leaves resolution to the loader)" >&2; exit 1
+            fi
+
+            if [ "$OFFENSIVE" = "true" ]; then
+              # v4: the offensive role stage is the numbered fragment 85-offensive.zsh (band
+              # 85-94); the loader picks it up by NN glob (no module-list entry to grep).
+              for link in "$HOME/.config/zsh/85-offensive.zsh" "$HOME/hacktheplanet"; do
+                if [ ! -L "$link" ]; then echo "MISSING offensive symlink: $link" >&2; exit 1; fi
+              done
+            fi
+
+            echo "bootstrap --links-only OK"
+          '
+
+  # ── provision(), executed at last ─────────────────────────────────────────────
+  # OPT-IN (`provision_stub: true`). The links-only job above returns before provision() is
+  # entered, so package installation, retries, upstream installers, repo/key setup and every
+  # failure path around them are executed by NO gate in the fleet — the gap in #575, and the
+  # reason a leaked RETURN trap shipped green through review in two repos
+  # (dotgibson/dotfiles-Debian#2).
+  #
+  # This runs the REAL bootstrap, no --links-only, with the package managers and downloaders
+  # replaced by logging no-ops from core/scripts/provision-shim.sh. Most of that bug class is
+  # control flow rather than I/O — a leaked trap, a bare refresh aborting under `set -e`, an
+  # unchecked GPG import, a tool assumed present on a minimal image — and all of it executes
+  # here without installing a package or touching the network.
+  #
+  # WHAT A GREEN RUN MEANS: provision() ran and returned, and wire_links still happened after
+  # it. It does NOT mean provisioning works — no package is really installed, so a wrong
+  # package name or a bad repo key is invisible. That still needs a periodic real bootstrap.
+  # The stub also always succeeds, so failure branches stay unexercised. Read the honest
+  # limits in the shim script before trusting this further than it goes.
+  #
+  # It is opt-in because a repo has to be shim-clean first: a step that downloads and then
+  # unpacks will not find its asset (the stub writes no file) and must tolerate that. Enable
+  # per repo, once.
+  provision-stub:
+    if: inputs.provision_stub
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: bootstrap with provisioning stubbed (${{ inputs.image }})
+        env:
+          IMAGE: ${{ inputs.image }}
+          PREP: ${{ inputs.prep }}
+        run: |
+          docker run --rm -e PREP -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
+            n=0
+            until eval "$PREP"; do
+              n=$((n+1))
+              if [ "$n" -ge 5 ]; then echo "prep failed after $n attempts" >&2; exit 1; fi
+              echo "prep attempt $n failed (mirror timeout?), retrying in $((n*10))s..." >&2
+              sleep $((n*10))
+            done
+            # The shim is VENDORED, so a repo whose core/ predates it simply has no such file.
+            # Skip loudly rather than silently passing a job that never ran the thing it names.
+            if [ ! -f core/scripts/provision-shim.sh ]; then
+              echo "core/scripts/provision-shim.sh missing — vendored Core predates it; sync Core first" >&2
+              exit 1
+            fi
+            # Same tpm pre-seed as links-only: skip the first-run clone, stay offline.
+            mkdir -p "$HOME/.config/tmux/plugins/tpm"
+
+            PROVISION_SHIM_LOG=/tmp/provision-shim.log
+            export PROVISION_SHIM_LOG
+            PATH="$(sh core/scripts/provision-shim.sh):$PATH"
+            export PATH
+
+            echo "── running the FULL bootstrap with provisioning stubbed ──"
+            ./bootstrap.sh
+
+            # provision() returning is necessary but not sufficient: the bug this job exists
+            # for aborted AFTER provision did its work and BEFORE wire_links, so assert the
+            # wiring still happened on the far side of it.
+            for link in "$HOME/.config/zsh/loader.zsh" "$HOME/.gitconfig"; do
+              if [ ! -L "$link" ]; then
+                echo "MISSING symlink after a full run: $link — provision() may have aborted before wire_links" >&2
+                exit 1
+              fi
+            done
+
+            echo "── what provision() would have done (intercepted) ──"
+            cat "$PROVISION_SHIM_LOG" 2>/dev/null || echo "(nothing intercepted)"
+            echo "bootstrap with stubbed provisioning OK"
+          '

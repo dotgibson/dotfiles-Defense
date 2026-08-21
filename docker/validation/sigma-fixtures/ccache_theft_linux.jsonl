@@ -1,3 +1,0 @@
-{"Image":"/usr/bin/kinit","CommandLine":"kinit administrator@CORP.LOCAL"}
-{"Image":"/usr/bin/base64","CommandLine":"base64 /tmp/krb5cc_1000"}
-{"Image":"/usr/bin/cp","CommandLine":"cp Administrator.ccache /tmp/loot.ccache"}

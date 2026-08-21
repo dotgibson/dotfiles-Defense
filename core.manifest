@@ -1,0 +1,151 @@
+# core.manifest — the canonical inventory of the Core layer.
+# Every path here is authored ONCE in this repo and vendored into each OS repo
+# under core/. If a file isn't listed here, it isn't Core — it belongs to an
+# OS repo (OS-native) or to dotfiles-Offense (offensive).
+#
+# This list is the contract. Audit scripts and the promotion checklist read it.
+# ── version stamp — the human-readable Core version, vendored so an OS repo can
+#    report WHICH Core it carries (`core-version`); the subtree squash records the
+#    commit, this records the SemVer. ──────────────────────────────────────────
+core.version
+# ── zsh ───────────────────────────────────────────────────────────────────────
+# Numbered load-order (v4). The loader globs NN-*.zsh across $ZSH_CFG, sorts by the
+# NN prefix, and sources in THIS order:
+#   00-tools -> 05-ui -> 10-options -> 15-history -> 20-aliases -> 25-git
+#         -> 30-functions -> 35-fzf -> 40-bindings -> 45-plugins -> 50-op
+#         -> 55-maint -> 60-update  (then the OS layer at 80-os, role at 85-*, host at 99-local)
+# The NN prefix — not a hand-listed name array — is the contract now. Bands: Core 00-69,
+# OS-native 70-84, Role 85-94, host-local 95-99. CORE_PROFILE gates only Core (00-69);
+# fragments >=70 always load. Order matters: tools inits atuin (defines its widget) and
+# fzf defines its zle widgets BEFORE plugins loads zsh-vi-mode, which fires the binding
+# hook; options runs compinit BEFORE plugins (fzf-tab + carapace need it). git loads AFTER
+# aliases so its comprehensive git set is the single source of truth (20-aliases.zsh
+# carries no git-WORKFLOW aliases; the two tool-detection-gated exceptions, `lg` and
+# `gdft`, are noted in that file).
+# loader.zsh is the shared fragment-loader an OS .zshrc sources (B12); it is NOT itself a
+# numbered fragment (no NN- prefix) — it DRIVES the glob, so it is never sourced by it.
+zsh/loader.zsh         # canonical glob+sort+profile+byte-compile+source loop, vendored so OS .zshrc files stop duplicating it
+zsh/00-tools.zsh       # detection + the single init point (zoxide/starship/atuin/mise/direnv) + the Core→OS API (_cache_eval, _core_is_wsl)
+zsh/05-ui.zsh          # terminal-UX primitives (_core_err/warn/ok/hint/confirm/spin) — gum-aware
+zsh/10-options.zsh     # setopts + completion system (compinit, cached) + zstyles
+zsh/15-history.zsh     # HISTFILE/HISTSIZE/SAVEHIST + history setopts + secret-ignore
+zsh/20-aliases.zsh     # modern-CLI aliases, each guarded by 00-tools.zsh detection
+zsh/25-git.zsh         # curated OMZ-style git aliases + git_main_branch/current_branch helpers
+zsh/30-functions.zsh   # cross-OS shell functions (mkcd, extract, serve, genpw, ...)
+zsh/35-fzf.zsh         # fzf env + zle widgets (Ctrl-T/R, Alt-Z, Ctrl-G) + fif/fbr
+zsh/40-bindings.zsh    # vi-mode keybindings (zvm_after_init hook)
+zsh/45-plugins.zsh     # plugin loader (zsh-defer, carapace, fzf-tab) + tool-native completions (gh/uv/ty) — after compinit, after carapace
+zsh/50-op.zsh          # 1Password CLI helpers (macOS agent socket -> os layer)
+zsh/55-maint.zsh       # daily-maintenance control surface (maint-install/run/log/...)
+zsh/60-update.zsh      # `up` updater + once/day "updates available" nudge
+# autoloaded completions for Core's own verbs — fpath-added by 10-options.zsh, not symlinked.
+# Listed PER-FILE (not as `zsh/completions/`) so the offline audit catches an ADDED or
+# REMOVED completion, not just a deleted directory (B10): a new Core verb must register its
+# completion here deliberately, and an orphaned one is flagged without needing the
+# network-bound verify-core backstop. Keep alphabetical.
+zsh/completions/_cdup
+zsh/completions/_core
+zsh/completions/_core-doctor
+zsh/completions/_core-help
+zsh/completions/_core-version
+zsh/completions/_extract
+zsh/completions/_fbr
+zsh/completions/_fcd
+zsh/completions/_fif
+zsh/completions/_gaf
+zsh/completions/_genpw
+zsh/completions/_grf
+zsh/completions/_grsf
+zsh/completions/_gsync
+zsh/completions/_maint-install
+zsh/completions/_maint-log
+zsh/completions/_maint-noargs
+zsh/completions/_mkbak
+zsh/completions/_mkcd
+zsh/completions/_openv
+zsh/completions/_opsecret
+zsh/completions/_opssh
+zsh/completions/_optoken
+zsh/completions/_please
+zsh/completions/_pullall
+zsh/completions/_serve
+zsh/completions/_up
+zsh/completions/_update-check
+# ── starship — prompt theme; symlinked to the DEFAULT ~/.config/starship.toml ─
+# (so no STARSHIP_CONFIG needed). Not a .zsh module, so bootstrap links it
+# explicitly rather than via the core/zsh/*.zsh loop.
+starship/starship.toml
+# ── lazygit — tokyonight theme; symlinked to ~/.config/lazygit/config.yml. Not a
+#    .zsh module, so bootstrap links it explicitly (like starship above). lazygit
+#    is reached via the `lg` alias + the `prefix + g` tmux popup. ───────────────
+lazygit/config.yml
+# ── cross-OS helper scripts (called by zsh, tmux, AND nvim) ───────────────────
+bin/clip
+bin/clip-paste
+# ── shared BASH UX lib — palette/glyphs/spinner; SOURCED by each OS repo's
+#    bootstrap.sh (the pre-shell installer can't source the zsh 05-ui.zsh) ──────
+lib/ux.sh
+# ── shared BASH provisioning scaffold — link/read_pkgs/WSL-detect/Core-symlink/
+#    .zshrc-loader/login-shell helpers; SOURCED by every repo's bootstrap.sh —
+#    role repos included — so the shared half of the bootstrap stops being
+#    hand-forked across the fleet. What differs is which helpers a repo CALLS:
+#    an OS repo calls blib_link_core + blib_link_os_layer; the CONTRACT for a
+#    role repo is blib_link_core + blib_link_role_layer and never
+#    blib_link_os_layer, because the OS band belongs to the repo underneath it.
+#    TODAY neither role repo is there yet: dotfiles-Defense hand-rolls the band
+#    in its own wire_defense_stage, and dotfiles-Offense still calls
+#    blib_link_os_layer because it still owns the Kali OS layer. Both adopt
+#    blib_link_role_layer once this Core release fans out. ─────────────────────
+lib/bootstrap-lib.sh
+# ── jujutsu (jj) — OPT-IN colocated git companion; symlinked to ~/.config/jj/config.toml.
+#    Additive — never replaces git. Inert without the jj binary; zsh aliases are HAVE_JJ-gated.
+#    Not a .zsh module, so bootstrap links it explicitly (like starship/lazygit above). ──
+jujutsu/config.toml
+# ── atuin — shell-history engine; symlinked to ~/.config/atuin/config.toml (the
+#    DEFAULT path, so no ATUIN_CONFIG_DIR). 00-tools.zsh already INITS atuin; this
+#    is the config that init never had. Carries the OPT-IN [daemon] block (ships
+#    OFF — a machine flips it with ATUIN_DAEMON__ENABLED=true from its OS/host
+#    layer, which also owns the launcher). Inert without the atuin binary. ───────
+atuin/config.toml
+# ── mise — polyglot runtime manager; global tool versions (portable) ──────────
+mise/config.toml
+# ── sesh — portable session-manager config (SEEDED to ~/.config/sesh/sesh.toml;
+#    copied, not symlinked — engagement layouts live in dotfiles-Offense) ──────────
+sesh/sesh.toml.example
+# ── tmux — base conf + keybinding layer; OS-specific bits -> os/<os>.conf ──────
+tmux/tmux.conf            # main config; sources tmux.reset.conf first, then os.conf,
+                          # then role.conf (the Role layer's tmux bits) last
+tmux/tmux.reset.conf      # the keybinding layer (prefix C-a lives here) — MUST be symlinked
+# tmux popup + status scripts. Listed PER-FILE (not as `tmux/scripts/`) so an added or
+# removed script is caught offline (B10) — this is the exact gap that let an orphaned
+# tmux-sessionizer.sh linger here once. (nvim/ closes the same gap the other way, via
+# audit-core.sh §4b reachability; per-file listing is the cheaper answer here.)
+# Keep alphabetical.
+tmux/scripts/tmux-battery.sh
+tmux/scripts/tmux-cheat.sh
+tmux/scripts/tmux-claude.sh
+tmux/scripts/tmux-menu.sh
+tmux/scripts/tmux-netinfo.sh
+tmux/scripts/tmux-scratch.sh
+tmux/scripts/tmux-sesh.sh
+# ── maintenance runner (invoked by the scheduler 55-maint.zsh installs) ───────
+maint/dotfiles-maint.sh
+# ── upstream-sync runner (invoked by the `gsync` function in zsh/20-aliases.zsh,
+#    which resolves this path relative to itself — like maint/ above) ──────────
+.bin/sync-upstream.sh
+# ── git — portable config; credential/identity split to OS+local ──────────────
+git/gitconfig
+git/local.gitconfig.example
+# ── vim — zero-dependency fallback for boxes with only stock vim (no nvim) ─────
+vim/vimrc
+# ── nvim — entire lazy.nvim tree; portable, clipboard via `clip` ──────────────
+# whole directory: lua/gerrrt/{config,plugins,servers,utils}. Kept DIRECTORY-granular on
+# purpose (unlike completions/ + tmux/scripts/ above): this is a vendored lazy.nvim tree
+# that legitimately churns wholesale as plugins/servers come and go, so per-file listing
+# would be maintenance noise. The orphan backstop here is audit-core.sh §4b (nvim module
+# reachability) instead of the manifest (B10): it walks the load graph and fails on a lua
+# module nothing can require. NB this comment previously named verify-core.sh, which has
+# never existed in this repo — so from the day nvim/ went directory-granular until §4b
+# was added, the "backstop instead of the manifest" was nothing at all (#454).
+nvim/
+# ── Core layers: zsh + clip + mise + sesh + tmux + maint + git + nvim. ────────

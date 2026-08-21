@@ -1,1 +1,0 @@
-{"Event": {"System": {"EventID": 1, "Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WEB01"}, "EventData": {"Image": "C:\\Windows\\System32\\cmd.exe", "CommandLine": "cmd.exe /c whoami", "ParentImage": "C:\\Windows\\System32\\inetsrv\\w3wp.exe", "User": "IIS APPPOOL\\DefaultAppPool"}}}
