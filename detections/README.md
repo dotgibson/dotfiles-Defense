@@ -88,8 +88,16 @@ repo's `lint.yml` only covers shell). Eleven hard checks, no advisory:
    in `splunk-precedence-allowlist.tsv`. Both instances today are correct and signed off;
    the point is that the third one is a review conversation rather than a silent
    behaviour change (#166).
-11. **ATT&CK-tag validity** — `detections/check-attack-tags.sh`. Checks every
-   `attack.*` tag against a **pinned** ATT&CK release. This was advisory until #172, and
+11. **ATT&CK id validity** — `detections/check-attack-tags.sh`. Checks every ATT&CK id
+   in the repo against a **pinned** release, in **both** places they are written: the
+   `attack.*` tags, and every id cited outside them — prose, and the technique pages
+   `references:` entries link to. The second half exists because gating one representation
+   moves the risk to the other: #171 retagged for v19 and #179 then found 27 revoked ids
+   still sitting in prose and references, untouched, because this gate read `tags:` and
+   nothing else. Those links are the sharp end — `attack.mitre.org` serves a revoked
+   technique with a banner rather than a 404, so a stale reference shows a responder the
+   wrong technique without ever announcing itself. A deliberate historical mention is
+   escaped with `attack-id-historical` on the line. This was advisory until #172, and
    why it stopped being one is the useful part: pySigma ≥ 1.5.0 resolves tags against a
    STIX bundle it downloads at check time from the HEAD of `attack-stix-data`, dropping
    revoked objects — so the same commit reported 0 issues one run and 52 the next with
