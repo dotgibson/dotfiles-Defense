@@ -25,7 +25,7 @@ core.version
 # loader.zsh is the shared fragment-loader an OS .zshrc sources (B12); it is NOT itself a
 # numbered fragment (no NN- prefix) — it DRIVES the glob, so it is never sourced by it.
 zsh/loader.zsh         # canonical glob+sort+profile+byte-compile+source loop, vendored so OS .zshrc files stop duplicating it
-zsh/00-tools.zsh       # detection + the single init point (zoxide/starship/atuin/mise)
+zsh/00-tools.zsh       # detection + the single init point (zoxide/starship/atuin/mise/direnv) + the Core→OS API (_cache_eval, _core_is_wsl)
 zsh/05-ui.zsh          # terminal-UX primitives (_core_err/warn/ok/hint/confirm/spin) — gum-aware
 zsh/10-options.zsh     # setopts + completion system (compinit, cached) + zstyles
 zsh/15-history.zsh     # HISTFILE/HISTSIZE/SAVEHIST + history setopts + secret-ignore
@@ -34,7 +34,7 @@ zsh/25-git.zsh         # curated OMZ-style git aliases + git_main_branch/current
 zsh/30-functions.zsh   # cross-OS shell functions (mkcd, extract, serve, genpw, ...)
 zsh/35-fzf.zsh         # fzf env + zle widgets (Ctrl-T/R, Alt-Z, Ctrl-G) + fif/fbr
 zsh/40-bindings.zsh    # vi-mode keybindings (zvm_after_init hook)
-zsh/45-plugins.zsh     # lightweight plugin loader (zsh-defer, carapace, fzf-tab)
+zsh/45-plugins.zsh     # plugin loader (zsh-defer, carapace, fzf-tab) + tool-native completions (gh/uv/ty) — after compinit, after carapace
 zsh/50-op.zsh          # 1Password CLI helpers (macOS agent socket -> os layer)
 zsh/55-maint.zsh       # daily-maintenance control surface (maint-install/run/log/...)
 zsh/60-update.zsh      # `up` updater + once/day "updates available" nudge

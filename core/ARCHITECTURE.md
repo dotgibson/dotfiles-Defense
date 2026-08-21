@@ -162,7 +162,9 @@ The zsh fragment chain is sourced in one canonical order, declared in
 The order encodes real dependencies: `00-tools` initializes atuin and `35-fzf`
 defines its widgets before `45-plugins` loads zsh-vi-mode (which fires the binding
 hook); `10-options` runs `compinit` before `45-plugins` (fzf-tab and carapace need
-it); `25-git` loads after `20-aliases` so its comprehensive git set is the single
+it — and so do the tool-native `gh`/`uv`/`ty` completions Core registers on the line
+immediately after carapace, late enough that a tool's own completion still overrides
+carapace's bridged one); `25-git` loads after `20-aliases` so its comprehensive git set is the single
 source of truth. The chain ends with the OS layer (`80-os`), any role stage
 (`85-*`), then `99-local`, so a machine can override Core last without editing it.
 Bands: Core `00`–`69`, OS-native `70`–`84`, role `85`–`94`, host `95`–`99`. Do not

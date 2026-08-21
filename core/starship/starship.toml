@@ -357,7 +357,7 @@ format = '[[ $symbol ($environment) ](fg:color_purple bg:color_srf1)]($style)'
 style = "bg:color_srf1"
 format = '[[ $symbol($version) ($environment) ](fg:color_purple bg:color_srf1)]($style)'
 
-# direnv state on the srf1 band — you hook direnv in os/macos.zsh but had no visual
+# direnv state on the srf1 band — Core hooks direnv in zsh/00-tools.zsh but there was no visual
 # feedback that an .envrc was loaded vs. waiting for `direnv allow`. Yellow when allowed
 # & loaded, red when blocked/denied so an un-allowed .envrc is obvious. Only renders in a
 # directory under direnv's control (an .envrc up the tree).

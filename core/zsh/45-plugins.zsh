@@ -230,6 +230,36 @@ if [[ -n ${HAVE_CARAPACE:-} ]]; then
   [[ -n ${HAVE_CARAPACE:-} ]] && _cache_eval --salt "${CARAPACE_BRIDGES:-}" carapace carapace _carapace zsh
 fi
 
+# ── tool-native zsh completions: gh / uv / ty. AFTER compinit AND after carapace. ──
+# All three emit a DETERMINISTIC completion script for a given binary — a `#compdef` header
+# plus a `compdef` call, static text — so they route through _cache_eval (00-tools.zsh)
+# exactly as carapace above does: generate once, then one cheap `source` per shell instead
+# of a fork per shell per tool. _cache_eval self-guards on ${commands[…]}, so a box without
+# the tool pays literally nothing and needs no HAVE_* flag; that is also why `ty` is here
+# unconditionally despite being on few boxes today.
+#
+# WHY HERE AND NOT AT BAND 00, where direnv's hook lives: these call `compdef`, which does
+# not exist until 10-options.zsh has run compinit. direnv touches no completion machinery,
+# so it can — and must — stay at band 00, because band 45 is profile-gated (loader.zsh ceils
+# `minimal` at 30, `standard` at 50) and a lost completion is a missing convenience while a
+# lost direnv hook is a broken feature.
+#
+# WHY AFTER THE CARAPACE BLOCK, not before it: carapace BRIDGES completions for hundreds of
+# commands, gh among them. Whichever `compdef` runs LAST owns the command, so registering
+# the tool's OWN completion after carapace is what keeps the hand-written one in front of
+# the bridged one. That is the order these three ran in for years while they lived in
+# os/*.zsh at band 80 — so this preserves behaviour rather than changing it, and moving
+# these lines above the carapace block silently hands gh back to the bridge, with no error.
+# scripts/test-core.sh asserts the relative line order outright.
+#
+# Unguarded (no `(( $+functions[_cache_eval] ))` wrapper), matching the carapace call above:
+# the os-layer copies carried one because band 80 can be sourced without Core, and band 00
+# always loads whenever band 45 does. These were duplicated across seven os/*.zsh until
+# #449, in three variants — Alpine and Gentoo carried only direnv+gh, so they gain uv/ty here.
+_cache_eval gh gh completion -s zsh
+_cache_eval uv uv generate-shell-completion zsh
+_cache_eval ty ty generate-shell-completion zsh
+
 # fzf-tab (load after compinit + carapace, before other completion wrappers)
 _zplugin_load Aloxaf fzf-tab
 if (($+functions[fzf-tab-complete])); then

@@ -101,10 +101,32 @@ branching on an OS name.**
 | timeout | `_to` (`maint/dotfiles-maint.sh`) | `timeout` → `gtimeout` → unbounded |
 | binary-name drift | `$FD_BIN`, `$BAT_BIN` (`zsh/00-tools.zsh`) | `fd`/`fdfind`, `bat`/`batcat` |
 | layer seam | numbered bands (`zsh/loader.zsh`) | file number, see `VENDORING.md` |
+| WSL host | `_core_is_wsl` (`zsh/00-tools.zsh`), `blib_is_wsl` (`lib/bootstrap-lib.sh`) | `$WSL_DISTRO_NAME` → the `microsoft`/`wsl` marker in the kernel version file |
 
 `command -v` is the workhorse. Prefer it to `uname`/`$OSTYPE`: probing for the tool you
 are about to run is both more precise and correct on machines the OS test never
 anticipated.
+
+### The env-fact exception
+
+`command -v` answers _can I run X?_. It cannot answer _what am I running inside?_, and two
+shims need exactly that: `bin/clip` (under WSL the clipboard routes to the Windows binary —
+a host fact, not a tool fact) and `_core_is_wsl` (the interop reach-arounds an OS layer gates
+on). Both are legitimate, and the exception is narrow and named:
+
+- read an **env var the environment already sets** — `$WSL_DISTRO_NAME`, set by WSL itself;
+- fall back to a **file the kernel wrote** — the `microsoft`/`wsl` marker in `/proc/version`,
+  for a login that never inherited the env (`su -`, a systemd unit, `ssh host cmd`);
+- **never** branch on `uname` or `$OSTYPE`.
+
+Both carry a `*_PROC_VERSION` test seam (`CORE_PROC_VERSION`, `CLIP_PROC_VERSION`), and that
+is not decoration: without it the "this box is not WSL" case cannot be asserted on a WSL
+development host, and "this box is WSL" cannot be asserted on a CI runner — the suite would
+prove one direction on each machine and both on neither.
+
+`_core_is_wsl` is also the **only** WSL predicate a zsh layer should use. Six OS repos each
+re-derived it before #449; an OS layer that needs the answer calls Core's, and the reusable
+`lint` workflow fails one that grows its own back.
 
 **When the capability genuinely cannot be probed**, push the knowledge outward rather
 than hardcoding it:

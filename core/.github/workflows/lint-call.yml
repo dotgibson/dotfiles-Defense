@@ -27,12 +27,22 @@ name: lint (reusable)
 # leg (all Lua lives under core/), shfmt is advisory. Tools are SHA-256-verified by
 # the shared composite action against pinned checksums in scripts/tool-versions.env.
 #
-# ONE leg needs no pinned tool and is not a linter: RETURN-trap discipline, a grep. It is
-# here rather than in SHELLCHECK_OPTS because shellcheck genuinely cannot see the bug —
-# the broken line is valid bash — and because bootstrap-test.yml never runs provision(),
-# so no gate in the fleet executes the code where it detonates (#512, #461). See the long
-# note on that step. It is BLOCKING, and was verified against all nine fleet repos plus
-# Core before landing: every one is green today, so nobody is red on arrival.
+# TWO legs need no pinned tool and are not linters — both are greps, and both encode a rule
+# that lives in scripts/lib/common.sh so the fleet-facing copy cannot drift from the tested
+# one:
+#
+#   * RETURN-trap discipline. Here rather than in SHELLCHECK_OPTS because shellcheck
+#     genuinely cannot see the bug — the broken line is valid bash — and because
+#     bootstrap-test.yml never runs provision(), so no gate in the fleet executes the code
+#     where it detonates (#512, #461). BLOCKING, and verified against all nine fleet repos
+#     plus Core before landing: every one was green, so nobody was red on arrival.
+#   * Core-owned block duplication (#449). The mirror of audit-core.sh §5c: that gate catches
+#     OS-specifics leaking INTO Core, and nothing caught portable logic stranded OUTSIDE it
+#     — which is how the same direnv/gh/uv/ty block came to be hand-maintained in seven OS
+#     repos, in three drifted variants. ADVISORY for one release cycle, because unlike the
+#     leg above it is red-on-arrival by construction: callers pin the moving @v4 tag, so
+#     they see this leg before they can possibly have vendored the Core that lets them
+#     delete their copy. See the long note on that step.
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -227,6 +237,73 @@ jobs:
           rc=0
           for f in "${files[@]}"; do echo "zsh -n $f"; zsh -n "$f" || rc=1; done
           exit $rc
+
+      # ── ADVISORY IN THIS RELEASE, BLOCKING IN THE NEXT: portable logic Core already owns,
+      # re-implemented locally. Not a linter and needs no pinned tool — it is a grep.
+      #
+      # Seven OS repos each hand-maintained the same direnv/gh/uv/ty init block and six the
+      # same WSL probe: entirely portable zsh, maintained N times, and already drifted into
+      # three variants of one block by the time anyone counted — two repos carried only half
+      # the tools, so whether your shell completed `uv` depended on which OS you booted.
+      # Core took both over in dotgibson/dotfiles-core#449; this leg stops them growing back.
+      # audit-core.sh §5c catches OS-specifics leaking INTO Core and cannot see this, the
+      # other direction: portable logic stranded OUTSIDE it is invisible to every gate the
+      # fleet has, and was found only by reading two layers side by side.
+      #
+      # THE RULE ITSELF LIVES IN ONE PLACE, as the RETURN-trap leg above: scripts/lib/common.sh
+      # :: _core_owned_block_hits, in the dotfiles-core checkout already at the workspace
+      # root, covered by fixtures in scripts/test-core.sh. UNLIKE that leg it has no
+      # audit-core.sh counterpart, on purpose — Core's own tree contains every pattern it
+      # scans for, which is the point — so the Core-side guard is the INVERSE assertion in
+      # test-core.sh: if Core ever loses a block, the gate stops making nine repos delete a
+      # feature nobody provides.
+      #
+      # WHY IT WARNS RATHER THAN FAILS, for now. The RETURN-trap leg could land blocking
+      # because the fleet was verified clean first. This one CANNOT: callers pin @v4, a
+      # moving major tag, so every OS repo sees this leg the moment auto-tag moves — and no
+      # repo can delete its copy until it has vendored the Core that replaces it. It is
+      # red-on-arrival by construction. So it warns for one release cycle, and the flip is a
+      # three-line follow-up once fleet-drift shows all nine clean.
+      - name: Core-owned block duplication (repo-owned zsh) — advisory
+        working-directory: caller
+        env:
+          CORE_ROOT: ${{ github.workspace }}
+        run: |
+          excludes=(':!:core/**')
+          # shellcheck disable=SC2206
+          [ -n "$EXTRA_EXCLUDES" ] && excludes+=($EXTRA_EXCLUDES)
+          mapfile -t files < <(git ls-files '*.zsh' "${excludes[@]}")
+          if [ ${#files[@]} -eq 0 ]; then echo "no repo-owned .zsh"; exit 0; fi
+          # shellcheck source=scripts/lib/common.sh
+          . "$CORE_ROOT/scripts/lib/common.sh"
+          # The helper returns "<line>:<rule-id>". Re-read the line here for the same reason
+          # the RETURN-trap leg does: the offending text is what makes a CI finding
+          # actionable without a checkout.
+          hits=0
+          for f in "${files[@]}"; do
+            while IFS= read -r hit; do
+              [ -n "$hit" ] || continue
+              ln="${hit%%:*}"
+              rule="${hit#*:}"
+              owner="$(_core_owned_block_owner "$rule" || echo 'the Core zsh layer')"
+              echo "    $f:$ln: [$rule] Core owns this — $owner"
+              echo "        $(sed -n "${ln}p" "$f")"
+              hits=1
+            done < <(_core_owned_block_hits "$f")
+          done
+          if [ "$hits" -ne 0 ]; then
+            echo "::warning::this repo re-implements a block Core owns (see the lines above)"
+            echo "These moved into Core in dotgibson/dotfiles-core#449 so they stop being"
+            echo "maintained once per OS repo. Delete the local copy and use the vendored one:"
+            echo "  direnv/gh/uv/ty hooks -> already run from core/zsh/00-tools.zsh (direnv)"
+            echo "                           and core/zsh/45-plugins.zsh (the completions)"
+            echo "  WSL detection         -> if _core_is_wsl; then ... fi"
+            echo "Delete only AFTER this repo has vendored a Core that carries them"
+            echo "(check core.lock), or the niceties gated on them go quiet."
+            echo "This warning becomes a BLOCKING failure in the next Core release."
+            exit 0
+          fi
+          echo "${#files[@]} repo-owned .zsh — none re-implements a Core-owned block"
 
       # ── ADVISORY: formatting vs a 2-space indent spec (matching core/.editorconfig).
       # The if/else swallows shfmt's drift exit so the step is non-blocking WITHOUT

@@ -13,6 +13,34 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.14.1] - 2026-08-21
+
+### Added
+
+- **CI can now run `provision()` for real, with the network stubbed.** (#575) `--links-only`
+  returns before `provision()` is entered, so package installation, retries, upstream
+  installers, repo/key setup and every failure path around them were executed by **no CI job
+  anywhere in the fleet**. That is how a leaked RETURN trap shipped green through review in
+  two repos: it aborted every fresh-box run _after_ installing everything and _before_
+  `wire_links`, and the one job that looks at `bootstrap.sh` never reached the function it
+  was in (`dotgibson/dotfiles-Debian#2`).
+
+  Adds `scripts/provision-shim.sh` — **a new file every OS repo receives in `core/scripts/`
+  on its next sync** — which builds a PATH shim of logging no-ops for the package managers,
+  downloaders and privilege tools a `provision()` reaches for, plus an **opt-in**
+  `provision-stub` job that runs the real bootstrap behind it. Most of that bug class is
+  control flow rather than I/O, so it executes without installing a package or touching the
+  network.
+
+  `sudo`/`doas` are not swallowed — they drop the escalation and re-exec the tail, so
+  `sudo apt-get install x` still reaches the apt-get stub and is still logged. `git` is
+  deliberately not stubbed, since bootstraps clone real things the caller pre-seeds and
+  stubbing it would mask wiring bugs this job should catch. The job asserts more than a zero
+  exit: the bug it exists for aborted _after_ `provision()` did its work, so it also checks
+  the symlink graph survived on the far side, and prints the intercepted command log.
+
+  Opt-in, so nothing changes for a repo that does not enable the job.
+
 ### Fixed
 
 - **`PORTING-MATRIX.md`: the Gentoo column told two lies, and a third that was bigger than
@@ -114,9 +142,82 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   Kali cell is now `cargo²¹`, matching `ouch` and `jujutsu` in that column, and the list of
   cells that previously overclaimed a `³` gains `ast-grep` on Kali alongside Gentoo.
 
+- **`bootstrap-test` and `lint` disagreed about the same `bootstrap.sh`, and only one of
+  them applied the fleet's shellcheck exclusions.** (#517) `lint-call.yml` set
+  `SHELLCHECK_OPTS` with Core's curated `SC1090,SC1091,SC2015,SC2088` exclusions;
+  `bootstrap-test.yml` lints the same file and set nothing. So the four codes Core has
+  explicitly decided are not defects still blocked — just in the other gate, and the same
+  commit could be green in `lint` and red in `bootstrap`.
+
+  The failure mode is nastier than the disagreement itself, because the two gates run on
+  different triggers: `lint` on every push and PR, `bootstrap` only when `bootstrap.sh` or
+  `core/` changes. A repo stays green for weeks, then a bootstrap-touching PR reds with an
+  error naming a rule the fleet documented as excluded. The natural reading is "the
+  exclusion list is wrong" and the natural fix is to weaken the shell script to satisfy it —
+  which is what happened in `dotfiles-Gentoo` before anyone noticed the gates simply
+  disagreed.
+
+  The workaround had already spread by the time this was found: `dotfiles-Arch`, `-Debian`
+  and `-Fedora` each carry an independent copy of Core's exclusion list in their own
+  `.shellcheckrc`, none aware of the others, while `-Offense` and `-openSUSE` have a
+  `.shellcheckrc` without it and `-MacBook`, `-Alpine`, `-Defense` and `-Gentoo` have none
+  at all. Setting it in the workflow fixes all nine at once, including the six no per-repo
+  workaround ever reached.
+
+  **Nothing changes colour on merge** — all nine `bootstrap.sh` files pass both invocations
+  today, so this closes a latent trap rather than a live break. GitHub cannot import an env
+  value from one workflow into another, so the literal is necessarily authored twice;
+  `scripts/test-core.sh` now asserts the two copies are equal, the same shape as the
+  `os-repos.txt` fallback-array check and for the same reason. Deliberately **not** done:
+  adding a `disable=` line to Core's own `.shellcheckrc` — Core's tree is green without
+  those exclusions, and adding them would weaken its own gate to match a rule written for
+  consumers. The per-repo `.shellcheckrc` fragmentation is tracked separately in #564.
+
 ## [v4.14.0] - 2026-08-21
 
 ### Changed
+
+- **Seven OS repos stop hand-maintaining the same shell-hook block; Core owns it.** (#449)
+  `direnv hook zsh`, `gh completion -s zsh`, `uv generate-shell-completion zsh` and
+  `ty generate-shell-completion zsh` were duplicated across every `os/*.zsh` in the fleet —
+  portable zsh with nothing OS-specific in it, maintained once per repo, and already drifted
+  into **three variants of one block**: Alpine and Gentoo carried only two of the four tools,
+  and one copy suppressed the generator's stderr in its fallback arm where the others did
+  not. So whether your shell completed `uv` depended on which OS you booted. They now live
+  in Core, and Alpine, Gentoo and the Debian family gain `uv`/`ty` completions for free.
+
+  **Split by kind rather than kept together**, because the two halves have different
+  constraints. `direnv` goes to `zsh/00-tools.zsh` alongside the zoxide/mise/atuin inits: it
+  registers a hook, needs no `compinit`, and band 00 loads under **every** `CORE_PROFILE` —
+  filed under band 45 it would silently stop `.envrc` files loading on minimal hosts, which
+  is a broken feature rather than a missing convenience. `gh`/`uv`/`ty` go to
+  `zsh/45-plugins.zsh` immediately **after** the carapace block: they call `compdef`, so they
+  must follow `compinit`, and they must follow carapace so a tool's own completion keeps
+  overriding carapace's bridged one — the order they already ran in at band 80, so this
+  preserves behaviour rather than changing it. All four move, `ty` included: `_cache_eval`
+  bails on an absent binary, so a host without the tool pays nothing.
+
+  One ordering that is easy to lose and now has a test behind it: direnv **prepends** its
+  hook to `precmd_functions`/`chpwd_functions`, and so does mise — whichever is sourced last
+  runs first. The direnv line therefore sits _after_ the mise line, reproducing exactly the
+  order these hooks had while direnv was hooked from band 80.
+
+  **Measured startup cost, because one of these four is not free.** Sourcing the cached
+  inits in a compinit-ready shell, 100+ runs each (`hyperfine`): `direnv` (14 lines) and
+  `gh` (212) are together **+0.6 ms** over a 12.9 ms baseline — noise. `uv` ships a
+  **6,976-line** completion and `ty` 325, and the pair costs **+37 ms**. The five repos that
+  already hooked all four have been paying that all along and see no change; Alpine, Gentoo
+  and the Debian family newly pay it, but only on a host that actually has `uv` installed.
+  That is the price of the fleet agreeing on one answer, and it is worth knowing rather
+  than discovering. Sourcing 7k lines on every shell to serve one `<TAB>` is the wrong
+  shape long-term — the fix is an `fpath` autoload rather than a `source`, filed separately.
+  Note the bench job cannot see any of this: it runs a hermetic sandbox with none of these
+  binaries, so every call is a two-token no-op there.
+
+  **For OS-repo maintainers:** nothing to do until you vendor this. After the sync, delete
+  your local copy (`VENDORING.md` has the list). Running both is harmless in the meantime —
+  direnv's hook guards its own registration, a repeated `compdef` re-points the same binding,
+  and Core reuses the same cache files, so the transitional window behaves exactly as today.
 
 - **nvim plugin pins move forward for five plugins.** `nui.nvim`, `nvim-lint`,
   `nvim-lspconfig`, `package-info.nvim` and `schemastore.nvim` advance to the commits
@@ -137,6 +238,36 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   to be lost again. They belong here, once, and reach every machine by fan-out.
 
 ### Added
+
+- **`_core_is_wsl` — one WSL predicate for the whole fleet, and a gate against the copies
+  coming back.** (#449) Six OS repos carried a byte-identical `_IS_WSL=0; …` probe to gate
+  their Windows-interop niceties. Core had the same fact twice more and neither was reachable
+  from zsh: `blib_is_wsl` (bash, forks `grep`, no test seam) and a private copy inside
+  `bin/clip`. Eight implementations of one predicate, in two languages, drifting
+  independently. `zsh/00-tools.zsh` now exports `_core_is_wsl` as a second Core→OS API
+  alongside `_cache_eval` — fork-free (`$(<file)`, no `cat`, no `grep`, because unlike the
+  bootstrap sibling this runs on every interactive shell), **lazily memoised** into
+  `_CORE_IS_WSL` so a shell that never asks never pays, and carrying a `$CORE_PROC_VERSION`
+  test seam. The seam is not decoration: without it the "this box is not WSL" case cannot be
+  asserted on a WSL development host and "this box is WSL" cannot be asserted on a CI runner,
+  so half the predicate would go untested on every machine. `PORTABILITY.md` gains the shim
+  row and documents the narrow **env-fact exception** to its own `command -v` rule.
+
+- **A gate against portable logic stranded outside Core.** (#449) `audit-core.sh` §5c catches
+  OS-specifics leaking _into_ Core; nothing caught the reverse, which is why the block above
+  went unnoticed long enough to drift three ways — it could only be found by reading two
+  layers side by side. `scripts/lib/common.sh` gains `_core_owned_block_hits`, the single
+  definition of "this repo re-implements something Core owns", and
+  `.github/workflows/lint-call.yml` gains a leg that runs it over each caller's repo-owned
+  `*.zsh`. It flags exact generator invocations rather than tool names, so hooking a tool
+  that exists on one OS and nowhere else — the OS layer's actual job — is never a finding.
+
+  Unlike the `RETURN`-trap gate it has **no `audit-core.sh` counterpart**, on purpose: Core's
+  own tree contains every pattern it scans for, which is the point. The Core-side guard is
+  the _inverse_ assertion in `scripts/test-core.sh` — if Core ever loses a block, the gate
+  would be making nine repos delete a feature nobody provides. And it **warns in this release
+  and blocks in the next**, because unlike that gate it is red-on-arrival by construction: no
+  OS repo can delete its copy until it has vendored the Core that replaces it.
 
 - **A gate against leaked `RETURN` traps, for the fleet and for Core's own tree.**
   (#552, #555, #558; refs #512, #461) A bash `RETURN` trap is a **global slot, not a

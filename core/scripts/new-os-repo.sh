@@ -161,7 +161,12 @@ w "$TARGET/os/$os_lc.zsh" <<EOF
 # os/$os_lc.zsh — the $OS interactive layer (symlinked to \$ZDOTDIR/80-os.zsh by bootstrap;
 # band 80 = OS-native, so the loader always sources it regardless of CORE_PROFILE).
 # Put OS-specific aliases, PATH, and package-manager bits HERE — never in Core.
-# It may use any Core helper (00-tools.zsh's _cache_eval, 05-ui.zsh's _core_* primitives).
+# It may use any Core helper (00-tools.zsh's _cache_eval and _core_is_wsl, 05-ui.zsh's
+# _core_* primitives).
+#
+# Core ALREADY hooks direnv/gh/uv/ty and already answers "is this WSL?" (_core_is_wsl) —
+# do not re-add either here. Seven os layers each carried a copy until dotfiles-core#449,
+# and the reusable lint workflow now flags a duplicate. See VENDORING.md.
 EOF
 
 # ── starter bootstrap ─────────────────────────────────────────────────────────

@@ -1211,6 +1211,203 @@ f() { echo \"check the $_rt_s value\"; }"
     pass "RETURN scan: the fleet gate (lint-call.yml) calls the helper rather than copying the pattern"
   fi
 fi
+# ── Core-owned block scanner (scripts/lib/common.sh :: _core_owned_block_hits) ─────
+# WHY THIS IS TESTED. This scanner is the ONLY thing standing between the fleet and the
+# defect it was written for coming straight back. Seven OS repos each hand-maintained the
+# direnv/gh/uv/ty init block and six the WSL probe; by the time anyone counted, the copies
+# had drifted into THREE variants of one block, and two repos silently lacked half the
+# tools. Nothing could see it: the duplicate is valid zsh, `zsh -n` passes it, the shell
+# keeps working, and audit-core.sh §5c looks the other way down the boundary (OS-specifics
+# leaking INTO Core, not portable logic stranded outside it). It was found by reading two
+# layers side by side, which is not a gate (#449).
+#
+# Both halves are pinned, as in the RETURN block above, and for the same reason: the
+# false-positive class is what gets a gate switched off. Here that risk is sharper than
+# usual, because an OS layer's legitimate business — hooking a tool that exists on ONE OS —
+# looks superficially identical to the thing being banned. Every ignore case below is a
+# shape a real OS layer either has today or will write tomorrow.
+#
+# NOTE the inverted self-reference rule vs the two scanners above: those must not flag their
+# own definition or this file. THIS one must not flag common.sh (the pattern table spells the
+# kernel version file as a character class precisely so it doesn't) but MUST flag Core's two
+# owning modules — that is the inverse assertion at the end of this block, and it is the
+# only direction that catches Core quietly losing a block the fleet has been made to delete.
+hdr "Core-owned block scanner (_core_owned_block_hits)"
+_obd="$SANDBOX/ownedblock"
+mkdir -p "$_obd"
+_ob_write() { printf '%s\n' "$2" >"$_obd/$1"; }   # _ob_write <name> <body>
+# _ob_is <file> <expected>  — the scanner's full output must equal <expected> exactly.
+# Exact, not "contains": a rule that fires on the right line for the wrong reason, or fires
+# twice, is a finding the operator has to triage, and this gate's whole value is that its
+# output is a delete-list.
+_ob_is() { # _ob_is <label> <file> <expected>
+  local got
+  got="$(_core_owned_block_hits "$_obd/$2")"
+  if [[ "$got" == "$3" ]]; then
+    pass "owned-block scan: $1"
+  else
+    fail "owned-block scan: $1 (got '${got//$'\n'/, }', want '${3//$'\n'/, }')"
+  fi
+}
+
+# ── what it must catch: the cached arm, one fixture per rule ──
+_ob_write direnv.zsh "# os layer
+_cache_eval direnv direnv hook zsh"
+_ob_is "the direnv hook is a finding" direnv.zsh "2:direnv-hook"
+
+_ob_write gh.zsh "# os layer
+_cache_eval gh gh completion -s zsh"
+_ob_is "the gh completion is a finding" gh.zsh "2:gh-completion"
+
+_ob_write uv.zsh "# os layer
+_cache_eval uv uv generate-shell-completion zsh"
+_ob_is "the uv completion is a finding" uv.zsh "2:uv-completion"
+
+_ob_write ty.zsh "# os layer
+_cache_eval ty ty generate-shell-completion zsh"
+_ob_is "the ty completion is a finding" ty.zsh "2:ty-completion"
+
+# THE EAGER FALLBACK ARM, which is half of every real copy. All seven os/*.zsh wrapped the
+# block in `if (( \$+functions[_cache_eval] )); then … else <bare eval> fi`, so a scanner
+# that only knew the _cache_eval shape would wave through the else-branch of every one of
+# them and report the repo clean after a half-deletion.
+_ob_write fallback.zsh "# os layer
+command -v gh >/dev/null 2>&1 && eval \"\$(gh completion -s zsh 2>/dev/null)\""
+_ob_is "the bare-eval fallback arm is a finding too" fallback.zsh "2:gh-completion"
+
+# ── what it must catch: the WSL probe, both halves ──
+_ob_write wslproc.zsh "# os layer
+elif [[ -r /proc/version ]]; then"
+_ob_is "reading the kernel version file is a finding" wslproc.zsh "2:wsl-detect"
+
+_ob_write wslvar.zsh "# os layer
+_IS_WSL=0"
+_ob_is "the hand-rolled _IS_WSL flag is a finding" wslvar.zsh "2:wsl-detect"
+
+# ── the whole block, as an OS layer actually writes it ──
+# Sorted numerically, deduped, one entry per offending line: this output IS the delete-list
+# the fan-out PRs work from, so its shape is part of the contract.
+_ob_write full.zsh "# ── Detect WSL once ──
+_IS_WSL=0
+if [[ -n \"\${WSL_DISTRO_NAME:-}\" ]]; then
+  _IS_WSL=1
+elif [[ -r /proc/version ]]; then
+  _pv=\"\$(</proc/version)\"; _pv=\${_pv:l}
+  [[ \"\$_pv\" == *microsoft* || \"\$_pv\" == *wsl* ]] && _IS_WSL=1
+fi
+if (( \$+functions[_cache_eval] )); then
+  _cache_eval direnv direnv hook zsh
+  _cache_eval gh gh completion -s zsh
+else
+  command -v direnv >/dev/null 2>&1 && eval \"\$(direnv hook zsh)\"
+fi"
+_ob_is "a real os-layer block reports every line, sorted and deduped" full.zsh \
+  "2:wsl-detect
+4:wsl-detect
+5:wsl-detect
+6:wsl-detect
+7:wsl-detect
+10:direnv-hook
+11:gh-completion
+13:direnv-hook"
+
+# ── what it must NOT catch ──
+# The pointer comment the fan-out PRs replace the deleted block with. If this fires, the
+# gate reds the repo that made the fix — the failure mode that switches a gate off.
+_ob_write comment.zsh "# Deleted: direnv hook zsh is Core's now (core/zsh/00-tools.zsh), as is the
+# WSL probe (_core_is_wsl); this file read /proc/version itself until #449."
+_ob_is "the pointer comment replacing a deleted block is not a finding" comment.zsh ""
+
+# AN OS-ONLY TOOL'S HOOK IS THE OS LAYER'S BUSINESS — the entire point of the band. This is
+# the ignore case that matters most: it is the shape the fix's own comment tells authors to
+# keep writing, and the one a tool-name-based pattern would have destroyed.
+_ob_write osonly.zsh "# os layer
+_cache_eval brew brew shellenv
+_cache_eval pyenv pyenv init -"
+_ob_is "an OS-only tool's own hook is not a finding" osonly.zsh ""
+
+# Using a tool is not registering its completion.
+_ob_write verbs.zsh "alias dv=direnv
+direnv allow
+gh pr create --fill
+uv sync"
+_ob_is "calling the tools is not a finding" verbs.zsh ""
+
+# Reading the distro NAME is a different use from re-implementing the DETECTION — a prompt
+# segment, a window title, a hostname. Only the latter is Core's, which is why the rule keys
+# on the version file and the flag rather than on the env var.
+_ob_write distroname.zsh "[[ -n \${WSL_DISTRO_NAME:-} ]] && print -r -- \"\$WSL_DISTRO_NAME\""
+_ob_is "reading the distro name is not a finding" distroname.zsh ""
+
+# THE FIX ITSELF MUST NEVER BE A FINDING.
+_ob_write fixed.zsh "if _core_is_wsl; then
+  alias open='explorer.exe'
+fi"
+_ob_is "calling Core's _core_is_wsl is not a finding" fixed.zsh ""
+
+# and the gate must not flag the library that defines it (see the character-class note there)
+if [[ -z "$(_core_owned_block_hits "$HERE/scripts/lib/common.sh")" ]]; then
+  pass "owned-block scan: does not flag its own definition"
+else
+  fail "owned-block scan: flagged common.sh itself — the rule table now spells a pattern it defines"
+fi
+
+# ── the INVERSE assertion: Core must still carry what it makes the fleet delete ──
+# This is this gate's counterpart to §5e, and the reason there is deliberately no
+# audit-core.sh section calling the scanner: Core's own tree matches every pattern, which is
+# the point. A gate that forces nine repos to delete a block Core has quietly lost is worse
+# than no gate — the niceties simply go silent everywhere at once, with every repo green.
+_ob_core_ok=1
+for _obf in zsh/00-tools.zsh zsh/45-plugins.zsh; do
+  [[ -n "$(_core_owned_block_hits "$HERE/$_obf")" ]] || _ob_core_ok=0
+done
+if (( _ob_core_ok )); then
+  pass "owned-block scan: Core still carries the blocks it makes the fleet drop"
+else
+  fail "owned-block scan: Core no longer carries a block the fleet is gated on — the fleet gate is now making nine repos delete a feature nobody provides"
+fi
+unset _ob_core_ok _obf
+
+# ── the fleet itself, when it is checked out ──
+# The direct regression signal, and the only assertion here that watches the real defect
+# rather than a fixture. SKIPs when a sibling clone is absent (CI, a partial checkout), the
+# same graceful degradation scripts/fleet-drift.sh uses — a missing repo is not a failure.
+# EXPECTED TO SKIP OR FAIL until the fan-out lands: the copies are still there on the day
+# Core takes the blocks over, which is exactly why the lint leg ships advisory (#449).
+_ob_fleet_seen=0 _ob_fleet_dirty=""
+# Siblings of this repo, the layout every fleet script assumes (see scripts/sync-core.sh).
+_ob_root="$(cd "$HERE/.." && pwd)"
+for _obr in dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian dotfiles-Fedora dotfiles-Gentoo dotfiles-openSUSE; do
+  _obp="$(resolve_repo_dir "$_ob_root" "$_obr" 2>/dev/null)" || continue
+  [[ -n "$_obp" && -d "$_obp" ]] || continue
+  for _obf in "$_obp"/os/*.zsh; do
+    [[ -f "$_obf" ]] || continue
+    _ob_fleet_seen=$((_ob_fleet_seen + 1))
+    [[ -z "$(_core_owned_block_hits "$_obf")" ]] || _ob_fleet_dirty="$_ob_fleet_dirty ${_obr}"
+  done
+done
+if (( _ob_fleet_seen == 0 )); then
+  skip "owned-block scan: no sibling OS repo checked out (fleet regression check)"
+elif [[ -n "$_ob_fleet_dirty" ]]; then
+  skip "owned-block scan: fan-out pending —$_ob_fleet_dirty still carry a Core-owned block (#449 step 7)"
+else
+  pass "owned-block scan: all $_ob_fleet_seen checked-out os layers are free of Core-owned blocks"
+fi
+unset _ob_fleet_seen _ob_fleet_dirty _ob_root _obr _obp _obf
+
+# ── ONE definition, and it must stay one (same contract as the RETURN leg above) ──
+_ob_wf="$HERE/.github/workflows/lint-call.yml"
+if [[ ! -r "$_ob_wf" ]]; then
+  skip "owned-block scan: lint-call.yml not readable (partial checkout?)"
+elif ! grep -q '_core_owned_block_hits' "$_ob_wf"; then
+  fail "owned-block scan: lint-call.yml no longer calls _core_owned_block_hits — the fleet gate has drifted off the shared definition"
+elif grep -qE 'generate-shell-completion|hook\[\[:space:\]\]' "$_ob_wf"; then
+  fail "owned-block scan: lint-call.yml carries its own copy of the patterns — call the helper instead, so the rule has one definition"
+else
+  pass "owned-block scan: the fleet gate (lint-call.yml) calls the helper rather than copying the patterns"
+fi
+unset _ob_wf
+
 
 # ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
 # WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
@@ -5359,10 +5556,15 @@ fi
 # >=70 always load, independent of CORE_PROFILE). Section A proves Core-in-isolation;
 # this proves the documented CONSUMPTION — the Core→OS CONTRACT at the real fan-out shape.
 # The 80-os stub uses exactly what an OS layer relies on Core to have left defined:
-# _cache_eval (00-tools's API for the OS layer's gh/uv/ty inits — NOT unfunctioned like
-# _have is), the _core_* UX primitives (05-ui), and an alias override (the macOS rm→trash
-# pattern). 99-local overrides a Core default. If Core ever stops exporting one of those,
-# this fails — where Section A, loading Core alone, would stay green.
+# _cache_eval (00-tools's API — NOT unfunctioned like _have is), _core_is_wsl (the second
+# such API, added in #449 so six OS layers could stop re-deriving the same probe), the
+# _core_* UX primitives (05-ui), and an alias override (the macOS rm→trash pattern).
+# 99-local overrides a Core default. If Core ever stops exporting one of those, this fails
+# — where Section A, loading Core alone, would stay green.
+#
+# IT ALSO PROVES WHAT BAND 80 USED TO PROVE AND NO LONGER CAN. The direnv/gh/uv/ty inits
+# moved into Core in #449, so the generate→cache→source path for the four tools the whole
+# fleet installs is now Core's own code on the real loader — see the stub generators below.
 hdr "consumer integration (Core + 80-os + 99-local, v4 loader)"
 INTEG="$SANDBOX/integ"
 mkdir -p "$INTEG"
@@ -5371,10 +5573,30 @@ for f in "${core_frags[@]}"; do ln -s "$f" "$INTEG/$(basename "$f")"; done
 _seed_plugin_dirs "$SANDBOX/integ-data/zsh/plugins"
 # 80-os.zsh: realistic OS-layer fragment. Exercises the Core helpers an OS repo depends
 # on; any reference to an undefined helper prints to stderr (the failure signal below).
+# Stub generators for the four tools Core now hooks itself (#449). Each "generated init"
+# is a single sentinel print, so a sentinel reaching stdout proves the whole
+# generate→cache→source path ran for that tool, under the REAL loader, in the real band
+# order — direnv from 00-tools at band 00, the three completions from 45-plugins at band 45.
+# A real box has some subset of these installed; the sandbox has none, so without stubs
+# _cache_eval bails on ${commands[…]} and all four lines are silent no-ops that could rot
+# unnoticed. (Side effect worth naming so nobody chases it: the `uv` stub sets HAVE_UV, so
+# 20-aliases.zsh defines uvr/uvs. Harmless here.)
+INTEGBIN="$SANDBOX/integ-bin"
+mkdir -p "$INTEGBIN"
+for _it in direnv gh uv ty; do
+  printf '#!/bin/sh\nprintf "%%s\\n" "print -r -- CORE_INIT_%s"\n' \
+    "$(printf '%s' "$_it" | tr '[:lower:]' '[:upper:]')" >"$INTEGBIN/$_it"
+  chmod +x "$INTEGBIN/$_it"
+done
+unset _it
 cat >"$INTEG/80-os.zsh" <<'OSZSH'
 # stub 80-os.zsh — must be able to use the API Core promises the OS layer.
 (( $+functions[_cache_eval] )) || print -u2 "80-os.zsh: _cache_eval missing (00-tools API gone)"
 (( $+functions[_core_ok]    )) || print -u2 "80-os.zsh: _core_ok missing (05-ui API gone)"
+(( $+functions[_core_is_wsl] )) || print -u2 "80-os.zsh: _core_is_wsl missing (00-tools API gone)"
+# The shape all six WSL-carrying OS layers adopt in place of their deleted probe (#449).
+# The answer does not matter here; that the call works from band 80 does.
+if _core_is_wsl; then alias winopen='explorer.exe'; fi
 # the documented gh/uv/ty pattern: _cache_eval a tool AFTER 10-options.zsh set NO_CLOBBER.
 # The generator must emit SOURCEABLE zsh (real tools emit an init script); a comment is
 # a valid no-op init and proves the generate→cache→source path works under NO_CLOBBER.
@@ -5398,6 +5620,7 @@ integ_out="$(
     XDG_CACHE_HOME="$SANDBOX/integ-cache" XDG_STATE_HOME="$SANDBOX/integ-state" \
     XDG_DATA_HOME="$SANDBOX/integ-data" \
     XDG_RUNTIME_DIR="$SANDBOX/run" MISE_TRUSTED_CONFIG_PATHS="$HERE" \
+    PATH="$INTEGBIN:$PATH" \
     zsh -f -i -c "ZDOTDIR='$INTEG'; source \"\$ZDOTDIR/.zshrc\"" 2>"$INTEG/integ.err"
 )"
 integ_errs="$(grep -Ei \
@@ -5412,6 +5635,19 @@ elif [[ -n "$integ_errs" ]]; then
 else
   pass "Core + 80-os + 99-local loaded via the loader (Core→OS contract holds)"
 fi
+
+# The four tool inits Core took over from the OS layers in #449. Asserted individually
+# rather than as a set: when this breaks it is nearly always ONE tool (a renamed generator
+# subcommand, a line moved across a band boundary), and a combined check would only say
+# "something".
+for _it in DIRENV GH UV TY; do
+  if grep -q "^CORE_INIT_$_it\$" <<<"$integ_out"; then
+    pass "consumer load: Core sourced the $_it init (was the OS layer's job until #449)"
+  else
+    fail "consumer load: Core never sourced the $_it init — the block is not reaching a real shell"
+  fi
+done
+unset _it
 
 # ── A3. profile filtering (CORE_PROFILE ceilings + env/file resolution) ───────
 # A2 proves the FULL chain; this proves the minimal/standard ceilings, that outer
@@ -6660,6 +6896,141 @@ ucheck "core-doctor and every HAVE_* flag agree about the same box (#447)" \
    (( n >= 30 )) || { print -r -- \"parsed only \$n tool->flag pairs out of 00-tools.zsh\"; exit 1; }
    (( \${#bad} == 0 )) || { print -r -- \"doctor and HAVE_* disagree: \${(j:, :)bad}\"; exit 1; }" \
   CORE_NO_PAGER=1
+# ── _core_is_wsl: one WSL predicate for the fleet (00-tools.zsh, #449) ───────────
+# Six OS layers each carried a byte-identical copy of this probe, and Core had the same fact
+# twice more (bash's blib_is_wsl, and a private copy inside bin/clip) with neither reachable
+# from zsh. Core owns it now, so it is Core's job to prove it — including the direction each
+# individual copy was never tested in at all.
+#
+# HERMETIC IN BOTH DIRECTIONS, which is the entire reason $CORE_PROC_VERSION exists. This
+# suite is developed on a WSL host and runs on non-WSL CI runners; against the real kernel
+# version file exactly ONE of the two answers is assertable on each machine, so without a
+# seam half the predicate would go untested everywhere and nobody would see the gap. Same
+# seam, same reason, as bin/clip's CLIP_PROC_VERSION at the top of this file.
+#
+# WSL_DISTRO_NAME= IS PASSED EXPLICITLY IN EVERY FILE-PATH CASE. The predicate reads the env
+# var FIRST, and a developer running this from inside WSL has it exported — so without the
+# neutralisation every case below would pass for the wrong reason, on the one machine most
+# likely to be running them. (The same trap the CARGO_HOME= neutralisation above documents.)
+WSLFIX="$SANDBOX/wsl"
+mkdir -p "$WSLFIX"
+printf 'Linux version 6.6.87.2-microsoft-standard-WSL2 (root@build) #1 SMP\n' >"$WSLFIX/wsl2"
+printf 'Linux version 4.4.0-19041-Microsoft (Microsoft@Microsoft.com) #488\n' >"$WSLFIX/wsl1"
+printf 'Linux version 6.1.0 (nobody@nowhere) WSL banner, no vendor marker\n' >"$WSLFIX/wslword"
+printf 'Linux version 5.15.0-generic (buildd@lcy02) #72-Ubuntu SMP\n' >"$WSLFIX/plain"
+
+# (a) The env var short-circuits — asserted by pointing the seam at the NON-WSL fixture, so
+# a predicate that consulted the file anyway would answer no and fail here.
+ucheck "_core_is_wsl: WSL_DISTRO_NAME alone answers yes (the version file is never consulted)" \
+  "source '$TOOLS_FILE'; _core_is_wsl" \
+  WSL_DISTRO_NAME=Ubuntu CORE_PROC_VERSION="$WSLFIX/plain"
+
+# (b)-(d) the file fallback, for a login that never inherited the env (su -, a unit, ssh cmd)
+ucheck "_core_is_wsl: the WSL2 marker in the version file is WSL" \
+  "source '$TOOLS_FILE'; _core_is_wsl" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/wsl2"
+# WSL1 capitalises the vendor string. This is the case-fold (${_pv:l}), not a second pattern
+# — drop the fold and every WSL1 box silently reads as plain Linux.
+ucheck "_core_is_wsl: WSL1's capitalised marker is WSL (the case-fold, not a second pattern)" \
+  "source '$TOOLS_FILE'; _core_is_wsl" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/wsl1"
+ucheck "_core_is_wsl: a bare wsl marker with no vendor string is WSL (the second pattern)" \
+  "source '$TOOLS_FILE'; _core_is_wsl" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/wslword"
+
+# (e) THE NEGATIVE, which is the half no OS-layer copy could ever assert on its own box.
+ucheck "_core_is_wsl: a plain Linux version string is NOT WSL" \
+  "source '$TOOLS_FILE'; ! _core_is_wsl" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/plain"
+
+# (f) No version file at all — the macOS/BSD path, where this must be silent and cheap
+# rather than an error. Core runs on macOS; the six copies that moved here never did.
+ucheck "_core_is_wsl: no version file and no env is NOT WSL (the macOS path, no error)" \
+  "source '$TOOLS_FILE'; ! _core_is_wsl" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/absent"
+
+# (g)-(i) the memo. It is what makes a per-prompt caller free, so it is worth pinning that it
+# exists, that it is actually consulted, and that the documented escape re-probes.
+ucheck "_core_is_wsl: memoises the answer into _CORE_IS_WSL" \
+  "source '$TOOLS_FILE'; _core_is_wsl; [[ \$_CORE_IS_WSL == 1 ]]" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/wsl2"
+ucheck "_core_is_wsl: the memo is honoured — a second call does not re-read the file" \
+  "source '$TOOLS_FILE'; _core_is_wsl; CORE_PROC_VERSION='$WSLFIX/plain'; _core_is_wsl" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/wsl2"
+ucheck "_core_is_wsl: unset _CORE_IS_WSL forces a re-probe (the documented escape)" \
+  "source '$TOOLS_FILE'; _core_is_wsl; unset _CORE_IS_WSL; CORE_PROC_VERSION='$WSLFIX/plain'; ! _core_is_wsl" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/wsl2"
+
+# (j) ZERO FORK, asserted the way the git exec-path suite asserts its own: a PATH holding
+# nothing but RECORDING stubs, and an empty call log. This is the guard that fails if someone
+# "simplifies" $(<file) into a `grep -qi` — which is exactly what the bash sibling does, and
+# what this deliberately does not, because it runs on every interactive shell and a caller may
+# put it in a hook. The log is truncated AFTER sourcing so the assertion is about the
+# predicate, not about what 00-tools does on the way in.
+WSLBIN="$SANDBOX/wslbin"
+mkdir -p "$WSLBIN"
+for _wc in cat grep head sed awk; do
+  printf '#!/bin/sh\necho "%s $*" >>"%s/calls"\nexit 0\n' "$_wc" "$WSLFIX" >"$WSLBIN/$_wc"
+  chmod +x "$WSLBIN/$_wc"
+done
+unset _wc
+ucheck "_core_is_wsl: reads the version file with no fork (no cat, no grep)" \
+  "source '$TOOLS_FILE'; : >|'$WSLFIX/calls'; _core_is_wsl; [[ ! -s '$WSLFIX/calls' ]]" \
+  WSL_DISTRO_NAME= CORE_PROC_VERSION="$WSLFIX/wsl2" PATH="$WSLBIN"
+
+# (k) It is Core→OS API, so unlike _have it must SURVIVE 00-tools.zsh. The OS layer calls it
+# at band 80; _have is unfunctioned at the end of that file and would not be there.
+ucheck "_core_is_wsl: survives 00-tools.zsh (Core→OS API), where _have does not" \
+  "source '$TOOLS_FILE'; (( \$+functions[_core_is_wsl] )) && (( ! \$+functions[_have] ))"
+
+# ── band placement of the four tool inits (#449) — structure, not behaviour ──────
+# Four decisions that BEHAVIOUR CANNOT SEE. Every one of them is silent when broken: the
+# shell still starts, no error is printed, and the damage shows up as a feature quietly not
+# working on a subset of hosts. Each assertion below therefore says WHAT breaks, not just
+# that a line moved, because the message is the only thing a future contributor will read
+# before deciding whether the constraint is real.
+PLUGINS_FILE="$HERE/zsh/45-plugins.zsh"
+# First-match line number. `grep -n | sed`, not `| head`: a file producer feeding an
+# early-exiting reader is exactly the SIGPIPE shape audit-core.sh §5d bans.
+_zln() { grep -nE "$2" "$1" | sed -n '1s/:.*//p'; } # _zln <file> <ere>
+_zsay() { if [[ -n "$2" ]]; then pass "band placement: $1"; else fail "band placement: $1"; fi; }
+
+_z_direnv_t="$(_zln "$TOOLS_FILE" '^_cache_eval[[:space:]]+direnv')"
+_z_direnv_p="$(_zln "$PLUGINS_FILE" '^_cache_eval[[:space:]]+direnv')"
+_z_mise="$(_zln "$TOOLS_FILE" '_cache_eval[[:space:]]+mise')"
+_z_carapace="$(_zln "$PLUGINS_FILE" '_cache_eval[[:space:]]+--salt.*carapace')"
+
+# (1) direnv stays at band 00. Band 45 is profile-gated (loader.zsh ceils `minimal` at 30)
+# while band 80 — where this used to live — always loads, so filing it under 45 stops .envrc
+# files loading on every minimal host and nothing anywhere says so.
+_zsay "direnv's hook is in 00-tools.zsh, not 45-plugins.zsh — band 45 is profile-gated (minimal ceils at 30), so .envrc loading would silently die on minimal hosts" \
+  "$([[ -n "$_z_direnv_t" && -z "$_z_direnv_p" ]] && echo ok)"
+
+# (2) …and the three completions stay at band 45, because they call compdef.
+_z_ok=1
+for _zt in gh uv ty; do
+  [[ -n "$(_zln "$PLUGINS_FILE" "^_cache_eval[[:space:]]+${_zt}[[:space:]]")" ]] || _z_ok=""
+  [[ -z "$(_zln "$TOOLS_FILE" "^_cache_eval[[:space:]]+${_zt}[[:space:]]")" ]] || _z_ok=""
+done
+unset _zt
+_zsay "gh/uv/ty are in 45-plugins.zsh, not 00-tools.zsh — they call compdef, which does not exist until 10-options.zsh has run compinit" "$_z_ok"
+
+# (3) …and AFTER carapace. carapace bridges a gh completion; the last compdef owns the
+# command, so this ordering is the only thing keeping gh's own completion in front of the
+# bridged one. It is the order they ran in at band 80, so it preserves behaviour.
+_z_ok=1
+for _zt in gh uv ty; do
+  _zl="$(_zln "$PLUGINS_FILE" "^_cache_eval[[:space:]]+${_zt}[[:space:]]")"
+  [[ -n "$_z_carapace" && -n "$_zl" ]] && (( _zl > _z_carapace )) || _z_ok=""
+done
+unset _zt _zl
+_zsay "gh/uv/ty are registered AFTER the carapace block — whichever compdef runs last owns the command, so moving them above it hands gh back to the bridged completion, silently" "$_z_ok"
+
+# (4) direnv after mise. Both PREPEND their hooks, so the one sourced last runs FIRST.
+_zsay "direnv is initialised AFTER mise — both PREPEND their hooks, so the one sourced last runs first; inverting this changes per-directory env resolution with no visible symptom" \
+  "$([[ -n "$_z_direnv_t" && -n "$_z_mise" ]] && (( _z_direnv_t > _z_mise )) && echo ok)"
+unset _z_direnv_t _z_direnv_p _z_mise _z_carapace _z_ok
+
 # ── git subcommands in git's exec-path: an honest doctor off $PATH (#424) ────
 # The Debian family packages a git SUBCOMMAND into git's exec-path (`git --exec-path`) and
 # keeps that directory off $PATH on purpose — git dispatches `git absorb` by looking there

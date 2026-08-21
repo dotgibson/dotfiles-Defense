@@ -63,6 +63,10 @@ blib_warn() { printf '%s%s%s %s\n'   "${UX_YEL:-}"  "${UX_WARN:-!}" "${UX_RST:-}
 # Returns 0 on WSL (so callers do `blib_is_wsl && IS_WSL=1`). The same probe every
 # bootstrap used: the WSL_DISTRO_NAME env first, then the microsoft/wsl marker in
 # /proc/version (covers a login that didn't inherit the env).
+# The zsh sibling is _core_is_wsl (core/zsh/00-tools.zsh), which is fork-free because it
+# runs on every interactive shell; the grep here is fine because bootstrap runs once, in
+# bash, before any shell layer exists to source. Keep the two rules in step — they answer
+# the same question and a box where they disagree is a bug.
 blib_is_wsl() {
   [[ -n "${WSL_DISTRO_NAME:-}" ]] && return 0
   grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null

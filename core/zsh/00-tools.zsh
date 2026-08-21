@@ -85,7 +85,8 @@ _cache_eval() { # _cache_eval [--salt <sig>] <name> <command...>
   # Resolve the binary via zsh's $commands hash (name -> absolute path) instead of
   # $(command -v ...): the builtin lookup is fork-free, where the command-substitution
   # forks a subshell on EVERY _cache_eval call (~8/shell across starship/zoxide/mise/
-  # atuin/carapace + os-layer gh/uv/ty). The tools cached here are all external binaries,
+  # atuin/carapace, plus direnv below and gh/uv/ty in 45-plugins.zsh). The tools cached here
+# are all external binaries,
   # so $commands is populated for them; an absent tool yields "" and we bail as before.
   local bin="${commands[$1]}"
   [[ -z "$bin" ]] && return 0
@@ -95,11 +96,66 @@ _cache_eval() { # _cache_eval [--salt <sig>] <name> <command...>
     # `>` onto an existing cache raises "file exists" (a shell-level redirection
     # error that 2>/dev/null does NOT suppress). This regen path runs whenever the
     # tool's binary is newer than the cache — e.g. right after a brew upgrade. It
-    # surfaced only for the os.zsh callers (gh/uv/ty) because they run AFTER
+    # surfaced only for the band-45 callers (carapace, gh/uv/ty) because they run AFTER
     # 10-options.zsh sets NO_CLOBBER; the 00-tools.zsh callers run before it.
     "$@" >|"$cache" 2>/dev/null
   fi
   source "$cache"
+}
+
+# ── WSL predicate: is this Linux userland hosted by Windows? ───────────────────
+# THE ONE Core→OS API for that question, alongside _cache_eval above. Six os/*.zsh
+# layers each carried a byte-identical copy of this probe to gate their Windows-interop
+# niceties, and Core had the same fact implemented twice more — in bash (blib_is_wsl,
+# lib/bootstrap-lib.sh) and privately inside bin/clip — with none of the three reachable
+# from an interactive zsh. Eight copies of one predicate, in two languages (#449).
+#
+# WHY NOT A `command -v` PROBE, which PORTABILITY.md §3 otherwise insists on: that rule
+# answers "can I run X?", and probing for the tool you are about to run is more precise than
+# inferring it from an OS name. This is not a capability question. It is an ENVIRONMENT FACT
+# — "what am I running inside?" — that no binary's presence implies, and the things gated on
+# it are interop reach-arounds rather than one verb with N backends. bin/clip is the same
+# documented exception and says so; this is its zsh sibling.
+#
+# FORK-FREE, deliberately. `$(<file)` is zsh's read-a-file-into-a-word form, which the shell
+# services itself: no subshell, no `cat`, and no `grep` — which is what the bash sibling
+# forks. That is fine there (bootstrap runs once); this runs on every interactive shell,
+# under ci.yml's startup budget, and a caller may put it in a hook, so it has to stay free.
+#
+# MEMOISED into _CORE_IS_WSL, LAZILY. Detecting eagerly at source time — what the six OS
+# copies did — makes every shell pay the read, including the macOS and desktop ones that
+# never ask. The lazy memo charges the first caller once and every later caller nothing.
+# WSL-ness cannot change within a process, so the memo can never go stale; it deliberately
+# survives `core reload` re-sourcing this file, and a caller wanting a re-probe anyway can
+# `unset _CORE_IS_WSL`.
+#
+# $CORE_PROC_VERSION overrides the file read and exists ONLY as a test seam. It is not
+# decoration: without it a "this box is NOT WSL" assertion cannot be written at all on a WSL
+# development host, and the reverse cannot be written on a non-WSL CI runner — the suite
+# would silently prove one direction on each machine and both nowhere. bin/clip's older
+# CLIP_PROC_VERSION is the same seam for the same reason; the two are deliberately SEPARATE
+# names because bin/clip is a separate PROCESS, not sourced, and one knob quietly steering
+# two programs is worse than two knobs that each say what they steer.
+#
+# NOT unfunctioned at the end of this file, unlike _have: the OS layer calls it at band 80.
+_core_is_wsl() {
+  if [[ -z ${_CORE_IS_WSL:-} ]]; then
+    typeset -g _CORE_IS_WSL=0
+    local _pvf=${CORE_PROC_VERSION:-/proc/version} _pv=""
+    # The env var WSL sets itself is authoritative and free. The file is the fallback for a
+    # login that never inherited it — `su -`, a systemd unit, a bare `ssh host cmd`.
+    if [[ -n ${WSL_DISTRO_NAME:-} ]]; then
+      _CORE_IS_WSL=1
+    elif [[ -r "$_pvf" ]]; then
+      # ${_pv:l} lowercases in the shell: the marker's case differs across builds (WSL1 tags
+      # "-Microsoft", WSL2 "-microsoft-standard-WSL2"), and folding once beats carrying two
+      # spellings of each pattern.
+      _pv="$(<"$_pvf")"
+      _pv=${_pv:l}
+      [[ $_pv == *microsoft* || $_pv == *wsl* ]] && _CORE_IS_WSL=1
+    fi
+  fi
+  ((_CORE_IS_WSL))
 }
 
 # ── Resolve binaries that ship under alternate names on some distros ──────────
@@ -132,7 +188,7 @@ _have btop && HAVE_BTOP=1
 _have dust && HAVE_DUST=1
 _have procs && HAVE_PROCS=1
 _have mise && HAVE_MISE=1
-_have uv && HAVE_UV=1              # Astral project-Python manager (20-aliases.zsh: uvr/uvs; os/*.zsh caches its completion)
+_have uv && HAVE_UV=1              # Astral project-Python manager (20-aliases.zsh: uvr/uvs; 45-plugins.zsh caches its completion)
 _have carapace && HAVE_CARAPACE=1 # completion engine — init in 45-plugins.zsh
 # 2026 additions (20-aliases.zsh guards each):
 _have xh && HAVE_XH=1
@@ -366,6 +422,10 @@ if [[ -n ${HAVE_STARSHIP:-} || -n ${_CORE_OSC133:-} ]]; then
   # exit code, not starship_precmd's" — does not survive measurement: zsh restores $? around
   # every hook, so position buys nothing there. What it does buy is OUTPUT order — the rule
   # and the D mark belong above whatever a later hook prints, not interleaved with it.
+  # NB "FIRST" is first among the hooks Core registers HERE: direnv (initialised below)
+  # PREPENDS its own, so on a box with direnv _direnv_hook sits ahead of this one. That is
+  # unchanged from when direnv was hooked at band 80, and it is harmless — _direnv_hook
+  # prints nothing on the common path, so the rule and the D mark still lead the output.
   precmd_functions=(_cmd_block_precmd ${precmd_functions:#_cmd_block_precmd})
 fi
 
@@ -379,6 +439,38 @@ fi
 # atuin: init script is static text; ATUIN_NOBIND (set above) is read at generation, so
 # salt the cache on it — flipping ATUIN_NOBIND now busts the cache instead of serving stale.
 [[ -n ${HAVE_ATUIN:-} ]] && _cache_eval --salt "${ATUIN_NOBIND:-}" atuin atuin init zsh
+
+# direnv: `direnv hook zsh` emits a static `_direnv_hook` plus its hook registration —
+# deterministic for a given binary — so it caches exactly like the three lines above. Seven
+# os/*.zsh copies carried this until #449; nothing in it is OS-specific, and the copies had
+# already drifted (one suppressed the generator's stderr in its fallback arm, the others did
+# not, and two carried only half the block).
+#
+# HERE, at band 00, and NOT with the gh/uv/ty completions in 45-plugins.zsh. Two decisions,
+# not preferences: this registers a HOOK, not a compdef, so it has no dependency on
+# 10-options.zsh's compinit; and band 00 loads under EVERY CORE_PROFILE while band 45 does
+# not (zsh/loader.zsh ceils `minimal` at 30). Filed under 45 it would silently stop .envrc
+# files loading on every minimal host — a broken feature, not a missing convenience.
+#
+# LAST of the four inits, also on purpose. direnv PREPENDS _direnv_hook to precmd_functions
+# AND chpwd_functions, and mise's activation prepends its own hook the same way — so
+# whichever is sourced LAST runs FIRST. Sourcing direnv after mise/atuin therefore
+# reproduces the exact order these hooks had while direnv was hooked from the OS layer at
+# band 80: direnv's per-dir env resolves before mise's, which is what an .envrc that pins
+# tool versions expects. Moving this line above the mise line inverts that with no visible
+# symptom until a project disagrees with its own .envrc — so scripts/test-core.sh asserts
+# the relative line order outright.
+#
+# No HAVE_DIRENV guard, unlike the three lines above: _cache_eval already bails on an absent
+# binary via ${commands[…]}, so a flag would be a second guard on the same fact, checked in
+# the only place that consumes it — and nothing else would read it.
+#
+# INHERITED CAVEAT, unchanged from the os-layer copies and worth knowing when a prompt turns
+# noisy: the generated hook bakes in direnv's RESOLVED path, and the cache is invalidated by
+# binary mtime (see the note on _cache_eval above). Move direnv to a prefix whose binary is
+# OLDER than the cache and the stale hook evals a path that no longer exists, once per
+# prompt. `unset` the cache file to recover.
+_cache_eval direnv direnv hook zsh
 
 # ── atuin daemon (OPT-IN) — degrade to direct writes when it isn't reachable ───
 # atuin's daemon owns the SQLite writes and shells talk to it over a unix socket, which
