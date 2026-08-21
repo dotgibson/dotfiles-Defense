@@ -34,21 +34,21 @@
     },
     {
       "techniqueID": "T1007",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): host_recon_command_burst"
+      "comment": "2 rule(s): host_recon_command_burst, host_recon_powershell_4104"
     },
     {
       "techniqueID": "T1016",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): host_recon_command_burst"
+      "comment": "2 rule(s): host_recon_command_burst, host_recon_powershell_4104"
     },
     {
       "techniqueID": "T1018",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): host_recon_command_burst"
+      "comment": "2 rule(s): host_recon_command_burst, host_recon_powershell_4104"
     },
     {
       "techniqueID": "T1021",
@@ -58,9 +58,9 @@
     },
     {
       "techniqueID": "T1033",
-      "score": 2,
+      "score": 3,
       "enabled": true,
-      "comment": "2 rule(s): host_enum_srvsvc_wkssvc_5145, host_recon_command_burst"
+      "comment": "3 rule(s): host_enum_srvsvc_wkssvc_5145, host_recon_command_burst, host_recon_powershell_4104"
     },
     {
       "techniqueID": "T1046",
@@ -76,9 +76,9 @@
     },
     {
       "techniqueID": "T1049",
-      "score": 2,
+      "score": 3,
       "enabled": true,
-      "comment": "2 rule(s): host_enum_srvsvc_wkssvc_5145, host_recon_command_burst"
+      "comment": "3 rule(s): host_enum_srvsvc_wkssvc_5145, host_recon_command_burst, host_recon_powershell_4104"
     },
     {
       "techniqueID": "T1053.005",
@@ -88,9 +88,9 @@
     },
     {
       "techniqueID": "T1057",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): host_recon_command_burst"
+      "comment": "2 rule(s): host_recon_command_burst, host_recon_powershell_4104"
     },
     {
       "techniqueID": "T1059",
@@ -130,15 +130,15 @@
     },
     {
       "techniqueID": "T1082",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): host_recon_command_burst"
+      "comment": "2 rule(s): host_recon_command_burst, host_recon_powershell_4104"
     },
     {
       "techniqueID": "T1087.001",
-      "score": 2,
+      "score": 3,
       "enabled": true,
-      "comment": "2 rule(s): host_recon_command_burst, local_group_enum_sweep_4798_4799"
+      "comment": "3 rule(s): host_recon_command_burst, host_recon_powershell_4104, local_group_enum_sweep_4798_4799"
     },
     {
       "techniqueID": "T1087.002",
@@ -184,9 +184,9 @@
     },
     {
       "techniqueID": "T1135",
-      "score": 2,
+      "score": 3,
       "enabled": true,
-      "comment": "2 rule(s): host_enum_srvsvc_wkssvc_5145, host_recon_command_burst"
+      "comment": "3 rule(s): host_enum_srvsvc_wkssvc_5145, host_recon_command_burst, host_recon_powershell_4104"
     },
     {
       "techniqueID": "T1136.001",

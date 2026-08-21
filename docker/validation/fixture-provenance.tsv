@@ -135,6 +135,8 @@ docker/validation/sigma-fixtures/dpapi_backupkey_5145_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/gpp_cpassword_5145.jsonl	unverified	-
 docker/validation/sigma-fixtures/gpp_cpassword_5145_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/host_recon_burst_4688.jsonl	unverified	-
+docker/validation/sigma-fixtures/host_recon_ps_4104_tn.jsonl	vendor-documented	4104 EventData field names (ScriptBlockText, Path, ScriptBlockId, MessageNumber, MessageTotal) per Microsoft's PowerShell script-block logging documentation and SigmaHQ's ps_script logsource, which keys on ScriptBlockText. Path is empty for an interactive console, which is why this rule carries no Path exclusion — an exclusion on an empty field nulls the match. The TN is a THRESHOLD near-miss (3 distinct blocks against gte 4), not a filter near-miss
+docker/validation/sigma-fixtures/host_recon_ps_4104_tp.jsonl	vendor-documented	4104 EventData field names (ScriptBlockText, Path, ScriptBlockId, MessageNumber, MessageTotal) per Microsoft's PowerShell script-block logging documentation and SigmaHQ's ps_script logsource, which keys on ScriptBlockText. Path is empty for an interactive console, which is why this rule carries no Path exclusion — an exclusion on an empty field nulls the match. The TN is a THRESHOLD near-miss (3 distinct blocks against gte 4), not a filter near-miss
 docker/validation/sigma-fixtures/kerberoast_4769.jsonl	unverified	-
 docker/validation/sigma-fixtures/kerberoast_4769_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/ldap_recon_4648.jsonl	unverified	-

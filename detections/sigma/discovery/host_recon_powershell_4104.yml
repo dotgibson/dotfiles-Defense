@@ -1,0 +1,179 @@
+title: PowerShell discovery cmdlet base (4104)
+id: 7c39b18a-4d62-4e05-9f77-1a6b2c8e40d3
+status: experimental
+description: |
+  Base event for the PowerShell-recon burst correlation below: a script block containing
+  one of the built-in discovery cmdlets. Not actionable alone - Get-Service and Get-Process
+  are what administration looks like. The operator shape is BREADTH: many DIFFERENT
+  discovery cmdlets on one host inside a few minutes, expressed by the correlation rule.
+  This is the independent-feed twin of discovery/host_recon_command_burst, and it exists
+  because that rule cannot see this. Every one of its eight selections requires a PROCESS
+  to be created with a known Image basename, so an operator who does their situational
+  awareness inside a single PowerShell session - Get-Process, Get-ComputerInfo,
+  Get-NetIPConfiguration, Get-ADDomainController - creates no process, emits no 4688 or
+  Sysmon 1, and generates exactly zero base events there. Five techniques (T1007, T1016,
+  T1018, T1057, T1082) rested on that one file; this is the second feed they now have,
+  the same remedy local_group_enum_sweep_4798_4799 and host_enum_srvsvc_wkssvc_5145
+  already applied to the other four.
+  Two properties the process-creation twin does not have. It survives a renamed binary,
+  because a cmdlet name is not a file on disk - copying whoami.exe to x.exe defeats an
+  Image|endswith list and does nothing here. And it survives the process-creation feed
+  being off, which is the single-point-of-failure the methodology names.
+  KNOWN LIMIT, stated rather than discovered later: 4104 logs a script BLOCK, not a
+  command, so a monolithic .ps1 that performs all of this recon in one block is ONE event
+  and will not trip a distinct-block count no matter how much it does. This rule catches
+  the interactive operator, who types one command at a time and produces one block each;
+  the scripted case is the residual. Where such a script shells out to the classic
+  utilities the process-creation twin still sees it, and where it does not, neither rule
+  does. Do not "fix" this by lowering the threshold to 1 - that converts an informational
+  base into an alert on Get-Service.
+  No Path filter, and this is the trap rather than an oversight. Suppressing your scheduled
+  collectors by script Path is the obvious tuning move and it silently disables the rule for
+  the case it exists to catch. 4104 emits an EMPTY Path for an interactive console, and a
+  `not filter` on an empty or absent field does not evaluate to "keep it" - the exclusion
+  nulls the whole match. Measured, not assumed: the same rule with a
+  `Path|contains` exclusion fires on a block whose Path is a script file and does NOT fire
+  on the identical block with Path empty. So a Path allowlist would suppress precisely the
+  hands-on-keyboard operator and keep the inventory scripts. Tune this rule with the
+  threshold and with triage on Path at alert time, never with a Path exclusion in the rule.
+  (Same family as the k8s array-traversal note and the Splunk OR/NOT precedence note: a
+  predicate that looks like coverage and is silently none.)
+  Requires Script Block Logging (Computer Configuration > Administrative Templates >
+  Windows Components > Windows PowerShell > Turn on PowerShell Script Block Logging).
+  Without it 4104 is not emitted at all and this rule is inert - the same ingestion
+  precondition the 4663 rules carry for their SACL.
+references:
+  - https://attack.mitre.org/techniques/T1007/
+  - https://attack.mitre.org/techniques/T1016/
+  - https://attack.mitre.org/techniques/T1018/
+  - https://attack.mitre.org/techniques/T1033/
+  - https://attack.mitre.org/techniques/T1049/
+  - https://attack.mitre.org/techniques/T1057/
+  - https://attack.mitre.org/techniques/T1082/
+  - https://attack.mitre.org/techniques/T1087/001/
+  - https://attack.mitre.org/techniques/T1135/
+author: dotfiles-Defense
+date: 2026-08-21
+name: host_recon_powershell
+tags:
+  - attack.discovery
+  - attack.t1007
+  - attack.t1016
+  - attack.t1018
+  - attack.t1033
+  - attack.t1049
+  - attack.t1057
+  - attack.t1082
+  - attack.t1087.001
+  - attack.t1135
+logsource:
+  product: windows
+  category: ps_script
+  definition: 'Requirements: PowerShell Script Block Logging (4104) must be enabled'
+detection:
+  selection_owner:
+    # T1033 System Owner/User Discovery
+    ScriptBlockText|contains:
+      - 'Get-LocalUser'
+      - 'WindowsIdentity]::GetCurrent'
+      - 'Get-CimInstance Win32_ComputerSystem'
+  selection_sysinfo:
+    # T1082 System Information Discovery
+    ScriptBlockText|contains:
+      - 'Get-ComputerInfo'
+      - 'Win32_OperatingSystem'
+      - 'Get-HotFix'
+  selection_process:
+    # T1057 Process Discovery
+    ScriptBlockText|contains:
+      - 'Get-Process'
+      - 'Win32_Process'
+  selection_service:
+    # T1007 System Service Discovery
+    ScriptBlockText|contains:
+      - 'Get-Service'
+      - 'Win32_Service'
+  selection_network:
+    # T1016 System Network Configuration / T1049 System Network Connections
+    ScriptBlockText|contains:
+      - 'Get-NetIPConfiguration'
+      - 'Get-NetIPAddress'
+      - 'Get-NetTCPConnection'
+      - 'Get-NetNeighbor'
+      - 'Get-NetRoute'
+  selection_domain:
+    # T1018 Remote System Discovery - DC, computer, and trust enumeration
+    ScriptBlockText|contains:
+      - 'Get-ADDomainController'
+      - 'Get-ADComputer'
+      - 'Get-ADTrust'
+      - 'Resolve-DnsName'
+      - 'Test-NetConnection'
+  selection_share:
+    # T1135 Network Share Discovery
+    ScriptBlockText|contains:
+      - 'Get-SmbShare'
+      - 'Get-SmbMapping'
+      - 'Get-SmbConnection'
+  selection_group:
+    # T1087.001 Local Account Discovery
+    ScriptBlockText|contains:
+      - 'Get-LocalGroupMember'
+      - 'Get-LocalGroup '
+  # There is deliberately NO filter_* here, and the reason is worth reading before adding
+  # one. See the "no Path filter" paragraph in the description.
+  condition: 1 of selection_*
+falsepositives:
+  - Administration and troubleshooting - these cmdlets are ordinary work, which is why the
+    base is informational and the distinct-block count below carries the signal.
+  - Module import compiles function bodies into their own script blocks, so a module whose
+    source happens to contain these cmdlet names can emit blocks nobody typed. Triage on
+    Path (a module import names the .psm1) before treating a burst as an operator - but
+    triage on it, do not filter on it; see the description.
+level: informational
+---
+title: PowerShell discovery burst - many distinct recon cmdlets on one host (T1082)
+id: 4e8d0f5b-93a1-4c26-b70e-6d2f81ac59b7
+status: experimental
+description: |
+  Detects one host running many DISTINCT PowerShell discovery cmdlets in a short window -
+  the same situational-awareness burst discovery/host_recon_command_burst catches on
+  process creation, on a feed that survives both a renamed binary and the loss of process
+  creation itself.
+  Counting DISTINCT script blocks rather than a rate is the same reasoning as the twin: a
+  monitoring script re-running one Get-Service every minute stays at one, while an operator
+  walking Get-ComputerInfo -> Get-Process -> Get-NetTCPConnection -> Get-ADDomainController
+  trips it. The threshold is 4 rather than the twin's 5 because a script block is chunkier
+  than a command line - one block can carry two of these cmdlets on one line - so the same
+  amount of reconnaissance produces fewer events here. Tune it to your build; imaging and
+  inventory windows are the baseline that shifts it.
+  Grouped by Computer, not by account, for the same reason as the twin: the burst is a
+  property of the host, and 4104's user field differs from the process-creation channels'.
+  Pair with host_recon_command_burst rather than choosing between them. Both firing on one
+  host inside a window is a hands-on-keyboard operator with high confidence; either alone
+  is worth a look. Where only one feed exists, the corresponding rule is the coverage.
+  Validate (purple): run the discovery fold from dotfiles-Offense (hacktheplanet
+  "Situational awareness" / post-exploitation recon) from an INTERACTIVE PowerShell
+  session rather than a batch script - the interactive path is what this rule adds.
+references:
+  - https://attack.mitre.org/techniques/T1082/
+  - https://attack.mitre.org/techniques/T1057/
+  - https://attack.mitre.org/techniques/T1018/
+  - https://attack.mitre.org/techniques/T1007/
+correlation:
+  type: value_count
+  rules:
+    - host_recon_powershell
+  group-by:
+    - Computer
+  timespan: 10m
+  condition:
+    gte: 4
+    field: ScriptBlockText
+falsepositives:
+  - Configuration-management and inventory runs that sweep several cmdlets on a schedule.
+    Raise the threshold or scope the deployment; do NOT add a Path exclusion, which would
+    disable the interactive case this rule is for (see the base rule's description).
+  - An administrator troubleshooting a broken host genuinely does run four of these in ten
+    minutes. Triage on the account, the time of day, and whether Path is empty.
+level: high
