@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**94 rules · 111 detection documents · 70 techniques · 10 tactics · 24 logsources.**
+**94 rules · 111 detection documents · 70 techniques · 11 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
@@ -11,7 +11,8 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Execution | TA0002 | 8 | 10 |
 | Persistence | TA0003 | 13 | 34 |
 | Privilege Escalation | TA0004 | 7 | 9 |
-| Defense Evasion | TA0005 | 7 | 11 |
+| Stealth | TA0005 | 1 | 1 |
+| Defense Impairment | TA0112 | 6 | 10 |
 | Credential Access | TA0006 | 15 | 17 |
 | Discovery | TA0007 | 13 | 5 |
 | Lateral Movement | TA0008 | 9 | 7 |
@@ -81,9 +82,6 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1558.004 | 2 | `asrep_roast_4768`, `asrep_roast_probing_4771` |
 | T1558.005 | 1 | `ccache_theft_staging` |
 | T1560.001 | 1 | `archive_staging_utility` |
-| T1562.001 | 6 | `cloudflare_waf_rule_disabled`, `github_branch_protection_tamper`, `gitlab_protected_branch_tamper`, `npm_publish_2fa_disabled`, `slack_2fa_enforcement_disabled`, `vault_audit_device_disabled` |
-| T1562.007 | 1 | `snowflake_network_policy_change` |
-| T1562.008 | 1 | `gcp_audit_log_sink_deleted` |
 | T1563.002 | 1 | `rdp_hijack_tscon_4688` |
 | T1567 | 1 | `slack_external_shared_channel` |
 | T1567.002 | 1 | `snowflake_data_unload` |
@@ -93,6 +91,9 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1611 | 1 | `k8s_privileged_pod_created` |
 | T1648 | 1 | `cloudflare_worker_deployed` |
 | T1649 | 1 | `adcs_esc1_san_mismatch_4886` |
+| T1685 | 5 | `github_branch_protection_tamper`, `gitlab_protected_branch_tamper`, `npm_publish_2fa_disabled`, `slack_2fa_enforcement_disabled`, `vault_audit_device_disabled` |
+| T1685.002 | 1 | `gcp_audit_log_sink_deleted` |
+| T1686.001 | 2 | `cloudflare_waf_rule_disabled`, `snowflake_network_policy_change` |
 
 ## By logsource
 

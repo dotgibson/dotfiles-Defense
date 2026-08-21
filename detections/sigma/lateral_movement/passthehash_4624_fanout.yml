@@ -17,7 +17,7 @@ author: dotfiles-Defense
 date: 2026-07-15
 name: network_logon_4624
 tags:
-  - attack.lateral_movement
+  - attack.lateral-movement
   - attack.t1550.002
   - attack.t1021
 logsource:

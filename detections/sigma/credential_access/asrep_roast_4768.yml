@@ -19,7 +19,7 @@ references:
 author: dotfiles-Defense
 date: 2026-07-22
 tags:
-  - attack.credential_access
+  - attack.credential-access
   - attack.t1558.004
 logsource:
   product: windows

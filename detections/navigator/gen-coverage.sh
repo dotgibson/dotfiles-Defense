@@ -52,22 +52,28 @@ import glob, os, re
 
 sigma = os.environ["SIGMA_DIR"]
 
-# ATT&CK enterprise tactics: tag slug -> (display name, TA id). Matching against this
+# ATT&CK enterprise tactics: tag slug -> (display name, TA id). Slugs are the Sigma
+# tag spelling — multi-word tactics hyphenate, which is what the ATT&CK tag validator
+# accepts. ATT&CK v19 (Apr 2026) split Defense Evasion into Stealth (TA0005, the same
+# id renamed) and Defense Impairment (TA0112); a slug missing from this table is
+# silently dropped from the tactic roll-up, so it has to track the corpus's tags.
+# Matching against this
 # fixed set (not any attack.\w+) keeps reference URLs (attack.mitre.org) and technique
 # tags (attack.tNNNN) out of the tactic tally. Ordered by the kill chain.
 TACTICS = [
     ("reconnaissance", "Reconnaissance", "TA0043"),
-    ("resource_development", "Resource Development", "TA0042"),
-    ("initial_access", "Initial Access", "TA0001"),
+    ("resource-development", "Resource Development", "TA0042"),
+    ("initial-access", "Initial Access", "TA0001"),
     ("execution", "Execution", "TA0002"),
     ("persistence", "Persistence", "TA0003"),
-    ("privilege_escalation", "Privilege Escalation", "TA0004"),
-    ("defense_evasion", "Defense Evasion", "TA0005"),
-    ("credential_access", "Credential Access", "TA0006"),
+    ("privilege-escalation", "Privilege Escalation", "TA0004"),
+    ("stealth", "Stealth", "TA0005"),
+    ("defense-impairment", "Defense Impairment", "TA0112"),
+    ("credential-access", "Credential Access", "TA0006"),
     ("discovery", "Discovery", "TA0007"),
-    ("lateral_movement", "Lateral Movement", "TA0008"),
+    ("lateral-movement", "Lateral Movement", "TA0008"),
     ("collection", "Collection", "TA0009"),
-    ("command_and_control", "Command and Control", "TA0011"),
+    ("command-and-control", "Command and Control", "TA0011"),
     ("exfiltration", "Exfiltration", "TA0010"),
     ("impact", "Impact", "TA0040"),
 ]

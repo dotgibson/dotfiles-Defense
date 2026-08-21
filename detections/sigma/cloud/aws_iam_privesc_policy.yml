@@ -24,7 +24,7 @@ references:
 author: dotfiles-Defense
 date: 2026-08-05
 tags:
-  - attack.privilege_escalation
+  - attack.privilege-escalation
   - attack.persistence
   - attack.t1098.003
 logsource:

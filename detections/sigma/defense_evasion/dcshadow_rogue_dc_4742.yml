@@ -17,7 +17,7 @@ references:
 author: dotfiles-Defense
 date: 2026-06-30
 tags:
-  - attack.defense_evasion
+  - attack.defense-impairment
   - attack.t1207
 logsource:
   product: windows

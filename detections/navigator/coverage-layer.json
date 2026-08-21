@@ -357,24 +357,6 @@
       "comment": "1 rule(s): archive_staging_utility"
     },
     {
-      "techniqueID": "T1562.001",
-      "score": 6,
-      "enabled": true,
-      "comment": "6 rule(s): cloudflare_waf_rule_disabled, github_branch_protection_tamper, gitlab_protected_branch_tamper, npm_publish_2fa_disabled, slack_2fa_enforcement_disabled, vault_audit_device_disabled"
-    },
-    {
-      "techniqueID": "T1562.007",
-      "score": 1,
-      "enabled": true,
-      "comment": "1 rule(s): snowflake_network_policy_change"
-    },
-    {
-      "techniqueID": "T1562.008",
-      "score": 1,
-      "enabled": true,
-      "comment": "1 rule(s): gcp_audit_log_sink_deleted"
-    },
-    {
       "techniqueID": "T1563.002",
       "score": 1,
       "enabled": true,
@@ -427,6 +409,24 @@
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): adcs_esc1_san_mismatch_4886"
+    },
+    {
+      "techniqueID": "T1685",
+      "score": 5,
+      "enabled": true,
+      "comment": "5 rule(s): github_branch_protection_tamper, gitlab_protected_branch_tamper, npm_publish_2fa_disabled, slack_2fa_enforcement_disabled, vault_audit_device_disabled"
+    },
+    {
+      "techniqueID": "T1685.002",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): gcp_audit_log_sink_deleted"
+    },
+    {
+      "techniqueID": "T1686.001",
+      "score": 2,
+      "enabled": true,
+      "comment": "2 rule(s): cloudflare_waf_rule_disabled, snowflake_network_policy_change"
     }
   ],
   "gradient": {

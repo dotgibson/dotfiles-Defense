@@ -14,7 +14,7 @@ author: dotfiles-Defense
 date: 2026-06-30
 name: kerb_preauth_fail_4771
 tags:
-  - attack.credential_access
+  - attack.credential-access
   - attack.t1558.004
 logsource:
   product: windows

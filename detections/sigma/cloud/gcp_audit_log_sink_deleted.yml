@@ -17,8 +17,8 @@ references:
 author: dotfiles-Defense
 date: 2026-07-22
 tags:
-  - attack.defense_evasion
-  - attack.t1562.008
+  - attack.defense-impairment
+  - attack.t1685.002
 logsource:
   product: gcp
   service: gcp.audit

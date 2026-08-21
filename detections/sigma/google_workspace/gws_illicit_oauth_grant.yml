@@ -17,7 +17,7 @@ references:
 author: dotfiles-Defense
 date: 2026-07-02
 tags:
-  - attack.credential_access
+  - attack.credential-access
   - attack.t1528
 logsource:
   product: google_workspace
