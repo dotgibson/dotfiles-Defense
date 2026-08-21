@@ -801,7 +801,10 @@ contains "the pin says why it exists" "$pin_text" "#172"
 # Everything below is hermetic — no 51 MiB download. Failure paths only, driven against
 # throwaway copies; the happy path is the CI gate's own job.
 is "an unexpected argument exits 2" "2" \
-  "$(bash "$CAT" bogus >/dev/null 2>&1; echo $?)"
+  "$(
+    bash "$CAT" bogus >/dev/null 2>&1
+    echo $?
+  )"
 
 # A missing pin must fail loudly rather than validate against whatever pySigma downloads,
 # which is the exact behaviour #172 is about.
@@ -835,6 +838,17 @@ rc=$?
 is "an unreachable bundle fails the gate" "1" "$rc"
 contains "the download failure is explained" "$out" "could not download"
 lacks "it does not silently validate anyway" "$out" "No validation issues found"
+
+# The id scan (prose + references:) needs the 51 MiB bundle, so its BEHAVIOUR is verified by
+# the CI gate itself and by the probe in the commit message, not here — this suite stays
+# hermetic on purpose. What is asserted here is that the contract stays documented: a gate
+# whose escape hatch is undiscoverable gets worked around instead of used.
+gate_src="$(cat "$CAT")"
+contains "the gate checks ids cited outside tags" "$gate_src" "cited outside tags"
+contains "it scans the methodology too, not just the sigma tree" "$gate_src" "DEFENSE-METHODOLOGY.md"
+contains "it validates the pages references: link to" "$gate_src" "attack\\.mitre\\.org"
+contains "the historical escape is documented" "$gate_src" "attack-id-historical"
+contains "it explains why tags alone were not enough" "$gate_src" "#179"
 
 # ─────────────────────────────────────────────────────────────────────────────
 group "lint-shell.sh — CI-identical shell lint"

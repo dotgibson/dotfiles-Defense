@@ -10,7 +10,7 @@ description: |
   when a user browses a share.
   Scope boundary vs the other 5145 rules in this corpus, stated so nobody "consolidates"
   them later: coercion_named_pipes_5145 keys on spoolss/efsrpc/lsarpc/netlogon/lsass
-  (coercion, T1187) and dpapi_backupkey_5145 keys on protected_storage (T1006.001-
+  (coercion, T1187) and dpapi_backupkey_5145 keys on protected_storage (T1555-
   adjacent credential theft). The pipe sets are DISJOINT - same event ID, different
   RPC interface, different technique. Splitting on the pipe is the whole point.
   Costs no new ingestion: Detailed File Share auditing (5145) is already a prerequisite

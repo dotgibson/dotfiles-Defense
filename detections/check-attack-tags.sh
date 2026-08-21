@@ -21,10 +21,27 @@
 # hard failure, never a warning: it means the pin and the file disagree, and continuing
 # would validate against an unknown vocabulary.
 #
+# TWO representations are checked, because gating one moves the risk to the other rather
+# than removing it. #171 retagged the corpus for v19 and #179 then found 27 revoked ids
+# still sitting in prose and in references: URLs — untouched, because this gate read tags:
+# and nothing else. The references were the sharp end: attack.mitre.org serves a revoked
+# technique page with a banner rather than a 404 (T1562/001/ still returns HTTP 200), so a
+# stale link does not announce itself, it quietly shows the wrong technique to whoever is
+# working the alert.
+#
+#   1. TAGS   — pySigma's own validator over detections/sigma/, against the pinned bundle.
+#   2. CITED  — every ATT&CK id written anywhere else under detections/ or in
+#               DEFENSE-METHODOLOGY.md: prose ids, and the technique/tactic pages that
+#               references: entries link to.
+#
+# A deliberate mention of a revoked id — "T1562.001 was revoked by T1685" in a migration
+# note — is escaped by putting `attack-id-historical` on the same line. If that ever needs
+# structure, an allowlist file alongside splunk-precedence-allowlist.tsv is the upgrade.
+#
 #   check-attack-tags.sh              # gate the corpus
 #   ATTACK_DATA_DIR=... check-...     # override where the bundle is cached
 #
-# Exit: 0 = every tag valid;  1 = invalid tags, bad digest, or the bundle is unavailable;
+# Exit: 0 = every id valid;  1 = invalid ids, bad digest, or the bundle is unavailable;
 #       2 = bad invocation
 # ──────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
@@ -111,10 +128,10 @@ fi
 # the same process so the injection is in effect. set_cache_dir first: set_url clears the
 # cache it is pointed at, and clobbering the user's shared ~/.cache/pysigma as a side
 # effect of running a gate would be rude.
-"$PYTHON" - "$BUNDLE" "$REPO/detections/sigma/" "$VERSION" <<'PY'
+"$PYTHON" - "$BUNDLE" "$REPO/detections/sigma/" "$VERSION" "$REPO" <<'PY'
 import sys, tempfile
 
-bundle, rules, want_version = sys.argv[1], sys.argv[2], sys.argv[3]
+bundle, rules, want_version, repo = sys.argv[1:5]
 
 from sigma.data import mitre_attack
 
@@ -143,5 +160,70 @@ if code:
     print("  A tag can go invalid without the repo changing: ATT&CK revokes ids between")
     print("  releases. If this appeared after bumping attack-data.pin, retag the rules;")
     print("  the old ids are gone, not merely unfashionable.")
+
+# ── 2. ids CITED outside tags: prose, and the pages references: link to ────────────────
+import os, re
+
+TECH = set(mitre_attack.mitre_attack_techniques)
+TACS = {t.upper() for t in mitre_attack.mitre_attack_tactics}
+TAC_IDS = set(mitre_attack.mitre_attack_tactics)
+
+ID_RE  = re.compile(r"\bT\d{4}(?:\.\d{3})?\b")
+TA_RE  = re.compile(r"\bTA\d{4}\b")
+URL_RE = re.compile(r"https?://attack\.mitre\.org/(techniques|tactics)/(T[\dA-Z.]+|TA\d+)"
+                    r"(?:/(\d{3}))?/?")
+
+SCAN_DIRS = [os.path.join(repo, "detections")]
+SCAN_FILES = [os.path.join(repo, "DEFENSE-METHODOLOGY.md")]
+EXT = (".yml", ".yaml", ".md", ".conf", ".kql", ".lucene", ".zeek", ".rules")
+
+def files():
+    for f in SCAN_FILES:
+        if os.path.isfile(f):
+            yield f
+    for root in SCAN_DIRS:
+        for dirpath, _dirs, names in os.walk(root):
+            for n in sorted(names):
+                if n.endswith(EXT):
+                    yield os.path.join(dirpath, n)
+
+bad = []
+for f in sorted(set(files())):
+    try:
+        text = open(f, encoding="utf-8").read()
+    except (OSError, UnicodeDecodeError):
+        continue
+    rel = os.path.relpath(f, repo)
+    for lineno, line in enumerate(text.split("\n"), 1):
+        if "attack-id-historical" in line:
+            continue
+        seen = set()
+        # references: URLs — a sub-technique is .../T1685/002/, so rejoin the parts
+        for kind, head, sub in URL_RE.findall(line):
+            seen.add((head + "." + sub if sub else head, "reference URL"))
+        for m in ID_RE.findall(line):
+            seen.add((m, "cited id"))
+        for m in TA_RE.findall(line):
+            seen.add((m, "cited tactic"))
+        for ident, how in sorted(seen):
+            ok = ident in TAC_IDS if ident.startswith("TA") else ident in TECH
+            if not ok:
+                bad.append((rel, lineno, ident, how))
+
+if bad:
+    print("::error::%d ATT&CK id(s) cited outside tags: are not in pinned v%s:"
+          % (len(bad), got))
+    for rel, lineno, ident, how in bad:
+        print("  %s:%s  %s  (%s)" % (rel, lineno, ident, how))
+    print("  These are revoked, deprecated, or misspelled. Tags are checked separately and")
+    print("  may already be correct — that is exactly how #179 happened: the retag fixed")
+    print("  tags: and left prose and references: pointing at revoked techniques, which")
+    print("  attack.mitre.org still serves with a banner instead of a 404.")
+    print("  For a DELIBERATE historical mention, put `attack-id-historical` on that line.")
+    code = code or 1
+else:
+    print("attack ids: %d file(s) scanned, every cited id and reference URL current"
+          % len(sorted(set(files()))))
+
 sys.exit(code)
 PY
