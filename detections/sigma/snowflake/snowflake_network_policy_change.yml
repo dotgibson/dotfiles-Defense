@@ -6,12 +6,12 @@ description: |
   containing NETWORK POLICY - a CREATE/ALTER/DROP network policy or ALTER ACCOUNT/USER SET
   NETWORK_POLICY). A network policy is Snowflake's IP allowlist; opening it (a wide
   ALLOWED_IP_LIST like 0.0.0.0/0) or dropping the enforced one lets stolen credentials work
-  from anywhere - the control gap behind the 2024 credential-stuffing (T1562.007). These are
+  from anywhere - the control gap behind the 2024 credential-stuffing (T1686.001). These are
   rare and high-impact, so any change warrants review; read-only SHOW is excluded.
   Validate (purple): open/drop a network policy from dotfiles-Offense (htpx pair
   snowflake-network-policy).
 references:
-  - https://attack.mitre.org/techniques/T1562/007/
+  - https://attack.mitre.org/techniques/T1686/001/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/snowflake-network-policy-audit.md
 author: dotfiles-Defense
 date: 2026-07-02

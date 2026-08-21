@@ -5,14 +5,14 @@ description: |
   Detects an audit device being disabled in the Vault audit log (request.operation=delete
   on a sys/audit/ path). Disabling an audit device stops subsequent requests from being
   logged, blinding the SIEM to the secret exfil that typically follows - indicator/telemetry
-  removal (T1562.001). Vault logs the disable request itself (it is the last event on that
+  removal (T1685). Vault logs the disable request itself (it is the last event on that
   device), so the delete is a reliable, high-severity tripwire. Audit devices are removed
   almost never outside planned maintenance; alert in real time and pair with an audit-volume
   heartbeat (a gap right after the delete is the exfil-under-cover shape).
   Validate (purple): disable an audit device from dotfiles-Offense (htpx pair
   vault-audit-disable).
 references:
-  - https://attack.mitre.org/techniques/T1562/001/
+  - https://attack.mitre.org/techniques/T1685/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/vault-audit-device-audit.md
 author: dotfiles-Defense
 date: 2026-07-02

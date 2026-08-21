@@ -12,7 +12,7 @@ description: |
   Validate (purple): delete/override branch protection from dotfiles-Offense (htpx pair
   gh-branch-protection-off).
 references:
-  - https://attack.mitre.org/techniques/T1562/001/
+  - https://attack.mitre.org/techniques/T1685/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/gh-branch-protection-audit.md
 author: dotfiles-Defense
 date: 2026-07-02

@@ -5,14 +5,14 @@ description: |
   Detects the package require-two-factor-to-publish control being turned off in the npm audit
   log (action=package.edit, mfa=none). That setting is what stops a bare stolen token from
   shipping a release; setting it to none lets an automation token publish with no second
-  factor and no prompt, quietly clearing the path for a malicious publish (T1562.001). The
+  factor and no prompt, quietly clearing the path for a malicious publish (T1685). The
   downgrade is rare and high-impact, so any change to none warrants review - especially one
   soon followed by a package.publish; a disable-then-publish-then-re-enable is the cover-tracks
   shape.
   Validate (purple): run `npm access set mfa=none <package>` from dotfiles-Offense (htpx pair
   npm-2fa-disable).
 references:
-  - https://attack.mitre.org/techniques/T1562/001/
+  - https://attack.mitre.org/techniques/T1685/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/npm-2fa-audit.md
 author: dotfiles-Defense
 date: 2026-07-03

@@ -321,7 +321,7 @@ the rule gets muted, and a muted rule is a blind spot.
 | Rule | Event / source | ATT&CK | Validate with |
 | ---- | -------------- | ------ | ------------- |
 | `github_self_hosted_runner_registered` | `self_hosted_runner.created` | T1543 | GitHub · gh-self-hosted-runner |
-| `github_branch_protection_tamper` | `protected_branch.destroy` / `protected_branch.policy_override` | T1562.001 | GitHub · gh-branch-protection-off |
+| `github_branch_protection_tamper` | `protected_branch.destroy` / `protected_branch.policy_override` | T1685 | GitHub · gh-branch-protection-off |
 | `github_credential_backdoor` | `repo.create_deploy_key` / `personal_access_token.access_granted` | T1098 | GitHub · gh-deploy-key-backdoor |
 
 **`registry/`** (Harbor container-registry audit log — `product: harbor`, `service: audit`; field `operation`)
@@ -337,7 +337,7 @@ the rule gets muted, and a muted rule is a blind spot.
 | Rule | Event / source | ATT&CK | Validate with |
 | ---- | -------------- | ------ | ------------- |
 | `gitlab_rogue_runner_associated` | `set_runner_associated_projects` | T1543 | GitLab · gl-runner-hijack |
-| `gitlab_protected_branch_tamper` | `protected_branch_removed` / `protected_branch_created` | T1562.001 | GitLab · gl-protected-branch-off |
+| `gitlab_protected_branch_tamper` | `protected_branch_removed` / `protected_branch_created` | T1685 | GitLab · gl-protected-branch-off |
 | `gitlab_token_backdoor` | `project_access_token_created` / `personal_access_token_created` / `deploy_token_created` | T1098 | GitLab · gl-token-backdoor |
 
 **`vault/`** (HashiCorp Vault audit device — `product: vault`, `service: audit`; fields `request.operation`/`request.path`)
@@ -346,7 +346,7 @@ the rule gets muted, and a muted rule is a blind spot.
 | ---- | -------------- | ------ | ------------- |
 | `vault_bulk_secret_read` | `read` on `secret/` path (value_count correlation) | T1555 | Vault · vault-secret-exfil |
 | `vault_approle_backdoor` | create/update on `auth/approle/role/` or `sys/auth/` | T1098 | Vault · vault-approle-backdoor |
-| `vault_audit_device_disabled` | `delete` on `sys/audit/` path | T1562.001 | Vault · vault-audit-disable |
+| `vault_audit_device_disabled` | `delete` on `sys/audit/` path | T1685 | Vault · vault-audit-disable |
 
 **`terraform/`** (Terraform Cloud audit trail — `product: terraform`, `service: audit`; fields `resource.type`/`resource.action`)
 
@@ -370,7 +370,7 @@ the rule gets muted, and a muted rule is a blind spot.
 | ---- | -------------- | ------ | ------------- |
 | `snowflake_data_unload` | `QUERY_TYPE=UNLOAD` (COPY INTO location) | T1567.002 | Snowflake · snowflake-exfil-stage |
 | `snowflake_user_created` | `CREATE_USER` / priv `GRANT` | T1136.003 | Snowflake · snowflake-rogue-user |
-| `snowflake_network_policy_change` | `NETWORK POLICY` in query text | T1562.007 | Snowflake · snowflake-network-policy |
+| `snowflake_network_policy_change` | `NETWORK POLICY` in query text | T1686.001 | Snowflake · snowflake-network-policy |
 
 **`google_workspace/`** (Google Workspace admin/token/user audit — `product: google_workspace`; field `eventName`)
 
@@ -385,7 +385,7 @@ the rule gets muted, and a muted rule is a blind spot.
 | Rule | Event / source | ATT&CK | Validate with |
 | ---- | -------------- | ------ | ------------- |
 | `cloudflare_api_token_created` | `resource.type=api_token` `create` | T1098 | Cloudflare · cf-api-token |
-| `cloudflare_waf_rule_disabled` | `firewall_rule`/`ruleset` `delete`/`update` | T1562.001 | Cloudflare · cf-waf-disable |
+| `cloudflare_waf_rule_disabled` | `firewall_rule`/`ruleset` `delete`/`update` | T1686.001 | Cloudflare · cf-waf-disable |
 | `cloudflare_worker_deployed` | `resource.type=worker`/`workers_script` `create`/`update` | T1648 | Cloudflare · cf-worker-deploy |
 
 **`npm/`** (npm account/org audit log — `product: npm`, `service: audit`; field `action`)
@@ -394,7 +394,7 @@ the rule gets muted, and a muted rule is a blind spot.
 | ---- | -------------- | ------ | ------------- |
 | `npm_malicious_package_publish` | `package.publish` by non-CI actor | T1195.002 | npm · npm-malicious-publish |
 | `npm_maintainer_added` | `package.owner_add` / `team.user_add` | T1098 | npm · npm-owner-add |
-| `npm_publish_2fa_disabled` | `package.edit` `mfa=none` | T1562.001 | npm · npm-2fa-disable |
+| `npm_publish_2fa_disabled` | `package.edit` `mfa=none` | T1685 | npm · npm-2fa-disable |
 
 **`pypi/`** (PyPI project journal — `product: pypi`, `service: audit`; field `action`)
 
@@ -410,7 +410,7 @@ the rule gets muted, and a muted rule is a blind spot.
 | ---- | -------------- | ------ | ------------- |
 | `slack_app_installed` | `app_installed` (broad read scopes) | T1098 | Slack · slack-malicious-app |
 | `slack_external_shared_channel` | `shared_channel_invite_sent` / `_accepted` | T1567 | Slack · slack-external-share |
-| `slack_2fa_enforcement_disabled` | `pref.two_factor_auth_changed` (fires on the change; the direction lives in Slack's `details`) | T1562.001 | Slack · slack-2fa-disable |
+| `slack_2fa_enforcement_disabled` | `pref.two_factor_auth_changed` (fires on the change; the direction lives in Slack's `details`) | T1685 | Slack · slack-2fa-disable |
 
 `password_spray`, `asrep_roast_probing`, `sharphound_ldap_sweep`,
 `ldap_recon_explicit_creds_4648`, `host_recon_command_burst`,

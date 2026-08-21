@@ -6,13 +6,13 @@ description: |
   (protection deleted, opening the branch) - pair with protected_branch_created to catch
   the re-create that covers tracks. Removing protection on a default/release branch
   bypasses required approvals to land unreviewed code on a protected branch and the
-  pipeline that deploys it - a supply-chain evasion (T1562.001). The action is rare and
+  pipeline that deploys it - a supply-chain evasion (T1685). The action is rare and
   legitimately maps to a change ticket, so a removal outside the approved window, or a
   remove-then-recreate around a push to the same branch, warrants review.
   Validate (purple): delete protected-branch rules from dotfiles-Offense (htpx pair
   gl-protected-branch-off).
 references:
-  - https://attack.mitre.org/techniques/T1562/001/
+  - https://attack.mitre.org/techniques/T1685/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/gl-protected-branch-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
