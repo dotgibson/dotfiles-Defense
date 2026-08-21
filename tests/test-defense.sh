@@ -785,6 +785,58 @@ contains "the allowlist explains the archive-staging rule" \
   "$(cat "$REPO/$ALLOW")" "password branch is deliberately unfiltered"
 
 # ─────────────────────────────────────────────────────────────────────────────
+group "check-attack-tags.sh — ATT&CK tags gate against a PINNED release"
+
+CAT="$REPO/detections/check-attack-tags.sh"
+PIN="$REPO/detections/attack-data.pin"
+[ -x "$CAT" ] && ok "attack-tag gate is executable" || no "attack-tag gate is executable"
+
+# The pin is the whole point: a version, an immutable URL, and a digest to check it with.
+pin_text="$(cat "$PIN" 2>/dev/null)"
+contains "the pin names a version" "$pin_text" "version"
+contains "the pin names a per-version (not HEAD) bundle" "$pin_text" "enterprise-attack-"
+contains "the pin carries a sha256" "$pin_text" "sha256"
+contains "the pin says why it exists" "$pin_text" "#172"
+
+# Everything below is hermetic — no 51 MiB download. Failure paths only, driven against
+# throwaway copies; the happy path is the CI gate's own job.
+is "an unexpected argument exits 2" "2" \
+  "$(bash "$CAT" bogus >/dev/null 2>&1; echo $?)"
+
+# A missing pin must fail loudly rather than validate against whatever pySigma downloads,
+# which is the exact behaviour #172 is about.
+AT1="$TMPROOT/at1"
+mkdir -p "$AT1"
+cp -r "$REPO/detections" "$AT1/"
+rm -f "$AT1/detections/attack-data.pin"
+out="$(bash "$AT1/detections/check-attack-tags.sh" 2>&1)"
+rc=$?
+is "a missing pin fails" "1" "$rc"
+contains "the missing pin is named" "$out" "attack-data.pin"
+
+# A pin missing a field is malformed, not a licence to guess a default.
+AT2="$TMPROOT/at2"
+mkdir -p "$AT2"
+cp -r "$REPO/detections" "$AT2/"
+grep -v "^sha256" "$PIN" >"$AT2/detections/attack-data.pin"
+out="$(bash "$AT2/detections/check-attack-tags.sh" 2>&1)"
+rc=$?
+is "a pin with no sha256 fails" "1" "$rc"
+contains "the missing field is named" "$out" "sha256"
+
+# An unreachable bundle fails the gate. It must NOT fall through to pySigma's own live
+# download, because then the pin would be decorative and the verdict would float again.
+AT3="$TMPROOT/at3"
+mkdir -p "$AT3/cache"
+cp -r "$REPO/detections" "$AT3/"
+sed 's#^url\t.*#url\thttp://127.0.0.1:9/nope.json#' "$PIN" >"$AT3/detections/attack-data.pin"
+out="$(ATTACK_DATA_DIR="$AT3/cache" bash "$AT3/detections/check-attack-tags.sh" 2>&1)"
+rc=$?
+is "an unreachable bundle fails the gate" "1" "$rc"
+contains "the download failure is explained" "$out" "could not download"
+lacks "it does not silently validate anyway" "$out" "No validation issues found"
+
+# ─────────────────────────────────────────────────────────────────────────────
 group "lint-shell.sh — CI-identical shell lint"
 
 LS="$REPO/tests/lint-shell.sh"
