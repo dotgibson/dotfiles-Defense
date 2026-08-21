@@ -65,7 +65,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # SHELLCHECK_OPTS must match lint-call.yml's, and scripts/test-core.sh asserts that it
+      # does. Both gates lint the SAME bootstrap.sh, and until now only lint-call.yml set the
+      # fleet's curated exclusions — so the four codes Core has explicitly decided are not
+      # defects were still blocking, just in the other gate (#517). SC2088 is the one that
+      # actually fires: "tildes in messages" is exactly what a bootstrap does, since every
+      # user-facing string names ~/.zshrc, ~/.config/…, ~/.local/bin.
+      #
+      # The failure mode is nasty because the two gates run on different triggers — `lint` on
+      # every push and PR, `bootstrap` only when bootstrap.sh/core/ change. A repo stays green
+      # for weeks, then a bootstrap-touching PR reds with an error naming a rule the fleet
+      # documented as excluded. The natural reading is "the exclusion list is wrong" and the
+      # natural fix is to weaken the message — which is what happened in dotfiles-Gentoo
+      # before anyone noticed the two gates simply disagreed.
+      #
+      # Three repos (Arch, Debian, Fedora) had independently worked around this with a
+      # copy-pasted `disable=` line in their own .shellcheckrc — the N-way drift the reusable
+      # workflows exist to end. Setting it here fixes all nine at once, including the six that
+      # have no .shellcheckrc, or one without that line.
       - name: shellcheck + syntax + --help
+        env:
+          SHELLCHECK_OPTS: "-e SC1090 -e SC1091 -e SC2015 -e SC2088"
         run: |
           shellcheck -x bootstrap.sh
           bash -n bootstrap.sh

@@ -1,0 +1,31 @@
+# .shellcheckrc — repo-wide ShellCheck config so author-time, CI, and the editor
+# (bashls / nvim) all lint identically.
+# ──────────────────────────────────────────────────────────────────────────────
+# WHY A FILE AT THE REPO ROOT, when core/.shellcheckrc already exists: ShellCheck
+# resolves its config by searching UP from the file being checked, so the vendored
+# copy governs core/** and nothing else. bootstrap.sh and the repo-owned scripts sit
+# outside it and found no config at all — they were linted with ShellCheck's defaults
+# while CI passed the fleet's suppressions via SHELLCHECK_OPTS in lint-call.yml. The
+# result was a local `shellcheck` (and any editor) disagreeing with a green CI, in the
+# direction that teaches people to ignore the linter (dotfiles-core#573).
+
+# Follow `source`-d files so `-x` resolves core/lib/ux.sh + core/lib/bootstrap-lib.sh
+# from any working directory, relative to the script being checked.
+external-sources=true
+source-path=SCRIPTDIR
+
+# Lint as bash: the repo-owned scripts are `#!/usr/bin/env bash` and the libraries they
+# source from core/lib/ carry no shebang. ShellCheck has no zsh mode, so the zsh files
+# are checked with `zsh -n` instead.
+shell=bash
+
+# House-style suppressions. These MIRROR the fleet gate in dotfiles-core
+# (.github/workflows/lint-call.yml and bootstrap-test.yml both set
+# SHELLCHECK_OPTS="-e SC1090 -e SC1091 -e SC2015 -e SC2088"). Keep them in step: if that
+# list changes upstream, change it here too, or local and CI will disagree again.
+#   SC1090/SC1091 — runtime `source` of a path ShellCheck cannot follow statically
+#   SC2015        — the deliberate `cmd && ok || warn` idiom used throughout
+#   SC2088        — a literal `~` inside a user-facing MESSAGE, not a path to expand
+# File-SPECIFIC suppressions stay INLINE at their use site — they are not global truths
+# and must not be hidden here.
+disable=SC1090,SC1091,SC2015,SC2088
