@@ -3,6 +3,6 @@
 # hand-edit, and never 'git subtree pull' by hand: that moves core/ but not
 # this file, and core-integrity.sh then reports TAMPERED. See VENDORING.md.
 core_version=4.14.0
-core_sha=181dd8cdbe0e92e93185a4ffc992bd930a7e5705
-core_branch=181dd8cdbe0e92e93185a4ffc992bd930a7e5705
-core_tag=v4
+core_sha=adfa6a4a5135c6c159a4d764157cd90803a04a8a
+core_branch=main
+core_tag=v4.14.0-6-gadfa6a4

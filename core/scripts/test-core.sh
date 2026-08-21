@@ -1161,6 +1161,37 @@ f() { echo \"check the $_rt_s value\"; }"
   # is what makes that true, and a regression in it must fail HERE rather than in §5e
   if [[ -z "$(_core_return_trap_hits "$HERE/scripts/test-core.sh")" ]]; then pass "RETURN scan: does not flag its own fixtures (the signal name stays assembled)"; else fail "RETURN scan: this file now spells the banned shape literally — keep the name in \$_rt_s"; fi
 
+  # ── SHELLCHECK_OPTS parity across the two workflows that lint the same file ──
+  # lint-call.yml and bootstrap-test.yml BOTH run shellcheck over an OS repo's bootstrap.sh.
+  # For a long time only the first set the fleet's curated exclusions, so the same commit
+  # could be green in `lint` and red in `bootstrap` — with an error naming a rule the fleet
+  # had documented as excluded (#517). SC2088 is the one that fires, because a bootstrap's
+  # user-facing strings are full of ~/.zshrc and ~/.config.
+  #
+  # It is not shareable state: GitHub has no way to import an env value from one workflow
+  # into another, so the value is authored twice by necessity. This is the assertion that
+  # keeps the two copies equal — the same shape as the os-repos.txt fallback-array check
+  # above, and for the same reason: a literal duplicated across files with nothing comparing
+  # them is exactly the N-way drift the reusable workflows exist to end.
+  # The multi-value test below is `== *$'\n'*`, NOT `$(wc -l) != 1`: BSD wc pads its count
+  # with leading spaces ("       1"), so the string compare is true on macOS and false on
+  # Linux — this assertion shipped with exactly that bug and the macOS leg caught it. A
+  # bash-native newline test has no such divergence, and needs no external tool.
+  _sco_of() { # _sco_of <workflow> → the SHELLCHECK_OPTS value, or empty
+    sed -n 's/^[[:space:]]*SHELLCHECK_OPTS:[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$1" 2>/dev/null | sort -u
+  }
+  _sco_lc="$(_sco_of "$HERE/.github/workflows/lint-call.yml")"
+  _sco_bt="$(_sco_of "$HERE/.github/workflows/bootstrap-test.yml")"
+  if [[ -z "$_sco_lc" || -z "$_sco_bt" ]]; then
+    fail "SHELLCHECK_OPTS parity: could not read the value from both workflows (lint-call='$_sco_lc' bootstrap-test='$_sco_bt')"
+  elif [[ "$_sco_lc" == *$'\n'* ]]; then
+    fail "SHELLCHECK_OPTS parity: lint-call.yml carries more than one distinct value — the steps disagree with each other"
+  elif [[ "$_sco_lc" != "$_sco_bt" ]]; then
+    fail "SHELLCHECK_OPTS parity: lint-call.yml has '$_sco_lc' but bootstrap-test.yml has '$_sco_bt' — the same bootstrap.sh would be green in one gate and red in the other (#517)"
+  else
+    pass "SHELLCHECK_OPTS parity: both gates that lint bootstrap.sh use the same exclusions"
+  fi
+
   # ── ONE definition, and it must stay one ──
   # The fleet-facing leg in .github/workflows/lint-call.yml gates the nine caller repos with
   # the SAME rule §5e applies here. It first shipped with the pattern inlined (#552) while
