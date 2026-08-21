@@ -192,13 +192,14 @@ tag**:
 ```sh
 # in an OS repo, adopt a specific Core release rather than main's tip
 git subtree pull --prefix=core <core-remote> v<X.Y.Z> --squash
-make core-lock   # or hand-edit core.lock — see the caveat below
+# …then re-stamp core.lock from Core's fan-out — see the caveat below
 ```
 
 **Do not hand-run that in practice.** A raw subtree pull updates `core/` but not
 `core.lock`, and `core-integrity.sh` compares the vendored tree against the commit the
 lock pins — so the freshly-synced repo reports `TAMPERED` until the lock is regenerated,
-and `make core-lock` does not exist in every consumer (most have no root `Makefile`).
+and there is no per-repo target that regenerates it (`make core-lock` is absent in most
+consumers, and where it exists it only prints a redirect back to the fan-out).
 `sync-core.sh` commits both together, and `sync-fanout.yml` runs it for you on every
 release. The recipe above is here to show the *pinning model*, not as an operator step.
 

@@ -102,9 +102,16 @@ core() {
 # merely installed? Presence (command -v) ≠ active: starship can be on PATH while the
 # prompt is plain, atuin installed while Ctrl-E is dead, mise present while the chpwd
 # hook never registered. Probe the function/widget each tool's init defines, so
-# core-doctor can tell "✓ present" from "✓ present AND working". Returns non-zero for an
-# unknown tool. (Inherited into core-doctor's `$()` capture: zsh forks keep functions +
-# the $widgets/$precmd_functions params readable.)
+# core-doctor can tell "✓ present" from "✓ present AND working". (Inherited into
+# core-doctor's `$()` capture: zsh forks keep functions + the $widgets/$precmd_functions
+# params readable.)
+# THREE exit states, and the third one is load-bearing: 0 wired, 1 known but idle, 2 the
+# name has no arm here at all. Both are "not wired" to the two callers, which test only for
+# zero — the split exists so a TEST can tell them apart, because they are different bugs.
+# An idle tool is a true report about the box; a name with no arm is a report about US, and
+# renders a permanent `○ (idle)` that no amount of installing or configuring can clear.
+# _CORE_DOCTOR_WIRED is what the renderers iterate, so a name added there and not here is
+# exactly that silent-forever row; the suite asserts every listed name avoids 2.
 # Each arm accepts BOTH the historical and the current upstream name: starship and
 # carapace renamed the functions their `init` emits, so probing only the old name
 # reported a FALSE `○ (idle)` for an integration that was demonstrably driving the
@@ -118,7 +125,7 @@ _core_wired() {
   mise)     (( $+functions[_mise_hook] )) || (( $+functions[__mise_hook] )) ;;
   zoxide)   (( $+functions[__zoxide_hook] )) || (( $+functions[__zoxide_z] )) ;;
   carapace) (( $+functions[_carapace] )) || (( $+functions[_carapace_completer] )) ;;
-  *) return 1 ;;
+  *) return 2 ;;  # no arm for this name — see the three-state note above
   esac
 }
 
@@ -150,6 +157,26 @@ typeset -ga _CORE_DOCTOR_GROUPS=(
   "data / net"   "jq yq jnv gron sd xh doggo gping glow lnav op"
   "dev / repo"   "ast-grep shellcheck shfmt hyperfine watchexec uv jj difft git-absorb"
 )
+
+# ── The doctor's WIRABLE inventory — ONE definition, read by BOTH renderers ───────────
+# The same single-source rule as _CORE_DOCTOR_GROUPS above, applied to the other axis. This
+# list lived as two `local -a` literals — one in _core_doctor_json, one in
+# _core_doctor_render — plus the `case` arms of _core_wired: three copies hand-synced with
+# nothing to catch a drift. The render⇄json parity test cannot see this list at all, because
+# it stubs _core_have false, which makes the "integrations wired" block skip every entry by
+# construction. So the one seam the tool axis had a guard for, the wired axis had neither a
+# single source NOR a test (#447).
+#
+# NOT folded into _CORE_DOCTOR_GROUPS' "integrations" group, which is a superset: gum and
+# sesh belong there (they ARE integrations a reader wants presence for) but neither
+# registers a hook, widget or completer, so neither is wirable and both would render a
+# permanent `○ (idle)`. Presence and wiredness are different questions about different sets.
+#
+# Membership rule: a tool belongs here iff its own `init`/activation defines something
+# observable in THIS shell — a function, a widget, a precmd hook — that _core_wired can
+# probe. If you cannot name the thing to probe, it is not wirable; add it to a group above
+# and stop there. Adding a name here without an arm in _core_wired fails the suite.
+typeset -ga _CORE_DOCTOR_WIRED=(starship atuin mise zoxide carapace)
 
 # _core_doctor_bin <tool> → REPLY = the binary that actually BACKS that row.
 # The rows above are canonical names, but two of them are not the binary on every distro:
@@ -256,7 +283,8 @@ _core_doctor_json() {
   for ((_gi = 2; _gi <= ${#_CORE_DOCTOR_GROUPS}; _gi += 2)); do
     alltools+=(${=_CORE_DOCTOR_GROUPS[_gi]})
   done
-  local -a wir=(starship atuin mise zoxide carapace)
+  # Read from the single source, not restated — same rule as the tools object above.
+  local -a wir=("${_CORE_DOCTOR_WIRED[@]}")
   # REPLY is declared HERE, with the rest — _core_doctor_bin writes it, and `local` inside
   # the loop would re-declare an already-set parameter (see the `local … _v` note in
   # _core_doctor_render for what that costs).
@@ -411,7 +439,7 @@ _core_doctor_render() {
   # "starship installed but the prompt is plain" or "atuin present but Ctrl-E is dead" is
   # visible instead of a misleading green ✓. ○ = installed but idle (not wired here). Only
   # the present ones are listed (an absent tool already shows ✗ in the group above).
-  local -a wirable=(starship atuin mise zoxide carapace)
+  local -a wirable=("${_CORE_DOCTOR_WIRED[@]}")
   local w wline=""
   for w in $wirable; do
     _core_have "$w" || continue

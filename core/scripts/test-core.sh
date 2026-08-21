@@ -1073,6 +1073,114 @@ sed -n "s/^x=//p" "$f" | head -n1'
   if [[ -z "$(_core_pipefail_hits "$HERE/scripts/lib/common.sh")" ]]; then pass "pipefail scan: does not flag its own definition"; else fail "pipefail scan: flagged common.sh itself"; fi
 fi
 
+# ── leaked-RETURN-trap scanner (scripts/lib/common.sh :: _core_return_trap_hits) ───
+# WHY THIS IS TESTED. audit-core.sh §5e is the ONLY gate anywhere that can see this bug.
+# The broken line is valid bash, so the lint and syntax sections both pass it; and
+# bootstrap-test.yml only ever runs --links-only, so the code where it detonates is executed
+# by nothing (#512, #461). A gate that is the sole line of defence, for a bug that has
+# already shipped green in two repos, is worth proving fires. Probe-testing it while it was
+# written is what found the line-start anchor: the version this repo nearly shipped catches
+# ONE of the four broken shapes below, and the one it misses is the likeliest of them.
+#
+# Both halves are pinned — what it catches AND what it must ignore. The second half is not
+# padding. The false-positive class is what gets a gate switched off, and dotfiles-Debian's
+# own fix carries three comment lines naming the signal directly above its corrected traps:
+# a scanner without the comment filter would red the repo that FIXED the bug.
+#
+# THE SIGNAL NAME IS ASSEMBLED, NOT WRITTEN LITERALLY — the same move, for the same reason,
+# as _pf_p in the pipefail block above. §5e scans this file, and a file whose job is to test
+# the banned shape necessarily contains it; the first run flagged eight of its own lines.
+# Keeping the literal out of this source is the honest fix: the fixture written to disk is
+# byte-identical to the real hazard, so the assertions still exercise the true pattern. An
+# inline "allow" marker in the scanner was rejected for the same reason it was there — an
+# escape hatch invites silencing a real finding. The assertion MESSAGES are worded around
+# it too, which is why none of them says the shape out loud.
+if have git; then
+  hdr "leaked-RETURN-trap scanner (_core_return_trap_hits)"
+  _rtd="$SANDBOX/returntrap"
+  mkdir -p "$_rtd"
+  _rt_write() { printf '%s\n' "$2" >"$_rtd/$1"; }   # _rt_write <name> <body>
+  _rt_s='RETURN'
+  # The handler body is a placeholder, not a real cleanup: what is under test is the signal
+  # operand and the disarm, so a literal `rm -rf` in a fixture would be risk for no gain.
+
+  # ── the four broken shapes ──
+  # The ONE-LINE BODY is first because it is the shape a line-start anchor misses, and it is
+  # how this is most often written: the whole helper fits on one line, so the handler does too.
+  _rt_write oneline.sh "#!/usr/bin/env bash
+f() { trap CLEAN $_rt_s; }"
+  if [[ "$(_core_return_trap_hits "$_rtd/oneline.sh")" == 2 ]]; then pass "RETURN scan: catches a one-line function body"; else fail "RETURN scan: missed the one-line function body — is the pattern anchored to line-start again?"; fi
+
+  _rt_write ownline.sh "#!/usr/bin/env bash
+f() {
+  trap CLEAN $_rt_s
+}"
+  if [[ "$(_core_return_trap_hits "$_rtd/ownline.sh")" == 3 ]]; then pass "RETURN scan: catches the dotfiles-Debian#2 shape (handler on its own line)"; else fail "RETURN scan: missed the own-line shape"; fi
+
+  # A TRAILING COMMENT must not hide it. This is why the signal is matched as a TOKEN rather
+  # than as the last word on the line — anchoring to end-of-line waves this straight through.
+  _rt_write trailing.sh "#!/usr/bin/env bash
+f() { trap CLEAN $_rt_s  # cleanup
+}"
+  if [[ "$(_core_return_trap_hits "$_rtd/trailing.sh")" == 2 ]]; then pass "RETURN scan: catches a handler with a trailing comment"; else fail "RETURN scan: missed a trailing comment — is the signal anchored to end-of-line again?"; fi
+
+  # TWO SIGNALS leak in exactly the same way, and here the signal is not the last operand.
+  _rt_write multisig.sh "#!/usr/bin/env bash
+f() { trap CLEAN $_rt_s EXIT; }"
+  if [[ "$(_core_return_trap_hits "$_rtd/multisig.sh")" == 2 ]]; then pass "RETURN scan: catches a second signal after the first"; else fail "RETURN scan: missed the two-signal form"; fi
+
+  # ── what it must NOT flag ──
+  # The disarming form is the FIX. Flagging it would punish the cure and leave no way to
+  # write a correct one at all.
+  _rt_write fixed.sh "#!/usr/bin/env bash
+f() { trap \"trap - $_rt_s; CLEAN\" $_rt_s; }"
+  if [[ -z "$(_core_return_trap_hits "$_rtd/fixed.sh")" ]]; then pass "RETURN scan: a self-disarming body is not a finding"; else fail "RETURN scan: flagged the disarming fix"; fi
+
+  # Writing ABOUT the hazard must not trip it — this repo now documents it in three places,
+  # and so does the fix in dotfiles-Debian.
+  _rt_write comment.sh "#!/usr/bin/env bash
+# trap CLEAN $_rt_s is the shape this gate exists to catch
+f() { trap \"trap - $_rt_s; CLEAN\" $_rt_s; }"
+  if [[ -z "$(_core_return_trap_hits "$_rtd/comment.sh")" ]]; then pass "RETURN scan: a comment describing the hazard is not a finding"; else fail "RETURN scan: flagged a comment"; fi
+
+  # Every OTHER signal is fine — only this one has the leaking-slot semantics. An EXIT
+  # handler inside a function is ordinary, and this repo uses several.
+  _rt_write exitonly.sh '#!/usr/bin/env bash
+f() { trap CLEAN EXIT; }'
+  if [[ -z "$(_core_return_trap_hits "$_rtd/exitonly.sh")" ]]; then pass "RETURN scan: an EXIT handler is not a finding"; else fail "RETURN scan: flagged an EXIT handler"; fi
+
+  # The word in prose, or as part of a longer identifier, is not a signal operand.
+  _rt_write prose.sh "#!/usr/bin/env bash
+f() { echo \"check the $_rt_s value\"; }"
+  if [[ -z "$(_core_return_trap_hits "$_rtd/prose.sh")" ]]; then pass "RETURN scan: the bare word in prose is not a finding"; else fail "RETURN scan: flagged the word where no handler is armed"; fi
+
+  # and the gate must not flag the library that defines it
+  if [[ -z "$(_core_return_trap_hits "$HERE/scripts/lib/common.sh")" ]]; then pass "RETURN scan: does not flag its own definition"; else fail "RETURN scan: flagged common.sh itself"; fi
+
+  # nor this file, whose fixtures are the banned shape by construction — the assembly above
+  # is what makes that true, and a regression in it must fail HERE rather than in §5e
+  if [[ -z "$(_core_return_trap_hits "$HERE/scripts/test-core.sh")" ]]; then pass "RETURN scan: does not flag its own fixtures (the signal name stays assembled)"; else fail "RETURN scan: this file now spells the banned shape literally — keep the name in \$_rt_s"; fi
+
+  # ── ONE definition, and it must stay one ──
+  # The fleet-facing leg in .github/workflows/lint-call.yml gates the nine caller repos with
+  # the SAME rule §5e applies here. It first shipped with the pattern inlined (#552) while
+  # the helper landed separately (#555), so for one release the rule existed twice and only
+  # the copy below was tested — the fleet-facing half was the one that could drift unseen.
+  # These two assertions are what stop that from recurring: the workflow must CALL the
+  # helper, and must not carry a second copy of the expression. Cheap, and it fails in the
+  # suite rather than the next time someone corrects one copy and not the other.
+  _rt_wf="$HERE/.github/workflows/lint-call.yml"
+  if [[ ! -r "$_rt_wf" ]]; then
+    skip "RETURN scan: lint-call.yml not readable (partial checkout?)"
+  elif ! grep -q '_core_return_trap_hits' "$_rt_wf"; then
+    fail "RETURN scan: lint-call.yml no longer calls _core_return_trap_hits — the fleet gate has drifted off the shared definition"
+  elif grep -qE 'trap\[\[:space:\]\]' "$_rt_wf"; then
+    fail "RETURN scan: lint-call.yml carries its own copy of the pattern — call the helper instead, so the rule has one definition"
+  else
+    pass "RETURN scan: the fleet gate (lint-call.yml) calls the helper rather than copying the pattern"
+  fi
+fi
+
 # ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
 # WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
 # whole reason for existing is that an INTERMITTENT failure is unreproducible by the time the
@@ -1245,7 +1353,12 @@ if have git; then
   # moment the count was met: a NEW content gate could use bare `git ls-files` and still
   # satisfy it. Exactness makes adding either kind of enumeration fail here until someone
   # picks a side, which is the decision this rule exists to force.
-  _als_expect="audit-core.sh:8:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
+  # audit-core.sh 8→9 content calls: §5e (leaked RETURN trap) enumerates via _audit_ls.
+  # It is a CONTENT gate — "is this file's text valid?" — so an untracked-but-not-ignored
+  # script is in scope: a brand-new helper arming a leaked trap must be caught BEFORE it is
+  # `git add`ed, not one round-trip later. That is the side of the rule this tripwire made
+  # explicit, which is what it is for.
+  _als_expect="audit-core.sh:9:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
   _als_bad=""
   for _als_spec in $_als_expect; do
     _als_f="${_als_spec%%:*}"
@@ -5530,15 +5643,43 @@ assert shown == keys, \"render-only: %s | json-only: %s\" % (sorted(shown - keys
 # Direction is deliberately one-way: probed ⊆ reported. The reverse would fail on `op` (no
 # HAVE_OP — the doctor probes it live) and on `fd`/`bat`, which 00-tools.zsh sets from
 # FD_BIN/BAT_BIN after resolving fdfind/batcat rather than with a bare `_have` line.
+# `^_have +` and not `^_have `: 00-tools.zsh aligns a couple of trailing comments with two
+# spaces (tldr is one), and the single-space form silently dropped those rows from the set —
+# a coverage guard that read stronger than it was. The quantifier takes it 37 → 38.
 check_dep "core-doctor reports every tool 00-tools.zsh probes (no silently undetected tools)" python3 \
   '_TOOLS_SRC="'"$HERE"'/zsh/00-tools.zsh" _CD_J="$(core-doctor --json)" python3 -c "
 import json, os, re
-probed   = set(re.findall(r\"(?m)^_have ([A-Za-z0-9_.-]+)\", open(os.environ[\"_TOOLS_SRC\"]).read()))
+probed   = set(re.findall(r\"(?m)^_have +([A-Za-z0-9_.-]+)\", open(os.environ[\"_TOOLS_SRC\"]).read()))
 reported = set(json.loads(os.environ[\"_CD_J\"])[\"tools\"])
 missing  = sorted(probed - reported)
 assert probed, \"parsed no _have lines out of 00-tools.zsh\"
 assert not missing, \"detected by 00-tools.zsh but absent from core-doctor: %s\" % missing
 "'
+# ...and now the REVERSE direction, which the note above declined to assert because three
+# rows legitimately have no `_have` line. Declining it entirely left a hole: the check above
+# derives its tool -> flag mapping from the very line that sets the flag, so DELETING
+# `_have jq && HAVE_JQ=1` does not make it fail — it just removes jq from both sides and the
+# suite goes quiet. That is the #447 failure mode itself (the doctor promising a tool Core
+# never wired), so assert it directly, with the three exceptions named rather than waived.
+#
+# op is deliberate: the doctor probes it live and no alias or function is gated on it. fd and
+# bat are set from FD_BIN/BAT_BIN after resolving fdfind/batcat, so their assignments do not
+# match `^_have`. A NEW name showing up here is not a fourth exception to add — it means a
+# doctor row has no detection behind it, which is the bug.
+# Pure zsh so it runs everywhere; _CORE_DOCTOR_GROUPS is the inventory the parity test above
+# already proves equal to both renderers' output.
+check "every core-doctor row has a HAVE_* probe behind it (or is a documented exception)" \
+  'paired=(); exempt=(op fd bat); missing=()
+   for line in ${(f)"$(<'"$HERE"'/zsh/00-tools.zsh)"}; do
+     [[ $line =~ "^_have +([A-Za-z0-9_.-]+) +&& +HAVE_[A-Z0-9_]+=1" ]] && paired+=($match[1])
+   done
+   (( ${#paired} >= 30 )) || { print -r -- "parsed only ${#paired} _have lines"; exit 1; }
+   for ((gi = 2; gi <= ${#_CORE_DOCTOR_GROUPS}; gi += 2)); do
+     for t in ${=_CORE_DOCTOR_GROUPS[gi]}; do
+       (( ${paired[(I)$t]} )) || (( ${exempt[(I)$t]} )) || missing+=($t)
+     done
+   done
+   (( ${#missing} == 0 )) || { print -r -- "doctor rows with no detection behind them: $missing"; exit 1; }'
 # git-absorb is the first --json tools key that is NOT a bare identifier, and the JSON is
 # hand-rolled by _core_doctor_json rather than produced by a serialiser — so the hyphen has
 # to survive quoting on its own merit. The set-equality check above cannot see this: it
@@ -5598,6 +5739,45 @@ check "_core_wired accepts carapace's current hook name (_carapace_completer)" \
   '_carapace_completer() { :; }; _core_wired carapace'
 check "_core_wired is false for an idle carapace" \
   '_core_wired carapace 2>/dev/null; (( $? != 0 ))'
+# ── The wired list must not drift from the arms that implement it (#447) ──────────────
+# _CORE_DOCTOR_WIRED is what BOTH renderers iterate; the `case` arms of _core_wired are what
+# actually probe. Those were three hand-synced literals until this change, and — unlike the
+# tool axis — nothing could see a drift: the render⇄json parity test above stubs _core_have
+# false, which makes the "integrations wired" block skip every entry by construction. So the
+# guard has to be built here, in both directions, because the two drifts are different bugs.
+#
+# The sentinel first, because the next assertion is vacuous without it: an unknown name must
+# return exactly 2, not merely non-zero. Reverting that arm to `return 1` makes "no arm for
+# this name" indistinguishable from "installed but idle" and silently disarms the check below.
+check "_core_wired returns the distinct exit 2 for a name it has no arm for" \
+  '_core_wired bogustool 2>/dev/null; (( $? == 2 ))'
+# Direction 1 — every listed name has an arm. This is the drift that renders a WRONG report:
+# a name in the array with no arm falls to `*)` and prints `○ (idle)` forever, on every box,
+# no matter what the user installs or configures. Runtime, so it needs no source parsing.
+# `_core_wired` is called with the hooks undefined, so a correctly-armed tool returns 1 here;
+# only 2 is a failure.
+check "every _CORE_DOCTOR_WIRED entry has a matching _core_wired arm" \
+  'for t in $_CORE_DOCTOR_WIRED; do
+     _core_wired "$t" 2>/dev/null
+     (( $? == 2 )) && { print -r -- "no _core_wired arm for: $t"; exit 1; }
+   done
+   (( ${#_CORE_DOCTOR_WIRED} > 0 ))'
+# Direction 2 — every arm is listed. This is the drift that renders a MISSING report: a tool
+# gains a probe nobody iterates, so its wiredness is never shown and the omission is silent
+# (exactly how twelve tools went unreported on the tool axis for releases). Not observable at
+# runtime — an unlisted arm is unreachable by definition — so read the arms out of the source,
+# the same technique as the "probed ⊆ reported" test above. Skips without python3, like its
+# neighbours.
+check_dep "every _core_wired arm appears in _CORE_DOCTOR_WIRED (no unreachable probes)" python3 \
+  '_FN_SRC="'"$HERE"'/zsh/30-functions.zsh" _CD_W="$_CORE_DOCTOR_WIRED" python3 -c "
+import os, re
+src  = open(os.environ[\"_FN_SRC\"]).read()
+body = re.search(r\"(?s)^_core_wired\\(\\) \\{.*?^\\}\", src, re.M).group(0)
+arms = set(re.findall(r\"(?m)^  ([a-z][a-z0-9-]*)\\)\", body))
+listed = set(os.environ[\"_CD_W\"].split())
+assert arms, \"parsed no case arms out of _core_wired\"
+assert not arms - listed, \"probed by _core_wired but never rendered: %s\" % sorted(arms - listed)
+"'
 # core-help (U5): the width-aware renderer must emit every verb and never crash on its
 # kw arithmetic — including a pathologically narrow terminal where the key column clamps.
 check "core-help renders all verbs (wide terminal)" \
@@ -6298,6 +6478,157 @@ ucheck "renamed: neither present → no bat/fd/cat alias and the doctor reports 
   "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ -z \${HAVE_BAT:-} && -z \${HAVE_FD:-} ]] && ! (( \$+aliases[bat] )) && ! (( \$+aliases[fd] )) && ! (( \$+aliases[cat] )) && [[ \$j == *'\"bat\":false'* && \$j == *'\"fd\":false'* ]]" \
   PATH="$RNBIN" CORE_NO_PAGER=1
 
+
+# ── user bindirs reach PATH BEFORE detection (#425) ──────────────────────────
+# 00-tools.zsh prepends the per-user bindirs language installers write into, then probes
+# for HAVE_* flags. It used to prepend only ~/.local/bin, so a `cargo install`ed tool —
+# which lands in $CARGO_HOME/bin, and reached PATH only via the OS layer at band 80, a
+# whole load-order band AFTER detection — got no flag, no alias, and no shell init, while
+# core-doctor (which probes LIVE, later, against the finished PATH) reported it ✓. Same
+# shell, two answers. atuin's own installer writes ~/.atuin/bin and had the identical
+# hole, which is the severe one: no HAVE_ATUIN means `atuin init zsh` never runs, so
+# Ctrl+E is dead and no history is recorded behind a green doctor row.
+#
+# Hermetic, and it has to be: the box running this suite has its own cargo/go/atuin dirs
+# one way or the other, and neither arrangement can prove the other's. Each case pins HOME
+# to a purpose-built fixture and PATH to a stub dir holding nothing but real grep/head.
+#
+# CARGO_HOME/GOBIN/GOPATH are neutralised (passed EMPTY — `:-` treats empty as unset) in
+# every case that is not deliberately setting them. That is the same trap v4.13.2 fixed in
+# the blib_user_bindirs_on_path fixture below: the resolution is `${CARGO_HOME:-$HOME/...}`
+# precisely so a relocated dir still works, so a developer with CARGO_HOME exported in
+# their own shell retargets the lookup, the fixture's dir never lands, and the case reds a
+# perfectly healthy tree while no CI runner — none of which export it — ever sees it.
+UBHOME="$SANDBOX/ubhome"
+UBSYS="$SANDBOX/ubsys"
+mkdir -p "$UBSYS"
+ln -sf "$(command -v grep)" "$UBSYS/grep"
+ln -sf "$(command -v head)" "$UBSYS/head"
+_ub_fixture() { # _ub_fixture <reldir>:<tool> ... — fresh $UBHOME holding exactly these stubs
+  rm -rf "$UBHOME"
+  mkdir -p "$UBHOME"
+  local spec d n
+  for spec in "$@"; do
+    d="${spec%%:*}"
+    n="${spec##*:}"
+    mkdir -p "$UBHOME/$d"
+    # Answers --version and NOTHING else: `atuin init zsh` must emit no script, or
+    # _cache_eval would source the stub's chatter back into the shell.
+    printf '#!/bin/sh\n[ "$1" = --version ] && echo "%s 1.0.0"\nexit 0\n' "$n" >"$UBHOME/$d/$n"
+    chmod +x "$UBHOME/$d/$n"
+  done
+}
+
+# (a) THE REPORTED BUG: a cargo-installed tool is detected, aliased and wired.
+_ub_fixture .cargo/bin:procs
+ucheck "bindirs: a tool in ~/.cargo/bin sets HAVE_PROCS and gets its alias (#425)" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; [[ -n \${HAVE_PROCS:-} && \${aliases[ps]} == procs ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (b) THE SEVERE ONE: atuin's own installer dir, whose miss silently loses history.
+_ub_fixture .atuin/bin:atuin
+ucheck "bindirs: a tool in ~/.atuin/bin sets HAVE_ATUIN (so atuin init zsh runs)" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_ATUIN:-} ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (c) RELOCATABLE: rustup honours $CARGO_HOME, so hard-coding ~/.cargo/bin would leave a
+# relocated box still undetected. NOTE there is no ~/.cargo/bin in this fixture at all —
+# the flag can only be set by resolving through the variable.
+_ub_fixture xdgcargo/bin:procs
+ucheck "bindirs: CARGO_HOME is honoured (a relocated cargo dir is still detected)" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_PROCS:-} ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME="$UBHOME/xdgcargo" GOBIN= GOPATH=
+
+# (d) go honours $GOBIN first.
+_ub_fixture gobin:xh
+ucheck "bindirs: GOBIN is honoured" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_XH:-} ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN="$UBHOME/gobin" GOPATH=
+
+# (e) …then $GOPATH — which is a path LIST, and go writes to the FIRST entry's bin/.
+# Expanding "$GOPATH/bin" against /a:/b would probe a nonexistent "/a:/b/bin", so this
+# asserts BOTH that the first entry is used and that no such bogus entry is built.
+_ub_fixture gopath/bin:xh second/bin:gron
+ucheck "bindirs: GOPATH's FIRST entry is used, and no bogus /a:/b/bin entry is built" \
+  "source '$TOOLS_FILE'; [[ -n \${HAVE_XH:-} && -z \${HAVE_GRON:-} && \$PATH != *'gopath:'* ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH="$UBHOME/gopath:$UBHOME/second"
+
+# (f) IDEMPOTENT: the guard is a containment test, so a second source must not duplicate.
+# Duplicates are not cosmetic — 00-tools.zsh is re-sourced by `core reload`, and an
+# unbounded PATH is a real leak over a long session.
+_ub_fixture .cargo/bin:procs .local/bin:eza
+ucheck "bindirs: sourcing twice adds each dir exactly once" \
+  "source '$TOOLS_FILE'; source '$TOOLS_FILE'; p=(\${(s.:.)PATH}); [[ \${#\${(M)p:#\$HOME/.cargo/bin}} == 1 && \${#\${(M)p:#\$HOME/.local/bin}} == 1 ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (g) Only dirs that EXIST are added — no phantom entries on a box without go or atuin.
+_ub_fixture .cargo/bin:procs
+ucheck "bindirs: directories that do not exist are never added to PATH" \
+  "source '$TOOLS_FILE'; [[ \$PATH != *'/go/bin'* && \$PATH != *'/.atuin/bin'* && \$PATH == *'/.cargo/bin'* ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (h) ORDER IS A DECISION, not an accident. Each existing dir is prepended, so the front of
+# PATH ends up in reverse list order: ~/.atuin/bin ahead of ~/.local/bin. That matches
+# lib/bootstrap-lib.sh's blib_user_bindirs_on_path, examples/atuin-daemon.service's
+# Environment=PATH, and the OS layers — inverting it here would silently change which
+# binary wins on a box holding atuin in both places.
+_ub_fixture .cargo/bin:procs .local/bin:eza .atuin/bin:atuin
+ucheck "bindirs: ~/.atuin/bin precedes ~/.local/bin, and all of them precede the old PATH" \
+  "source '$TOOLS_FILE'; p=(\${(s.:.)PATH}); [[ \${p[(i)\$HOME/.atuin/bin]} -lt \${p[(i)\$HOME/.local/bin]} && \${p[(i)\$HOME/.local/bin]} -lt \${p[(i)$UBSYS]} ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+
+# (i) THE DISAGREEMENT ITSELF. The issue's symptom was not "no alias" but that core-doctor
+# and the flags answered differently about the same tool in the same shell. Assert they now
+# agree: the doctor says present AND Core wired it. Before the fix the first half passed and
+# the second failed, which is exactly the bug.
+_ub_fixture .cargo/bin:procs
+ucheck "bindirs: core-doctor and HAVE_PROCS now agree about a cargo-installed tool (#425)" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'; j=\$(core-doctor --json); [[ \$j == *'\"procs\":true'* && -n \${HAVE_PROCS:-} && \${aliases[ps]} == procs ]]" \
+  HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH= CORE_NO_PAGER=1
+
+# ── ...and the same agreement for EVERY probed tool, not just the one that was reported ──
+# #447's point: the five bugs it collected were one defect sampled five times, and the reason
+# CI never caught any of them is that nothing asserted the two answers match. The check above
+# pins procs because procs is what #425 happened to be reported against; a sixth tool
+# packaged unusually would have walked straight past it. Generalise: for every tool
+# 00-tools.zsh probes, "the doctor says present" and "Core set the flag" must be the SAME
+# boolean. A disagreement in either direction is a bug — doctor=1/flag=0 is #425 exactly (a
+# green row for a tool Core never wired, so no alias, and for atuin no history recorded),
+# and doctor=0/flag=1 is the mirror (Core wired something the report calls absent).
+#
+# The tool -> flag mapping is READ OUT OF THE SOURCE, never restated here, so it cannot rot
+# and needs no hand-maintained table for the two irregular names (ast-grep -> HAVE_ASTGREP,
+# git-absorb -> HAVE_GIT_ABSORB). The `+` quantifiers matter: 00-tools.zsh aligns some
+# comments with two spaces, and a single-space regex silently drops those rows.
+#
+# Excluded BY CONSTRUCTION rather than by a skip list, which is why the pattern is anchored
+# to `^_have`: op has no _have line (the doctor probes it live), and fd/bat are set from
+# FD_BIN/BAT_BIN inside `if` blocks after resolving fdfind/batcat — all three are pinned by
+# their own tests above. Sourcing 20-aliases.zsh keeps this close to a real shell; the one
+# alias that shadows a row name (`alias fd=$FD_BIN`) is already outside the pair list.
+#
+# Pure zsh, no python3: the values are bare true/false against a quoted unique key, so a
+# substring test is exact — and unlike the check_dep neighbours this then runs everywhere
+# instead of skipping on a box without python3. $'\42' is a literal double quote, which
+# survives this bash layer without a thicket of backslashes.
+# NO env overrides and no fixture: this one wants the REAL box — real PATH, real tools,
+# whatever this runner happens to have installed. That is the whole point. It is only as
+# strong as the runner is populated, but it costs nothing on a bare one (everything absent,
+# everything unflagged, agreement holds) and it is the assertion that fails the moment a
+# tool arrives by a route detection misses.
+ucheck "core-doctor and every HAVE_* flag agree about the same box (#447)" \
+  "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'
+   j=\$(core-doctor --json); bad=(); n=0
+   for line in \${(f)\"\$(<'$TOOLS_FILE')\"}; do
+     [[ \$line =~ '^_have +([A-Za-z0-9_.-]+) +&& +(HAVE_[A-Z0-9_]+)=1' ]] || continue
+     t=\$match[1]; f=\$match[2]; (( n++ ))
+     [[ \$j == *\$'\\42'\$t\$'\\42'':true'* ]] && d=1 || d=0
+     [[ -n \${(P)f:-} ]] && h=1 || h=0
+     (( d == h )) || bad+=(\"\$t (doctor=\$d \$f=\$h)\")
+   done
+   (( n >= 30 )) || { print -r -- \"parsed only \$n tool->flag pairs out of 00-tools.zsh\"; exit 1; }
+   (( \${#bad} == 0 )) || { print -r -- \"doctor and HAVE_* disagree: \${(j:, :)bad}\"; exit 1; }" \
+  CORE_NO_PAGER=1
 # ── git subcommands in git's exec-path: an honest doctor off $PATH (#424) ────
 # The Debian family packages a git SUBCOMMAND into git's exec-path (`git --exec-path`) and
 # keeps that directory off $PATH on purpose — git dispatches `git absorb` by looking there

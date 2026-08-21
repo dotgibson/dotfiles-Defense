@@ -21,9 +21,42 @@
 # Interactive shells only. Scripts get raw POSIX.
 [[ $- == *i* ]] || return 0
 
-# user-local bin (mise/starship/atuin/clip/carapace land here) must be on PATH
-# BEFORE we probe for those tools, or they won't be detected on a fresh shell.
-[[ -d "$HOME/.local/bin" && ":$PATH:" != *":$HOME/.local/bin:"* ]] && export PATH="$HOME/.local/bin:$PATH"
+# The per-user bindirs language installers write into must be on PATH BEFORE the probes
+# below, or nothing installed there gets a HAVE_* flag on a fresh shell (#425).
+# ~/.local/bin was always here (mise/starship/atuin/clip/carapace land there); the other
+# three are new. `cargo install` writes $CARGO_HOME/bin, which reached PATH only via the
+# OS layer at band 80 — 200 lines and a whole load-order band AFTER detection — so
+# `cargo install procs` set no HAVE_PROCS and created no `ps` alias, while core-doctor
+# (which probes live, later, against the finished PATH) reported ✓ for a tool Core had
+# never wired. atuin's own installer writes ~/.atuin/bin and had the same hole, which is
+# worse than cosmetic: no HAVE_ATUIN means `atuin init zsh` below never runs, so Ctrl+E is
+# dead and NOTHING IS RECORDED — silent history loss behind a green doctor row.
+#
+# RELOCATABLE, hence resolved through their env vars rather than hard-coded: `cargo
+# install` honours $CARGO_HOME, `go install` honours $GOBIN and then $GOPATH. GOPATH is a
+# path LIST and go writes to the FIRST entry's bin/, so expanding "$GOPATH/bin" against
+# /a:/b would probe a nonexistent "/a:/b/bin" and quietly miss. Hard-coding ~/.cargo/bin
+# does not fix this bug, it just moves it somewhere less obvious.
+#
+# Same dirs, same resolution, same order as lib/bootstrap-lib.sh's
+# blib_user_bindirs_on_path, deliberately: bootstrap's `command -v` guards and this
+# shell's HAVE_* probes must not be able to disagree about where a tool lives. Change one,
+# change the other.
+#
+# ORDER: each existing dir is PREPENDED, so the front of PATH ends up in reverse list
+# order — ~/.atuin/bin, then go, cargo, ~/.local/bin. That matches the rest of the fleet
+# rather than inverting it (examples/atuin-daemon.service and the OS layers both put
+# ~/.atuin/bin ahead of ~/.local/bin), and a test pins it so it stays a decision.
+#
+# The zero-fork contract holds: the nested ${...%%:*} is a parameter expansion, not a
+# subshell, and each candidate costs one -d stat.
+for _d in "$HOME/.local/bin" \
+  "${CARGO_HOME:-$HOME/.cargo}/bin" \
+  "${GOBIN:-${${GOPATH:-$HOME/go}%%:*}/bin}" \
+  "$HOME/.atuin/bin"; do
+  [[ -d "$_d" && ":$PATH:" != *":$_d:"* ]] && export PATH="$_d:$PATH"
+done
+unset _d  # file top level — no function scope to contain it
 
 _have() { command -v "$1" >/dev/null 2>&1; }
 

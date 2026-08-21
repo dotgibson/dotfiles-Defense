@@ -309,6 +309,64 @@ _core_pipefail_hits() { # _core_pipefail_hits <file>
     awk -F: '{ l = $0; sub(/^[0-9]+:/, "", l); if (l !~ /^[[:space:]]*#/) print $1 }'
 }
 
+# ── leaked-RETURN-trap scanner (audit-core.sh §5e) ────────────────────────────
+# _core_return_trap_hits <file> — print the line number of every place <file> arms a bash
+# RETURN trap whose body does not disarm the slot. Silence = clean.
+#
+# A bash RETURN trap is a GLOBAL slot, not a function-scoped one. Arm one inside a function
+# and it stays armed in the CALLER's frame, firing a SECOND time when the caller returns —
+# where the local it was cleaning up is out of scope and `set -u` makes that fatal:
+#
+#     f()     { local tmp; tmp=$(mktemp -d); trap CLEANUP RETURN; ...; }
+#     outer() { f; ...; }        # ← aborts HERE, on outer's return, not on f's
+#
+# That is dotgibson/dotfiles-Debian#2. Its bootstrap died the instant provision() returned,
+# AFTER installing every package but BEFORE wire_links ran — a box carrying the whole stack
+# and not one symlink. It shipped green because nothing could see it: the broken line is
+# valid bash, so shellcheck and `bash -n` pass it, and bootstrap-test.yml only ever runs
+# --links-only, so no gate executes provision() at all (#512, #461). When it does surface,
+# the reported line number is a DECOY — bash attributes a RETURN trap to the last nested
+# function DEFINITION in the frame, so Debian's abort blamed `_add_vendor_repo`, which had
+# nothing to do with it. Grepping for the trap is the only reliable way to find it.
+#
+# It lives here rather than inline in the gate for the same reason _core_pipefail_hits does:
+# so test-core.sh can drive it on fixtures. Same rule as the fleet-facing leg in
+# .github/workflows/lint-call.yml — that one gates the CALLER repos, this one gates Core's
+# own tree, which lint-call.yml never checks out. Keep the two in step.
+#
+# WHAT THIS IS: a textual scan, and so a HEURISTIC BACKSTOP rather than a proof. It does not
+# parse shell. A trap armed through a variable or `eval` is not seen, and neither is one
+# assembled across lines. It catches the shape people actually write.
+#
+# TWO DELIBERATE LOOSENESS DECISIONS, each of which a tighter pattern got wrong under test:
+#   * RETURN is matched as a SIGNAL TOKEN — whitespace, `;` or end-of-line after it — not as
+#     the last word on the line. Anchoring to end-of-line waves through a trailing comment
+#     and through a two-signal `RETURN EXIT`, and both leak identically.
+#   * `trap` is matched as a WORD ANYWHERE on the line, not anchored to line-start. Anchoring
+#     waves through the ONE-LINE function body, which is exactly where this hides. The guard
+#     dotfiles-Debian shipped anchors, and misses that form; against a fixture carrying four
+#     broken shapes it catches one.
+# And two narrowings, both about not crying wolf:
+#   * comment lines are skipped, so writing ABOUT the hazard does not trip the gate — this
+#     repo now documents it in three places, and Debian's own fix carries three such comment
+#     lines directly above the corrected traps
+#   * a body that disarms the slot is the FIX, not the bug, and is never a finding
+#
+# BASH ONLY. zsh has no RETURN signal at all (`trap ... RETURN` → "undefined signal"), so the
+# zsh modules are out of scope rather than silently scanned.
+_core_return_trap_hits() { # _core_return_trap_hits <file>
+  local f="${1:-}" re dis
+  [ -f "$f" ] || return 0
+  # ASSEMBLED FROM FRAGMENTS, like _core_pipefail_hits above, so these lines cannot match the
+  # pattern they define — the scanner reads every tracked shell script, and common.sh is one
+  # of them. (The concatenation is also what keeps the literal disarm text off this line.)
+  re="(^|[[:space:]]|;)trap[[:space:]].*[[:space:]]RETURN"'([[:space:]]|;|$)'
+  dis='trap[[:space:]]+-[[:space:]]+RETURN'
+  grep -nE "$re" "$f" 2>/dev/null |
+    awk -F: -v dis="$dis" '{ l = $0; sub(/^[0-9]+:/, "", l);
+                             if (l !~ /^[[:space:]]*#/ && l !~ dis) print $1 }'
+}
+
 # ── _audit_ls: the file set the CONTENT gates inspect ─────────────────────────
 # Tracked files PLUS untracked-but-not-ignored ones. The distinction matters, and it
 # cost a real round-trip: a brand-new script is invisible to `git ls-files` until the

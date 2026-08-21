@@ -87,8 +87,9 @@ Nothing else is rewritten — a third-party action pinned in the identical
 
 **Do not pull the subtree by hand.** A raw `git subtree pull` updates `core/` but not
 `core.lock`, so `core-integrity.sh` compares your tree against a commit the lock no longer
-describes and reports `TAMPERED` until the lock is regenerated — and `make core-lock` does
-**not** exist in every consumer (most carry no root `Makefile`). `sync-core.sh` commits
+describes and reports `TAMPERED` until the lock is regenerated — and no per-repo target
+regenerates it (`make core-lock` is absent in most consumers, and where it exists it only
+prints a redirect back to the fan-out). `sync-core.sh` commits
 both together, and `sync-fanout.yml` runs it for you on every release. If you have already
 done it by hand, the fix is to re-run the fan-out from Core rather than to patch the lock.
 See `RELEASE-STRATEGY.md` on the pinning model.

@@ -22,6 +22,8 @@
 #  5c. Core⇄OS boundary                — no OS-absolute paths in portable zsh modules
 #  5d. pipefail SIGPIPE hazard        — no shell-string producer piped into a reader
 #                                         that exits early (grep -q / awk exit / head)
+#  5e. leaked RETURN trap             — no `trap … RETURN` that fails to disarm the
+#                                         slot (it fires again in the CALLER's frame)
 #   6. config files                     — toml/yaml parse-check (if python3 present)
 #   7. markdown                          — markdownlint (if markdownlint-cli2 present)
 #   8. workflows                         — actionlint on .github/workflows (if present)
@@ -618,6 +620,46 @@ EOF
 $(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
 EOF
   ((pf_fail)) || pass "pipefail (no shell-string producer feeds an early-exiting reader)"
+fi
+
+# ── 5e. leaked RETURN trap (fleet regression gate) ───────────────────────────
+# A bash RETURN trap is a GLOBAL slot, not a function-scoped one. Armed inside a function it
+# survives into the CALLER's frame and fires a SECOND time on that frame's return, where the
+# local it cleans up is out of scope and `set -u` makes it fatal. dotgibson/dotfiles-Debian#2:
+# every fresh-box bootstrap died the instant provision() returned, AFTER installing everything
+# but BEFORE wire_links — a box carrying the whole stack and not one symlink.
+#
+# WHY IT NEEDS ITS OWN SECTION rather than a shellcheck rule: shellcheck cannot see it. The
+# broken line is valid bash, and `bash -n` passes it too. §5's shellcheck leg and §3's syntax
+# leg both run over the offending file and both go green. Only a textual scan catches it.
+#
+# WHY IT IS A CORE CONCERN even though the two known instances were in OS repos: this is the
+# tree that fans out to nine of them, and `lib/bootstrap-lib.sh` is exactly the kind of code
+# that arms cleanup traps. .github/workflows/lint-call.yml carries the same rule for the
+# CALLER repos, but it checks the caller out into `caller/` and never looks at Core's own
+# 38 shell scripts. This section is that half. The two must stay in step —
+# scripts/lib/common.sh :: _core_return_trap_hits is the canonical expression of the rule.
+#
+# Scope matches §5d: repo-owned bash, including the extensionless bin/clip helpers. zsh is
+# excluded on purpose — it has no RETURN signal, so the bug cannot exist there.
+hdr "leaked RETURN trap"
+if ! ((SCOPE_SHELL)); then
+  skip "RETURN trap (out of scope)"
+else
+  rt_fail=0
+  while IFS= read -r rt_f; do
+    [ -n "$rt_f" ] || continue
+    while IFS= read -r rt_line; do
+      [ -n "$rt_line" ] || continue
+      fail "RETURN trap: $rt_f:$rt_line — armed without disarming the slot; it will fire again in the CALLER's frame. Make the body disarm FIRST: trap 'trap - RETURN; …' RETURN"
+      rt_fail=1
+    done <<EOF
+$(_core_return_trap_hits "$rt_f")
+EOF
+  done <<EOF
+$(_audit_ls '*.sh' 'bin/clip' 'bin/clip-paste')
+EOF
+  ((rt_fail)) || pass "RETURN traps (every one disarms the slot before the caller's frame sees it)"
 fi
 
 # ── 6. config files (toml / yaml parse) ──────────────────────────────────────
