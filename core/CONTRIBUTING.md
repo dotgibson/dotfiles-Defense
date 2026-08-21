@@ -90,6 +90,12 @@ itself at commit time. Two deliberate non-checks:
   OS capability without naming a path. Read it before your first Core change; the boundary
   gate (`audit-core.sh` §5c) enforces it, and its scope is derived from `core.manifest`,
   so a file you add is checked the moment you list it.
+- **Core owns portable shell logic once.** The mirror of the rule above, and the harder
+  direction to notice: if you find the same portable block in two OS repos, that is a
+  **Core** change, not two OS changes. §5c cannot see it — it scans for OS-specifics leaking
+  into Core, not portable logic stranded outside it. `scripts/lib/common.sh ::
+  _core_owned_block_hits` is the list of blocks already moved, and the reusable `lint`
+  workflow fails a caller repo that grows one back.
 - **Working in an OS repo instead?** [`VENDORING.md`](VENDORING.md) is the consumer-side
   contract: what `core/` and `core.lock` mean, which number band your file may claim, and
   how to send a fix back upstream.
