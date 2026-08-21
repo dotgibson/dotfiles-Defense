@@ -216,8 +216,8 @@ EventID == 4720 and (not(SubjectUserName =~ "svc_iam_provisioning"))
 // persistence/scheduled_task_suspicious_4698.yml — Scheduled task created with a suspicious action
 EventID == 4698 and (TaskContent contains "-enc" or TaskContent contains "-EncodedCommand" or TaskContent contains "-w hidden" or TaskContent contains "-WindowStyle Hidden" or TaskContent contains "FromBase64String" or TaskContent contains "\\mshta.exe" or TaskContent contains "\\regsvr32.exe" or TaskContent contains "\\rundll32.exe" or TaskContent contains "DownloadString" or TaskContent contains "IEX")
 
-// persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line consumer
-EventID == 20 and (Destination contains "powershell" or Destination contains "cmd.exe" or Destination contains "mshta" or Destination contains "wscript" or Destination contains "cscript" or Destination contains "rundll32" or Destination contains "-enc" or Destination contains "FromBase64String")
+// persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line or script consumer
+(EventID == 20 and (Destination contains "powershell" or Destination contains "cmd.exe" or Destination contains "mshta" or Destination contains "wscript" or Destination contains "cscript" or Destination contains "rundll32" or Destination contains "-enc" or Destination contains "FromBase64String")) or (EventID == 20 and Type contains "Script")
 
 // privilege_escalation/adcs_esc1_san_mismatch_4886.yml — AD CS certificate request (ESC1 triage surface)
 EventID in~ ("4886", "4887")

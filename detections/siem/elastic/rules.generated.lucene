@@ -216,8 +216,8 @@ EventID:4720 AND (NOT SubjectUserName:svc_iam_provisioning)
 // persistence/scheduled_task_suspicious_4698.yml — Scheduled task created with a suspicious action
 EventID:4698 AND (TaskContent:(*\-enc* OR *\-EncodedCommand* OR *\-w\ hidden* OR *\-WindowStyle\ Hidden* OR *FromBase64String* OR *\\mshta.exe* OR *\\regsvr32.exe* OR *\\rundll32.exe* OR *DownloadString* OR *IEX*))
 
-// persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line consumer
-EventID:20 AND (Destination:(*powershell* OR *cmd.exe* OR *mshta* OR *wscript* OR *cscript* OR *rundll32* OR *\-enc* OR *FromBase64String*))
+// persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line or script consumer
+(EventID:20 AND (Destination:(*powershell* OR *cmd.exe* OR *mshta* OR *wscript* OR *cscript* OR *rundll32* OR *\-enc* OR *FromBase64String*))) OR (EventID:20 AND Type:*Script*)
 
 // privilege_escalation/adcs_esc1_san_mismatch_4886.yml — AD CS certificate request (ESC1 triage surface)
 EventID:(4886 OR 4887)

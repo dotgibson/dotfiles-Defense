@@ -173,5 +173,7 @@ docker/validation/sigma-fixtures/sharphound_4662.jsonl	unverified	-
 docker/validation/sigma-fixtures/sharphound_4662_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/unconstrained_deleg_4624.jsonl	unverified	-
 docker/validation/sigma-fixtures/unconstrained_deleg_4624_tn.jsonl	unverified	-
-docker/validation/sigma-fixtures/wmi_consumer_20.jsonl	unverified	-
+docker/validation/sigma-fixtures/wmi_consumer_20.jsonl	vendor-documented	EID 20 EventData field list per trustedsec/SysmonCommunityGuide chapters/WMI-events.md; Type="Command Line" from a captured EID 20 at research.splunk.com/sources/aeee5374-3203-4286-b744-a8cc4ad1cd7e/ . Replaces a row that put "Consumer" (an EID 21 field) in an EID 20 record
+docker/validation/sigma-fixtures/wmi_consumer_20_activescript.jsonl	vendor-documented	same field list; Type="Script" per threathunterplaybook.com hunt 200902-RemoteWMIActiveScriptEventConsumers, which selects EID 20 on 'type: script' against a captured dataset. What Destination holds for a script consumer is NOT confirmed - the rule deliberately does not key on it. See #158
+docker/validation/sigma-fixtures/wmi_consumer_20_tn.jsonl	vendor-documented	same field list; benign CommandLineEventConsumer near-miss, shared by both wmi-consumer-20 rows
 docker/validation/sigma-fixtures/wmiexec_4688.jsonl	unverified	-
