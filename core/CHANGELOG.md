@@ -13,6 +13,417 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`PORTING-MATRIX.md`: the Gentoo column told two lies, and a third that was bigger than
+  both.** Reported by the `/os-package-availability` routine as
+  `dotgibson/dotfiles-Gentoo#85`; the OS-layer halves already landed there in
+  `dotfiles-Gentoo#98` (gum) and `#103` (jj), and this is the matrix catching up.
+
+  - **`gum` on Gentoo is not `app-misc/gum`** — that atom exists in neither `::gentoo` nor
+    GURU, in any category. The cell now reads `mise³⁰`, `gum` is struck from ¹²'s GURU list,
+    and ¹² records why an entry there can only ever emerge as a `skipped:` line — which reads
+    like a keyword mask and invites an `accept_keywords` "fix" that unmasks nothing. That is
+    how it survived in `guru_install` for months. ³⁰ gains the caveat that
+    `gentoo/mise-tools.toml` is the **`--user` path only**, so a privileged Gentoo bootstrap
+    installs no gum at all.
+  - **`jujutsu` on Gentoo is packaged, as `dev-vcs/jj`** (`~amd64`, added 2025-12-04, EAPI 8).
+    The cell moves from `cargo²¹` to `` `dev-vcs/jj`²¹ `` and ⁸ names the trap: the atom is
+    `jj`; `dev-vcs/jujutsu` has never existed. **Kali's `cargo²¹` is unchanged** — jj really
+    is still absent from stable Debian/Kali apt. ⁸ also stops reading Gentoo's `packages.txt`
+    omission as a decline: it is a deliberate placement, because that file is the
+    unconditional emerge and jj must stay skippable by `--no-extras`.
+  - **The ²¹ "available, not installed" family was verified against `install/packages.txt`
+    alone** — and Gentoo is the repo that installs most from `bootstrap.sh` instead, precisely
+    because everything opt-in has to live in the script. So **four of the eight Gentoo cells
+    in ²¹'s table read `—` for tools bootstrap installs**: `shfmt` (go, unconditional), `ouch`
+    and `watchexec` (cargo, opt-in extras) and `gping` (emerged from GURU). Corrected here,
+    along with ⁷, ¹⁹ and ²⁵, which each carried the same claim in prose. ²¹ now says two
+    repos' bootstraps install from this family (Alpine and Gentoo), not one, and records the
+    single-file verification as the root cause so the row does not go stale the same way
+    again. `watchexec`'s Gentoo cell also moves `GURU²⁵` → `cargo²⁵`: GURU carries 2.5.0, but
+    the bootstrap routes around it and builds `watchexec-cli` for upstream-latest.
+
+- **`direnv` is installed by six of the fleet's seven package lists and had no row in the
+  matrix at all.** (`dotgibson/dotfiles-openSUSE#89`) The `/os-package-availability` audit of
+  `dotfiles-openSUSE` reported it as its one coverage gap rather than drift: `direnv` appeared
+  in `PORTING-MATRIX.md` only inside footnote ¹², as one of the Gentoo GURU atoms. So a reader
+  asking "what is direnv called on Alpine" found nothing, and the next audit comparing a
+  package list against the table found a name the table did not know. It has a row now, and it
+  sits next to `mise` rather than in alphabetical order — this table has never been
+  alphabetical, and the two are the same mechanism: both are `_cache_eval`'d hook generators
+  emitted from `os/<distro>.zsh` at band 80, and Core's own `examples/mise.project.toml` calls
+  mise's `[env]` block "the direnv replacement" and its `[hooks]` block "the other half of
+  direnv".
+
+  Six of the seven cells are a bare `direnv`, verified 2026-08-21 against each distro's own
+  index: Arch `extra` 2.37.1-1, Alpine `community` 2.37.1-r7 (v3.24 — a Go binary, so a native
+  musl build), openSUSE Tumbleweed 2.37.1 with Leap 16.0 and 16.1 both at 2.34.0 through
+  Backports (`bp160.1.13` / `bp161.1.9`, both arches), kali-rolling 2.37.1-1, Ubuntu 24.04
+  `universe` 2.32.1-2ubuntu0.24.04.3 and Debian trixie 2.32.1-2+b16. Gentoo is the exception
+  and is GURU-only — `app-shells/direnv` at 2.37.1, no `::gentoo` atom, and `dev-util/direnv`
+  does not exist — so that cell reads `` `app-shells/direnv` ``¹², where the warning already
+  lived and which therefore needed no edit.
+
+  New footnote ³² records what makes the row unlike its neighbours, because no existing
+  footnote shape fits it. It is not ²¹'s "available, not installed" — six repos install it —
+  and not ¹⁷/¹⁹'s detect-only, because **Core does not detect it at all**: there is no
+  `HAVE_DIRENV`, no alias and no `core-doctor` row. It is the only row in the table wired by
+  the OS layer instead of by Core; the `direnv hook zsh` that makes it work is emitted by each
+  OS repo's `os/<distro>.zsh` at band 80. Core's one stake is `starship/starship.toml`'s
+  `[direnv]` module, which Core switches on (`disabled = false` — starship ships it off by
+  default) so `.envrc` state is visible rather than a directory silently waiting on
+  `direnv allow`. `dotfiles-Offense` (Kali) is the single fleet gap, and it is structural
+  rather than a judgment about direnv — that repo carries no `install/packages.txt` and, since
+  band 80 moved to the OS repo underneath it, no `os/` layer, so nothing there installs the
+  package or evaluates the hook.
+
+  One version floor is recorded because it is the only point where a frozen archive touches
+  Core: starship runs `direnv status --json`, and the `--json` flag is **silently ignored below
+  direnv 2.33.0** — `src/modules/direnv.rs` says so and parses the text output instead. Every
+  target above clears that floor except `dotfiles-Debian`'s two lanes, both on 2.32.1. It
+  degrades rather than breaks, which is why that repo's `install/packages.txt` declares no
+  `# min:` floor for it.
+
+- **Footnote ¹⁹ said both that Gentoo's `bootstrap.sh` emerges `gping` and that it does not.**
+  (#568) #565 rewrote the footnote's opening to record that `dotfiles-Gentoo` really does emerge
+  `net-analyzer/gping` from GURU in its `guru_install` pass — and that naming the atom only in a
+  `packages.txt` comment is a pointer to that call rather than a decline. Its closing sentence
+  was left behind still saying the opposite: "unlike the ¹² atoms `bootstrap.sh` does **not**
+  emerge it, so enable GURU per ¹² and `emerge net-analyzer/gping` by hand." A reader who got to
+  the end of the footnote was told to do by hand what the bootstrap had already done, and the
+  "unlike the ¹² atoms" framing inverted the actual relationship — the same rewrite had just
+  added `gping` to ¹²'s GURU list, so it is one of them.
+
+  The tail now agrees with the head: GURU-only, no main-tree atom, emerged **like** the ¹²
+  atoms in the same `guru_install` pass, nothing left to do by hand. Verified against
+  `dotfiles-Gentoo/bootstrap.sh`, where `net-analyzer/gping` is the last atom in that call.
+
+- **Footnote ²¹ claimed Kali installs `ast-grep`, and the `ast-grep` row's `³` rested on that
+  claim.** (#569) The note carved out an explicit exception — "Kali **does** install `ast-grep`
+  (`bootstrap.sh`, cargo best-effort), which is why that one cell keeps its ³ while its Gentoo
+  neighbour does not" — which is why the Kali column kept a `cargo³` there after `ouch`,
+  `jujutsu` and `lazygit` lost theirs in the same pass. There is no such install.
+  `dotfiles-Offense`'s `bootstrap.sh` contains no `ast-grep` at all, and its only two `cargo`
+  mentions are the comment and `export` that put `~/.cargo/bin` on PATH for tools an operator
+  added by hand — which is precisely the ²¹ contract, not a ³ one.
+
+  This mattered beyond the prose because ³ means "`bootstrap.sh` installs it best-effort", so a
+  ³ with no installer behind it reads as "you will get this" and delivers nothing — the exact
+  overclaim ²¹ was written to correct, surviving inside ²¹ itself for one tool. The `ast-grep`
+  Kali cell is now `cargo²¹`, matching `ouch` and `jujutsu` in that column, and the list of
+  cells that previously overclaimed a `³` gains `ast-grep` on Kali alongside Gentoo.
+
+## [v4.14.0] - 2026-08-21
+
+### Changed
+
+- **nvim plugin pins move forward for five plugins.** `nui.nvim`, `nvim-lint`,
+  `nvim-lspconfig`, `package-info.nvim` and `schemastore.nvim` advance to the commits
+  lazy.nvim had already resolved on a live box, 2–7 days ahead of the pins Core carried.
+
+  Every new SHA was verified to exist upstream and to be newer than the one it replaces,
+  and each range was read before promotion: `nui.nvim` one additive commit (borderless
+  tables, `set_data`, cell navigation); `nvim-lint` two (zlint source name, relative
+  `artifactLocation.uri` in sarif output); `nvim-lspconfig` twelve, all per-server fixes
+  or additions plus generated docs (`vhdl_ls`, `tsc`, `symfony_lsp`, `slang-server`,
+  `php_lsp`, `oxc`); `package-info.nvim` one notification fix; `schemastore.nvim` two
+  catalog refreshes. Nothing renames or removes an API Core calls.
+
+  Provenance worth recording, because it is the failure mode this repo warns about: these
+  bumps were found as an uncommitted edit to `dotfiles-Fedora`'s **vendored** `core/nvim/
+  lazy-lock.json`. That tree is a copy — the next `make sync` overwrites it — so the bumps
+  were days from being silently reverted, and would have come back on the next `lazy sync`
+  to be lost again. They belong here, once, and reach every machine by fan-out.
+
+### Added
+
+- **A gate against leaked `RETURN` traps, for the fleet and for Core's own tree.**
+  (#552, #555, #558; refs #512, #461) A bash `RETURN` trap is a **global slot, not a
+  function-scoped one**: armed inside a function it survives into the _caller's_ frame and
+  fires a second time on that frame's return, where the local it cleans up is out of scope
+  and `set -u` makes it fatal. In `dotfiles-Debian` that aborted `provision()` after every
+  package had installed but before `wire_links` ran — a box carrying the whole stack and
+  not one symlink, wearing the costume of a near-complete run
+  (dotgibson/dotfiles-Debian#2).
+
+  Nothing could see it, and nothing was wrong with the gates that missed it. The broken
+  line is **valid bash**, so `lint-call.yml`'s shellcheck and `bash -n` legs both pass it;
+  and `bootstrap-test.yml` only ever runs `--links-only`, so no job anywhere in the fleet
+  executes `provision()` at all. A textual scan is the only thing that catches this class,
+  which is why it is its own leg rather than another `SHELLCHECK_OPTS` entry.
+
+  `scripts/lib/common.sh` gains `_core_return_trap_hits`, the single definition of the
+  rule. `audit-core.sh` §5e runs it over Core's own tree (which lint-call.yml never checks
+  out), and `lint-call.yml` sources it to gate its callers — **so a caller repo now fails
+  its required `lint` check on a leaked trap.** Every repo in the fleet was verified green
+  against the rule before release, so nothing reds on arrival.
+
+  **That is eight repos, not nine.** `dotfiles-MacBook` does not call `lint-call.yml` at
+  all — it carries its own `shell lint` job in `ci.yml` — so the leg reaches Alpine, Arch,
+  Debian, Defense, Fedora, Gentoo, Offense and openSUSE, and MacBook is ungated. Its tree
+  is clean today (checked directly, not inferred), and its vendored `core/` and SHA-pinned
+  Core workflow refs do advance with the fan-out, so this is a coverage gap rather than
+  drift. Whether MacBook should adopt the reusable gate or grow the leg in its own `ci.yml`
+  is open.
+
+  Two notes for anyone writing one of these. The correct form is
+  `trap 'trap - RETURN; …' RETURN` — disarm first, and keep it first, so an early `return`
+  inside the body cannot skip it. And when this bug does surface at runtime the reported
+  line number is a **decoy**: bash attributes a `RETURN` trap to the last nested function
+  _definition_ in the frame, so Debian's abort blamed `_add_vendor_repo`, which had nothing
+  to do with it. Grep for the trap, not the line.
+
+  The pattern is deliberately looser than the one dotfiles-Debian shipped. `trap` is
+  matched as a word **anywhere on the line**, because anchoring to line-start misses
+  `f() { trap … RETURN; }` — the one-line body, and the likeliest shape; against a fixture
+  carrying four broken forms the anchored version catches one. The signal is matched as a
+  **token** rather than as the last word, so a trailing comment and a two-signal
+  `RETURN EXIT` are caught too. Whole-line comments are filtered, because Debian's own fix
+  carries three comment lines naming the signal directly above its corrected traps — an
+  unfiltered scanner would red the repo that fixed the bug. Ten fixtures in
+  `scripts/test-core.sh` pin both halves, plus two assertions that keep `lint-call.yml`
+  calling the helper instead of growing a second copy of the expression.
+
+  **zsh is out of scope, permanently:** it has no `RETURN` signal at all
+  (`trap 'x' RETURN` → _undefined signal_), so the bug cannot exist there.
+
+### Fixed
+
+- **Every `core.lock` in the fleet told the reader to recover with `make core-lock`, a
+  command that mostly does not exist and does not regenerate the lock where it does.**
+  (#557) `sync-core.sh` stamped that hint into the generated header unconditionally, and it
+  was wrong three ways at once: the target is absent from `dotfiles-core` itself and from
+  most consumers (which carry no root `Makefile`); in the one repo that has it,
+  `dotfiles-Offense`, it regenerates nothing and just prints a redirect back to the
+  fan-out; and it pointed away from the recovery `VENDORING.md` already prescribes — re-run
+  the fan-out from Core, never patch the lock by hand.
+
+  That line is read at the worst possible moment. `core-integrity.sh` reports `TAMPERED
+  (core/ edited since sync)` whenever the vendored tree and the lock disagree, which reads
+  like someone hand-edited `core/`; the first thing the confused reader does is open
+  `core.lock`, where the header sent them to a dead end. The generated header now names the
+  real recovery and says why the hand route fails, and the two docs that repeated the
+  `make core-lock` caveat are corrected — they warned it was _missing_ in some repos,
+  which understated it: it does not do the job anywhere.
+
+  Note for the first sync after this lands: the header's bytes change, so `sync-core.sh`'s
+  idempotency skip will not fire on that pass and each repo takes one
+  `chore(core): core.lock → …` commit. Nothing else moves. Left open in #557: whether
+  `dotfiles-Offense` should keep a `core-lock` target now that nothing points at it.
+
+- **The doctor's wirable list was three hand-synced copies with nothing able to see a drift,
+  and no test asserted that a `✓` row means Core actually wired anything.** (#447) Meta-issue
+  #447 collected five bugs — #418, #420, #423, #424, #425 — as one defect: a name used as a
+  proxy for a capability. All five are fixed and closed, and the seam that fixed the presence
+  half is `_core_doctor_bin`, which resolves a canonical row name to the binary that actually
+  backs it (`fd`→`$FD_BIN`, `bat`→`$BAT_BIN`, `git-*`→git's exec-path). Its proposed
+  `_core_have_override` was **not** taken, for the reasons recorded at the v4.13.2 entry below
+  and in `30-functions.zsh` — that decision stands and this change does not revisit it.
+
+  What #447 was right about, and what was still outstanding, is the OTHER axis. `_core_wired`'s
+  `case` arms, `_core_doctor_json`'s `wir=(…)` and `_core_doctor_render`'s `wirable=(…)` were
+  three literals of the same five names, kept in step by hand — precisely the arrangement
+  `_CORE_DOCTOR_GROUPS` exists to prevent on the tool axis. Worse, it was **unobservable**: the
+  render⇄json parity test stubs `_core_have` false, which makes the "integrations wired" block
+  skip every entry, so the one guard that might have noticed is blind to this list by
+  construction. There is now a single `_CORE_DOCTOR_WIRED`, read by both renderers, and the
+  drift is guarded in both directions — a name listed with no `case` arm (which renders a
+  permanent `○ (idle)` no user action can clear) and an arm no renderer iterates (which
+  reports nothing at all, the way twelve tools went unreported on the tool axis for releases).
+  To make the first testable, `_core_wired`'s fallthrough returns **2** — "no arm for this
+  name" — where an idle-but-known tool still returns 1. Both callers test only for zero, so
+  no report changes: the rendered output and `--json` are byte-identical across this change.
+
+  And #447's "worth pairing with a test" now exists, generalised past the single tool it was
+  written against: for **every** tool `00-tools.zsh` probes, "the doctor says present" and
+  "Core set the `HAVE_*` flag" must be the same boolean, on the real box the suite runs on.
+  That is #425's disagreement stated as an invariant instead of an anecdote — it had a
+  `procs`-shaped check only because `procs` is what got reported. The tool→flag mapping is
+  read out of the source, so the two irregular names (`ast-grep`→`HAVE_ASTGREP`,
+  `git-absorb`→`HAVE_GIT_ABSORB`) need no table and cannot rot. A second guard closes the hole
+  that mapping leaves behind — deriving both sides from the same line means DELETING a
+  detection line removes it from the comparison rather than failing it — by requiring every
+  doctor row to have a probe behind it, with `op`, `fd` and `bat` named as the three
+  deliberate exceptions rather than waived in prose.
+
+  Also: the existing "reports every tool 00-tools.zsh probes" guard anchored on `^_have`
+  followed by exactly one literal space, and `00-tools.zsh` aligns some trailing comments with
+  two — so `tldr` had been silently outside its coverage. 37 rows → 38.
+
+- **`jnv` is in Arch's `extra` now, so the matrix stopped sending Arch users to the AUR.**
+  (dotgibson/dotfiles-Arch#87) The package landed as `jnv` 0.7.1-1 on 2026-04-01; `pacman -Si
+  jnv` on a current box reports `Repository: extra`. The table's Arch cell said `AUR` and
+  footnote ¹⁷ prescribed `paru -S jnv`, which asked readers to build an AUR helper for a tool
+  `pacman` has been able to install for four months.
+
+  Footnote ²⁴ also used jnv as its yardstick for the worst packaging shape in the table —
+  lnav is "macOS-only in practice" _rather than jnv's "barely packaged anywhere" one_. With
+  brew and `extra` both carrying it that overstates the case, so the contrast is now the
+  narrower and still-true one: two platforms package jnv, everywhere else is `cargo`.
+
+  What has **not** changed is the decision underneath: jnv stays detect-only on Linux. It is
+  in no `install/packages.txt` and no `bootstrap.sh` installs it, so `HAVE_JNV` still lights
+  only for a box that opted in. Being packaged made the _instruction_ wrong, not the policy —
+  wiring it into the per-repo bootstrap remains the tracked follow-up it already was.
+
+- **`PORTING-MATRIX.md`'s openSUSE story was written for Leap 15.6, which is EOL.**
+  (`dotgibson/dotfiles-openSUSE#89`)
+  Four passages still described a release nobody runs; two of them gave advice that is now
+  wrong rather than merely dated. All figures below were verified against the `repo/oss`
+  binary indexes for Leap 16.0, Leap 16.1 and Tumbleweed on 2026-08-21 — both arches, since
+  the Python packages are `noarch` and an `x86_64`-only pass misses them.
+
+  `tealdeer` (footnote ¹) is the one real availability break: it is in Tumbleweed at 1.8.0 and
+  in **neither** Leap 16.0 nor 16.1. The footnote said "also Leap 15.6 … on older Leap, cargo
+  install", which reads as _newer Leap has it_ — the opposite of the truth. It now names the
+  two ways in on Leap (the `utilities` OBS repo, which really does build it, or cargo) and
+  records the trap `dotfiles-openSUSE` hit shipping the fallback: the crate is `tealdeer` and
+  the binary is `tldr`, so a presence guard on the crate name never fires.
+
+  Footnote ¹⁸ hedged that "**Leap 15.x was not separately audited**" and told readers to fall
+  back to the ³ cargo/go path there. Leap 16.x _has_ now been audited, and all seven of that
+  footnote's packages resolve on both 16.0 and 16.1 via Backports — `starship` 1.21.1, `atuin`
+  18.3.0, `yazi` 25.5.31, `viddy` 0.4.0, `ouch` 0.5.1, `doggo` 1.0.5, `ast-grep` 0.28.0. So
+  `zypper in` is the right first move on Leap too; the note now frames those versions as a
+  floor to check rather than prescribing a source build nobody needs.
+
+  That same footnote closed by saying moving these into `install/packages.txt` was
+  "deliberately **not** done". `dotfiles-openSUSE` has since made the opposite call — its list
+  is packaged-first and carries `starship`, `atuin` and `yazi`, which is what keeps three
+  unpinned `curl | sh` installers off its happy path. The footnote was describing a policy the
+  fleet had already reversed.
+
+  Footnote ¹⁹ (`gping`) cited Leap 15.6 at 1.16.1. Both supported Leaps carry 1.17.3 through
+  Backports (`bp160.1.13` / `bp161.1.6`), so the tool is available there without adding a repo.
+
+- **Docs-only PRs were permanently unmergeable.** `audit-alpine` and `audit-arch` are
+  required status checks on `main`, but both carried a job-level
+  `if: needs.changes.outputs.shell == 'true'` — so any change that touched no shell files
+  reported the `skipped` conclusion, which a repository ruleset does not accept as satisfying
+  a required check. The branch was then blocked with "5 of 5 required status checks are
+  expected" and no way to clear it short of an admin override. Both legs now run
+  unconditionally and gate their **steps** instead, so they report `success` on a change they
+  cannot be affected by, at the cost of one runner boot. The container is still never spun for
+  a docs- or nvim-only change, which was the whole point of the axis.
+
+- **`PORTING-MATRIX.md` no longer claims a fleet-wide absence that one repo falsifies.**
+  (dotgibson/dotfiles-Alpine#103) Seven footnotes asserted some form of "no Linux repo's
+  `install/packages.txt` carries it" or "the only tool in this table that nothing in the fleet
+  installs". Re-verified 2026-08-21 against all six Linux repos plus the MacBook `Brewfile`:
+  `dotfiles-Alpine` carries `hyperfine`, `shellcheck`, `shfmt`, `lnav`, `git-absorb`, `gping`,
+  `watchexec` and `jujutsu`, and installs `ouch` from `bootstrap.sh`; `dotfiles-Gentoo` carries
+  four of those. The audit that filed this proposed narrowing the claims to "except
+  `dotfiles-Alpine`" — that would have been a second wrong absolute, since it could only see
+  the Alpine caller. So ²¹ now carries a per-tool coverage table and the prose defers to it,
+  while ⁸, ¹⁹, ²⁴ and ²⁶ name their real exceptions and ²⁵ is rewritten rather than qualified.
+
+  ¹⁴ was the one with teeth: it prescribed keeping `duf`/`glow`/`ouch` in Alpine's
+  `packages.txt` "as a best-effort that `apk add` skips" — the exact footgun that repo
+  documents against, since `apk` fails the whole transaction on one unknown name, so a
+  permanently-unresolvable entry breaks the bulk `apk add` on **every** run. It also called
+  `ouch` a `go install`; it is `cargo install --locked ouch --no-default-features`, because
+  bzip3's bindgen build cannot `dlopen` libclang under musl's static linking.
+
+- **`PORTING-MATRIX.md` no longer sends a reader to a row that isn't there, a `go install`
+  that builds the wrong major, or a shadowed `sg`.** (#431) The issue asked for an apt column
+  for Debian/Ubuntu distinct from Kali's; that landed with `dotfiles-Debian` in #505, and every
+  tool the issue measured on Ubuntu 24.04 now matches the column. What its noble provisioning
+  also exposed — and what this fixes — are three things that were wrong for the whole fleet,
+  not just apt boxes.
+
+  `core-doctor` probes `mise` and `uv`, and both have a `HAVE_*` flag, but neither had a row in
+  the package table — so for exactly those two the "install missing" hint's promise ("see
+  `core/PORTING-MATRIX.md` for the per-tool name and install path") resolved to nothing. They
+  have rows now, with a footnote (³⁰) for the chicken-and-egg `mise` creates: six other
+  footnotes prescribe `mise use -g <x>` as the fallback, and every `bootstrap.sh` reaches for
+  `mise exec go@latest` when no Go toolchain is present, so it is a prerequisite of the table
+  rather than an entry in it. `uv` turns out to be the sharpest argument for splitting the two
+  apt columns in the first place: kali-rolling ships `uv` 0.9.17 and Ubuntu 24.04 ships none.
+
+  The `go³` cells named no module paths, and the module path is usually not the repo URL. Four
+  of the six go-installable rows need a major-version suffix, a `cmd/` subpath, or both —
+  `github.com/joshmedeski/sesh/v2`, `github.com/mikefarah/yq/v4`, `mvdan.cc/sh/v3/cmd/shfmt`,
+  `github.com/mr-karan/doggo/cmd/doggo` — so a naive `go install <repo>@latest` fails or
+  silently builds an abandoned major. Footnote ³¹ now lists all of them, verified against each
+  project's own `go.mod`. That verification caught a live one: Charm has moved its tools off
+  GitHub as a module host, so `glow` is `charm.land/glow/v3` and `gum` is `charm.land/gum/v2`.
+  #431 reported `github.com/charmbracelet/glow/v2`, which was correct when it was filed and is
+  now two majors stale.
+
+  Footnote ¹¹ claimed `sg` "can collide with `setgroups`" and that ast-grep "shadows nothing".
+  Both were wrong. `sg(1)` is a symlink to `newgrp` — from `login` on the Debian family,
+  `shadow` elsewhere — and the `ast-grep` crate installs `sg` as a second binary. The second
+  claim was merely imprecise until #425, which put `${CARGO_HOME:-~/.cargo}/bin` on PATH ahead
+  of `/usr/bin`: on any box with a `cargo install`ed ast-grep, a bare `sg` now runs the search
+  tool instead of switching group. A hypothetical shadow became a real one, and the doc still
+  said it couldn't happen.
+
+- **A `cargo install`ed tool now gets its `HAVE_*` flag, its alias and its shell
+  integration — `core-doctor` and the flags no longer disagree about the same box.** (#425)
+  `zsh/00-tools.zsh` put only `~/.local/bin` on PATH before probing, and computed all 43
+  `HAVE_*` flags immediately after. The Rust bindir arrived far later — via the OS layer at
+  band 80, and via mise's activation 200 lines further down the same file — so anything
+  `cargo install` had written to `~/.cargo/bin` was simply invisible at detection time.
+  `core-doctor`, which probes live from an interactive prompt against the finished PATH,
+  saw it and printed `✓`. Same shell, two answers, and the flags were the ones that
+  mattered: `20-aliases.zsh` never made the alias.
+
+  That subset is not small — `PORTING-MATRIX.md` prescribes cargo as the source for
+  `procs`, `xh`, `atuin`, `ouch`, `jnv`, `ast-grep`, `watchexec`, `difft`, `viddy` and
+  `yazi` on distros that do not package them — and for atuin the failure was not cosmetic.
+  An unset `HAVE_ATUIN` means `atuin init zsh` never runs, so Ctrl+E is dead and **no
+  history is recorded at all**, while the doctor reports `✓ atuin` in the tool row and
+  `○ atuin (idle)` below it. That reads as "installed but idle" rather than "Core never
+  initialised it", which is why this could sit unnoticed.
+
+  All four per-user bindirs now join PATH before detection, not just cargo's: `~/.local/bin`,
+  `${CARGO_HOME:-~/.cargo}/bin`, `$GOBIN` (falling back to the **first** entry of `$GOPATH`,
+  which is a path list — expanding `$GOPATH/bin` against `/a:/b` would probe a nonexistent
+  `/a:/b/bin`), and `~/.atuin/bin`, which is where atuin's own installer writes and so had
+  the identical hole. The cargo and go dirs are resolved through their environment variables
+  rather than hard-coded, because rustup and go honour them and a box that relocates one
+  would otherwise keep missing its tools — hard-coding `~/.cargo/bin` does not fix this bug,
+  it moves it somewhere less obvious.
+
+  This is deliberately the same list, the same resolution and the same order as
+  `lib/bootstrap-lib.sh`'s `blib_user_bindirs_on_path`, which fixed the identical blind spot
+  on the bash side in v4.13.2: bootstrap's `command -v` guards and the shell's `HAVE_*`
+  probes must not be able to disagree about where a tool lives. Neither can source the other
+  — one is bash and runs before any Core shell exists — so both carry a note pointing at the
+  other. The order puts `~/.atuin/bin` ahead of `~/.local/bin`, matching
+  `examples/atuin-daemon.service` and the OS layers rather than inverting them, and a test
+  pins it so it stays a decision.
+
+  The OS layers' own prepends (`os/*.zsh`) become inert rather than duplicative — both sides
+  guard on `":$PATH:" != *":$d:"*`, so the later one simply finds the dir already there. They
+  can be dropped on their next pass; nothing breaks if they are not.
+
+  Nine hermetic cases cover it, each pinning `HOME` to a fixture and `PATH` to a stub dir:
+  the reported reproducer, the atuin variant, `CARGO_HOME`/`GOBIN`/`GOPATH` relocation,
+  idempotence, phantom-directory rejection, the ordering, and the disagreement itself
+  (`core-doctor --json` and `$HAVE_PROCS` asserted to agree). All nine are red against the
+  previous `00-tools.zsh`. They neutralise an inherited `CARGO_HOME`/`GOBIN`/`GOPATH` for the
+  reason v4.13.2 records: the resolution exists so a relocated dir still works, so a
+  developer who exports one retargets the lookup and reds a healthy tree while no CI runner
+  — none of which export it — ever sees the failure.
+
+  Worth noting what this does **not** fix, and #425 says so explicitly: `HAVE_*` is still a
+  snapshot taken at band 00, while PATH keeps being assembled through band 99. mise's
+  `hook-env` rewrites it per directory, and `80-os.zsh`, an `85-*` role and `99-local.zsh`
+  all load after every probe, so a tool contributed by any of those still gets no flag while
+  the doctor reports it present. A `✓` still means "on PATH when you asked", not "Core wired
+  this". That half is tracked separately.
+
+- **`PORTING-MATRIX.md` footnote ⁸ no longer tells the reader `dnf install jujutsu` works.**
+  It listed Fedora among the distros that package jj. Fedora does not: there is no
+  `jujutsu`, `jj` or `jj-cli` on F43, F44 or rawhide, and — unlike `sd` and `gron`, which
+  were dropped — no retired build to point back at. Fedora now sits with Debian/Kali and
+  Gentoo in the `cargo install --locked jj-cli` group. Documentation-only: jj is opt-in and
+  carried in no OS repo's `packages.txt`, so nothing installs differently — but the footnote
+  is the one place a reader looks for the install path, and it named a package manager that
+  would have answered "No match".
+
 ## [v4.13.2] - 2026-08-19
 
 ### Fixed
