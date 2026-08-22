@@ -1,0 +1,147 @@
+# core/ssh/config → symlinked to ~/.ssh/config by blib_link_core.
+# ──────────────────────────────────────────────────────────────────────────────
+# CORE layer: portable ssh client config, identical on every machine. This is a
+# VENDORED copy in each OS repo — never edit it there, fix it in dotfiles-core and
+# re-sync (see VENDORING.md).
+#
+# It lived in seven OS repos before dotgibson/dotfiles-core#450. Every one of those
+# copies carried a BYTE-IDENTICAL `Host *` block; the only functional divergence in
+# the whole fleet was one repo's per-service key names. Everything else that had
+# drifted was comments — seven copies of one file, diverging in the half nobody
+# tests. Nothing in here is OS-, libc- or package-manager-specific, so by the
+# "is it Core?" test (CONTRIBUTING.md) it always belonged here.
+#
+# Keys themselves are NEVER tracked — only this file.
+# Docs: man ssh_config
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── local overrides — KEEP THIS FIRST ─────────────────────────────────────────
+# ssh is FIRST-OBTAINED-VALUE-WINS: for each keyword the earliest match in the file
+# is the one that takes effect, and later matches are ignored. That is the opposite
+# of most config formats, and it is why this Include sits at the very top rather
+# than the bottom — anything a drop-in sets here beats the `Host *` defaults below.
+# Move it after them and the drop-ins become silently inert.
+#
+# ONE EXCEPTION, and it is the one the per-service-key case runs into: IdentityFile
+# ACCUMULATES rather than first-wins. A drop-in does not replace the key set below,
+# it PREPENDS to it — ssh then offers the drop-in's key first and falls back to
+# ~/.ssh/id_ed25519. Measured, not assumed:
+#
+#   drop-in sets User + StrictHostKeyChecking  → they win outright (first-match)
+#   drop-in sets IdentityFile                  → `ssh -G` lists BOTH, drop-in first
+#
+# That is the wanted behaviour for per-service keys (the right key is tried first),
+# but it means a drop-in cannot UNSET a default — only pre-empt it. A host that must
+# offer exactly one key wants `IdentitiesOnly yes` alongside its IdentityFile.
+#
+# blib_link_core creates ~/.ssh/config.d (0700). Files there are host-local and
+# untracked, which is where machine-specific ssh belongs:
+#
+#   ~/.ssh/config.d/10-per-service-keys.conf   per-service IdentityFile
+#   ~/.ssh/config.d/20-work.conf               employer bastions/jump hosts
+#
+# An OS repo with a genuinely OS-specific need ships ssh/os.conf instead, which
+# blib_link_os_layer links to ~/.ssh/config.d/50-os.conf — the same overlay shape
+# as os/<os>.zsh and os/<os>.gitconfig. A missing config.d is not an error: the
+# glob simply matches nothing.
+Include ~/.ssh/config.d/*.conf
+
+# =========================================================
+# Global Defaults
+# =========================================================
+Host *
+  # Connection multiplexing — reuse existing connections. Big win for repeated
+  # SSH / lab / pentest sessions. blib_link_core creates ~/.ssh/sockets (0700).
+  ControlMaster auto
+  ControlPath ~/.ssh/sockets/%r@%h:%p
+  ControlPersist 10m
+
+  # Keep-alives so idle sessions don't silently drop
+  ServerAliveInterval 60
+  ServerAliveCountMax 3
+
+  # Security hardening
+  StrictHostKeyChecking ask
+  VerifyHostKeyDNS yes
+  HashKnownHosts yes
+  AddKeysToAgent yes
+
+  # 1Password SSH agent (optional). The socket path is PLATFORM-SPECIFIC, which is
+  # precisely why it is not set here — put the IdentityAgent line in a
+  # ~/.ssh/config.d/ drop-in for the machine, or in that OS repo's ssh/os.conf:
+  #   • Linux desktop:  IdentityAgent ~/.1password/agent.sock
+  #   • macOS:          the agent socket under the 1Password group-container directory
+  #                     (1Password prints the exact path in Settings → Developer)
+  #   • WSL → bridge to the Windows 1Password agent (npiperelay/socat):
+  #       https://developer.1password.com/docs/ssh/integrations/wsl/
+  # The macOS path is DESCRIBED, not spelled: audit-core.sh §5c fails any manifested
+  # Core file containing an OS-absolute path, prose included — a deliberately absolute
+  # rule, so that a real OS-specific value can never hide in a comment.
+
+  # Prefer modern algorithms
+  KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp521
+  HostKeyAlgorithms ssh-ed25519,ecdsa-sha2-nistp521,rsa-sha2-512
+  Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
+  MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+
+  # Forward SSH agent / X11 only where explicitly set per-host
+  ForwardAgent no
+  ForwardX11 no
+
+# =========================================================
+# GitHub  (uses the key you generated: ~/.ssh/id_ed25519)
+# =========================================================
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519
+  AddKeysToAgent yes
+  # Per-service keys instead? Do NOT edit this block — it is vendored and a sync
+  # overwrites it. Drop the override in ~/.ssh/config.d/10-per-service-keys.conf,
+  # which the Include above reaches BEFORE this stanza. IdentityFile accumulates
+  # (see the Include's note), so the drop-in's key is tried FIRST and the one below
+  # remains a fallback — add `IdentitiesOnly yes` if you want only yours offered:
+  #   Host github.com
+  #     IdentityFile ~/.ssh/id_ed25519_github
+
+# =========================================================
+# GitLab  (template — uncomment in a config.d drop-in if you use it)
+# =========================================================
+# Host gitlab.com
+#   HostName gitlab.com
+#   User git
+#   IdentityFile ~/.ssh/id_ed25519_gitlab
+#   AddKeysToAgent yes
+
+# =========================================================
+# Jump Host / Bastion Template
+# =========================================================
+# Host bastion
+#   HostName <bastion-ip-or-hostname>
+#   User <your-username>
+#   IdentityFile ~/.ssh/id_ed25519_work
+#   ForwardAgent yes
+#
+# Access internal hosts through the bastion:
+# Host *.internal
+#   ProxyJump bastion
+#   User <your-username>
+#   IdentityFile ~/.ssh/id_ed25519_work
+
+# =========================================================
+# Lab / Work Environment Template
+# =========================================================
+# Host lab-*
+#   User root
+#   IdentityFile ~/.ssh/id_ed25519_lab
+#   StrictHostKeyChecking no       # ONLY for known throwaway lab machines
+#   UserKnownHostsFile /dev/null
+
+# =========================================================
+# Personal VPS / Servers
+# =========================================================
+# Host myserver
+#   HostName <ip>
+#   User <user>
+#   Port 22
+#   IdentityFile ~/.ssh/id_ed25519_personal

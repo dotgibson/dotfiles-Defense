@@ -25,7 +25,13 @@ name: lint (reusable)
 #
 # Same scoping decisions as before: core/ is excluded (gated by its own CI), no Lua
 # leg (all Lua lives under core/), shfmt is advisory. Tools are SHA-256-verified by
-# the shared composite action against pinned checksums in scripts/tool-versions.env.
+# the shared composite action against pinned checksums in scripts/tool-versions.env —
+# EXCEPT markdownlint-cli2, which is npm rather than a release asset and is installed
+# from the same pinned version, mirroring ci.yml's own markdown step.
+#
+# THREE JOBS: `shell` (shellcheck/bash -n/RETURN-trap/zsh -n/owned-block/shfmt),
+# `actionlint` (the caller's workflows), and `markdown` (#452 — the file class the other
+# two never inspect, and the one a non-maintainer is most likely to read).
 #
 # TWO legs need no pinned tool and are not linters — both are greps, and both encode a rule
 # that lives in scripts/lib/common.sh so the fleet-facing copy cannot drift from the tested
@@ -43,6 +49,11 @@ name: lint (reusable)
 #     leg above it is red-on-arrival by construction: callers pin the moving @v4 tag, so
 #     they see this leg before they can possibly have vendored the Core that lets them
 #     delete their copy. See the long note on that step.
+#
+# A THIRD leg is advisory for the same red-on-arrival reason, measured rather than assumed:
+# markdown (#452). Seven of the nine fleet repos carry findings today (0 to 52 each), so
+# landing it blocking would red most of the fleet before a maintainer could act. Numbers,
+# and why the backlog is smaller than it looks, are on the `markdown` job below.
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -226,13 +237,29 @@ jobs:
           fi
           echo "${#files[@]} repo-owned .sh — every RETURN trap disarms itself"
 
+      # The file list is '*.zsh' PLUS three names by hand, and that is not belt-and-braces
+      # — it is the fix for #451. The ZDOTDIR entry files are symlinked to ~/.zshenv,
+      # $ZDOTDIR/.zshrc and $ZDOTDIR/.zprofile, whose destinations have no extension, so
+      # they were repeatedly WRITTEN without one: scripts/new-os-repo.sh emitted all three
+      # extensionless from the day it was added, and dotfiles-MacBook hand-wrote the same
+      # three. None matched '*.zsh', so none was ever syntax-checked in any repo.
+      #
+      # ~/.zshenv is the worst possible file to leave unchecked: it is sourced on EVERY zsh
+      # invocation including non-interactive ones, and it carries the ZDOTDIR indirection,
+      # so a syntax error there does not degrade the shell — it breaks login shells outright
+      # on every box running that layer.
+      #
+      # The generator now emits *.zsh (#451), which fixes repos stamped from here on. These
+      # three pathspecs cover the ones already written, WITHOUT requiring a rename in each
+      # repo, and stop the next hand-written entry file slipping the same way. A pathspec
+      # matching nothing is inert, so this is a no-op everywhere the names are unused.
       - name: zsh -n (syntax, repo-owned zsh modules)
         working-directory: caller
         run: |
           excludes=(':!:core/**')
           # shellcheck disable=SC2206
           [ -n "$EXTRA_EXCLUDES" ] && excludes+=($EXTRA_EXCLUDES)
-          mapfile -t files < <(git ls-files '*.zsh' "${excludes[@]}")
+          mapfile -t files < <(git ls-files '*.zsh' zsh/zshenv zsh/zshrc zsh/zprofile "${excludes[@]}")
           if [ ${#files[@]} -eq 0 ]; then echo "no repo-owned .zsh"; exit 0; fi
           rc=0
           for f in "${files[@]}"; do echo "zsh -n $f"; zsh -n "$f" || rc=1; done
@@ -272,7 +299,11 @@ jobs:
           excludes=(':!:core/**')
           # shellcheck disable=SC2206
           [ -n "$EXTRA_EXCLUDES" ] && excludes+=($EXTRA_EXCLUDES)
-          mapfile -t files < <(git ls-files '*.zsh' "${excludes[@]}")
+          # Same population as the zsh -n leg above, entry files included — see the long
+          # note there. An OS layer's direnv/WSL block is exactly the kind of thing that
+          # gets parked in a .zshenv, so scanning a narrower set here would reopen the
+          # duplication blind spot in the one file class that was already invisible.
+          mapfile -t files < <(git ls-files '*.zsh' zsh/zshenv zsh/zshrc zsh/zprofile "${excludes[@]}")
           if [ ${#files[@]} -eq 0 ]; then echo "no repo-owned .zsh"; exit 0; fi
           # shellcheck source=scripts/lib/common.sh
           . "$CORE_ROOT/scripts/lib/common.sh"
@@ -374,3 +405,107 @@ jobs:
         env:
           SHELLCHECK_OPTS: "-e SC1090 -e SC1091 -e SC2015 -e SC2088"
         run: actionlint -color
+
+  # ── markdown. The file class shellcheck and `zsh -n` never inspect, and the one most
+  # likely to be read by someone who is not the maintainer: each OS repo's README is the
+  # public landing page for that layer, linked from the showcase site.
+  #
+  # Every caller already ships a .markdownlint.jsonc — they were mirrored from Core's and
+  # are functionally identical (same MD013/MD041/MD024/MD033 decisions; only the comments
+  # differ). Until now those configs were pure decoration: this workflow had no markdown
+  # leg at all, so the rules only ever ran if an author ran them by hand. One of them says
+  # so in its own header. Core lints its own markdown (audit-core.sh §7 + a pre-commit
+  # hook), so the gap was in the REUSABLE gate specifically, not in Core's hygiene.
+  #
+  # ADVISORY IN THIS RELEASE, BLOCKING IN THE NEXT — and unlike the owned-block leg, this
+  # one is not a judgement call. Measured across the fleet before landing, with each repo's
+  # own config and excludes:
+  #
+  #   Debian 0 · Offense 0 · MacBook 1 · Gentoo 16 · Alpine 17 · Fedora 18 · openSUSE 20
+  #   · Arch 26 · Defense 52
+  #
+  # Seven of nine repos would go red the moment auto-tag moves @v4, before a maintainer
+  # could act — callers pin a moving major tag, so they see this leg before they can
+  # possibly have fixed anything. So it warns first, exactly as the Core-owned-block leg
+  # does, and the flip to blocking is a one-line follow-up once the fleet is clean.
+  #
+  # The backlog is smaller than 150 findings looks: 130 of them are MD060 (table pipe
+  # alignment) and `markdownlint-cli2 --fix` clears most of it — measured at 17 findings
+  # → 5 on the worst single file. Core's own 33 markdown files are already clean under
+  # the same rule set, so this is drift in the callers, not an unreasonable house style.
+  #
+  # markdownlint-cli2 is npm, not a release asset, so setup-core-tools does not install it
+  # and should not learn to — this mirrors ci.yml's own markdown step: node is preinstalled
+  # on ubuntu-latest, and MARKDOWNLINT_VERSION comes from the same tool-versions.env pin
+  # that audit-core.sh §9 already checks against the pre-commit hook rev.
+  markdown:
+    name: markdown lint (markdownlint — advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      EXTRA_EXCLUDES: ${{ inputs.extra_ls_files_excludes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: ${{ github.repository_owner }}/dotfiles-core
+          # Same major as the callers (`@v4`) — see the note on the shell-lint job above.
+          ref: v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: caller
+
+      - name: Load pinned tool versions + checksums (Core single source)
+        run: |
+          f=scripts/tool-versions.env
+          if [ ! -f "$f" ]; then echo "::error::$f missing from the dotfiles-core checkout"; exit 1; fi
+          grep -E '^[A-Z0-9_]+=' "$f" >> "$GITHUB_ENV"
+
+      - name: Install markdownlint-cli2 (pinned)
+        run: npm install -g "markdownlint-cli2@${MARKDOWNLINT_VERSION}"
+
+      # Scoped exactly like every other leg: core/ is the vendored tree, gated by Core's
+      # own CI — a finding there is fixed upstream, not here — plus the caller's own
+      # extra excludes (Offense's vendored htpx companion, which is 187 of its 204
+      # markdown files).
+      #
+      # `working-directory: caller` is load-bearing, not tidiness: markdownlint-cli2
+      # discovers .markdownlint.jsonc by walking up from the working directory, so running
+      # from the workspace root would silently apply CORE's config to the caller's files.
+      # The two agree today; the point is that the caller owns its own rules.
+      #
+      # The if/else swallows the drift exit so the step is non-blocking WITHOUT
+      # continue-on-error — same shape as the shfmt leg, so a genuine install failure
+      # still reds the job rather than being reported as "advisory".
+      - name: markdownlint (repo-owned markdown) — advisory
+        working-directory: caller
+        run: |
+          excludes=(':!:core/**')
+          # shellcheck disable=SC2206  # curated space-separated pathspecs; intentional split
+          [ -n "$EXTRA_EXCLUDES" ] && excludes+=($EXTRA_EXCLUDES)
+          mapfile -t files < <(git ls-files '*.md' "${excludes[@]}")
+          if [ ${#files[@]} -eq 0 ]; then echo "no repo-owned .md"; exit 0; fi
+          # HARD-FAIL if the linter is missing, BEFORE the advisory if/else below. Without
+          # this the `if markdownlint-cli2 …` arm cannot tell "127, not installed" from
+          # "1, found issues": a broken install would be reported as an ordinary advisory
+          # warning and the leg would look like it ran for the rest of the release cycle.
+          # An advisory gate that silently never runs is worse than no gate — it reads as
+          # coverage. The install step above is the usual failure point and reds on its
+          # own; this catches the case where it "succeeds" without putting the bin on PATH.
+          command -v markdownlint-cli2 >/dev/null || {
+            echo "::error::markdownlint-cli2 is not on PATH after the pinned install step"
+            exit 1
+          }
+          echo "linting ${#files[@]} repo-owned markdown file(s) against this repo's .markdownlint.jsonc"
+          if markdownlint-cli2 "${files[@]}"; then
+            echo "markdown is clean"
+          else
+            echo "::warning::markdownlint reported issues (advisory, not blocking)"
+            echo "Most of the fleet's backlog is MD060 (table pipe alignment), which is"
+            echo "auto-fixable. From the repo root:"
+            echo "    npx markdownlint-cli2 --fix \$(git ls-files '*.md' ':!:core/**')"
+            echo "Rules live in this repo's own .markdownlint.jsonc — the vendored core/"
+            echo "tree is excluded and is gated by dotfiles-core's CI instead."
+            echo "This warning becomes a BLOCKING failure in the next Core release."
+          fi

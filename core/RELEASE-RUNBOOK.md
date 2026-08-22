@@ -231,7 +231,7 @@ What you do with the alias depends on the bump you chose in §1.0
    release-notes` is a separate git-cliff helper for manually *drafting* a body; it is
    not what CI publishes.)
 2. `sync-fanout.yml` opens a `core.lock`-bump PR in every repo in `scripts/os-repos.txt`,
-   each vendoring `vX.Y.Z` via `git subtree pull --squash`. **It opens PRs, never merges.**
+   each vendoring `vX.Y.Z` by materializing `core/` at that commit (#587). **It opens PRs, never merges.**
    (Requires the `FLEET_SYNC_TOKEN` secret on `dotfiles-core`.)
 
 Then continue to section 2 to roll it out.

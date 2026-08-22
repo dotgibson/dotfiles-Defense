@@ -262,8 +262,9 @@ jobs:
               # Deliberately NOT retried with the workflow changes dropped. core.lock and
               # the pins name the same Core; landing the lock while silently keeping stale
               # pins is precisely the "vendors one Core, runs another" split that #482
-              # closed — and it is invisible to core-integrity and verify-core, which is
-              # what made it survive. Failing this repo loudly beats re-creating that.
+              # closed — and it is invisible to core-integrity, which compares a tree
+              # object and never reads a workflow. That is what made it survive. Failing
+              # this repo loudly beats re-creating that.
               if grep -qi "without .workflows. permission" "$RUNNER_TEMP/push-$r.log"; then
                 echo "- ❌ \`$r\` push refused: the fleet token lacks the \`workflows\` permission, and this repo SHA-pins a Core caller (#482)" >> "$summary"
                 echo "::error::$r: grant the fleet GitHub App the 'workflows' permission (see GITHUB-APP-AUTH.md) — the fan-out must rewrite .github/workflows/* pins in repos that SHA-pin a Core caller"

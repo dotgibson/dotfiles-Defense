@@ -169,7 +169,8 @@ blib_read_pkgs() {
 #   tmux   — tmux.conf/reset/scripts + tpm, os/<os>.conf, <role>/<role>.conf
 #   git    — core gitconfig, os/<os>.gitconfig, the once-seeded local identity
 #   prompt — starship.toml
-#   tools  — lazygit, mise, jujutsu, atuin, bin/clip*, ssh client config, the seeded sesh config
+#   tools  — lazygit, mise, jujutsu, atuin, bin/clip*, core/ssh/config (+ ssh/os.conf),
+#            the seeded sesh config
 # Default (neither BLIB_ONLY nor BLIB_SKIP set) wires EVERYTHING, so every existing
 # caller is byte-for-byte unaffected. A bootstrap's arg loop routes its --only/--skip
 # to blib_select; the helpers consult blib_want. bash 3.2-safe (no arrays needed).
@@ -294,7 +295,7 @@ blib_migrate_v4() {
 # local identity), the cross-OS bin/clip* helpers, the ssh client config, a once-seeded
 # sesh config, and a one-time tpm clone. Keep this in step with the group list at the
 # top of this file — that is the canonical enumeration. OS-specific overlays
-# (os/<os>.*) are NOT here — call blib_link_os_layer for those.
+# (os/<os>.*, ssh/os.conf) are NOT here — call blib_link_os_layer for those.
 blib_link_core() {
   local dotfiles="$1" config="$2" f s tpm_log
 
@@ -401,17 +402,31 @@ blib_link_core() {
       done
     fi
 
-    # ssh client config (keys are NEVER tracked — only ssh/config). ssh is strict about
-    # permissions: ~/.ssh must be 0700, and ControlMaster needs the sockets dir to exist.
-    if [[ -f "$dotfiles/ssh/config" ]]; then
+    # ssh client config (keys are NEVER tracked — only ssh/config). Core's, from
+    # core/, like every other file above: this used to read "$dotfiles/ssh/config" —
+    # the OS repo's ROOT — so Core's shared library had a hard dependency on a file
+    # each of nine repos had to happen to provide at exactly that path, and the
+    # [[ -f ]] guard made "the repo forgot" and "the repo opted out" the same
+    # outcome. Seven repos provided it, with byte-identical `Host *` blocks (#450).
+    #
+    # ssh is strict about permissions: ~/.ssh must be 0700, ControlMaster needs the
+    # sockets dir to exist, and config.d is where the host-local overrides the
+    # vendored config Includes live (see core/ssh/config's header for the
+    # first-match-wins ordering that makes them win).
+    #
+    # NO chmod on the config file itself. ssh refuses a config that is group- or
+    # world-WRITABLE; git checks out 0644, which already satisfies that. The old
+    # `chmod 600 "$dotfiles/ssh/config"` reached into the consumer repo's working
+    # tree to change a tracked file's mode — and now that the file lives in core/,
+    # it would be Core chmod'ing its own vendored tree in nine repos. Don't restore it.
+    if [[ -f "$dotfiles/core/ssh/config" ]]; then
       if _blib_dry; then
-        blib_say "would link ssh/config into ~/.ssh (0700 ~/.ssh + sockets, 0600 config)"
+        blib_say "would link core/ssh/config into ~/.ssh (0700 ~/.ssh + sockets + config.d)"
       else
-        blib_say "symlinking ssh/config"
-        mkdir -p "$HOME/.ssh/sockets"
-        chmod 700 "$HOME/.ssh" "$HOME/.ssh/sockets"
-        chmod 600 "$dotfiles/ssh/config" 2>/dev/null || true
-        blib_link "$dotfiles/ssh/config" "$HOME/.ssh/config"
+        blib_say "symlinking core/ssh/config"
+        mkdir -p "$HOME/.ssh/sockets" "$HOME/.ssh/config.d"
+        chmod 700 "$HOME/.ssh" "$HOME/.ssh/sockets" "$HOME/.ssh/config.d"
+        blib_link "$dotfiles/core/ssh/config" "$HOME/.ssh/config"
         blib_ok "ssh/config linked into ~/.ssh (generate a key with: ssh-keygen -t ed25519)"
       fi
     fi
@@ -419,12 +434,21 @@ blib_link_core() {
 }
 
 # ── symlink the OS-native overlays ────────────────────────────────────────────
-# blib_link_os_layer <dotfiles> <config> <os> — link the three OS overlay files when
+# blib_link_os_layer <dotfiles> <config> <os> — link the four OS overlay files when
 # present: os/<os>.conf → tmux/os.conf, os/<os>.zsh → zsh/80-os.zsh (the loader's OS
-# band), os/<os>.gitconfig → git/os.gitconfig (included by Core's gitconfig).
+# band), os/<os>.gitconfig → git/os.gitconfig (included by Core's gitconfig), and
+# ssh/os.conf → ~/.ssh/config.d/50-os.conf (Included by Core's ssh/config).
+#
+# The ssh overlay is the ESCAPE HATCH for #450, and it is deliberately the only one
+# whose source is NOT under os/: it is named ssh/os.conf, next to where each repo's
+# ssh/config used to sit, so a repo that genuinely needs OS-specific ssh has an
+# obvious place to put THAT — rather than re-forking the whole client config, which
+# is how seven repos came to hand-maintain byte-identical copies of one file. No OS
+# repo ships one today; the [[ -f ]] guard makes that the normal case, not a gap.
 blib_link_os_layer() {
   local dotfiles="$1" config="$2" os="$3"
-  # Each overlay rides with its Core group: os.conf→tmux, os.gitconfig→git, os.zsh→zsh.
+  # Each overlay rides with its Core group: os.conf→tmux, os.gitconfig→git, os.zsh→zsh,
+  # ssh/os.conf→tools (the group that links Core's ssh/config in the first place).
   if blib_want tmux && [[ -f "$dotfiles/os/$os.conf" ]]; then
     blib_link "$dotfiles/os/$os.conf" "$config/tmux/os.conf"
   fi
@@ -436,6 +460,14 @@ blib_link_os_layer() {
     # v4: the OS layer is the numbered fragment 80-os.zsh (band 70-84). The loader globs
     # it by NN prefix; it always loads (>=70), independent of CORE_PROFILE.
     blib_link "$dotfiles/os/$os.zsh" "$config/zsh/80-os.zsh"
+  fi
+  # ssh overlay → a config.d drop-in. Numbered 50- so a host-local file can sort either
+  # side of it deliberately; Core's Include globs *.conf in lexical order, and ssh's
+  # first-match-wins means a lower number beats this one. Directory created here rather
+  # than relied upon: `--only zsh` skips blib_link_core, which is what creates it.
+  if blib_want tools && [[ -f "$dotfiles/ssh/os.conf" ]]; then
+    _blib_dry || { mkdir -p "$HOME/.ssh/config.d"; chmod 700 "$HOME/.ssh" "$HOME/.ssh/config.d"; }
+    blib_link "$dotfiles/ssh/os.conf" "$HOME/.ssh/config.d/50-os.conf"
   fi
 }
 

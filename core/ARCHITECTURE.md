@@ -116,7 +116,7 @@ Core flows in one direction — authored here, copied out:
                     │  (core.manifest =    │
                     │   the contract)      │
                     └──────────┬───────────┘
-                               │  git subtree pull --prefix=core … --squash
+                               │  make sync — core/ materialized at core_sha
      ┌────────┬────────┬───┴────┬────────┬────────┬────────┐
      ▼        ▼        ▼        ▼        ▼        ▼        ▼
   MacBook  Fedora    Arch    Debian  openSUSE  Alpine   Gentoo
