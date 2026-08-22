@@ -130,10 +130,12 @@ detection:
       - 'Get-SmbMapping'
       - 'Get-SmbConnection'
   selection_group:
-    # T1087.001 Local Account Discovery
-    ScriptBlockText|contains:
-      - 'Get-LocalGroupMember'
-      - 'Get-LocalGroup '
+    # T1087.001 Local Account Discovery. One keyword, not two: 'Get-LocalGroup' is a
+    # substring of 'Get-LocalGroupMember', so it catches the group-enum cmdlet and its
+    # member variant together - including a bare 'Get-LocalGroup' that lists every local
+    # group, which the earlier 'Get-LocalGroup ' (trailing space, to disambiguate from
+    # Member) silently missed at end of a block.
+    ScriptBlockText|contains: 'Get-LocalGroup'
   # There is deliberately NO filter_* here, and the reason is worth reading before adding
   # one. See the "no Path filter" paragraph in the description.
   condition: 1 of selection_*
