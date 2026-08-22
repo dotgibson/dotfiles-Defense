@@ -1,1 +1,0 @@
-{"verb": "create", "objectRef": {"resource": "pods", "subresource": "exec", "namespace": "kube-system"}, "user": {"username": "system:serviceaccount:kube-system:replicaset-controller"}}

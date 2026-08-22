@@ -1,1 +1,0 @@
-{"Event": {"System": {"EventID": 7045, "Channel": "System", "Computer": "DC01"}, "EventData": {"ServiceName": "PSEXESVC", "ImagePath": "%COMSPEC% /c echo pwned > \\\\.\\pipe\\x", "ServiceType": "user mode service"}}}

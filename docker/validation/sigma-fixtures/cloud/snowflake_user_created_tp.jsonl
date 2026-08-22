@@ -1,2 +1,0 @@
-{"query_type": "CREATE_USER", "query_text": "CREATE USER evil PASSWORD='x'"}
-{"query_type": "GRANT", "query_text": "GRANT ROLE ACCOUNTADMIN TO USER evil"}

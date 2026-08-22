@@ -1,1 +1,0 @@
-{"Event": {"System": {"EventID": 4624, "Channel": "Security", "Computer": "FILE01"}, "EventData": {"LogonType": 3, "AuthenticationPackageName": "Kerberos", "TargetUserName": "DC1$", "IpAddress": "10.9.9.50"}}}

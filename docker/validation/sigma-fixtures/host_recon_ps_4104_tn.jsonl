@@ -1,3 +1,0 @@
-{"Event": {"System": {"EventID": 4104, "Channel": "Microsoft-Windows-PowerShell/Operational", "Computer": "WS01"}, "EventData": {"ScriptBlockText": "Get-Service Spooler", "Path": "", "ScriptBlockId": "tn-block-00", "MessageNumber": 1, "MessageTotal": 1}}}
-{"Event": {"System": {"EventID": 4104, "Channel": "Microsoft-Windows-PowerShell/Operational", "Computer": "WS01"}, "EventData": {"ScriptBlockText": "Get-Process -Name explorer", "Path": "", "ScriptBlockId": "tn-block-01", "MessageNumber": 1, "MessageTotal": 1}}}
-{"Event": {"System": {"EventID": 4104, "Channel": "Microsoft-Windows-PowerShell/Operational", "Computer": "WS01"}, "EventData": {"ScriptBlockText": "Get-NetIPConfiguration", "Path": "", "ScriptBlockId": "tn-block-02", "MessageNumber": 1, "MessageTotal": 1}}}
