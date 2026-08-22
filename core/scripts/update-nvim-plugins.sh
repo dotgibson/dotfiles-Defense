@@ -108,7 +108,7 @@ if [[ ! -f "$LOCK" ]]; then
 fi
 
 # Report the delta (added/removed/changed plugin commits) in human terms.
-if cmp -s "$BEFORE" "$LOCK"; then
+if core_files_identical "$BEFORE" "$LOCK"; then
   printf '%s✓ all nvim plugin pins already current.%s\n' "$c_grn" "$c_rst"
   # "Already current" is success in BOTH modes — check (gate passes) and apply
   # (nothing to update). Exit 0 explicitly: `((CHECK)) && exit 0` would, in apply

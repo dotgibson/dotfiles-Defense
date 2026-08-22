@@ -13,6 +13,38 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.14.3] - 2026-08-21
+
+### Fixed
+
+- **`sync-core.sh`'s idempotence check failed open when `cmp` was missing, so a fan-out
+  reported repointing workflow pins it never touched.** (#572) `_sync_pin_workflows` asked
+  "did that rewrite change anything" with `cmp -s`. `cmp` ships in **diffutils**, which is
+  not guaranteed present — a Tumbleweed box in this fleet had none, so neither `cmp` nor
+  `diff` existed. A missing binary exits non-zero, which is indistinguishable from "the
+  files differ", so every candidate file took the changed-branch.
+
+  Observed on a real v4.14.x fan-out: seven of nine repos reported 6–12 workflow rewrites
+  and committed **zero**, and the false counts reached nine repos' commit subjects before
+  being corrected by hand. Contents were never corrupted — an unchanged file was rewritten
+  to identical bytes, so git recorded nothing — but a genuine rewrite failure and a missing
+  `cmp` were indistinguishable in the output.
+
+  The same call sat in `update-nvim-plugins.sh`, failing the other way: it reported drift
+  that did not exist, which under `--check` is exit 2 — the freshness gate going red on a
+  lockfile that never moved. One failing open and one failing closed off the same absent
+  binary is the tell that the comparison, not either caller, was the wrong shape.
+
+  Both now call `core_files_identical` in `scripts/lib/common.sh`, which hashes with
+  `git hash-object`. That removes the dependency rather than detecting it: byte-exact, no
+  repository required, and git is the one tool these scripts already cannot run without.
+  `sha256sum` was the other candidate and is wrong for this fleet — macOS ships `shasum`,
+  not `sha256sum`, and these scripts run on the MacBook too. `$(cat a) == $(cat b)` was
+  rejected for stripping trailing newlines from both sides, which would silently miss a
+  real one-byte difference; a test pins that case. Six assertions cover both directions, a
+  missing operand, the trailing-newline case, and correctness on a PATH carrying git and no
+  diffutils — plus a grep that fails the suite if any script reintroduces `cmp`.
+
 ## [v4.14.2] - 2026-08-21
 
 ### Fixed

@@ -9432,6 +9432,62 @@ else
   pass "'chsh not found' is NOT on stdout (no longer a blib_say status line)"
 fi
 
+# ── core_files_identical: the comparison that must not need diffutils ─────────
+# sync-core.sh and update-nvim-plugins.sh both asked "did that rewrite change anything"
+# with `cmp -s`, which needs diffutils. On a box without it, `command not found` is a
+# non-zero exit indistinguishable from "differs", so sync-core.sh counted every candidate
+# workflow as repointed (#572) and update-nvim-plugins.sh reported drift that did not
+# exist. Both now call core_files_identical, so pin both directions AND the property that
+# made the old shape fail: it must not depend on any binary outside git.
+_cfi="$(mktemp -d "$SANDBOX/cfi.XXXXXX")"
+printf 'alpha\nbeta\n' >"$_cfi/a"
+printf 'alpha\nbeta\n' >"$_cfi/b"
+printf 'alpha\nGAMMA\n' >"$_cfi/c"
+printf 'alpha\nbeta' >"$_cfi/d" # same bytes as a, minus the trailing newline
+
+if core_files_identical "$_cfi/a" "$_cfi/b"; then
+  pass "core_files_identical: identical files compare equal"
+else
+  fail "core_files_identical: identical files reported as differing"
+fi
+if core_files_identical "$_cfi/a" "$_cfi/c"; then
+  fail "core_files_identical: differing files reported as equal"
+else
+  pass "core_files_identical: differing files compare unequal"
+fi
+# The trailing-newline case is why this is a hash of the bytes and not `[[ $(cat a) == $(cat b) ]]`:
+# command substitution strips trailing newlines from BOTH sides, so a real one-byte
+# difference would compare equal and the rewrite would be skipped.
+if core_files_identical "$_cfi/a" "$_cfi/d"; then
+  fail "core_files_identical: a trailing-newline-only difference was missed (\$(cat) semantics leaked in)"
+else
+  pass "core_files_identical: a trailing-newline-only difference still counts as different"
+fi
+# A missing operand must read as "differs", so a caller that lost its temp file rewrites
+# rather than silently skipping.
+if core_files_identical "$_cfi/a" "$_cfi/nope"; then
+  fail "core_files_identical: a missing operand compared equal"
+else
+  pass "core_files_identical: a missing operand counts as different"
+fi
+# The regression itself: with diffutils absent it must still be correct. Run it with a
+# PATH holding only git, so any reintroduced cmp/diff call fails the way it did in #572.
+_cfi_git="$(command -v git)"
+_cfi_bin="$(mktemp -d "$SANDBOX/cfibin.XXXXXX")"
+ln -s "$_cfi_git" "$_cfi_bin/git"
+if PATH="$_cfi_bin" core_files_identical "$_cfi/a" "$_cfi/b" &&
+  ! PATH="$_cfi_bin" core_files_identical "$_cfi/a" "$_cfi/c"; then
+  pass "core_files_identical: correct on a PATH with git but no cmp/diff (the #572 box)"
+else
+  fail "core_files_identical: wrong answer without diffutils on PATH — the #572 regression is back"
+fi
+# And no caller may quietly go back to cmp.
+if grep -nE '(^|[|;&( ])cmp[[:space:]]+-' "$HERE/scripts"/*.sh "$HERE/scripts/lib"/*.sh 2>/dev/null | grep -v '^\s*#' | grep -q .; then
+  fail "a script calls cmp again — use core_files_identical (#572)"
+else
+  pass "no script calls cmp (diffutils stays optional)"
+fi
+
 # ── summary ───────────────────────────────────────────────────────────────────
 summary
 ((FAIL == 0)) || {
