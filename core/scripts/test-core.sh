@@ -2721,7 +2721,10 @@ if ((_sc_subtree)); then
   # assertion away, and a guard applied only where it already hurts is how this one got in.
   _sc_out="$(env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never REPOS_ROOT="$SCF/repos" \
     CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main SYNC_JOBS=1 bash "$_SCS" --dry-run 2>&1)"
-  if grep -q 'would: git -C' <<<"$_sc_out" &&
+  # 'would: materialize' since #587 — the plan line stopped naming `git subtree pull`
+  # when the sync stopped BEING one. Matched on the verb rather than the whole line so
+  # this pins "a plan was printed", not the sentence's punctuation.
+  if grep -q 'would: materialize' <<<"$_sc_out" &&
     [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]] &&
     [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
     pass "sync-core: --dry-run prints the plan and writes nothing"
@@ -2739,10 +2742,20 @@ if ((_sc_subtree)); then
     fail "sync-core: core.lock is missing or landed inside core/"
   fi
   if grep -q "^core_sha=$_sc_remote_sha\$" "$_sc_lock" &&
-    grep -q '^core_version=9.9.9$' "$_sc_lock" && grep -q '^core_branch=main$' "$_sc_lock"; then
-    pass "sync-core: core.lock records the FULL vendored sha, version and branch"
+    grep -q '^core_version=9.9.9$' "$_sc_lock" && grep -q '^core_ref=main$' "$_sc_lock"; then
+    pass "sync-core: core.lock records the FULL vendored sha, version and ref"
   else
     fail "sync-core: core.lock contents wrong ($(tr '\n' ' ' <"$_sc_lock"))"
+  fi
+  # The field must NOT be called core_branch any more (#453) — it was written from
+  # $CORE_BRANCH, which sync-fanout.yml deliberately sets to a pinned SHA, so a field
+  # documented as a branch held a commit and duplicated core_sha. Assert the old name is
+  # gone rather than only that the new one is present: emitting BOTH would satisfy the
+  # check above while leaving the contradicting field in every OS repo's lock file.
+  if ! grep -q '^core_branch=' "$_sc_lock"; then
+    pass "sync-core: core.lock no longer emits the mislabelled core_branch field"
+  else
+    fail "sync-core: core.lock still emits core_branch"
   fi
   # The tree must be CLEAN afterwards, or the dirty-tree guard blocks the next run —
   # the self-inflicted deadlock the core.lock commit exists to prevent.
@@ -2760,6 +2773,82 @@ if ((_sc_subtree)); then
     pass "sync-core: re-syncing an unchanged sha is a no-op (no empty core.lock commit)"
   else
     fail "sync-core: a no-change re-sync still moved HEAD"
+  fi
+
+  # --- a sync must NOT depend on the subtree trailer surviving (#587) ------------
+  # THE REGRESSION THIS EXISTS FOR, and it is not hypothetical: it took the v4.15.0
+  # fan-out down in 9 repos out of 9, simultaneously.
+  #
+  # `git subtree pull --squash` finds its base by grepping history for the previous sync
+  # commit's `git-subtree-split:` trailer. Every fleet repo SQUASH-merges its fan-out PR
+  # (RELEASE-STRATEGY.md), and a squash keeps the original body only if it happens to be
+  # carried over — so the trailer dies intermittently. Seven of nine repos had lost it
+  # after the v4.14.3 round.
+  #
+  # The damage is not a missing marker, it is a WRONG BASE. Reproducing that needs TWO
+  # prior syncs, not one: destroy the NEWEST trailer and subtree falls back to the one
+  # before it, then replays both rounds of changes onto a tree that already contains the
+  # first — so any file touched by BOTH rounds conflicts. That is why CHANGELOG.md and
+  # core.version (which every release rewrites) were the two casualties in the real
+  # failure, and why payload.txt is rewritten in both rounds here.
+  #
+  # Materializing the tree has no base and no trailer to lose.
+  printf 'core payload v2\n' >"$SCF/coreremote/payload.txt"
+  _scg "$SCF/coreremote" add -A >/dev/null 2>&1
+  _scg "$SCF/coreremote" commit -q -m 'core: payload v2'
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"   # round 2 — this is the sync whose trailer dies
+  # Destroy the trailer the way a squash-merge does — from EVERY commit, not just HEAD.
+  # Amending HEAD alone is not enough and quietly proves nothing: under the old
+  # `subtree pull` a sync round produced TWO commits (the squash, then core.lock), so
+  # amending HEAD rewrote the lock commit and left the subtree marker untouched. Stripping
+  # the trailer repo-wide is both the honest reproduction (a fleet repo can lose it on any
+  # round) and what makes the assertion below able to fail.
+  FILTER_BRANCH_SQUELCH_WARNING=1 _scg "$SCF/repos/dotfiles-Test" \
+    filter-branch -f --msg-filter 'sed "/^git-subtree-/d"' -- --all >/dev/null 2>&1
+  if _scg "$SCF/repos/dotfiles-Test" log --format=%B | grep -q 'git-subtree-split'; then
+    fail "sync-core (#587 fixture): could not destroy the trailer — the test below would prove nothing"
+  else
+    printf 'core payload v3\n' >"$SCF/coreremote/payload.txt"   # SAME file round 2 touched
+    _scg "$SCF/coreremote" add -A >/dev/null 2>&1
+    _scg "$SCF/coreremote" commit -q -m 'core: payload v3'
+    _sc_v3_sha="$(_scg "$SCF/coreremote" rev-parse main)"
+    _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"                        # round 3 — the one that broke
+    _sc_587=""
+    grep -qi 'conflict' <<<"$_sc_out" && _sc_587="$_sc_587 conflicted"
+    grep -q 'failed 0' <<<"$_sc_out" || _sc_587="$_sc_587 repo-failed"
+    # The payload must actually have moved — a sync that "succeeded" without updating the
+    # tree would satisfy the two checks above and be exactly as broken.
+    [[ "$(cat "$SCF/repos/dotfiles-Test/core/payload.txt" 2>/dev/null)" == 'core payload v3' ]] ||
+      _sc_587="$_sc_587 payload-stale"
+    grep -q "^core_sha=$_sc_v3_sha\$" "$_sc_lock" || _sc_587="$_sc_587 lock-stale"
+    if [[ -z "$_sc_587" ]]; then
+      pass "sync-core: a sync succeeds with the subtree trailer DESTROYED (#587 — the v4.15.0 fan-out failure)"
+    else
+      fail "sync-core: trailer-less sync regressed —$_sc_587"
+    fi
+    # And the tree must be clean afterwards, or the next run self-blocks on the dirty guard.
+    if [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
+      pass "sync-core: the trailer-less sync leaves a clean tree (one atomic commit)"
+    else
+      fail "sync-core: the trailer-less sync left the target dirty"
+    fi
+  fi
+
+  # --- core_ref records the ref that was FOLLOWED, branch or pinned commit (#453) --
+  # The bug this pins: sync-fanout.yml sets CORE_BRANCH="$target_sha" on purpose, so each
+  # release PR vendors the exact released commit rather than a moving main — and the value
+  # was then persisted into a field named, and documented, as a *branch*. Every OS repo's
+  # lock file ended up with core_branch == core_sha: a contract violation, and a field
+  # carrying no information core_sha did not already have.
+  #
+  # The run above covers the branch half (core_ref=main). This covers the half that was
+  # actually wrong, by driving the script the way the fan-out drives it.
+  _sc_pin_sha="$(_scg "$SCF/coreremote" rev-parse main)"
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1 CORE_BRANCH="$_sc_pin_sha")"
+  if grep -q "^core_ref=$_sc_pin_sha\$" "$_sc_lock"; then
+    pass "sync-core: a pinned-SHA sync records that commit as core_ref (the fan-out shape)"
+  else
+    fail "sync-core: core_ref did not record the pinned sha ($(grep '^core_ref=' "$_sc_lock" || echo absent))"
   fi
 
   # --- the dirty-tree guard, and that it does not abandon the rest of the fleet -
@@ -2792,8 +2881,7 @@ if ((_sc_subtree)); then
   # A repo names the vendored Core in three places — the core/ subtree, core.lock, and the
   # `uses:` pins of any SHA-pinned reusable caller. The sync wrote two and left the third,
   # so a fan-out produced a tree that VENDORED one Core and RAN another, with both existing
-  # gates green (core-integrity checks the tree object, verify-core the split; neither reads
-  # a workflow). It reached production on the v4.12.0 fan-out and only surfaced because
+  # the gate green (core-integrity compares a tree object and never reads a workflow). It reached production on the v4.12.0 fan-out and only surfaced because
   # dotfiles-MacBook had built its own pin gate.
   #
   # Tag the fixture Core first: the comment rewrite is driven by core.lock's core_tag, so
@@ -2935,7 +3023,7 @@ if have git; then
   # both a race and a violation of the read-only assumption the whole suite is built on.
   # Copying per top-level directory keeps .git out without needing a non-portable tar flag.
   mkdir -p "$LR/dotfiles/core"
-  for _lr_d in zsh nvim tmux vim git starship lazygit mise jujutsu atuin sesh bin lib; do
+  for _lr_d in zsh nvim tmux vim git starship lazygit mise jujutsu atuin sesh ssh bin lib; do
     [[ -e "$HERE/$_lr_d" ]] && cp -R "$HERE/$_lr_d" "$LR/dotfiles/core/$_lr_d"
   done
   mkdir -p "$LR/config/tmux/plugins/tpm"   # pre-seed: skips the tpm clone (offline)
@@ -2952,6 +3040,9 @@ if have git; then
 
   _lr_is_link_to() { # <link> <target>  — a symlink resolving to the expected file
     [[ -L "$1" ]] && [[ "$(readlink "$1")" == "$2" ]]
+  }
+  _lr_mode() { # <path> — octal permission bits, GNU or BSD stat (the macOS CI leg)
+    stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null
   }
   # The zsh chain is the load-order contract: every numbered Core fragment must land FLAT
   # in $config/zsh under its own basename, because loader.zsh globs NN-*.zsh there. A
@@ -3006,6 +3097,38 @@ if have git; then
     pass "link run: clip + clip-paste link onto ~/.local/bin and resolve executable"
   else
     fail "link run: clip/clip-paste missing, mislinked, or not executable"
+  fi
+  # ssh (#450). Core OWNS the client config now — it used to be read from the OS repo's
+  # ROOT ($dotfiles/ssh/config), a path Core neither shipped nor listed in core.manifest,
+  # so a repo that simply lacked one silently got no ssh config at all. Assert the link
+  # resolves INTO core/, not just that ~/.ssh/config exists: a leftover file from the
+  # pre-#450 layout would satisfy the weaker check while the vendored config went unused.
+  _lr_ssh_bad=""
+  _lr_is_link_to "$LR/home/.ssh/config" "$LR/dotfiles/core/ssh/config" || _lr_ssh_bad="$_lr_ssh_bad config"
+  # ssh REFUSES to use ~/.ssh when the perms are loose, and ControlMaster fails outright
+  # on a missing sockets dir — both are silent-at-link-time, loud-at-first-connect.
+  # config.d is the override chain Core's Include depends on; without it, the drop-in
+  # mechanism that replaces each repo's forked config has nowhere to put a file.
+  for _lr_sd in .ssh .ssh/sockets .ssh/config.d; do
+    [[ -d "$LR/home/$_lr_sd" ]] || { _lr_ssh_bad="$_lr_ssh_bad $_lr_sd(missing)"; continue; }
+    # 700 exactly — ssh rejects group/other access on ~/.ssh, and a 755 here is the
+    # failure mode that only shows up on a box with a real key in it.
+    [[ "$(_lr_mode "$LR/home/$_lr_sd")" == 700 ]] || _lr_ssh_bad="$_lr_ssh_bad $_lr_sd($(_lr_mode "$LR/home/$_lr_sd"))"
+  done
+  if [[ -z "$_lr_ssh_bad" ]]; then
+    pass "link run: ssh/config links out of core/, with ~/.ssh, sockets and config.d at 0700"
+  else
+    fail "link run: ssh wiring wrong —$_lr_ssh_bad"
+  fi
+  # The dropped chmod, pinned so it cannot creep back. blib_link_core used to run
+  # `chmod 600` on the SOURCE — reaching into the consumer repo's working tree to change
+  # a tracked file's mode, which post-#450 means Core chmod'ing its own vendored tree in
+  # nine repos. It was never needed: ssh only refuses a config that is group/world
+  # WRITABLE, and git checks out 0644. Assert the source keeps the mode git gave it.
+  if [[ "$(_lr_mode "$LR/dotfiles/core/ssh/config")" != 600 ]]; then
+    pass "link run: core/ssh/config keeps its checked-out mode (no chmod into the vendored tree)"
+  else
+    fail "link run: something chmod 600'd core/ssh/config — Core must not mutate the vendored tree"
   fi
   # The SEEDED files are the inverse contract: real copies, never symlinks, so a user's
   # identity/local edits are never tracked back into Core. A symlink here would publish
@@ -3091,6 +3214,71 @@ if have git; then
   fi
 else
   skip "bootstrap link run (git unavailable)"
+fi
+
+# ── F7b. new-os-repo.sh emits LINTABLE entry files (scripts/new-os-repo.sh) ──
+# Every OS repo this generator stamps inherits whatever it writes, so a defect here
+# ships to each new layer from birth and is only ever noticed downstream.
+#
+# #451: it emitted the three ZDOTDIR entry files EXTENSIONLESS — zsh/zshenv,
+# zsh/zprofile, zsh/zshrc — because their symlink destinations (~/.zshenv,
+# $ZDOTDIR/.zshrc, $ZDOTDIR/.zprofile) have no extension either. Core's reusable lint
+# gate selects repo-owned zsh with `git ls-files '*.zsh'`, so none of the three matched
+# and none was ever syntax-checked, in any repo, from the day the generator was added.
+#
+# ~/.zshenv is the file that makes this worth a fixture rather than a one-line fix: it
+# is sourced on EVERY zsh invocation including non-interactive ones, and it carries the
+# ZDOTDIR indirection, so a syntax error there breaks login shells outright rather than
+# degrading them. It was simultaneously the highest-blast-radius file in an OS repo and
+# the only one the gate could not see.
+#
+# Asserted here rather than trusted, because the pull toward renaming these back to
+# match their destinations is permanent — the filenames LOOK wrong until you know why.
+if have git && have zsh; then
+  hdr "new-os-repo.sh entry files (lintable by construction)"
+  NOR="$SANDBOX/newosrepo"
+  rm -rf "$NOR"
+  # --no-vendor: skip the `git subtree add`, which is the only network call in the
+  # script. Everything this asserts is written before/independently of it.
+  if bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$NOR" >/dev/null 2>&1; then
+    _nor_bad=""
+    for _nor_f in zshenv zprofile zshrc; do
+      [[ -f "$NOR/zsh/$_nor_f.zsh" ]] || _nor_bad="$_nor_bad zsh/$_nor_f.zsh(missing)"
+      # The extensionless name must NOT come back alongside it: a generator writing both
+      # would satisfy the check above while still shipping an unlinted file.
+      [[ -e "$NOR/zsh/$_nor_f" ]] && _nor_bad="$_nor_bad zsh/$_nor_f(extensionless)"
+    done
+    if [[ -z "$_nor_bad" ]]; then
+      pass "new-os-repo: the three ZDOTDIR entry files are written as *.zsh (lint-gate visible)"
+    else
+      fail "new-os-repo: entry-file naming wrong —$_nor_bad"
+    fi
+    # The rename is only behaviour-neutral if the generated bootstrap follows it. A repo
+    # with zshenv.zsh on disk and `link .../zsh/zshenv` in bootstrap.sh has no ~/.zshenv
+    # at all — no ZDOTDIR, so the loader is never reached and the shell starts bare.
+    if grep -q 'link "\$REPO/zsh/zshenv\.zsh" *"\$HOME/\.zshenv"' "$NOR/bootstrap.sh" &&
+      grep -q 'link "\$REPO/zsh/zprofile\.zsh" *"\$CFG/zsh/\.zprofile"' "$NOR/bootstrap.sh" &&
+      grep -q 'link "\$REPO/zsh/zshrc\.zsh" *"\$CFG/zsh/\.zshrc"' "$NOR/bootstrap.sh"; then
+      pass "new-os-repo: bootstrap.sh links the .zsh sources to the extensionless destinations"
+    else
+      fail "new-os-repo: bootstrap.sh link lines disagree with the scaffolded filenames"
+    fi
+    # And the gate can only help if what it reads actually parses. This is the check that
+    # never ran on these three files in any repo until #451.
+    _nor_syn=""
+    for _nor_f in "$NOR"/zsh/*.zsh; do
+      zsh -n "$_nor_f" 2>/dev/null || _nor_syn="$_nor_syn $(basename "$_nor_f")"
+    done
+    if [[ -z "$_nor_syn" ]]; then
+      pass "new-os-repo: every scaffolded entry file passes zsh -n"
+    else
+      fail "new-os-repo: scaffolded entry file(s) fail zsh -n —$_nor_syn"
+    fi
+  else
+    fail "new-os-repo: --no-vendor scaffold run failed outright"
+  fi
+else
+  skip "new-os-repo entry files (git or zsh unavailable)"
 fi
 
 # ── F8. blib_link displacement accounting (lib/bootstrap-lib.sh) ─────────────
@@ -3185,6 +3373,71 @@ if [[ "$_bl_sum" == *"2 relinked"* ]]; then
 else
   fail "blib_wire_summary: the footer omits the relink tally (got: $_bl_sum)"
 fi
+
+# ── F8a. blib_link_os_layer's ssh overlay (lib/bootstrap-lib.sh) ─────────────
+# The escape hatch #450 depends on, and the one overlay NO repo ships yet — so without a
+# fixture it is code that has never run anywhere. It is also what makes moving ssh/config
+# into Core safe to argue for: a layer with a genuinely OS-specific ssh need has somewhere
+# to put it other than a forked copy of the whole client config, which is how seven repos
+# ended up hand-maintaining byte-identical files.
+#
+# Two properties, and the second is the one that bites. blib_link honours BLIB_DRY on its
+# own, but the mkdir/chmod this overlay needs do NOT — they are plain commands, so a
+# --dry-run would create and chmod ~/.ssh/config.d on a box the operator was only
+# inspecting. That is the exact asymmetry F8b pins for the role layer (one repo's dry-run
+# mutated the box, the other's did not), caught here before it can happen again.
+#
+# No `have` guard: this needs only bash and the library, unlike F7 (git), so it runs
+# everywhere — including the minimal containers where the heavier fixtures skip.
+hdr "blib_link_os_layer ssh overlay (config.d drop-in, dry-run safe)"
+# Local rather than F7's _lr_mode: that one is defined inside `if have git`, so it does
+# not exist on a box without git, where this fixture still runs.
+_ol_mode() { # <path> — octal permission bits, GNU or BSD stat (the macOS CI leg)
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null
+}
+_ol_wire() { # run blib_link_os_layer against the fixture, honouring the caller's BLIB_DRY
+  HOME="$_ol/home" XDG_CONFIG_HOME="$_ol/config" bash -c '
+    set -u
+    . "'"$HERE/lib/bootstrap-lib.sh"'"
+    blib_link_os_layer "'"$_ol"'/repo" "'"$_ol"'/config" testos
+  ' >/dev/null 2>&1
+}
+_ol="$(mktemp -d "$SANDBOX/oslayer.XXXXXX")"
+mkdir -p "$_ol/home" "$_ol/config" "$_ol/repo/ssh"
+printf 'Host *\n  IdentityAgent ~/.1password/agent.sock\n' >"$_ol/repo/ssh/os.conf"
+
+# 1) --dry-run must touch NOTHING, not even the directory.
+BLIB_DRY=1 _ol_wire
+if [[ ! -e "$_ol/home/.ssh/config.d" ]]; then
+  pass "os layer: --dry-run creates no ~/.ssh/config.d and links nothing"
+else
+  fail "os layer: --dry-run created ~/.ssh/config.d — the mkdir/chmod escaped the BLIB_DRY guard"
+fi
+
+# 2) the real run links it at the numbered drop-in path, with ssh's required 0700.
+_ol_wire
+_ol_bad=""
+[[ -L "$_ol/home/.ssh/config.d/50-os.conf" ]] || _ol_bad="$_ol_bad link(missing)"
+[[ "$(readlink "$_ol/home/.ssh/config.d/50-os.conf" 2>/dev/null)" == "$_ol/repo/ssh/os.conf" ]] ||
+  _ol_bad="$_ol_bad link(wrong-target)"
+[[ "$(_ol_mode "$_ol/home/.ssh/config.d")" == 700 ]] || _ol_bad="$_ol_bad config.d(perms)"
+if [[ -z "$_ol_bad" ]]; then
+  pass "os layer: ssh/os.conf links to ~/.ssh/config.d/50-os.conf with the dir at 0700"
+else
+  fail "os layer: ssh overlay wiring wrong —$_ol_bad"
+fi
+
+# 3) a repo WITHOUT one is the normal case, not a gap — no repo ships ssh/os.conf today,
+#    so a version of this that linked unconditionally would break every one of them.
+rm -f "$_ol/repo/ssh/os.conf"
+rm -rf "$_ol/home/.ssh"
+_ol_wire
+if [[ ! -e "$_ol/home/.ssh/config.d/50-os.conf" ]]; then
+  pass "os layer: no ssh/os.conf is a silent no-op (the case every repo is in today)"
+else
+  fail "os layer: linked a 50-os.conf with no source file"
+fi
+
 
 # ── F8b. blib_link_role_layer (lib/bootstrap-lib.sh) ─────────────────────────
 # The Role band (85-94) had no Core wiring for years, so BOTH role repos hand-rolled it

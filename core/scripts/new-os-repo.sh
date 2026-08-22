@@ -125,19 +125,35 @@ else
 fi
 
 # ── entry layer (ZDOTDIR model): ~/.zshenv → ZDOTDIR; .zprofile/.zshrc in $ZDOTDIR ──
-w "$TARGET/zsh/zshenv" <<'EOF'
-# zsh/zshenv → ~/.zshenv. Point ZDOTDIR at ~/.config/zsh so the rest of the shell
+#
+# THE .zsh EXTENSION IS LOAD-BEARING (#451). Core's reusable lint gate syntax-checks
+# repo-owned zsh with `git ls-files '*.zsh'` (.github/workflows/lint-call.yml). Emitted
+# as plain `zshenv`/`zprofile`/`zshrc`, these three matched nothing and were the only
+# files in a generated repo that CI never checked — while ~/.zshenv in particular is
+# sourced on EVERY zsh invocation, including non-interactive ones, and carries the
+# ZDOTDIR indirection. A syntax error there does not degrade the shell, it breaks login
+# shells outright on every box running that layer. Highest blast radius in the repo, and
+# the one file the gate could not see. The symlink DESTINATION is ~/.zshenv regardless of
+# the source filename, so the extension costs nothing.
+w "$TARGET/zsh/zshenv.zsh" <<'EOF'
+# zsh/zshenv.zsh → ~/.zshenv. Point ZDOTDIR at ~/.config/zsh so the rest of the shell
 # config lives under XDG. Keep this file tiny — it runs for EVERY zsh (incl. scripts).
+#
+# Do NOT rename this to plain `zshenv` to match the symlink: the .zsh suffix is what
+# puts it in front of the lint gate's `git ls-files '*.zsh'` (#451).
 export ZDOTDIR="${XDG_CONFIG_HOME:-$HOME/.config}/zsh"
 EOF
 
-w "$TARGET/zsh/zprofile" <<'EOF'
-# zsh/zprofile → $ZDOTDIR/.zprofile. Login-shell setup (PATH, env). Interactive
+w "$TARGET/zsh/zprofile.zsh" <<'EOF'
+# zsh/zprofile.zsh → $ZDOTDIR/.zprofile. Login-shell setup (PATH, env). Interactive
 # config lives in .zshrc. Add OS login-time bits here.
+#
+# The .zsh suffix is load-bearing for the lint gate — see zshenv.zsh (#451).
 EOF
 
-w "$TARGET/zsh/zshrc" <<'EOF'
-# zsh/zshrc → $ZDOTDIR/.zshrc — interactive shell.
+w "$TARGET/zsh/zshrc.zsh" <<'EOF'
+# zsh/zshrc.zsh → $ZDOTDIR/.zshrc — interactive shell.
+# The .zsh suffix is load-bearing for the lint gate — see zshenv.zsh (#451).
 # Sources the vendored v4 Core loader, which globs the numbered fragments (Core NN-*.zsh
 # + this repo's 80-os.zsh + any 99-local.zsh) and sources them in NN order. v4 keeps
 # mutable state out of the config tree: history→$XDG_STATE_HOME, compdump→$XDG_CACHE_HOME,
@@ -193,9 +209,9 @@ link() { # link <src> <dest> — back up a real file once, then symlink
 # Core zsh modules + entry layer
 for f in "\$REPO"/core/zsh/*.zsh; do link "\$f" "\$CFG/zsh/\$(basename "\$f")"; done
 link "\$REPO/os/$os_lc.zsh" "\$CFG/zsh/80-os.zsh"
-link "\$REPO/zsh/zshenv"   "\$HOME/.zshenv"
-link "\$REPO/zsh/zprofile" "\$CFG/zsh/.zprofile"
-link "\$REPO/zsh/zshrc"    "\$CFG/zsh/.zshrc"
+link "\$REPO/zsh/zshenv.zsh"   "\$HOME/.zshenv"
+link "\$REPO/zsh/zprofile.zsh" "\$CFG/zsh/.zprofile"
+link "\$REPO/zsh/zshrc.zsh"    "\$CFG/zsh/.zshrc"
 # Core configs
 link "\$REPO/core/starship/starship.toml" "\$CFG/starship.toml"
 link "\$REPO/core/tmux/tmux.conf"         "\$CFG/tmux/tmux.conf"

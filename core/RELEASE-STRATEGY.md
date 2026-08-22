@@ -27,10 +27,10 @@ versioned thing (Core) vendored into thin per-OS consumers**:
   rather than trusting a number copied into prose). It is the single source of truth, vendored into each OS repo's
   `core/` via `git subtree`. A defect here fans out N-way, so Core is the thing
   that earns a version number, a tag, and a changelog.
-- **OS-native repos** (`dotfiles-{MacBook,Fedora,Arch,openSUSE,Alpine,Gentoo}`)
+- **OS-native repos** (`dotfiles-{MacBook,Fedora,Arch,Debian,openSUSE,Alpine,Gentoo}`)
   and **Role repos** (`dotfiles-Offense`, `dotfiles-Defense`) are **not**
   independently versioned. They are stamped with the Core they carry — the
-  generated `core.lock` records `core_version`, `core_sha`, and `core_branch` —
+  generated `core.lock` records `core_version`, `core_sha`, and `core_ref` —
   so "what Core does Alpine run?" is answerable offline without a release
   number of its own.
 - **`dotfiles-Windows`** is the exception: it vendors **no** `core/` subtree (so no
@@ -197,11 +197,12 @@ git subtree pull --prefix=core <core-remote> v<X.Y.Z> --squash
 
 **Do not hand-run that in practice.** A raw subtree pull updates `core/` but not
 `core.lock`, and `core-integrity.sh` compares the vendored tree against the commit the
-lock pins — so the freshly-synced repo reports `TAMPERED` until the lock is regenerated,
-and there is no per-repo target that regenerates it (`make core-lock` is absent in most
-consumers, and where it exists it only prints a redirect back to the fan-out).
-`sync-core.sh` commits both together, and `sync-fanout.yml` runs it for you on every
-release. The recipe above is here to show the *pinning model*, not as an operator step.
+lock pins — so the freshly-synced repo reports `TAMPERED` until the lock is regenerated.
+Nor should you reach for a per-repo `make core-lock`: three consumers carry an independent
+generator of a format Core owns, and all three have already drifted from it (see
+`VENDORING.md`). `sync-core.sh` is the only sanctioned writer; it commits both together,
+and `sync-fanout.yml` runs it for you on every release. The recipe above is here to show
+the *pinning model*, not as an operator step.
 
 Now "what Alpine runs" is a frozen, named version, and rolling one OS back is
 just pulling the previous tag there — it touches no other repo. `sync-core.sh`

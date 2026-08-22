@@ -147,8 +147,9 @@ blib_ok() { ok "$@"; }
 # checkout is behind. Falls back to the local branch SHA when offline. (The empty
 # assignment from a failed $() does NOT trip `set -e`, so the fallback runs.)
 # Resolve the revision with ONE network call: take the FULL SHA from ls-remote, then derive
-# the short form as its 12-char prefix (core.lock (B1) records the full hash so an OS repo's
-# verify-core can compare it exactly against the subtree-split marker, which is full).
+# the short form as its 12-char prefix (core.lock (B1) records the FULL hash because
+# core-integrity.sh resolves it to a tree object, and the subtree-split marker it can be
+# compared against is full too — a 12-char prefix would make both a string-prefix guess).
 CORE_SHA_FULL="$(git ls-remote "$CORE_REMOTE" "$CORE_BRANCH" 2>/dev/null | awk 'NR==1{print $1}')"
 [[ -n "$CORE_SHA_FULL" ]] || CORE_SHA_FULL="$(git -C "$HERE" rev-parse "$CORE_BRANCH" 2>/dev/null || echo unknown)"
 if [[ "$CORE_SHA_FULL" == unknown ]]; then CORE_SHA=unknown; else CORE_SHA="${CORE_SHA_FULL:0:12}"; fi
@@ -238,10 +239,10 @@ fi
 # script wrote the first two and left the third, so a fan-out into a pinned repo produced
 # a tree that VENDORED one Core and RAN another. Not cosmetic: auto-tag-call holds
 # `contents: write` and notify-web-call is handed two secrets, so the pins decide whose
-# privileged code executes. Both existing gates stay green through it — core-integrity
-# checks the tree object and verify-core the byte-for-byte split, and neither looks at a
-# workflow — so the drift was silent until dotfiles-MacBook's test/check-pins.sh caught it
-# on the v4.12.0 fan-out (#482).
+# privileged code executes. The existing gate stays green through it — core-integrity
+# compares a tree object and never looks at a workflow — so the drift was silent until
+# dotfiles-MacBook's test/check-pins.sh caught it on the v4.12.0 fan-out (#482). (This
+# comment used to credit a second gate, `verify-core`, which has never existed here; #454.)
 #
 # Only an EXISTING 40-hex pin is moved. A caller on the mutable `@v4` alias is left alone:
 # tracking the alias is a deliberate per-repo policy (7 of the 9 repos choose it, and the
@@ -324,6 +325,47 @@ _sync_pin_workflows() { # <repo-path> <full-sha> <tag> → prints how many files
 # wasn't even counted until the override above). These count REPOS, each landing in
 # exactly one bucket: failed if the repo printed any ✗ (dirty tree, pull or lock-commit
 # failure), else updated if its subtree pull ran, else skipped.
+# ── materialize core/ at a Core commit (replaces `git subtree pull --squash`) ──
+# WHY THIS IS NOT A MERGE ANY MORE (#587).
+#
+# `git subtree pull --squash` locates its base by grepping history for the
+# `git-subtree-split:` trailer of the previous sync commit. Every fleet repo squash-merges
+# its fan-out PR (RELEASE-STRATEGY.md), and a squash commit keeps the original body only
+# if GitHub happens to carry it over — so the trailer is destroyed intermittently. After
+# the v4.14.3 round SEVEN of nine repos had lost it.
+#
+# The consequence is not a missing marker, it is a WRONG BASE: subtree falls back to the
+# newest surviving trailer (v4.14.2's) and replays every change since onto a tree that
+# already contains v4.14.3, so core/CHANGELOG.md and core/core.version conflict in every
+# repo at once. That is exactly how the v4.15.0 fan-out failed 9 of 9.
+#
+# Merging was never the right operation. core/ is a pure vendored COPY — never edited
+# downstream (blib_install_core_guard rejects it, core-integrity.sh proves it byte-for-byte
+# against core.lock). The question a sync answers is "make core/ identical to Core@<sha>",
+# which has exactly one correct answer and no merge base. Materializing the tree cannot
+# conflict, needs no trailer, and is immune to whatever the merge policy does to commit
+# bodies. It also makes the sync self-healing: a repo whose core/ drifted for ANY reason
+# is corrected by the next run rather than conflicting against its own drift.
+#
+# `read-tree --prefix` is the same plumbing `git subtree add` uses to place a tree at a
+# path, so file modes (the exec bits audit-core.sh asserts) come straight from the tree
+# object rather than being reconstructed.
+_sync_materialize_core() { # <repo-path> <remote> <ref> → stages core/ at that commit
+  local path="$1" remote="$2" ref="$3"
+  # --no-tags: we want one commit, not the remote's tag namespace pulled into every
+  # OS repo (which is also how a stale local `v4` alias comes to block a later fetch).
+  git -C "$path" fetch -q --no-tags "$remote" "$ref" || return 1
+  # Clear the prefix from index AND worktree: read-tree --prefix refuses to write over
+  # existing index entries. --ignore-unmatch so a half-repaired repo (entries already
+  # gone, directory still present) is recoverable rather than fatal.
+  git -C "$path" rm -rq --ignore-unmatch -- core || return 1
+  # The rm above removes TRACKED files only. An untracked leftover under core/ would
+  # survive into the new tree and then read as drift to core-integrity, so clear the
+  # directory outright. `${path:?}` guards an empty path expanding this to `rm -rf /core`.
+  rm -rf -- "${path:?}/core"
+  git -C "$path" read-tree --prefix=core/ -u FETCH_HEAD || return 1
+}
+
 repos_updated=0 repos_skipped=0 repos_failed=0
 for repo in "${TARGETS[@]}"; do
   path="$(resolve_repo_dir "$REPOS_ROOT" "$repo")" || path="$REPOS_ROOT/$repo"
@@ -338,7 +380,7 @@ for repo in "${TARGETS[@]}"; do
     continue
   fi
   if ((DRY)); then
-    echo "would: git -C $path subtree pull --prefix=core $CORE_REMOTE $CORE_BRANCH --squash   (→ $CORE_SHA)"
+    echo "would: materialize $path/core at $CORE_REMOTE $CORE_BRANCH   (→ $CORE_SHA)"
     continue
   fi
   # bail if the OS repo has a dirty tree — subtree merges into a clean state only
@@ -354,13 +396,18 @@ for repo in "${TARGETS[@]}"; do
   # Snapshot the line-level FAIL counter: any err() emitted inside this repo's body
   # (pull failure, core.lock commit failure) flips the whole repo into the failed bucket.
   _repo_fail0=$FAIL
-  if git -C "$path" subtree pull --prefix=core "$CORE_REMOTE" "$CORE_BRANCH" --squash; then
-    ok "$repo core/ updated → $CORE_SHA"
+  # Unlike the subtree pull this replaces, materializing COMMITS NOTHING — it leaves the
+  # new tree staged so core.lock and the workflow pins land in the SAME commit below.
+  # One atomic commit per repo instead of two, and no window where core/ has moved but
+  # core.lock has not (the state core-integrity.sh reports as TAMPERED).
+  if _sync_materialize_core "$path" "$CORE_REMOTE" "$CORE_BRANCH"; then
+    ok "$repo core/ materialized → $CORE_SHA"
     # B1: stamp provenance so the OS repo can answer "which Core do I carry?" in O(1),
     # OFFLINE, without parsing `git log --grep` for the subtree-split marker (which needs
     # full history and breaks if the squash-commit format ever changes). Lives at the OS
-    # repo ROOT — outside core/, so a subtree pull never clobbers it. verify-core asserts
-    # this equals the actual split; fleet-drift.sh reads it as each repo's recorded Core.
+    # repo ROOT — outside core/, so a subtree pull never clobbers it. core-integrity.sh
+    # resolves core_sha to a tree and compares it with the vendored core/; fleet-drift.sh
+    # reads it as each repo's recorded Core.
     if [[ "$CORE_SHA_FULL" != unknown ]]; then
       {
         echo "# GENERATED by dotfiles-core sync-core.sh — vendored Core provenance (B1)."
@@ -369,7 +416,18 @@ for repo in "${TARGETS[@]}"; do
         echo "# this file, and core-integrity.sh then reports TAMPERED. See VENDORING.md."
         echo "core_version=$CORE_VERSION"
         echo "core_sha=$CORE_SHA_FULL"
-        echo "core_branch=$CORE_BRANCH"
+        # core_ref, NOT core_branch (#453). The field is written from $CORE_BRANCH, which
+        # is a branch name for a hand-run `make sync` but a PINNED COMMIT for a release
+        # fan-out — sync-fanout.yml sets CORE_BRANCH="$target_sha" deliberately, so each
+        # release PR vendors the exact released commit rather than a moving main. That
+        # pinning is correct and stays. What was wrong was persisting it into a field
+        # named, and documented in VENDORING.md, as a *branch*: the lock file disagreed
+        # with its own contract, and the value duplicated core_sha with nothing added.
+        #
+        # Named for what it actually holds, it earns its place: core_ref is the one field
+        # that says whether this repo was vendored by a release fan-out (a SHA) or by an
+        # ad-hoc sync off a branch (a name) — which core_sha alone cannot answer.
+        echo "core_ref=$CORE_BRANCH"
         # Only emit core_tag once Core actually carries a tag — keeps core.lock
         # byte-identical to the pre-tagging format until the first release, so the
         # idempotency check below still skips a no-op re-sync (no spurious commit).
@@ -402,8 +460,26 @@ for repo in "${TARGETS[@]}"; do
       if git -C "$path" diff --cached --quiet; then
         ok "$repo core.lock current → ${CORE_SHA_FULL:0:12} (v$CORE_VERSION)"
       else
-        _lockmsg="chore(core): core.lock → ${CORE_SHA} (v$CORE_VERSION)"
-        ((_pins)) && _lockmsg="chore(core): core.lock + ${_pins} workflow pin(s) → ${CORE_SHA} (v$CORE_VERSION)"
+        # Name what actually moved. Since materializing stages core/ alongside core.lock,
+        # "core.lock → sha" would understate a run that replaced the whole vendored tree —
+        # and `git log -- core/` is how a maintainer finds the sync that brought a file in.
+        if git -C "$path" diff --cached --quiet -- core; then
+          _lockmsg="chore(core): core.lock → ${CORE_SHA} (v$CORE_VERSION)"
+          ((_pins)) && _lockmsg="chore(core): core.lock + ${_pins} workflow pin(s) → ${CORE_SHA} (v$CORE_VERSION)"
+        else
+          _lockmsg="chore(core): sync Core → v$CORE_VERSION (${CORE_SHA})"
+          ((_pins)) && _lockmsg="chore(core): sync Core → v$CORE_VERSION (${CORE_SHA}) + ${_pins} workflow pin(s)"
+        fi
+        # Emit the subtree trailer even though NOTHING here depends on it any more.
+        # core.lock is the authoritative provenance (#587), and this sync no longer reads
+        # the trailer to find a base — but consumer tooling still uses it as a fallback
+        # (dotfiles-MacBook's verify-core warns when it disagrees with the lock), so an
+        # ACCURATE marker where one survives is strictly better than none. Informational,
+        # not load-bearing: a squash-merge may still eat it, and that is now harmless
+        # rather than the thing that breaks the next release.
+        _lockmsg="$_lockmsg
+git-subtree-dir: core
+git-subtree-split: ${CORE_SHA_FULL}"
         if git -C "$path" commit -q -m "$_lockmsg"; then
           ok "$repo core.lock committed → ${CORE_SHA_FULL:0:12} (v$CORE_VERSION)"
           ((_pins)) && ok "$repo repointed ${_pins} workflow file(s) at ${CORE_SHA_FULL:0:12}${CORE_TAG:+ ($CORE_TAG)}"
@@ -416,7 +492,7 @@ for repo in "${TARGETS[@]}"; do
     # subtree in this repo is rejected (this sync run itself is exempt via the env var above).
     blib_install_core_guard "$path" || true
   else
-    err "$repo subtree pull failed — resolve, then re-run"
+    err "$repo: could not materialize core/ at $CORE_SHA — resolve, then re-run"
   fi
   if ((FAIL > _repo_fail0)); then
     repos_failed=$((repos_failed + 1))

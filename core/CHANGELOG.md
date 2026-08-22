@@ -13,6 +13,217 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.15.1] - 2026-08-22
+
+### Fixed
+
+- **The fan-out no longer depends on a commit trailer that squash-merge destroys.** (#587)
+  `make sync` used `git subtree pull --squash`, which locates its base by grepping history
+  for the previous sync commit's `git-subtree-split:` trailer. Every fleet repo
+  squash-merges its fan-out PR, and a squash keeps the original body only if it happens to
+  be carried over — so the trailer died intermittently.
+
+  The damage was never a missing marker; it was a **wrong base**. Subtree silently fell
+  back to the newest _surviving_ trailer and replayed every change since onto a tree that
+  already contained them. Seven of nine repos lost the marker in the v4.14.3 round, and
+  the **v4.15.0 fan-out then failed in all nine at once**, conflicting on
+  `core/CHANGELOG.md` and `core/core.version` — the two files every release rewrites, so
+  the two guaranteed to overlap.
+
+  **Merging was the wrong operation to begin with.** `core/` is a pure vendored copy,
+  never edited downstream (`blib_install_core_guard` rejects it, `core-integrity.sh` proves
+  it byte-for-byte). "Make `core/` identical to Core@`core_sha`" has exactly one correct
+  answer and no merge base, so the sync now materializes the tree with `read-tree
+  --prefix` — the same plumbing `git subtree add` uses, so file modes come from the tree
+  object rather than being reconstructed. It cannot conflict, needs no trailer, and is
+  immune to whatever the merge policy does to commit bodies. It is also **self-healing**:
+  a `core/` that drifted for any reason is corrected by the next sync instead of
+  conflicting against its own drift.
+
+  Two consequences worth knowing. The sync is now **one atomic commit** per repo rather
+  than two — `core/`, `core.lock` and the workflow pins land together, closing the window
+  where `core/` had moved but `core.lock` had not (the state `core-integrity` reports as
+  TAMPERED). And the subtree trailer is still **emitted**, accurately, purely so consumer
+  tooling that reads it as a fallback keeps working; nothing depends on it any more, so a
+  squash eating it is now harmless rather than the thing that breaks the next release.
+
+  Pinned by a fixture that strips the trailer from every commit and then syncs to a newer
+  Core. It **fails** against the old `subtree pull` implementation and passes against this
+  one — the earlier draft of it did not, because a `subtree pull` round produced two
+  commits and amending `HEAD` rewrote the wrong one.
+
+## [v4.15.0] - 2026-08-22
+
+### Changed
+
+- **Core owns the ssh client config; seven OS repos stop each maintaining a copy.** (#450)
+  `blib_link_core` — Core's shared bootstrap library — read `$dotfiles/ssh/config`, the
+  **OS repo's root**: a hard dependency on a file Core neither shipped nor listed in
+  `core.manifest`, guarded by a `[[ -f ]]` that made "this repo forgot" and "this repo
+  opted out" the same silent outcome. Seven repos did provide one. Their `Host *` blocks
+  were **byte-identical** — connection multiplexing, keepalives, the KEX/cipher/MAC
+  allowlists, `StrictHostKeyChecking ask`, `ForwardAgent no`. The only functional
+  divergence in the entire fleet was one repo's per-service key names; everything else
+  that had drifted was comments. Nothing in the file is OS-, libc- or package-manager
+  specific, so by the "is it Core?" test it always belonged here.
+
+  It is now `core/ssh/config`, in the manifest, linked from `core/` like every other
+  file `blib_link_core` wires. Verified behaviour-neutral rather than assumed:
+  `ssh -G github.com` against the new file is **byte-identical** to the same query
+  against the config it replaces.
+
+  **Per-host variance gets a drop-in, not a fork.** The file `Include`s
+  `~/.ssh/config.d/*.conf` as its **first** directive, because ssh resolves each keyword
+  first-match-wins — placed at the bottom it would be silently inert. `blib_link_core`
+  creates that directory (0700), so a machine's per-service keys, work bastions or
+  1Password socket path live there, untracked, instead of forking the whole config.
+  A repo with a genuinely OS-specific need ships `ssh/os.conf`, which
+  `blib_link_os_layer` links to `~/.ssh/config.d/50-os.conf` — the same overlay shape as
+  `os/<os>.zsh` and `os/<os>.gitconfig`. One measured caveat is documented in the file:
+  `IdentityFile` **accumulates** rather than first-wins, so a drop-in's key is tried
+  first and Core's stays a fallback; `User` and `StrictHostKeyChecking` override outright.
+
+  **The `chmod 600` is gone, deliberately.** Core used to `chmod` the _source_ file —
+  reaching into the consumer repo's working tree to change a tracked file's mode, which
+  post-move would mean Core chmod'ing its own vendored tree in nine repos. It was never
+  needed: ssh refuses a config that is group- or world-**writable**, and git checks out
+  0644, which already satisfies that. The 0700 on `~/.ssh`, `~/.ssh/sockets` and
+  `~/.ssh/config.d` stays — ssh does require those. A test pins the absence so it cannot
+  creep back.
+
+  **For OS-repo maintainers:** delete your root `ssh/config` **only after** you have
+  vendored this Core (check `core.lock`) — reversed, the box has no ssh config at all.
+  `VENDORING.md` has the deletion order and the drop-in table.
+
+### Added
+
+- **The reusable lint gate finally lints markdown — all eight caller repos, no per-repo
+  workflow.** (#452) `lint-call.yml` had no markdown leg at all, so **no OS repo's markdown
+  was ever linted in CI**, even though every one of them ships a `.markdownlint.jsonc`.
+  Those configs were decoration; one says so in its own header. Core lints its own markdown
+  (`audit-core.sh` §7 plus a pre-commit hook), so this was a gap in the _reusable_ gate
+  specifically, not in Core's hygiene — and markdown is the file class `shellcheck` and
+  `zsh -n` never inspect, and the one a non-maintainer is most likely to read: each OS
+  repo's README is the public landing page for that layer.
+
+  Scoped like every other leg (`git ls-files '*.md' ':!:core/**'` plus the caller's own
+  `extra_ls_files_excludes`), and run from the caller's checkout so `markdownlint-cli2`
+  discovers **its** config rather than Core's — the two agree today, but the caller owns
+  its own rules. `markdownlint-cli2` is npm rather than a release asset, so it is installed
+  from the `MARKDOWNLINT_VERSION` pin exactly as `ci.yml` already does, instead of teaching
+  the SHA-256-verifying composite action a package manager it does not speak.
+
+  **ADVISORY this release, BLOCKING the next — measured, not guessed.** Run across the
+  fleet with each repo's own config and excludes before landing: Debian 0, Offense 0,
+  MacBook 1, Gentoo 16, Alpine 17, Fedora 18, openSUSE 20, Arch 26, Defense 52. Seven of
+  nine would have gone red the moment auto-tag moves `@v4`, before any maintainer could
+  act — callers pin a moving major tag. The backlog is smaller than 150 findings looks:
+  **130 are MD060** (table pipe alignment) and `markdownlint-cli2 --fix` clears most of it
+  (17 → 5 on the worst single file). Core's own 33 markdown files are already clean under
+  the same rules, so this is caller drift, not an unreasonable house style.
+
+  One deliberate difference from the shfmt leg it borrows its non-blocking shape from: a
+  **missing linter hard-fails**. The `if <tool>; then … else warn; fi` idiom cannot tell
+  exit 127 from exit 1, so a broken install would report as an ordinary advisory warning
+  and the leg would look like it had run for the whole release cycle. An advisory gate that
+  silently never runs is worse than no gate, because it reads as coverage.
+
+### Fixed
+
+- **`core.lock` records `core_ref`, a field that means what it is named.** (#453)
+  `sync-core.sh` wrote `core_branch=$CORE_BRANCH`, and `sync-fanout.yml` deliberately sets
+  `CORE_BRANCH="$target_sha"` so each release PR vendors the exact released commit rather
+  than a moving `main`. That pinning is correct and stays — the defect was persisting it
+  into a field named, and documented in `VENDORING.md`, as a _branch_. Every OS repo's lock
+  file therefore carried `core_branch` identical to `core_sha`: a file disagreeing with its
+  own contract, in the fleet's provenance record, with a field that added no information.
+
+  Named for what it holds, it earns its place. `core_sha` says _which commit_; `core_ref`
+  says _how it was chosen_ — a pinned commit for a release fan-out, a branch name for an
+  ad-hoc `make sync`. Each repo picks the new field up on its next sync. Two fixtures pin
+  it: the branch case, and the pinned-SHA case that was the actual bug — plus an assertion
+  that the old name is _gone_, since emitting both would satisfy the new check while
+  leaving the contradiction in every lock file.
+
+  **One consumer had to be fixed first, and this entry originally said there were none.**
+  The rename shipped on the claim that nothing read `core_branch` — which was verified
+  inside this repo only, where it is true (`fleet-drift.sh` and `core-integrity.sh` read
+  `core_sha`). `dotfiles-Offense` reads it, and is the only fleet member that does: it
+  vendors Core on its own schedule via `scripts/sync-core.sh` rather than waiting for the
+  fan-out. Unfixed, that script would have **died** on the renamed lock, and its
+  `check-core-freshness.sh` would have done something worse than dying — fallen back to
+  `main` and compared the vendored tree against main's tip while reporting success,
+  watching nothing, in the state that repo is in most of the time.
+
+  Fixed in dotgibson/dotfiles-Offense#233 **before** this release could reach it: both
+  now prefer `core_ref` and fall back to `core_branch`, so locks of either vintage work
+  and the rollout order cannot bite. Recorded here rather than quietly corrected, because
+  "nothing reads this field" is exactly the kind of claim a fleet-wide rename rests on,
+  and the check that produced it was scoped to one repo.
+
+- **The three zsh entry files a new OS repo is stamped with are now lintable.** (#451)
+  `scripts/new-os-repo.sh` emitted `zsh/zshenv`, `zsh/zprofile` and `zsh/zshrc`
+  **extensionless** — mirroring their symlink destinations (`~/.zshenv`,
+  `$ZDOTDIR/.zprofile`, `$ZDOTDIR/.zshrc`), which have no extension either. The reusable
+  lint gate selects repo-owned zsh with `git ls-files '*.zsh'`, so none of the three ever
+  matched, and none was syntax-checked in any repo, from the day the generator was added.
+
+  `~/.zshenv` is what makes that worth more than a rename: it is sourced on **every** zsh
+  invocation, non-interactive ones included, and it carries the ZDOTDIR indirection — so a
+  syntax error there does not degrade the shell, it breaks login shells outright on every
+  box running that layer. Simultaneously the highest-blast-radius file in an OS repo and
+  the only one the gate could not see.
+
+  The generator now writes `*.zsh` and links them to the same unchanged destinations, so
+  the fix is behaviour-neutral. **`lint-call.yml`'s two zsh legs additionally select the
+  three bare names by hand**, which covers the copies already written — `dotfiles-MacBook`
+  hand-wrote all three — without requiring a rename in each repo. Verified no repo goes
+  red on arrival: MacBook's three parse today, and the change takes it from 1 linted zsh
+  file to 4. A pathspec that matches nothing is inert, so it is a no-op elsewhere.
+
+  A new `test-core.sh` fixture pins all of it — the `.zsh` names, the absence of the bare
+  ones, agreement between the scaffolded filenames and the generated `bootstrap.sh` link
+  lines, and `zsh -n` over the result. Confirmed to fail when the defect is reintroduced.
+
+### Documentation
+
+- **`verify-core` is no longer named as a gate that runs, because it has never existed.**
+  (#454) The name was cited across the docs and code comments as the byte-for-byte
+  split-vs-upstream check backing several claims — `VENDORING.md`'s gate table listed it
+  against two of the three Core references, `core.manifest` credited it as the reason a
+  section needed no other backstop, and three comments in `sync-core.sh` plus one each in
+  `sync-fanout.yml` and `test-core.sh` described it running alongside `core-integrity`.
+  `ls scripts/verify-core.sh` has never found anything. Every surviving mention now says
+  so explicitly; `core-integrity.sh` — which resolves `core.lock`'s `core_sha` to a tree
+  and compares it with the vendored `core/` — is named where a real gate belongs. The
+  load-bearing half of this was already fixed: `nvim/`'s directory-granular manifest entry
+  cited the phantom as its orphan backstop, and `scripts/nvim-reachability.sh` (audit §4b)
+  is the real one.
+
+- **The docs' claim about per-repo `make core-lock` targets was false, and the truth
+  matters more after #453.** They said the target is "absent in most consumers, and where
+  it exists it only prints a redirect back to the fan-out". Four consumers have one, and
+  only `dotfiles-Offense`'s is a redirect: `dotfiles-Arch`, `dotfiles-MacBook` and
+  `dotfiles-openSUSE` each carry an **independent generator of a format Core owns** — and
+  they have already drifted from it and from each other. Arch hardcodes `core_branch=main`,
+  so regenerating a release-pinned lock silently discards which commit was vendored;
+  openSUSE writes the SHA into that field; MacBook reads the previous value back. None
+  knows about the `core_ref` rename, so running one now emits a lock the fleet's own docs
+  and tooling disagree with. `VENDORING.md` and `RELEASE-STRATEGY.md` now say this plainly
+  and name `sync-core.sh` as the only sanctioned writer. The three local generators are a
+  fleet-side fix, not a Core one — filed separately.
+
+- **`RELEASE-STRATEGY.md` listed six OS-native repos, not seven — `dotfiles-Debian` was
+  missing.** The bullet is about repos that carry no version of their own and are stamped
+  instead by the `core.lock` this repo generates for them. `dotfiles-Debian` vendors `core/`
+  and has a `core.lock` like the rest, so the document that defines the fan-out understated
+  it by one repo. `dotfiles-Windows` stays out of that list deliberately, and correctly: the
+  next bullet names it as the exception with no `core/` subtree, no `core.lock`, and a
+  `vX.Y.Z` of its own. Part of one drift with several faces — the same list had lost
+  `dotfiles-Debian` in six OS repos' READMEs, and `dotfiles-Debian`'s own README had lost
+  `dotfiles-Fedora` in its place. `CLAUDE.md` had it right throughout and is the copy the
+  rest were corrected against.
+
 ## [v4.14.3] - 2026-08-21
 
 ### Fixed

@@ -41,8 +41,10 @@ zsh/60-update.zsh      # `up` updater + once/day "updates available" nudge
 # autoloaded completions for Core's own verbs — fpath-added by 10-options.zsh, not symlinked.
 # Listed PER-FILE (not as `zsh/completions/`) so the offline audit catches an ADDED or
 # REMOVED completion, not just a deleted directory (B10): a new Core verb must register its
-# completion here deliberately, and an orphaned one is flagged without needing the
-# network-bound verify-core backstop. Keep alphabetical.
+# completion here deliberately, and an orphaned one is flagged OFFLINE, by the manifest
+# itself, rather than depending on any separate backstop. (This named a `verify-core`
+# until #454 — a script that has never existed here. Per-file listing needs no such
+# thing, which is the argument for it.) Keep alphabetical.
 zsh/completions/_cdup
 zsh/completions/_core
 zsh/completions/_core-doctor
@@ -112,6 +114,11 @@ mise/config.toml
 # ── sesh — portable session-manager config (SEEDED to ~/.config/sesh/sesh.toml;
 #    copied, not symlinked — engagement layouts live in dotfiles-Offense) ──────────
 sesh/sesh.toml.example
+# ── ssh — portable client config; symlinked to ~/.ssh/config. Host-local and
+#    OS-specific bits go to ~/.ssh/config.d/ drop-ins (ssh/os.conf -> 50-os.conf),
+#    which the file Includes FIRST so they win ssh's first-match-wins resolution.
+#    Lived in seven OS repos with byte-identical `Host *` blocks until #450. ──────
+ssh/config
 # ── tmux — base conf + keybinding layer; OS-specific bits -> os/<os>.conf ──────
 tmux/tmux.conf            # main config; sources tmux.reset.conf first, then os.conf,
                           # then role.conf (the Role layer's tmux bits) last
@@ -148,4 +155,4 @@ vim/vimrc
 # never existed in this repo — so from the day nvim/ went directory-granular until §4b
 # was added, the "backstop instead of the manifest" was nothing at all (#454).
 nvim/
-# ── Core layers: zsh + clip + mise + sesh + tmux + maint + git + nvim. ────────
+# ── Core layers: zsh + clip + mise + sesh + ssh + tmux + maint + git + nvim. ──
