@@ -256,8 +256,10 @@ fi
 # v4.12.0-5-gabc1234 off a tag) precisely so the two agree by construction.
 #
 # Portable-sed shape: write to a temp and mv, never `sed -i` (BSD wants an arg, GNU does
-# not). Idempotent by construction — an unchanged file is cmp-identical and left alone, so
-# a re-sync of the same Core stages nothing.
+# not). Idempotent by construction — an unchanged file hashes identically and is left
+# alone, so a re-sync of the same Core stages nothing. That check is core_files_identical
+# rather than `cmp -s`: cmp needs diffutils, and a missing cmp read as "differs" and
+# counted every file as changed (#572).
 _sync_pin_workflows() { # <repo-path> <full-sha> <tag> → prints how many files it changed
   local path="$1" sha="$2" tag="$3" f tmp changed=0 rc=0
   [[ -d "$path/.github/workflows" ]] || { printf 0; return 0; }
@@ -301,7 +303,7 @@ _sync_pin_workflows() { # <repo-path> <full-sha> <tag> → prints how many files
         continue
       fi
     fi
-    if cmp -s "$f" "$tmp"; then
+    if core_files_identical "$f" "$tmp"; then
       rm -f "$tmp"
     elif mv "$tmp" "$f"; then
       changed=$((changed + 1))

@@ -544,3 +544,33 @@ resolve_repo_dir() { # resolve_repo_dir <root> <repo-name> — echo the clone pa
   done
   return 1
 }
+
+# ── byte-identical file comparison, without diffutils ──────────────────────────
+# `cmp -s A B` was the obvious way to ask "did that rewrite change anything", and it is
+# how sync-core.sh and update-nvim-plugins.sh both asked it. cmp ships in **diffutils**,
+# which is not guaranteed present: a Tumbleweed box in this fleet had none installed, so
+# neither `cmp` nor `diff` existed at all.
+#
+# A missing cmp does not fail usefully. `command not found` is a non-zero exit, and that
+# is indistinguishable from "the files differ" — so both callers silently took their
+# differ-branch for every file, in opposite directions:
+#   - sync-core.sh counted every candidate workflow as repointed, writing inflated counts
+#     into nine repos' commit messages while committing no workflow change at all (#572);
+#   - update-nvim-plugins.sh reported drift that did not exist, which under --check is
+#     exit 2 — the freshness gate going red on a lockfile that never moved.
+# One failing open and the other failing closed off the same missing binary is the tell
+# that the comparison, not either caller, was the wrong shape.
+#
+# git hash-object rather than a `command -v cmp` preflight: it removes the dependency
+# instead of detecting it. It is byte-exact (SHA-1 over the blob — no newline
+# normalisation, no text/binary heuristic), it needs no repository (verified: it hashes
+# fine with cwd outside any work tree), and git is the one tool every script here already
+# cannot run without. `sha256sum` was the other candidate and is wrong for this fleet:
+# macOS ships `shasum`, not `sha256sum`, and these scripts run on the MacBook too.
+#
+# A missing operand counts as "differs" so a caller that lost its temp file rewrites
+# rather than silently skipping — the safe direction for every caller here.
+core_files_identical() { # core_files_identical <a> <b> — 0 iff byte-identical
+  [[ -f "$1" && -f "$2" ]] || return 1
+  [[ "$(git hash-object -- "$1")" == "$(git hash-object -- "$2")" ]]
+}
