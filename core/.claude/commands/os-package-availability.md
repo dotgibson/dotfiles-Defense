@@ -115,7 +115,8 @@ the list still resolve upstream*.
 
 ## How to report
 
-Group by severity, cite `file:line` on both sides, and give the exact one-line fix
+Group by severity, cite `file:line` **and an anchor string** on both sides (see
+"Quote an anchor, not just a number" below), and give the exact one-line fix
 (old name → new name; add / remove; matrix footnote to correct). For any claim
 about `PORTING-MATRIX.md`, put the evidence in the report: quote the full matrix
 row (or the footnote's current text) alongside the `file:line`, so a reader can
@@ -148,6 +149,30 @@ is `duf`, and `gnu-sed` at `:64` when `:64` is `visidata` — both names were co
 both resolved, so the verdict stood, but the citations pointed at the wrong entries. A
 green run whose line numbers are wrong teaches the next reader to distrust the ones that
 are right, which costs the audit the thing it is for.
+
+**Quote an anchor, not just a number.** The rule above makes a citation correct *when you
+write it*. This one keeps it usable *when someone acts on it*, which is a different problem
+and is not solved by being careful. These reports are filed as issues and sit open for days
+or weeks; the files they point into keep moving in the meantime, and a line number is the
+part of a citation with no redundancy — when it rots there is nothing to detect the rot
+with. So for every `file:line`, also quote the **literal text of the line** (or a short,
+unique fragment of it), and say that the text is what to search for:
+
+> `PORTING-MATRIX.md:577` — `` - **Arch `extra`, openSUSE Tumbleweed, Homebrew, nixpkgs** — 2.5.1, current. ``
+>
+> Locate by the quoted text; the line number is a hint, not the address.
+
+This has already shipped, in the run that prompted the rule: the 2026-08-23 macbook report
+cited the watchexec version stamp at `PORTING-MATRIX.md:552`. It was `:552` when written and
+`:577` by the time it was fixed — `dotfiles-core` had gone v4.14.0 → v4.15.1 in between, and
+that footnote had itself been rewritten. Nothing was wrong with the report; the file simply
+moved out from under it. The anchor text, meanwhile, was still an exact match, so a reader
+with the quote in hand finds the line in one `grep` no matter how far it has drifted.
+
+The same applies to a fix you are asked to make from an *older* report: locate the target by
+the quoted anchor and re-read it before editing, rather than trusting the number. If the
+anchor no longer matches anything, that is real information — the line has been edited or
+removed, and the finding needs re-checking rather than applying.
 
 Report-first. Fixes to a package list land in the **OS repo**
 (`install/packages.txt` / `Brewfile`); fixes to the matrix land in **dotfiles-core**

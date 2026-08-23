@@ -117,6 +117,29 @@ EOF
   shift
 done
 
+# ── STOP CORE_JSON AT THIS PROCESS BOUNDARY (#511/#524/#508) ──────────────────
+# CORE_JSON=1 means "stdout carries only the JSON object", and common.sh's skip() honours
+# it by printing nothing. That is right for THIS script and wrong for every child it runs.
+#
+# The fixtures below execute real gate scripts — fleet-drift.sh, sync-core.sh, auto-tag.sh,
+# tag-release.sh — and assert on their human-readable output, skip() lines included. An
+# INHERITED CORE_JSON silences exactly those lines, so an assertion fails for a reason that
+# has nothing to do with the code under test: `test-core.sh --scope none --json` reported a
+# failing result on a tree the identical non-JSON run passed clean, three separate times
+# (#508 tag-release, #524 sync-core, #511 fleet-drift). Each was fixed where it hurt, and
+# the next fixture inherited the trap again — because the default was wrong.
+#
+# `export -n` fixes the DEFAULT rather than the symptom: the value stays readable in this
+# shell, so our own skip() is still quiet and the JSON object is still clean, but no child
+# inherits it. It handles both routes in: our own --json above, and audit-core.sh --json,
+# which puts CORE_JSON in our environment before we start.
+#
+# The explicit `env -u CORE_JSON` at each fixture invocation is kept as well. It is not
+# redundant: it documents the hazard at the call site, and it keeps each fixture correct if
+# it is ever lifted out of this file. The two insulation gates (sync-core, fleet-drift)
+# export CORE_JSON inside a subshell precisely to prove those pins still work.
+export -n CORE_JSON 2>/dev/null || true
+
 # Wall-clock for the standalone summary (mirrors audit-core.sh) — the headless nvim
 # leg can take a few seconds, so showing elapsed reads as progress, not a hang.
 SECONDS=0
@@ -151,7 +174,18 @@ summary() {
 # created BEFORE the zsh gate because Section C (clipboard) is pure bash and must run
 # even where zsh is absent — bin/clip's whole reason to exist is bare-box portability.
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/core-test.XXXXXX")"
-trap 'rm -rf "$SANDBOX"' EXIT
+# ONE handler, because `trap … EXIT` REPLACES rather than appends — a second one installed
+# further down this file would silently take the sandbox cleanup with it, leaving a
+# core-test.XXXXXX per run under /tmp for nobody to notice. Anything else needing to run at
+# exit hangs off this function. The `declare -F` guard is for the early exits above (--help,
+# a bad argument): those leave before the later definitions exist, and an EXIT handler that
+# calls a not-yet-defined function turns a clean `exit 0` into a command-not-found on stderr.
+_core_test_cleanup() {
+  rm -rf "$SANDBOX"
+  declare -F _d_drop_lock >/dev/null && _d_drop_lock
+  return 0
+}
+trap '_core_test_cleanup' EXIT
 
 # ── C. clipboard detection ladder (bin/clip / bin/clip-paste) ─────────────────
 # bin/clip is the single highest-fan-out runtime artifact in Core — used by zsh
@@ -590,6 +624,165 @@ LUA
   fi
 else
   skip "nvim config load (nvim not installed — runs in CI)"
+fi
+
+# ── D1b. lazy.nvim's lockfile lives in STATE, not the vendored tree ───────────
+# THE regression net for #465. nvim/lazy-lock.json is tracked inside core/, the one tree a
+# consumer must keep byte-for-byte upstream — and lazy.nvim REWRITES its lockfile in place
+# whenever plugins are installed or updated, while an OS repo bootstrap-symlinks
+# ~/.config/nvim into that very tree. Opening the editor ONCE was enough to dirty it: a
+# fresh openSUSE box repinned 10 plugins, a fresh Gentoo box 2, with nobody running
+# :Lazy update. Consumers' vendoring gates (`make check-core`, a no-core-edits pre-commit
+# hook, core-integrity at PR time) then failed closed on it — correctly, but against the
+# operator, since the writer was lazy.nvim rather than a person. A pre-push gate that a
+# routine editor session turns red is a gate people learn to ignore.
+#
+# So the contract is now: lazy writes $XDG_STATE_HOME/nvim/lazy-lock.json, and
+# nvim/lazy-lock.json is a read-only fleet SEED copied in on first run. Both halves need
+# pinning — the seed alone would not stop the drift, and the relocation alone would lose
+# reproducibility on a fresh machine.
+#
+# HERMETIC, because the real thing needs the network: a STUB lazy.nvim is planted where
+# lazy would be cloned (so config/lazy.lua's bootstrap finds it and skips the git clone),
+# and its setup() records the opts instead of installing anything. That lets the actual
+# nvim/lua/gerrrt/config/lazy.lua run start to finish — seeding included — with no plugin
+# ever fetched. Asserting the recorded `lockfile` opt is what makes this a real gate rather
+# than a grep: it is the value lazy would actually use.
+hdr "lazy.nvim lockfile is state, not the vendored config tree (#465)"
+if have nvim; then
+  _lz="$(mktemp -d "$SANDBOX/lazylock.XXXXXX")"
+  mkdir -p "$_lz/config" "$_lz/state" "$_lz/data" "$_lz/cache"
+  # NORMALISE BOTH SIDES before comparing paths, because the two platforms disagree about
+  # which form nvim reports. On macOS $TMPDIR is /var/folders/…, and /var is a symlink to
+  # /private/var, and stdpath() came back RESOLVED — so comparing against the literal $_lz
+  # false-reds there. Resolving only the expected side then false-reds on Linux, where the
+  # same call came back LITERAL. Neither form is "the" answer, so resolve both and compare
+  # resolved-to-resolved; the assertion is about WHICH DIRECTORY the lockfile is in, not
+  # about which spelling of that directory nvim happened to hand back.
+  _lz_real="$(cd "$_lz" && pwd -P)"
+  _core_nvim_real="$(cd "$HERE/nvim" && pwd -P)"
+  _lz_resolve() { # <path> — absolute, symlink-resolved; EMPTY unless the input is itself
+    # an absolute path with an existing parent. The absolute-input guard is load-bearing:
+    # without it, an UNSET opt arrives here as the literal "nil", `dirname nil` is ".", and
+    # the result is a perfectly plausible $PWD/nil — so the "is an absolute path outside the
+    # tree" assertion passes vacuously on exactly the pre-fix code it exists to catch.
+    local d b
+    [[ "$1" == /* ]] || return 0
+    d="$(dirname "$1")" b="$(basename "$1")"
+    [[ -d "$d" ]] || return 0
+    printf '%s/%s' "$(cd "$d" && pwd -P)" "$b"
+  }
+  ln -s "$HERE/nvim" "$_lz/config/nvim"
+  # The stub, at the exact path config/lazy.lua bootstraps into — so `fs_stat(lazypath)`
+  # is true, no clone is attempted, and `require("lazy")` resolves here.
+  mkdir -p "$_lz/data/nvim/lazy/lazy.nvim/lua/lazy"
+  cat >"$_lz/data/nvim/lazy/lazy.nvim/lua/lazy/init.lua" <<'LZSTUB'
+-- test stub: record what the real config asked for, install nothing.
+local M = {}
+function M.setup(opts)
+  local f = assert(io.open(vim.env.CORE_LZ_OUT, "w"))
+  f:write(tostring(opts.lockfile) .. "\n")
+  f:close()
+end
+return M
+LZSTUB
+  _lz_out="$_lz/opts.txt"
+  _lz_err="$_lz/nvim.err"
+  # SNAPSHOT the vendored seed before the run, so assertion 3 below can ask the question it
+  # actually means — "did THIS RUN write through into the vendored tree?" — against content
+  # rather than against git's view of the maintainer's worktree. See the note there.
+  _lz_seed_before="$_lz/seed-before.json"
+  cp "$HERE/nvim/lazy-lock.json" "$_lz_seed_before"
+  # -u the repo's REAL init.lua (via the symlinked config dir), not a probe: the seeding
+  # runs at config load, so a probe that skipped it would test nothing.
+  if HOME="$_lz" XDG_CONFIG_HOME="$_lz/config" XDG_STATE_HOME="$_lz/state" \
+    XDG_DATA_HOME="$_lz/data" XDG_CACHE_HOME="$_lz/cache" \
+    DOTFILES_OFFLINE=1 CORE_LZ_OUT="$_lz_out" \
+    nvim --headless -i NONE -n +qa </dev/null >/dev/null 2>"$_lz_err"; then
+    _lz_lock="$(head -n1 "$_lz_out" 2>/dev/null || true)"
+    _lz_lock_real="$(_lz_resolve "$_lz_lock")"
+
+    # 1) THE FIX. The path lazy was handed must be under XDG_STATE_HOME and must NOT be
+    #    inside the config tree — that tree is the vendored one, and anything lazy writes
+    #    there is drift a consumer's integrity gate will reject.
+    if [[ "$_lz_lock_real" == "$_lz_real/state/nvim/lazy-lock.json" ]]; then
+      pass "lazy lockfile resolves to \$XDG_STATE_HOME/nvim/lazy-lock.json"
+    else
+      fail "lazy lockfile is '$_lz_lock' — it must not live in the vendored config tree"
+    fi
+    # Stated as a POSITIVE requirement, not just "not inside the tree": an unset opt is
+    # also not inside the tree, so the negative form alone passes vacuously on exactly the
+    # pre-fix code this exists to catch. Require a real absolute path that is neither the
+    # seed nor anywhere under the symlinked config dir.
+    # The config dir is a SYMLINK into the repo, so "inside the config tree" resolves to
+    # the repo nvim/ dir — check against that, which catches both spellings at once.
+    if [[ "$_lz_lock_real" == /* && "$_lz_lock_real" != "$_core_nvim_real/"* ]]; then
+      pass "lazy lockfile is an absolute path outside the symlinked config tree and is not the seed"
+    else
+      fail "lazy lockfile '$_lz_lock' is unset, is the seed, or is inside the vendored tree"
+    fi
+
+    # 2) REPRODUCIBILITY. A first run must start from the fleet's committed pins rather
+    #    than resolving every plugin's default branch afresh — that is the entire reason
+    #    Core ships a lockfile at all, and the half a bare relocation would have lost.
+    # core_files_identical, not `cmp` — diffutils is not guaranteed present and this
+    # repo has been bitten by assuming it (#572); the helper hashes with git instead.
+    if [[ -f "$_lz/state/nvim/lazy-lock.json" ]] &&
+      core_files_identical "$_lz/state/nvim/lazy-lock.json" "$HERE/nvim/lazy-lock.json"; then
+      pass "first run seeds the state lockfile from Core's vendored pins (reproducible)"
+    else
+      fail "first run did not seed \$XDG_STATE_HOME/nvim/lazy-lock.json from the Core seed"
+    fi
+
+    # 3) The seed and the working copy must be DIFFERENT FILES, not the same inode reached
+    #    two ways. Copying rather than symlinking is the whole mechanism: a symlink from
+    #    state back into the config tree would satisfy every path assertion above and still
+    #    let lazy write straight through into the vendored tree — the original bug wearing
+    #    a state-directory costume.
+    if [[ ! -L "$_lz/state/nvim/lazy-lock.json" ]]; then
+      pass "the state lockfile is an independent copy, not a link back into the vendored tree"
+    else
+      fail "the state lockfile links back into the vendored tree"
+    fi
+
+    # 3b) The run must leave the vendored seed BYTE-IDENTICAL.
+    #
+    #    WHAT THIS DOES NOT CATCH, stated first so nobody reads it as more than it is: the
+    #    #465 bug itself. lazy is stubbed here, so nothing plays the part of lazy REWRITING
+    #    its lockfile, and "the vendored file is untouched" would pass on the pre-fix code
+    #    too. Assertions 1 and 2 are what pin #465, by testing the CONFIGURED destination.
+    #
+    #    WHAT IT DOES CATCH: config/lazy.lua's own SEEDING, which — unlike lazy — really does
+    #    run here, against a config dir symlinked at the vendored tree. `seed` there resolves
+    #    to $HERE/nvim/lazy-lock.json, so an inverted fs_copyfile(lockfile, seed), an
+    #    fs_symlink, or anything else that writes the seed instead of reading it would
+    #    corrupt the fleet's pins from a plain editor start. That is a live path, and it is
+    #    worth a gate.
+    #
+    #    WHY CONTENT AND NOT `git status --porcelain nvim/lazy-lock.json`, which this
+    #    replaces: that asked git whether the WORKTREE was dirty, which is a different
+    #    question and answers this one wrongly in both directions.
+    #      · False RED, the one that bit: a maintainer running ./scripts/update-nvim-plugins.sh
+    #        — the sanctioned way to move these pins — has an uncommitted seed by design, so
+    #        `make audit` failed before they could commit. A gate that fires on the workflow
+    #        it is meant to protect is one people learn to route around, which is the same
+    #        lesson the #465 comment above already records about consumer vendoring gates.
+    #      · False GREEN: outside a git checkout (a release tarball, a vendored copy) the
+    #        `git rev-parse --show-toplevel` guard short-circuited the whole clause to true,
+    #        so the assertion silently stopped asserting.
+    #    Comparing a pre-run snapshot to the post-run file has neither failure mode and needs
+    #    no repo. core_files_identical, not `cmp` — diffutils is not guaranteed present (#572).
+    if core_files_identical "$_lz_seed_before" "$HERE/nvim/lazy-lock.json"; then
+      pass "the run left the vendored seed byte-identical (no write-through)"
+    else
+      fail "the run MODIFIED $HERE/nvim/lazy-lock.json — config/lazy.lua wrote through into the vendored tree"
+    fi
+  else
+    fail "nvim failed to load the real config with a stubbed lazy.nvim:"
+    [[ -s "$_lz_err" ]] && sed 's/^/    /' "$_lz_err" >&2
+  fi
+else
+  skip "lazy lockfile location (nvim not installed — runs in CI)"
 fi
 
 # ── D2. Neovim event-driven autocmd callbacks (nvim/, headless) ───────────────
@@ -1844,7 +2037,7 @@ if have git; then
   }
   _at_would() { # [bump] → echoes the tag it WOULD cut (dry-run), or noop / err
     local out
-    out="$("$AT" "$ATR" ${1:+--bump "$1"} --color never 2>&1)" || {
+    out="$(env -u CORE_JSON "$AT" "$ATR" ${1:+--bump "$1"} --color never 2>&1)" || {
       echo err
       return 0
     }
@@ -1959,7 +2152,7 @@ if have git; then
   git -C "$GRNR" commit -q --allow-empty -m "totally unconventional line" # must be dropped
   git -C "$GRNR" commit -q --allow-empty -m "fixing a flaky test"         # prose, no delimiter → dropped
   git -C "$GRNR" commit -q --allow-empty -m "refactor:"                   # no description → dropped
-  _grn_out="$("$GRN" "$GRNR" v1.0.0 HEAD 2>/dev/null)"
+  _grn_out="$(env -u CORE_JSON "$GRN" "$GRNR" v1.0.0 HEAD 2>/dev/null)"
 
   if grep -q '^### Features$' <<<"$_grn_out" && grep -q '^### Bug Fixes$' <<<"$_grn_out"; then
     pass "gen-notes: groups feat + fix under cliff.toml headings"
@@ -2006,7 +2199,7 @@ if have git; then
 
   git -C "$GRNR" tag v1.1.0
   git -C "$GRNR" commit -q --allow-empty -m "just some words"
-  if _grn_empty="$("$GRN" "$GRNR" v1.1.0 HEAD)"; [[ -z "$_grn_empty" ]]; then
+  if _grn_empty="$(env -u CORE_JSON "$GRN" "$GRNR" v1.1.0 HEAD)"; [[ -z "$_grn_empty" ]]; then
     pass "gen-notes: a no-conventional-commit range prints nothing (caller falls back)"
   else fail "gen-notes: expected empty output for a non-conventional range"; fi
 
@@ -2122,7 +2315,7 @@ _fd_run() {
     GH_SEARCH="${GH_SEARCH:-limited}" GITHUB_REPOSITORY_OWNER=fixtureowner \
     DASH_SEARCH_PACE=0 DASH_RETRY_BASE="${DASH_RETRY_BASE:-0}" \
     DASH_RETRY_BUDGET="${DASH_RETRY_BUDGET:-60}" \
-    bash "$FDR/scripts/freshness-dashboard.sh" --root "$SANDBOX/fdfleet" 2>/dev/null
+    env -u CORE_JSON bash "$FDR/scripts/freshness-dashboard.sh" --root "$SANDBOX/fdfleet" 2>/dev/null
 }
 
 : >"$SANDBOX/gh.calls"
@@ -2202,7 +2395,7 @@ else fail "dashboard: backoff budget not enforced (calls=$_fd_budget_calls, expe
 # Without gh/token the board must still compose, with the unavailable note.
 _fd_degraded="$(env -u GH_TOKEN -u GITHUB_TOKEN PATH="$FDBIN:$PATH" \
   GH_CALLS="$SANDBOX/gh.calls" \
-  bash "$FDR/scripts/freshness-dashboard.sh" --root "$SANDBOX/fdfleet" 2>/dev/null)"
+  env -u CORE_JSON bash "$FDR/scripts/freshness-dashboard.sh" --root "$SANDBOX/fdfleet" 2>/dev/null)"
 _fd_deg_rc=$?
 if [ "$_fd_deg_rc" -eq 0 ] && grep -q 'Unavailable in this run' <<<"$_fd_degraded"; then
   pass "dashboard: degrades to the 'unavailable' note without gh/token"
@@ -2336,7 +2529,14 @@ if have git; then
   _fdg checkout -q main
 
   _fdd_lock() { printf '%s\n' "$@" >"$FDF/dotfiles-Test/core.lock"; }
-  _fdd_run() { bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --color never 2>&1; }
+  # -u CORE_JSON, for the same reason _sc_run and _tr_run strip it (#524/#508/#511): the
+  # parent's --json EXPORTS CORE_JSON=1 so nested gates keep stdout clean for the JSON object,
+  # common.sh's skip() then prints nothing, and fleet-drift.sh reports a not-checked-out repo
+  # via exactly that skip() (fleet-drift.sh, the `else skip` arm of the NOT CHECKED OUT
+  # branch). The assertions below grep for that line, so `test-core.sh --scope none --json`
+  # reported fail:1 on a tree the identical non-JSON run passed clean. Third fixture bitten by
+  # this, which is why the scan below now enforces the rule rather than trusting review.
+  _fdd_run() { env -u CORE_JSON bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --color never 2>&1; }
   _fdd_is() { # _fdd_is <label> <want-rc> <status-regex>
     local out rc row
     out="$(_fdd_run)"; rc=$?
@@ -2416,7 +2616,7 @@ if have git; then
 
   # An explicit --ref that doesn't resolve must be a usage error, not a silent fallback to
   # origin/main — the banner would otherwise name a ref that was never compared against.
-  bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --ref nosuchref --color never >/dev/null 2>&1
+  env -u CORE_JSON bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --ref nosuchref --color never >/dev/null 2>&1
   if [[ $? -eq 2 ]]; then pass "drift: an unresolvable --ref exits 2 instead of falling back"
   else fail "drift: unresolvable --ref did not exit 2"; fi
 
@@ -2424,9 +2624,9 @@ if have git; then
   # returned 0, so every caller read the run as clean. The root must EXIST and merely be
   # empty — a missing root is a separate usage error (exit 2) and would mask the regression.
   mkdir -p "$SANDBOX/fdempty"
-  bash "$FDC/scripts/fleet-drift.sh" --root "$SANDBOX/fdempty" --strict --color never >/dev/null 2>&1
+  env -u CORE_JSON bash "$FDC/scripts/fleet-drift.sh" --root "$SANDBOX/fdempty" --strict --color never >/dev/null 2>&1
   _fdd_strict=$?
-  bash "$FDC/scripts/fleet-drift.sh" --root "$SANDBOX/fdempty" --color never >/dev/null 2>&1
+  env -u CORE_JSON bash "$FDC/scripts/fleet-drift.sh" --root "$SANDBOX/fdempty" --color never >/dev/null 2>&1
   _fdd_plain=$?
   if [[ $_fdd_strict -eq 1 && $_fdd_plain -eq 0 ]]; then
     pass "drift: --strict fails on a not-checked-out repo, plain mode still skips"
@@ -2461,7 +2661,7 @@ if have git; then
   # checks dotfiles-Windows unconditionally (line ~383, outside the os-repos loop) and this
   # one-repo fixture root has no such clone, so --strict exits 1 here no matter what the
   # dotfiles-Test row says. An rc assertion would pass for entirely the wrong reason.
-  _fdd_strict_ren="$(bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --strict --color never 2>&1)"
+  _fdd_strict_ren="$(env -u CORE_JSON bash "$FDC/scripts/fleet-drift.sh" --root "$FDF" --strict --color never 2>&1)"
   if grep -qE 'dotfiles-Test.*current' <<<"$_fdd_strict_ren" &&
     ! grep -qE 'dotfiles-Test.*NOT CHECKED OUT' <<<"$_fdd_strict_ren"; then
     pass "drift: --strict does not red a found-by-URL renamed clone"
@@ -2474,6 +2674,27 @@ if have git; then
   if grep -qE 'dotfiles-Test.*not checked out' <<<"$(_fdd_run)"; then
     pass "drift: a clone whose origin names a DIFFERENT repo is not adopted"
   else fail "drift: the URL fallback adopted an unrelated repo"; fi
+  # THE REGRESSION GATE for #511, same shape and same reason as the sync-core one above.
+  # The assertion immediately above is the one that actually broke: it greps for the
+  # not-checked-out line, fleet-drift.sh emits that line through skip(), and skip() is silent
+  # when CORE_JSON is exported — so `test-core.sh --scope none --json` reported fail:1 on a
+  # tree the identical non-JSON run passed clean. Reproduced on an unmodified checkout before
+  # the fix. Drive the same fixture with CORE_JSON exported and require the identical verdict:
+  # this fails loudly if anyone drops the `-u CORE_JSON` from _fdd_run.
+  #
+  # An explicit `export` in a subshell, not a `CORE_JSON=1 _fdd_run` prefix — the value must
+  # genuinely be EXPORTED or `env -u` has nothing to strip and the gate passes vacuously.
+  # shellcheck disable=SC2030,SC2031  # subshell-local by design — the export must NOT
+  # outlive this command substitution, or it would silence every later section's skip()
+  _fdd_json="$(
+    export CORE_JSON=1
+    _fdd_run
+  )"
+  if grep -qE 'dotfiles-Test.*not checked out' <<<"$_fdd_json"; then
+    pass "drift: the fixture is insulated from an exported CORE_JSON (--json cannot change the verdict)"
+  else
+    fail "drift: an exported CORE_JSON silenced fleet-drift's skip() line — --json would red a green tree (#511)"
+  fi
   # Restore the fixture: later legs assert on the plain directory, with no remote to find.
   rm -rf "$FDF/dotfiles-OldName/.git"
   mv "$FDF/dotfiles-OldName" "$FDF/dotfiles-Test"
@@ -2656,6 +2877,7 @@ if ((_sc_subtree)); then
   # genuinely be EXPORTED or `env -u` has nothing to strip and the gate passes vacuously; and a
   # prefix assignment on a FUNCTION call is the one form whose persistence bash and POSIX mode
   # disagree about, so it could leak CORE_JSON into every later section and silence their skips.
+  # shellcheck disable=SC2030,SC2031  # subshell-local by design, as above
   _sc_out="$(
     export CORE_JSON=1
     _sc_run SYNC_SKIP_AUDIT=1
@@ -2793,9 +3015,18 @@ if ((_sc_subtree)); then
   # failure, and why payload.txt is rewritten in both rounds here.
   #
   # Materializing the tree has no base and no trailer to lose.
-  printf 'core payload v2\n' >"$SCF/coreremote/payload.txt"
+  # 'v2-round2', NOT 'v2': the local-vs-remote guard section above already wrote the exact
+  # bytes 'core payload v2' to this file and committed them, so re-writing them here staged
+  # nothing and `commit -q` was a NO-OP. That cost two things. It printed git's "nothing to
+  # commit, working tree clean" to STDOUT — where --json promises the JSON object and nothing
+  # else, so the machine-readable mode this section's own sibling fixtures exist to protect
+  # was itself unparseable. And it quietly hollowed out this fixture: with no round-2 commit
+  # the remote never moved, so round 2's sync was a no-op too and the "TWO prior syncs" the
+  # comment above insists on were only ever one. The content must differ from BOTH the value
+  # already vendored and the v3 written below.
+  printf 'core payload v2-round2\n' >"$SCF/coreremote/payload.txt"
   _scg "$SCF/coreremote" add -A >/dev/null 2>&1
-  _scg "$SCF/coreremote" commit -q -m 'core: payload v2'
+  _scg "$SCF/coreremote" commit -q -m 'core: payload v2-round2'
   _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"   # round 2 — this is the sync whose trailer dies
   # Destroy the trailer the way a squash-merge does — from EVERY commit, not just HEAD.
   # Amending HEAD alone is not enough and quietly proves nothing: under the old
@@ -2860,10 +3091,16 @@ if ((_sc_subtree)); then
   # ZERO here: the failure branch prints "done with failures" to stderr but never sets a
   # status. That is load-bearing rather than an oversight to "fix" in passing —
   # sync-fanout.yml runs this under `bash -e` and then does its OWN per-repo
-  # post-condition check (core.lock pins the released sha, branch ≥1 commit ahead), so a
-  # non-zero exit would abort that step and stop it opening PRs for the repos that DID
-  # sync. Pinning the observable contract here keeps the test honest about what the
-  # script actually promises; whether $? should also be non-zero is a design call.
+  # post-condition check, so a non-zero exit would abort that step and stop it opening PRs
+  # for the repos that DID sync. Pinning the observable contract here keeps the test honest
+  # about what the script actually promises; whether $? should also be non-zero is a design
+  # call. That post-condition is now THREE assertions, not two — core.lock pins the released
+  # sha, the branch is ≥1 commit ahead, and every dotgibson/dotfiles-core 40-hex pin in
+  # .github/workflows/* equals the target (#484). The third was added because the first two
+  # are both satisfied by a repo whose pin rewrite FAILED: err() flips it into the failed
+  # bucket here, but that verdict cannot cross the exit-0 boundary, and core.lock is
+  # deliberately committed anyway. The fan-out now checks the artefact rather than trusting
+  # this script's report — which is what makes keeping exit 0 safe.
   if grep -q 'has uncommitted changes' <<<"$_sc_out" &&
     grep -qE 'failed 1' <<<"$_sc_out"; then
     pass "sync-core: a dirty target is refused and counted failed (not stashed, not force-merged)"
@@ -2886,7 +3123,16 @@ if ((_sc_subtree)); then
   #
   # Tag the fixture Core first: the comment rewrite is driven by core.lock's core_tag, so
   # without a tag that half of the contract would go untested (and core_tag untested too).
+  #
+  # TWO tags on ONE commit, in release order, because that is the shape that broke (#515).
+  # Every real cut writes the specific vX.Y.Z and then re-points the moving major alias, so
+  # the alias is the NEWER tag — and a bare `git describe --tags` picks it. On v4.15.1 it did,
+  # and all nine repos stamped `core_tag=v4`: a provenance field naming a target that moves on
+  # the next release, which then became the `# v4` comment on every rewritten pin, i.e. a
+  # Renovate bump target that never changes. Reproduced here: without the vX.Y.Z shape filter
+  # in sync-core.sh, describe returns `v9` and both assertions below go red.
   _scg "$SCF/coreremote" tag -f v9.9.9 >/dev/null 2>&1
+  _scg "$SCF/coreremote" tag -f v9 >/dev/null 2>&1
   _scg "$SCF/core" fetch -q --tags origin >/dev/null 2>&1
   _sc_remote_sha="$(_scg "$SCF/coreremote" rev-parse main)"
   _sc_oldsha=0123456789abcdef0123456789abcdef01234567
@@ -2920,6 +3166,15 @@ if ((_sc_subtree)); then
     pass "sync-core: a SHA-pinned caller is repointed at the vendored Core, comment and all"
   else
     fail "sync-core: pinned caller not repointed ($(grep -o '@[^ ]*.*' "$_sc_wf/pinned-with-comment.yml"))"
+  fi
+  # The lock side of the same property. Asserted separately from the pin comment above
+  # because the two can diverge: core_tag is written even by a repo that SHA-pins nothing,
+  # and fleet-drift renders it as the RECORDED column, so `v9` here would make the fleet
+  # dashboard answer "which Core?" with "9.x" for every repo (#515).
+  if grep -q '^core_tag=v9\.9\.9$' "$_sc_lock"; then
+    pass "sync-core: core.lock stamps the SPECIFIC release tag, not the moving major alias"
+  else
+    fail "sync-core: core.lock core_tag is '$(grep '^core_tag=' "$_sc_lock" || echo '(absent)')', want v9.9.9"
   fi
   # No comment in, no comment out: inventing one would hand Renovate a version claim the
   # repo never made.
@@ -3240,7 +3495,7 @@ if have git && have zsh; then
   rm -rf "$NOR"
   # --no-vendor: skip the `git subtree add`, which is the only network call in the
   # script. Everything this asserts is written before/independently of it.
-  if bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$NOR" >/dev/null 2>&1; then
+  if env -u CORE_JSON bash "$HERE/scripts/new-os-repo.sh" --no-vendor Fixture "$NOR" >/dev/null 2>&1; then
     _nor_bad=""
     for _nor_f in zshenv zprofile zshrc; do
       [[ -f "$NOR/zsh/$_nor_f.zsh" ]] || _nor_bad="$_nor_bad zsh/$_nor_f.zsh(missing)"
@@ -3335,6 +3590,53 @@ else
   fail "blib_link: real-file backup regressed or leaked into the relink tally (got: $_bl_out)"
 fi
 
+# 2b) …and it SAYS SO. The backup was correct but MUTE, and blib_link wires ~34 of ~40
+#     destinations in an OS-repo bootstrap, so silent clobbering was the common case, not
+#     the rare one (#463). The aggregate "N backed up" footer says THAT something moved,
+#     never WHAT — which is the one thing the person migrating an existing machine needs.
+#     Assert the destination AND the backup path are both named, so a future refactor
+#     cannot quietly degrade this to "backed up a file".
+if [[ "$_bl_out" == *"backed up existing $_bl/dst2 -> $_bl_bak"* ]]; then
+  pass "blib_link: the backup is announced, naming both the destination and where it went"
+else
+  fail "blib_link: a real file was displaced silently or without naming the backup (got: $_bl_out)"
+fi
+
+# 2c) The backup SUFFIX is the one sortable format (#464). Core wrote `date +%s` here and
+#     the `link()` helper new-os-repo.sh generates wrote `date +%Y%m%d-%H%M%S`, and an
+#     OS repo's unlink_dest DOCUMENTS a lexical-sort-is-chronological invariant over the
+#     glob. A 10-digit epoch always sorts before a `20…` datestamp, so across the pair the
+#     invariant was false and --uninstall could restore the OLDER file. Pin the format so
+#     the assertion in that comment is true rather than merely asserted. The `.<pid>` tail
+#     is the same-second collision guard; it only ever tiebreaks WITHIN a second.
+if [[ "${_bl_bak##*/}" =~ ^dst2\.pre-dotfiles\.[0-9]{8}-[0-9]{6}\.[0-9]+$ ]]; then
+  pass "blib_link: backup suffix is the sortable pre-dotfiles.<YYYYmmdd-HHMMSS>.<pid> format"
+else
+  fail "blib_link: backup suffix drifted from the one fleet format (got: ${_bl_bak##*/})"
+fi
+
+# 2d) The invariant itself, end to end: two backups of the SAME destination, one second
+#     apart, must sort chronologically under a plain lexical sort — the operation
+#     --uninstall performs to choose the newest. This is the assertion that would have
+#     caught the two-format split, because it fails on a mixed pair regardless of which
+#     formats are in play.
+printf 'OLDER\n' >"$_bl/dst4"
+_bl_run 0 "$_bl/src" "$_bl/dst4" >/dev/null
+rm -f "$_bl/dst4"
+sleep 1
+printf 'NEWER\n' >"$_bl/dst4"
+_bl_run 0 "$_bl/src" "$_bl/dst4" >/dev/null
+_bl_sorted=()
+while IFS= read -r _bl_l; do _bl_sorted[${#_bl_sorted[@]}]="$_bl_l"; done < <(
+  find "$_bl" -name 'dst4.pre-dotfiles.*' | sort
+)
+if ((${#_bl_sorted[@]} == 2)) &&
+  [[ "$(cat "${_bl_sorted[0]}")" == "OLDER" && "$(cat "${_bl_sorted[1]}")" == "NEWER" ]]; then
+  pass "blib_link: a lexical sort of the backups IS chronological (the --uninstall invariant)"
+else
+  fail "blib_link: lexical sort of backups is not chronological — --uninstall would restore the wrong file"
+fi
+
 # 3) BLIB_DRY previews the displacement instead of hiding it. "would relink: $dst" alone
 #    reads as *repoint*; a reader has to be told what is about to go, and the fixture must
 #    come through untouched.
@@ -3389,6 +3691,229 @@ fi
 #
 # No `have` guard: this needs only bash and the library, unlike F7 (git), so it runs
 # everywhere — including the minimal containers where the heavier fixtures skip.
+hdr "helper-adoption section is --strict-safe (audit-core.sh §5f)"
+# The adoption section reads SIBLING repos off disk, and CI checks out only Core — so every
+# run there takes a skip branch. audit-core.sh treats a skip whose text lacks the literal
+# "out of scope" as a real coverage gap and reds `--strict`, which is what CI runs (ci.yml
+# passes $strict). A section that skips with any other wording would therefore turn the whole
+# fleet's CI red the moment it landed, on every repo, for a purely advisory check.
+#
+# Asserted statically on the source rather than by running the audit: reproducing "no sibling
+# checked out" means a fake fleet root, and the property worth pinning is the WORDING, which
+# is exactly what a static read can see.
+_ha_bad=0
+while IFS= read -r _ha_line; do
+  [ -n "$_ha_line" ] || continue
+  case "$_ha_line" in
+  *"out of scope"*) ;;
+  *)
+    fail "helper adoption: a skip without 'out of scope' would red --strict in CI — $_ha_line"
+    _ha_bad=1
+    ;;
+  esac
+done <<EOF
+$(grep -n 'skip "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
+EOF
+if ((_ha_bad == 0)) && grep -q 'skip "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null; then
+  pass "helper adoption: every skip is worded 'out of scope', so --strict stays green in CI"
+elif ((_ha_bad == 0)); then
+  fail "helper adoption: audit-core.sh has no helper-adoption skip at all — the section is gone or renamed"
+fi
+# The other half of "advisory": the section must not be able to FAIL. A future edit that
+# swaps the report for a fail() would red every repo's CI on arrival, since 8 of 9 are short.
+if ! grep -q 'fail "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null; then
+  pass "helper adoption: the section reports and never fails (advisory by construction)"
+else
+  fail "helper adoption: the section can now fail — 8 of 9 repos are short, so this reds the fleet"
+fi
+unset _ha_bad _ha_line
+
+hdr "git identity refuses to guess (useConfigOnly + a commented-out seed)"
+# What a FRESHLY BOOTSTRAPPED box does when the user has not set an identity yet.
+#
+# The seeded ~/.config/git/local.gitconfig used to ship a live `Your Name
+# <you@example.com>`, and gitconfig [include]s it — so the box had a VALID identity, commits
+# succeeded, and they were authored as Your Name. Before bootstrap the same box had no
+# identity and the commit would have failed loudly, so bootstrapping made the failure mode
+# strictly worse; the result lands in public repo history, where authorship is not fixable
+# retroactively (#476).
+#
+# Both halves are asserted because either alone is insufficient: with a live placeholder,
+# useConfigOnly is satisfied and git commits; with it commented out but useConfigOnly unset,
+# git invents $USER@$(hostname) and commits. Only the pair produces the error.
+if have git; then
+  _gi="$(mktemp -d "$SANDBOX/gitid.XXXXXX")"
+  mkdir -p "$_gi/home/.config/git" "$_gi/repo"
+  cp "$HERE/git/gitconfig" "$_gi/home/.gitconfig"
+  # exactly what blib_seed does on a first bootstrap
+  cp "$HERE/git/local.gitconfig.example" "$_gi/home/.config/git/local.gitconfig"
+  # GIT_CONFIG_GLOBAL must be POINTED at the fixture's copy, not left to $HOME. This suite
+  # exports GIT_CONFIG_GLOBAL=/dev/null suite-wide (so a developer's real signing config
+  # cannot reach the tag-release fixtures), and that override wins over $HOME/.gitconfig
+  # outright — git would read no global config at all here. The first draft of this block set
+  # only HOME and passed two of its four assertions VACUOUSLY: with no config whatsoever there
+  # is no identity, so "resolves no user.email" and "the commit fails" were both true for
+  # entirely the wrong reason. HOME is still set because gitconfig's [include] path is written
+  # as ~/.config/git/local.gitconfig and `~` is $HOME.
+  _gi_git() {
+    HOME="$_gi/home" XDG_CONFIG_HOME="$_gi/home/.config" \
+      GIT_CONFIG_GLOBAL="$_gi/home/.gitconfig" git -C "$_gi/repo" "$@"
+  }
+  _gi_git init -q >/dev/null 2>&1
+  printf 'x\n' >"$_gi/repo/a"
+  _gi_git add a >/dev/null 2>&1
+
+  # 1) the seed must not supply an identity. Asserted on the RESOLVED value rather than by
+  #    grepping the example file: the whole defect was that the include made a commented-out
+  #    line and a live one indistinguishable from where git stands.
+  if [[ -z "$(_gi_git config --get user.email || true)" ]] &&
+    [[ -z "$(_gi_git config --get user.name || true)" ]]; then
+    pass "git identity: a freshly seeded box resolves NO user.name/user.email"
+  else
+    fail "git identity: the seed supplied an identity ($(_gi_git config --get user.name || true) <$(_gi_git config --get user.email || true)>)"
+  fi
+  # 2) useConfigOnly must be on, or git fills the gap with a guess instead of erroring.
+  if [[ "$(_gi_git config --get user.useConfigOnly || true)" == "true" ]]; then
+    pass "git identity: user.useConfigOnly is set, so git will not invent an author"
+  else
+    fail "git identity: useConfigOnly is not set — git would author as \$USER@\$(hostname)"
+  fi
+  # 3) THE property, end to end: the commit must FAIL, and its message must tell the user what
+  #    to do. This is the assertion that catches the live-placeholder half — restoring the
+  #    example's `name`/`email` makes it report `rc=0 — authored as Your Name
+  #    <you@example.com>`, i.e. #476 verbatim. It does NOT discriminate on the useConfigOnly
+  #    half on every box: where the hostname is not a FQDN git declines to guess an email and
+  #    refuses anyway. That is exactly why assertion 2 checks the setting directly rather than
+  #    relying on this one to cover both.
+  _gi_out="$(_gi_git -c commit.gpgsign=false commit -m probe 2>&1)"
+  _gi_rc=$?
+  if ((_gi_rc != 0)) && grep -qi 'please tell me who you are' <<<"$_gi_out"; then
+    pass "git identity: committing on an unconfigured box FAILS loudly, naming the fix"
+  else
+    fail "git identity: commit succeeded on an unconfigured box (rc=$_gi_rc) — authored as $(_gi_git log -1 --format='%an <%ae>' 2>/dev/null)"
+  fi
+  # 4) ...and filling the seed in must still work. useConfigOnly only refuses to GUESS; a
+  #    configured identity has to keep working, or the fix would have traded one bug for a
+  #    worse one.
+  _gi_git config -f "$_gi/home/.config/git/local.gitconfig" user.name "Real Person" >/dev/null 2>&1
+  _gi_git config -f "$_gi/home/.config/git/local.gitconfig" user.email "real@example.org" >/dev/null 2>&1
+  if _gi_git -c commit.gpgsign=false commit -qm probe >/dev/null 2>&1 &&
+    [[ "$(_gi_git log -1 --format='%an <%ae>' 2>/dev/null)" == "Real Person <real@example.org>" ]]; then
+    pass "git identity: filling the seed in restores committing, with the real author"
+  else
+    fail "git identity: a filled-in local.gitconfig still could not commit"
+  fi
+  unset _gi _gi_out _gi_rc
+else
+  skip "git identity (git not installed)"
+fi
+
+hdr "blib_install_system_file (root-owned /etc write, non-destructive)"
+# The system-file counterpart to the blib_link accounting above, and the same property:
+# nothing that was already on the machine is destroyed unannounced. blib_link has had this
+# since the beginning; `_blib_priv tee` into /etc never did, so each OS repo hand-rolled it
+# and dotfiles-Arch did not — it re-rendered /etc/wsl.conf on every run of a script its docs
+# call idempotent, and on a real box destroyed a pre-existing `[boot] systemd=true` (#475).
+#
+# BLIB_SU= throughout: the helper escalates through _blib_priv, and an empty BLIB_SU means
+# "run directly". That is what makes this hermetic — it writes only under $SANDBOX and needs
+# no sudo, so it runs identically in CI, in a container and on a developer box.
+_sf="$(mktemp -d "$SANDBOX/sysfile.XXXXXX")"
+# Same `bash -c` shape as _bl_run above, and for the same reason: the lib's re-entry guard
+# makes a re-source a no-op, so the counters can only be read from a fresh interpreter.
+_sf_run() { # <dry> <content> <dst>  → run output, then "--", then LINKED BACKED SKIPPED
+  BLIB_DRY="$1" BLIB_SU='' bash -c '
+    set -u
+    . "'"$HERE/lib/bootstrap-lib.sh"'"
+    blib_install_system_file "$1" "$2"
+    printf -- "--\n%s %s %s\n" "$BLIB_LINKED" "$BLIB_BACKED" "$BLIB_SKIPPED"
+  ' _ "$2" "$3" 2>&1
+}
+_sf_tally() { printf '%s' "${1##*$'--\n'}" | tr -d '\n'; }
+
+# 1) THE #475 CASE, verbatim: a real pre-existing /etc/wsl.conf carrying systemd=true, and a
+#    bootstrap that renders something else. The old content must survive on disk.
+mkdir -p "$_sf/etc"
+printf '[boot]\nsystemd=true\n' >"$_sf/etc/wsl.conf"
+_sf_out="$(_sf_run 0 "$(printf '[interop]\nappendWindowsPath=false')" "$_sf/etc/wsl.conf")"
+_sf_bak="$(find "$_sf/etc" -name 'wsl.conf.pre-dotfiles.*' 2>/dev/null | head -n1)"
+if [[ -n "$_sf_bak" ]] && grep -q 'systemd=true' "$_sf_bak" &&
+  grep -q 'appendWindowsPath=false' "$_sf/etc/wsl.conf" && [[ "$_sf_out" == *"backed up existing"* ]]; then
+  pass "blib_install_system_file: an existing /etc file is preserved, announced, and replaced"
+else
+  fail "blib_install_system_file: the pre-existing file was not backed up (got: $_sf_out)"
+fi
+# The backup must be findable by the SAME convention as a dotfile backup — one naming rule
+# for the whole system, which is the whole point of routing it through _blib_backup_suffix.
+if [[ "${_sf_bak##*/}" =~ ^wsl\.conf\.pre-dotfiles\.[0-9]{8}-[0-9]{6}\.[0-9]+$ ]]; then
+  pass "blib_install_system_file: the backup uses the shared .pre-dotfiles.<stamp>.<pid> name"
+else
+  fail "blib_install_system_file: backup name '${_sf_bak##*/}' is not the shared convention (#464)"
+fi
+# ...and it must be counted, or the closing summary would report a clean run over a displaced
+# system file — the aggregate half of the same silence.
+if [[ "$(_sf_tally "$_sf_out")" == "0 1 0" ]]; then
+  pass "blib_install_system_file: a displaced system file counts into BLIB_BACKED"
+else
+  fail "blib_install_system_file: wrong tally '$(_sf_tally "$_sf_out")' (want LINKED=0 BACKED=1 SKIPPED=0)"
+fi
+
+# 2) IDEMPOTENCE, which is the property the helper is really for. A second run with the same
+#    rendering must write nothing and back up nothing — otherwise a weekly re-bootstrap
+#    accumulates a directory of identical .pre-dotfiles copies, which is its own damage.
+_sf_n1="$(find "$_sf/etc" -name 'wsl.conf.pre-dotfiles.*' | wc -l | tr -d ' ')"
+_sf_out="$(_sf_run 0 "$(printf '[interop]\nappendWindowsPath=false')" "$_sf/etc/wsl.conf")"
+_sf_n2="$(find "$_sf/etc" -name 'wsl.conf.pre-dotfiles.*' | wc -l | tr -d ' ')"
+if [[ "$_sf_n1" == "$_sf_n2" ]] && [[ "$(_sf_tally "$_sf_out")" == "0 0 1" ]] &&
+  [[ "$_sf_out" != *"backed up"* ]]; then
+  pass "blib_install_system_file: an identical re-run is a silent no-op (no second backup)"
+else
+  fail "blib_install_system_file: re-run was not a no-op (backups $_sf_n1 -> $_sf_n2, tally '$(_sf_tally "$_sf_out")')"
+fi
+# The same content rendered the way a bootstrap actually renders it — a heredoc, i.e. WITH a
+# trailing newline. $(...) strips trailing newlines from what is read off disk but nothing
+# strips them from the argument, so without the normalisation inside the helper this compares
+# unequal to the file the helper itself just wrote and rewrites on EVERY run: the exact
+# non-idempotence the helper exists to remove, reintroduced one layer up.
+_sf_out="$(_sf_run 0 "$(printf '[interop]\nappendWindowsPath=false\n\n')" "$_sf/etc/wsl.conf")"
+_sf_n3="$(find "$_sf/etc" -name 'wsl.conf.pre-dotfiles.*' | wc -l | tr -d ' ')"
+if [[ "$_sf_n2" == "$_sf_n3" ]] && [[ "$(_sf_tally "$_sf_out")" == "0 0 1" ]]; then
+  pass "blib_install_system_file: trailing newlines do not make a heredoc rendering look changed"
+else
+  fail "blib_install_system_file: trailing-newline difference triggered a rewrite (backups $_sf_n2 -> $_sf_n3)"
+fi
+
+# 3) an ABSENT destination is written, with no backup and nothing counted as displaced.
+_sf_out="$(_sf_run 0 'key=value' "$_sf/etc/fresh.conf")"
+if [[ "$(cat "$_sf/etc/fresh.conf" 2>/dev/null)" == "key=value" ]] &&
+  [[ "$(_sf_tally "$_sf_out")" == "0 0 0" ]]; then
+  pass "blib_install_system_file: an absent destination is created and nothing is counted"
+else
+  fail "blib_install_system_file: absent-destination write wrong (tally '$(_sf_tally "$_sf_out")')"
+fi
+
+# 4) BLIB_DRY must PLAN and touch nothing. Asserted on the file's bytes, not just the message:
+#    a dry run that announced correctly and wrote anyway would satisfy a message-only check,
+#    and this helper's whole audience is people who run --dry-run before letting it near /etc.
+_sf_before="$(cat "$_sf/etc/wsl.conf")"
+_sf_out="$(_sf_run 1 'totally different' "$_sf/etc/wsl.conf")"
+_sf_n4="$(find "$_sf/etc" -name 'wsl.conf.pre-dotfiles.*' | wc -l | tr -d ' ')"
+if [[ "$(cat "$_sf/etc/wsl.conf")" == "$_sf_before" ]] && [[ "$_sf_n3" == "$_sf_n4" ]] &&
+  [[ "$_sf_out" == *"would back up + write"* ]] && [[ "$(_sf_tally "$_sf_out")" == "0 1 0" ]]; then
+  pass "blib_install_system_file: BLIB_DRY plans the write and backup, and changes nothing"
+else
+  fail "blib_install_system_file: dry run mutated the box or did not announce (got: $_sf_out)"
+fi
+
+# 5) a missing destination argument must warn, not write somewhere surprising, and must not
+#    take down a bootstrap running under `set -e`.
+_sf_out="$(_sf_run 0 'content' '')"
+if [[ "$_sf_out" == *"no destination given"* ]] && [[ "$(_sf_tally "$_sf_out")" == "0 0 0" ]]; then
+  pass "blib_install_system_file: a missing destination warns and returns cleanly"
+else
+  fail "blib_install_system_file: missing destination mishandled (got: $_sf_out)"
+fi
+
 hdr "blib_link_os_layer ssh overlay (config.d drop-in, dry-run safe)"
 # Local rather than F7's _lr_mode: that one is defined inside `if have git`, so it does
 # not exist on a box without git, where this fixture still runs.
@@ -3537,6 +4062,132 @@ if [[ "$(readlink "$_rl_c5/zsh/85-defense.zsh")" == "$_rl/repo2/defense/defense.
   pass "blib_link_role_layer: a role with no .conf and no templates leaves no dangling role.conf"
 else
   fail "blib_link_role_layer: the no-.conf role wired wrongly (got: $_rl_out)"
+fi
+
+# ── F8c. package-list reading (lib/bootstrap-lib.sh) ─────────────────────────
+# blib_read_pkgs had NO coverage, which is how #460 survived: it read its file with a bare
+# redirect and no existence check, and every caller reaches it through a process
+# substitution, where `mapfile` reports its OWN status rather than the reader's. A missing
+# packages.txt therefore produced a zero-length array WITH A SUCCESS STATUS, and a broken
+# clone provisioned nothing while reporting that as intended.
+#
+# blib_read_pkgs_into is the shape that actually fixes it — it assigns in the CALLER'S
+# frame, so `|| exit 1` works. These pin both halves: the guard on the old function (loud
+# even where the status is discarded) and the new function's status/assignment contract.
+hdr "package-list reading (a missing list is a failure, not an empty array)"
+_rp="$(mktemp -d "$SANDBOX/readpkgs.XXXXXX")"
+printf 'foo # inline comment\n\n# whole-line comment\n  bar  \nbaz\n' >"$_rp/list.txt"
+# A list whose LAST line is a comment — the common real shape, and the one that made the
+# old `[[ -n "$line" ]] && printf …` tail return 1 from the loop.
+printf 'pkg\n# trailing comment\n' >"$_rp/comment-final.txt"
+
+# Fresh `bash -c` per case (the lib's re-entry guard makes a re-source a no-op at file
+# scope). Prints the case's own verdict lines; the assertions match on those.
+_rp_run() { bash -c '
+  set -uo pipefail
+  . "'"$HERE/scripts/lib/common.sh"'"
+  . "'"$HERE/lib/bootstrap-lib.sh"'"
+  '"$1"'
+' 2>&1; }
+
+# 1) THE BUG. An unreadable list must fail, loudly, and must not hand back a plausible
+#    empty array. Both halves matter: the status is what a caller tests, the warning is
+#    what an operator reads when the caller is the process-substitution form that cannot.
+_rp_out="$(_rp_run '
+  blib_read_pkgs_into pkgs /nonexistent/packages.txt && echo "STATUS=0" || echo "STATUS=$?"
+  echo "SIZE=${#pkgs[@]}"
+')"
+if [[ "$_rp_out" == *"STATUS=1"* && "$_rp_out" == *"SIZE=0"* &&
+  "$_rp_out" == *"not readable"* ]]; then
+  pass "blib_read_pkgs_into: an unreadable list returns 1, warns, and yields no packages"
+else
+  fail "blib_read_pkgs_into: a missing list did not fail loudly (got: $_rp_out)"
+fi
+
+# 2) The happy path still parses exactly as before: inline comments, whole-line comments,
+#    blank lines and surrounding whitespace all stripped.
+_rp_out="$(_rp_run '
+  blib_read_pkgs_into pkgs "'"$_rp"'/list.txt" || echo "STATUS=$?"
+  echo "GOT=${#pkgs[@]}:${pkgs[*]}"
+')"
+if [[ "$_rp_out" == *"GOT=3:foo bar baz"* ]]; then
+  pass "blib_read_pkgs_into: comments, blanks and whitespace are stripped into the array"
+else
+  fail "blib_read_pkgs_into: parsing drifted from blib_read_pkgs (got: $_rp_out)"
+fi
+
+# 3) The two readers must not disagree. CI and bootstrap both read the same file, and a
+#    gate that parses it differently from the thing it gates is worse than no gate.
+# core_files_identical, NOT diff — diffutils is not guaranteed present, and the Arch CI
+# container is a box that genuinely lacks it. That is the same rule #572 records for `cmp`
+# (they ship in the same package); the gate below now bans both.
+_rp_out="$(_rp_run '
+  blib_read_pkgs_into pkgs "'"$_rp"'/list.txt"
+  blib_read_pkgs "'"$_rp"'/list.txt" >"'"$_rp"'/via-print.txt"
+  printf "%s\n" "${pkgs[@]}" >"'"$_rp"'/via-array.txt"
+  if core_files_identical "'"$_rp"'/via-print.txt" "'"$_rp"'/via-array.txt"; then
+    echo AGREE
+  else echo DIFFER; fi
+')"
+if [[ "$_rp_out" == *AGREE* ]]; then
+  pass "blib_read_pkgs and blib_read_pkgs_into parse a list identically"
+else
+  fail "the two package-list readers disagree (got: $_rp_out)"
+fi
+
+# 4) A PROCESS SUBSTITUTION argument still works. dotfiles-Debian calls
+#    `blib_read_pkgs <(pkg_filter_lines "$base_list" "$OS_ID")` to drop the lines annotated
+#    for other distros, and that argument is a /dev/fd/N PIPE. This is why the guard is
+#    `-r` and not `-f`: the obvious existence check would reject it and break a working
+#    caller, turning a bug fix into an outage on one repo.
+_rp_out="$(_rp_run '
+  blib_read_pkgs_into pkgs <(printf "foo # c\n\nbar\n") || echo "STATUS=$?"
+  echo "GOT=${#pkgs[@]}:${pkgs[*]}"
+')"
+if [[ "$_rp_out" == *"GOT=2:foo bar"* ]]; then
+  pass "blib_read_pkgs_into: a /dev/fd process substitution is readable (the Debian shape)"
+else
+  fail "blib_read_pkgs_into: rejected a process substitution — -f crept back in (got: $_rp_out)"
+fi
+
+# 5) A failed read CLEARS the array rather than leaving the previous run's contents, so a
+#    caller that ignores the status cannot silently install a stale list.
+_rp_out="$(_rp_run '
+  blib_read_pkgs_into pkgs "'"$_rp"'/list.txt"
+  blib_read_pkgs_into pkgs /nonexistent 2>/dev/null
+  echo "SIZE=${#pkgs[@]}"
+')"
+if [[ "$_rp_out" == *"SIZE=0"* ]]; then
+  pass "blib_read_pkgs_into: a failed read empties the array (no stale package list)"
+else
+  fail "blib_read_pkgs_into: stale contents survived a failed read (got: $_rp_out)"
+fi
+
+# 6) The array NAME is spliced into an eval, so anything but a plain identifier must be
+#    rejected before it gets there — this is a code-injection surface, not a typo check.
+_rp_out="$(_rp_run '
+  blib_read_pkgs_into "x;touch '"$_rp"'/PWNED" "'"$_rp"'/list.txt" && echo "STATUS=0" || echo "STATUS=$?"
+  blib_read_pkgs_into "9lead" "'"$_rp"'/list.txt" 2>/dev/null && echo "D=0" || echo "D=$?"
+')"
+if [[ "$_rp_out" == *"STATUS=2"* && "$_rp_out" == *"D=2"* && ! -e "$_rp/PWNED" ]]; then
+  pass "blib_read_pkgs_into: a malformed array name returns 2 and never reaches the eval"
+else
+  fail "blib_read_pkgs_into: a bad array name was not rejected (got: $_rp_out)"
+fi
+
+# 7) blib_read_pkgs' own status is now MEANINGFUL, so it has to be right in both
+#    directions. The failure case is the point of #460; the success case is the
+#    regression it could have introduced — the function used to end on
+#    `[[ -n "$line" ]] && printf …`, so a list whose final line is a comment returned 1.
+#    Harmless while every caller discarded the status, a landmine the moment one stops.
+_rp_out="$(_rp_run '
+  blib_read_pkgs "'"$_rp"'/comment-final.txt" >/dev/null && echo "OK=0" || echo "OK=$?"
+  blib_read_pkgs /nonexistent >/dev/null 2>&1 && echo "MISS=0" || echo "MISS=$?"
+')"
+if [[ "$_rp_out" == *"OK=0"* && "$_rp_out" == *"MISS=1"* ]]; then
+  pass "blib_read_pkgs: exits 0 on a comment-final list and 1 on a missing one"
+else
+  fail "blib_read_pkgs: status contract is wrong in one direction (got: $_rp_out)"
 fi
 
 # ── F9. tag-release.sh — the tag may only exist on a commit that is on main ──
@@ -4139,7 +4790,7 @@ else
     # EMPTY array under `set -u` is an "unbound variable" error rather than zero words. The
     # calls that pass no env vars are exactly the ones that tripped it, so the bug only ever
     # showed on macOS. scripts/lib/common.sh pins the same 3.2 constraint for the same reason.
-    _bout="$(env CORE_COLOR=never ${envs[@]+"${envs[@]}"} "$_BENCH" "$@" 2>&1)"
+    _bout="$(env -u CORE_JSON CORE_COLOR=never ${envs[@]+"${envs[@]}"} "$_BENCH" "$@" 2>&1)"
     _brc=$?
   }
 
@@ -4404,7 +5055,7 @@ STUB
   _v_run() { # _v_run <stub> [extra args...] → sets _vout/_vrc
     local stub="$1"
     shift
-    _vout="$(CORE_COLOR=never "$_VERIFY" --atuin "$_vstub/$stub" "$@" 2>&1)"
+    _vout="$(env -u CORE_JSON CORE_COLOR=never "$_VERIFY" --atuin "$_vstub/$stub" "$@" 2>&1)"
     _vrc=$?
   }
   _v_verdict() { printf '%s' "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["verdict"])' 2>/dev/null; }
@@ -4415,7 +5066,7 @@ STUB
   #
   # A. A bare box must not be able to produce a green "holds". This is the one place the
   #    repo's skip-and-exit-0 idiom is deliberately broken, so it is pinned.
-  _vout="$(CORE_COLOR=never "$_VERIFY" --atuin /nonexistent/atuin --json 2>&1)"
+  _vout="$(env -u CORE_JSON CORE_COLOR=never "$_VERIFY" --atuin /nonexistent/atuin --json 2>&1)"
   _vrc=$?
   if ((_vrc == 3)) && [[ "$(_v_verdict "$_vout")" == unmeasurable ]]; then
     pass "atuin verify: a missing atuin exits 3 (unmeasurable), NOT 0 — exit 0 asserts something about upstream"
@@ -4689,6 +5340,50 @@ fi
 #
 # Hermetic, and genuinely so: the stub runs a REAL bindable AF_UNIX daemon (python3, exec'd so
 # the process is signal-addressable), but no atuin, no systemd and no network are involved.
+# ── the premise block's exclusivity lock ─────────────────────────────────────────────
+# `mkdir` and not flock/pgrep, deliberately:
+#   • mkdir is atomic on every POSIX filesystem and needs no util-linux — flock is absent on
+#     macOS, and this suite runs on the MacBook too;
+#   • a pgrep for "another test-core.sh" cannot work here at all. audit-core.sh runs
+#     test-core.sh in the BACKGROUND of the same audit, concurrent with its static gates, so
+#     a process-name probe would find its own sibling — or itself — and skip every audit.
+# The lock is content-addressed to nothing but the machine: one holder at a time, fleet-wide.
+#
+# STALENESS MATTERS MORE THAN THE LOCK. A run killed with SIGKILL (or a machine that lost
+# power mid-audit) leaves the directory behind, and a lock nothing can clear turns one crash
+# into a permanently skipped block — which is worse than the flakiness it replaces, because
+# it is silent and forever. So the holder's pid is recorded and a lock whose holder is gone
+# is taken over.
+_D_LOCK="${TMPDIR:-/tmp}/core-atuin-premise.lock"
+_D_LOCK_HELD=0
+_d_take_lock() {
+  if mkdir "$_D_LOCK" 2>/dev/null; then
+    printf '%s\n' "$$" >"$_D_LOCK/pid" 2>/dev/null || true
+    _D_LOCK_HELD=1
+    return 0
+  fi
+  local _holder
+  _holder="$(cat "$_D_LOCK/pid" 2>/dev/null || true)"
+  # No pid file, or a pid nobody answers for → the holder died. Take it over. `kill -0`
+  # answers "is there a process" without signalling it, and a pid we do not own still
+  # reports EPERM rather than ESRCH, so a live foreign holder is correctly left alone.
+  if [[ -z "$_holder" ]] || ! kill -0 "$_holder" 2>/dev/null; then
+    rm -rf "$_D_LOCK" 2>/dev/null || true
+    if mkdir "$_D_LOCK" 2>/dev/null; then
+      printf '%s\n' "$$" >"$_D_LOCK/pid" 2>/dev/null || true
+      _D_LOCK_HELD=1
+      return 0
+    fi
+  fi
+  return 1
+}
+# Released on EXIT rather than at the end of the block: the block can leave by a `fail` path,
+# and a lock held by a finished process would be reclaimed only by the staleness check above
+# — correct, but it would make the very next run skip for no reason.
+# Called from _core_test_cleanup, NOT from a trap of its own: a second `trap … EXIT` replaces
+# the first, and the first is what removes this run's $SANDBOX.
+_d_drop_lock() { ((_D_LOCK_HELD)) && rm -rf "$_D_LOCK" 2>/dev/null; return 0; }
+
 _DVERIFY="$HERE/scripts/verify-atuin-guard.sh"
 if [[ ! -x "$_DVERIFY" ]]; then
   skip "atuin autostart premise (scripts/verify-atuin-guard.sh absent or not executable)"
@@ -4696,6 +5391,22 @@ elif ! ((SCOPE_ATUIN)); then
   skip "atuin autostart premise (out of scope)"
 elif ! have python3; then
   skip "atuin autostart premise (python3 not installed)"
+elif ! _d_take_lock; then
+  # EXCLUSIVITY, and a skip rather than a fail (#495). This block is hermetic with respect to
+  # atuin, systemd and the network — but not with respect to another copy of ITSELF. Its
+  # leak assertion reasons about what appeared under shared /tmp during a window, and its
+  # fork/reap assertions about processes; neither can tell this run's residue from a
+  # concurrent run's. That is not hypothetical here: the release path audits TWICE (`make
+  # release` then `make tag`), this repo has carried six worktrees on one .git driven by
+  # separate sessions, and a cut therefore needed two consecutive lucky greens to get out.
+  # The observed shape was the tell — the same unmodified tree went `pass 261 fail 0` and
+  # then `pass 260 fail 1` nine minutes later, and across three attempts the failure COUNT
+  # varied (6, then 4, then 0), which a real defect does not do.
+  #
+  # A skip is honest; a flaky fail is not, and it teaches the operator to reach for
+  # TAG_SKIP_AUDIT=1 — eroding the gate the runbook depends on, which is a far worse outcome
+  # than one uncovered block.
+  skip "atuin autostart premise (another test-core.sh holds the premise lock — not safely parallel)"
 else
   hdr "atuin autostart self-healing premise (--premise autostart, hermetic)"
   # THIS RUN'S NAME IN SHARED /tmp. Case 17 asserts that a completed verifier run leaves no
@@ -5029,9 +5740,34 @@ STUB
   # Did this stub ever FORK a daemon, by any route? Survives the sandbox, and unlike the call
   # log it is about the thing that matters rather than the command that usually causes it.
   _d_spawned() { [[ -s "$_dstub/$1.spawned" ]]; }
+  # _d_forked_wait <stub> — wait, briefly and boundedly, for the stub's fork log to appear.
+  #
+  # The stub writes .forked from the CHILD it just forked, so "the file is not there yet" and
+  # "the stub never forked" are the same observation at the wrong moment. Reading immediately
+  # made that race decide the verdict, and the failure it produced named the wrong thing —
+  # "the stub never forked, so the reaping assertion proved nothing" — which is how #495 came
+  # to be filed as a flaky test rather than a race. ~2s at 50ms is far longer than a fork
+  # needs and far shorter than the run it guards. Returns non-zero if it never appears, which
+  # is then a real finding rather than a timing artefact.
+  _d_forked_wait() {
+    local _i
+    for _i in $(seq 1 40); do
+      [[ -s "$_dstub/$1.forked" ]] && return 0
+      sleep 0.05
+    done
+    return 1
+  }
   # _d_forks_alive <stub> — how many of the children that stub forked are STILL running.
+  #
+  # The `-s` guard is not defensive padding; without it this returned a SILENT ZERO. Bash
+  # applies redirections left to right, so `<"$_dstub/$1.forked"` is opened BEFORE
+  # `2>/dev/null` takes effect — a missing file therefore printed a raw
+  # "No such file or directory" on the inherited stderr AND still ran the printf, handing the
+  # caller a 0 indistinguishable from a genuinely clean reap. Its sibling _d_spawned just
+  # above has always checked -s; this one was the outlier (#495).
   _d_forks_alive() {
     local n=0 pid
+    [[ -s "$_dstub/$1.forked" ]] || { printf '0'; return 0; }
     while read -r pid; do
       [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && n=$((n + 1))
     done <"$_dstub/$1.forked" 2>/dev/null
@@ -5394,6 +6130,7 @@ J4PROBE
     #     the whole function in a subshell and discard the group id before cleanup ever saw it.
     _mkdstub atuin-forkhang fork-hang
     _d_run atuin-forkhang --premise autostart --json
+    _d_forked_wait atuin-forkhang || true
     _dalive="$(_d_forks_alive atuin-forkhang)"
     _dforked="$(grep -c . "$_dstub/atuin-forkhang.forked" 2>/dev/null || echo 0)"
     _dreap
@@ -5418,6 +6155,7 @@ J4PROBE
     #     rather than assumed to be covered by its sibling.
     _mkdstub atuin-forkhangend fork-hang-end
     _d_run atuin-forkhangend --premise autostart --json
+    _d_forked_wait atuin-forkhangend || true
     _dalive="$(_d_forks_alive atuin-forkhangend)"
     _dforked="$(grep -c . "$_dstub/atuin-forkhangend.forked" 2>/dev/null || echo 0)"
     _dreap
@@ -5437,6 +6175,7 @@ J4PROBE
     #     AND the survivor must be reaped.
     _mkdstub atuin-manualfork manual-fork-nobind
     _d_run atuin-manualfork --premise autostart --json
+    _d_forked_wait atuin-manualfork || true
     _dalive="$(_d_forks_alive atuin-manualfork)"
     _dforked="$(grep -c . "$_dstub/atuin-manualfork.forked" 2>/dev/null || echo 0)"
     _dv="$(_d_get "$_dout" verdict)"
@@ -5722,6 +6461,75 @@ assert not named, "the scope section names measured arms: %s" % named
     fi  # known-good stub held
   fi    # apparatus probe
   _dreap
+fi
+
+# ── --json output contract (self-run) ─────────────────────────────────────────
+# ── --json IS A CONTRACT: stdout carries ONE parseable object and nothing else ─
+# The mode exists for CI steps and editor integrations that PARSE rather than scrape, so
+# every guarantee it makes is machine-facing: a single JSON object on stdout, and a
+# `result` that agrees with the same run without --json. Three separate bugs have broken
+# one half or the other, each found by hand on a green tree (#508, #524, #511), and each
+# time the suite went on certifying itself because no test ever ran --json.
+#
+# Two failure shapes this catches that nothing else does:
+#   1. a fixture leaking to STDOUT — the last one was a no-op `git commit` printing
+#      "nothing to commit, working tree clean", which made the object unparseable while
+#      every assertion still passed;
+#   2. an inherited CORE_JSON silencing a child gate's skip() lines, which flips assertions
+#      that grep for them and reports a failing result on a healthy tree.
+#
+# Runs the suite against ITSELF at --scope none (the cheapest scope, a few seconds).
+# CORE_TEST_SELFJSON=1 in the child is what stops the recursion, and the guard is on the
+# PARENT so a nested run simply skips this section rather than re-entering it.
+#
+# Placed ABOVE the zsh-gated block below, not at the end of the file, because that block
+# ends in `summary; exit` on a box where zsh is absent or shell scope is off — so anything
+# after it is unreachable for exactly the `--scope none` invocation this gate is about.
+if [[ "${CORE_TEST_SELFJSON:-0}" == 1 ]]; then
+  : # nested self-run: this section is what invoked us
+else
+  hdr "--json output contract (self-run, hermetic)"
+  # -u CORE_TEST_NESTED is this section obeying its own rule. audit-core.sh sets it so the
+  # audit owns the summary and we print none — and the child would INHERIT it and print
+  # nothing at all, so under `make audit` the gate saw 0 lines and failed for a reason that
+  # had nothing to do with the contract. Exactly the shape #508/#524/#511 each took: a
+  # fixture asserting on output while a variable that governs how that output is produced
+  # leaks in from the parent.
+  _sj_out="$(env -u CORE_TEST_NESTED CORE_TEST_SELFJSON=1 bash "$HERE/scripts/test-core.sh" --scope none --json 2>/dev/null)"
+  _sj_lines="$(printf '%s\n' "$_sj_out" | grep -c . || true)"
+  if [[ "$_sj_lines" == 1 ]]; then
+    pass "--json: stdout is exactly one line (no fixture leaked onto it)"
+  else
+    fail "--json: stdout carried $_sj_lines lines, want 1 — something printed alongside the object:
+$(printf '%s\n' "$_sj_out" | grep -v '^{' | head -5)"
+  fi
+  # Parse it for real rather than grepping: a truncated or interleaved object can still
+  # contain the substring `"result":"ok"`, and a consumer would choke where a grep would not.
+  if _sj_result="$(printf '%s' "$_sj_out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"])' 2>/dev/null)"; then
+    pass "--json: stdout parses as JSON and exposes .result"
+  else
+    _sj_result=""
+    if have python3; then
+      fail "--json: stdout is not parseable JSON"
+    else
+      skip "--json parse (python3 not installed)"
+    fi
+  fi
+  # THE property #511 was filed about: --json must not change the VERDICT. Compared against
+  # the same scope without it, so a disagreement means the mode itself moved the result.
+  if [[ -n "$_sj_result" ]]; then
+    if env -u CORE_TEST_NESTED CORE_TEST_SELFJSON=1 bash "$HERE/scripts/test-core.sh" --scope none --quiet --color never >/dev/null 2>&1; then
+      _sj_plain=ok
+    else
+      _sj_plain=failed
+    fi
+    if [[ "$_sj_result" == "$_sj_plain" ]]; then
+      pass "--json: the verdict matches the identical run without --json (#511)"
+    else
+      fail "--json: reported '$_sj_result' where the same scope without --json reported '$_sj_plain' — the mode changed the result"
+    fi
+  fi
+  unset _sj_out _sj_lines _sj_result _sj_plain
 fi
 
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
@@ -6132,7 +6940,7 @@ check "core-doctor --help returns 0 (not mis-read)" \
 # describing state that can change under a LIVE shell, so a consumer polling it needs both
 # booleans to keep meaning what they say.
 check "core-doctor --json emits parseable JSON with tools/wired/atuin_daemon/resolved" \
-  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"wired\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"])"'
+  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"expected\",\"wired\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"])"'
 # The human report and --json now BOTH derive from _CORE_DOCTOR_GROUPS, so they agree by
 # construction and this assertion should be tautological. It is kept precisely for that
 # reason: it is the guard that stays red if someone reintroduces a second literal — which is
@@ -6148,11 +6956,105 @@ check_dep "core-doctor's rendered tool set == --json tools (the two inventories 
    _CD_R="$_r" _CD_J="$_j" python3 -c "
 import json, os, re
 body  = os.environ[\"_CD_R\"].split(chr(10), 1)[1]   # drop line 1: the header legend, not tools
-shown = set(re.findall(r\"[✓✗] ([A-Za-z0-9_.-]+)\", body))
+body  = body.split(chr(10) + \"opt-in\")[0]           # and the trailing opt-in recap, which re-lists names
+shown = set(re.findall(r\"[✓✗·] ([A-Za-z0-9_.-]+)\", body))
 keys  = set(json.loads(os.environ[\"_CD_J\"])[\"tools\"])
 assert shown, \"parsed no tools out of the rendered report\"
 assert shown == keys, \"render-only: %s | json-only: %s\" % (sorted(shown - keys), sorted(keys - shown))
 "'
+# ── the third state (#513) ────────────────────────────────────────────────────────────
+# `✗` is the doctor's only alarm channel, and PORTING-MATRIX.md's footnote ²¹ names a subset
+# of the inventory that NO Linux repo's packages.txt and NO bootstrap.sh installs, on purpose.
+# Rendering both as ✗ meant a correctly-provisioned box showed a wall of them, so a REAL
+# regression — a tool that was installed and broke — landed in the same visual bucket as the
+# ones that were never coming.
+check "core-doctor renders opt-in absence as · and expected absence as ✗" \
+  '_core_have() { return 1; }
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out == *"· lnav"* ]] && [[ $out == *"· git-absorb"* ]] \
+     && [[ $out == *"✗ eza"* ]] && [[ $out == *"✗ jq"* ]] \
+     && [[ $out != *"✗ lnav"* ]] && [[ $out != *"· eza"* ]]'
+# The legend has to name all three or the third glyph is a mystery mark. Asserted because the
+# glyph set and the legend are two literals in one function and drifted once already.
+check "core-doctor's legend names all three states" \
+  'out=$(NO_COLOR=1 core-doctor 2>&1 | head -n1)
+   [[ $out == *"✓ present"* ]] && [[ $out == *"✗ expected but missing"* ]] \
+     && [[ $out == *"· opt-in"* ]]'
+# `·` and not `○`: the wired block below the tools uses ○ for "installed but IDLE". Two
+# meanings for one glyph on one screen is the legibility problem this change is about, so the
+# separation is pinned rather than left to whoever edits next.
+check "core-doctor does not reuse the wired block's ○ for opt-in tools" \
+  '_core_have() { return 1; }
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out != *"○ lnav"* ]] && [[ $out != *"○ ouch"* ]]'
+# An opt-in tool must NOT join the "install missing" list. That block exists to tell the
+# operator what to fix; listing something nothing was ever going to install is the same alarm
+# fatigue one layer down.
+check "core-doctor keeps opt-in tools out of the install-missing list" \
+  '_core_have() { return 1; }
+   _pkgup_mgr() { print -r -- apt; }
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   inst=${out#*"install missing"}; inst=${inst%%"opt-in"*}
+   [[ $out == *"install missing"* ]] && [[ $inst == *"eza"* ]] && [[ $inst != *"lnav"* ]]'
+# THE POINT OF THE WHOLE CHANGE, in the machine-readable half: "no expected tool is missing"
+# had no expressible form. `tools` alone can only answer "is every tool present", which is
+# false on every correctly-provisioned box, so a provisioning gate could not be written at all.
+check_dep "core-doctor --json exposes 'expected', so a gate can assert what actually matters" python3 \
+  '_core_have() { return 1; }
+   _CD_J="$(core-doctor --json)" python3 -c "
+import json, os
+d = json.loads(os.environ[\"_CD_J\"])
+t, e = d[\"tools\"], d[\"expected\"]
+assert list(e) == list(t), \"expected and tools must share key set AND order\"
+assert all(v is False for v in t.values()), \"the stub makes every tool absent\"
+# with everything absent, the gate must flag exactly the EXPECTED ones — not all of them
+gate = sorted(k for k, v in e.items() if v and not t[k])
+optin = sorted(k for k, v in e.items() if not v)
+assert \"lnav\" in optin and \"git-absorb\" in optin, optin
+assert \"eza\" in gate and \"jq\" in gate, gate
+assert not (set(gate) & set(optin)), \"a tool cannot be both\"
+"'
+# MAKE THE PROSE MECHANICALLY CHECKABLE. _CORE_DOCTOR_OPTIN is seeded from PORTING-MATRIX.md
+# footnote ²¹, and a hand-copied list is how the matrix and the inventory drift apart — which
+# is exactly what happened in the other direction when a probed tool shipped with no matrix
+# row at all (#514). Re-derive the list from the matrix and require the two to agree.
+#
+# The rule, stated once here and in the array's comment: a tool is opt-in iff its Tool cell
+# carries a ROW-level ²¹, or one of the two footnotes ²¹ itself calls "the same shape" (¹⁷
+# jnv, ¹⁹ gping). Cell-level ²¹ (jj, ast-grep — Gentoo and Kali only) is deliberately NOT
+# included: a Core-side list cannot say "opt-in there, expected here", and muting them
+# globally would hide a real ✗ on the repos that do install them.
+check_dep "core-doctor's opt-in list is derivable from PORTING-MATRIX footnote 21" python3 \
+  '_MATRIX="'"$HERE"'/PORTING-MATRIX.md" _OPTIN="${_CORE_DOCTOR_OPTIN[*]}" python3 -c "
+import os, re
+lines = open(os.environ[\"_MATRIX\"]).read().split(chr(10))
+# Only the AUTHORITATIVE package-names table, bounded to its own CONTIGUOUS rows. Footnote 21
+# carries a coverage table of its own whose first column is backticked tool names, and it sits
+# between this table and the next \"## \" heading — so slicing on headings swept it in. A
+# derivation that reads the wrong table is worse than none, because it looks rigorous.
+i = next(n for n, l in enumerate(lines) if l.startswith(\"## Package names (modern CLI stack)\"))
+i = next(n for n in range(i, len(lines)) if lines[n].startswith(\"| Tool\"))
+rows = []
+while i < len(lines) and lines[i].startswith(\"|\"):
+    rows.append(lines[i]); i += 1
+want = set()
+for cell in re.findall(r\"(?m)^\\| *([^|]+?) *\\|\", chr(10).join(rows)):
+    name = re.split(r\"[ ⁰¹²³⁴⁵⁶⁷⁸⁹]\", cell, maxsplit=1)[0]
+    if set(re.findall(r\"[⁰¹²³⁴⁵⁶⁷⁸⁹]+\", cell)) & set([\"²¹\", \"¹⁷\", \"¹⁹\"]):
+        want.add(name)
+have = set(os.environ[\"_OPTIN\"].split())
+assert want, \"parsed no footnote-21 rows out of PORTING-MATRIX.md\"
+assert want == have, \"matrix-only: %s | list-only: %s\" % (sorted(want - have), sorted(have - want))
+"'
+# Orphan guard: a name here that is not in _CORE_DOCTOR_GROUPS mutes nothing and reads as if
+# it does — the failure mode of every list maintained beside another list.
+check "every _CORE_DOCTOR_OPTIN entry is actually in the doctor inventory" \
+  'local -a all=(); local gi
+   for ((gi = 2; gi <= ${#_CORE_DOCTOR_GROUPS}; gi += 2)); do all+=(${=_CORE_DOCTOR_GROUPS[gi]}); done
+   local o orphan=""
+   for o in $_CORE_DOCTOR_OPTIN; do (( ${all[(I)$o]} )) || orphan="$orphan $o"; done
+   [[ -z $orphan ]] || { print -r -- "orphaned opt-in entries:$orphan"; false }'
+
 # The invariant that would have caught the drift this backfill fixed: every binary
 # 00-tools.zsh probes must be REPORTED by the doctor. Twelve were not — ast-grep, difft,
 # gping, hyperfine, jj, jnv, ouch, shellcheck, shfmt, tldr, uv, viddy were detected into
@@ -7139,10 +8041,18 @@ ucheck "bindirs: core-doctor and HAVE_PROCS now agree about a cargo-installed to
 ucheck "core-doctor and every HAVE_* flag agree about the same box (#447)" \
   "source '$TOOLS_FILE'; source '$ALIASES_FILE'; source '$UI'; source '$FN'
    j=\$(core-doctor --json); bad=(); n=0
+   # Narrow to the tools object before substring-matching. --json grew a sibling expected
+   # object with the SAME key set (#513), so a bare match on <name>:true now finds whichever
+   # object happens to say true — and for a tool that is expected but absent that is the
+   # expected object, giving doctor=1 against an unset HAVE_ flag. The substring trick stays
+   # (it keeps this assertion python3-free, so it runs on every box); it just has to be
+   # pointed at one object. No literal quote marks in this comment: it lives inside a
+   # double-quoted bash string, where one would end the string early.
+   tj=\${j#*'\"tools\":{'}; tj=\${tj%%'}'*}
    for line in \${(f)\"\$(<'$TOOLS_FILE')\"}; do
      [[ \$line =~ '^_have +([A-Za-z0-9_.-]+) +&& +(HAVE_[A-Z0-9_]+)=1' ]] || continue
      t=\$match[1]; f=\$match[2]; (( n++ ))
-     [[ \$j == *\$'\\42'\$t\$'\\42'':true'* ]] && d=1 || d=0
+     [[ \$tj == *\$'\\42'\$t\$'\\42'':true'* ]] && d=1 || d=0
      [[ -n \${(P)f:-} ]] && h=1 || h=0
      (( d == h )) || bad+=(\"\$t (doctor=\$d \$f=\$h)\")
    done
@@ -8978,7 +9888,7 @@ if have git; then
   _nvr_catches() { # <grep-pattern> <label>
     git -C "$NREPO" add -A >/dev/null 2>&1
     local out rc
-    out="$("$NVR" --root "$NREPO" 2>&1)"
+    out="$(env -u CORE_JSON "$NVR" --root "$NREPO" 2>&1)"
     rc=$?
     if grep -q "$1" <<<"$out" && [[ $rc -eq 1 ]]; then
       pass "nvim-reachability: $2"
@@ -8989,7 +9899,7 @@ if have git; then
   _nvr_clean() { # <label>
     git -C "$NREPO" add -A >/dev/null 2>&1
     local out rc
-    out="$("$NVR" --root "$NREPO" 2>&1)"
+    out="$(env -u CORE_JSON "$NVR" --root "$NREPO" 2>&1)"
     rc=$?
     if [[ -z "$out" && $rc -eq 0 ]]; then
       pass "nvim-reachability: $1"
@@ -9734,9 +10644,69 @@ if PATH="$_cfi_bin" core_files_identical "$_cfi/a" "$_cfi/b" &&
 else
   fail "core_files_identical: wrong answer without diffutils on PATH — the #572 regression is back"
 fi
-# And no caller may quietly go back to cmp.
-if grep -nE '(^|[|;&( ])cmp[[:space:]]+-' "$HERE/scripts"/*.sh "$HERE/scripts/lib"/*.sh 2>/dev/null | grep -v '^\s*#' | grep -q .; then
-  fail "a script calls cmp again — use core_files_identical (#572)"
+# And no caller may quietly go back to cmp — OR to diff, which is the same hole one step
+# over: both ship in diffutils, so a box without it (the Arch CI container) has neither.
+# Banning only `cmp` is what let a `diff <(…) <(…)` into this very file and red audit-arch
+# while every local gate was green.
+#
+# `git diff` MUST be exempt — git is the one tool these scripts already cannot run without,
+# which is why core_files_identical is built on git hash-object. Getting that exemption
+# right is the whole difficulty, and the first attempt got it wrong: it enumerated the
+# invocation forms it could think of (`git diff`, `git --no-pager diff`) and so false-fired
+# on sync-core.sh's `git -C "$path" diff --cached`, reddening four CI legs on correct code.
+#
+# So the exemption is now structural rather than a list of spellings: `diff` is a git
+# SUBCOMMAND if a `git` invocation precedes it in the same pipeline stage. `[^|;&]*` is what
+# scopes it to that stage — it stops at a pipe, so `git log | diff -u - x` is still caught.
+# _diffutils_hits is a function purely so the fixtures below can test BOTH directions; a
+# gate whose exemption is untested is how the last one shipped broken.
+_diffutils_hits() { # _diffutils_hits <file>… — print offending "file:line:text"
+  # The comment filter must skip grep's "file:line:" PREFIX before looking for the #.
+  # The original gate used `grep -v "^\s*#"` against this same prefixed stream, so it
+  # never stripped a single comment — latent only because no commented `cmp -` existed.
+  # -H as well as -n: grep OMITS the filename when handed a single file, so the output
+  # format would change between the multi-file tree scan and a one-file fixture call — and
+  # the comment filter below, which skips past "file:line:", would then miss the "#".
+  grep -nHE '(^|[|;&( ])(cmp|diff)[[:space:]]+-' "$@" 2>/dev/null |
+    grep -vE '^[^:]*:[0-9]+:[[:space:]]*#' |
+    grep -vE 'git[^|;&]*[[:space:]]diff[[:space:]]' || true
+}
+# Fixtures first: prove the matcher catches a real call and the exemption spares every git
+# form actually used in this repo, before trusting its verdict on the tree.
+_du_fx="$(mktemp -d "$SANDBOX/diffutils.XXXXXX")"
+# The offending literals are ASSEMBLED, never written out, because this fixture lives inside
+# a file the gate itself scans — spelled directly, test-core.sh would flag its own test data
+# and the only fixes would be to stop scanning the very file that carried the real bug, or to
+# stop testing the gate. (Same reason the pipefail scanner has a "does not flag its own
+# definition" case.)
+_du_d=diff _du_c=cmp
+{
+  printf 'if %s -u "$a" "$b" >/dev/null; then echo same; fi\n' "$_du_d"
+  printf '%s -s "$a" "$b" && echo identical\n' "$_du_c"
+  printf 'git log --oneline | %s -u - expected.txt\n' "$_du_d"
+} >"$_du_fx/bad.sh"
+cat >"$_du_fx/good.sh" <<'DUGOOD'
+if git diff --quiet HEAD -- "$f"; then echo clean; fi
+git --no-pager diff --no-index -- "$a" "$b"
+git -C "$path" diff --cached --quiet
+git -C "$path" diff --cached --quiet -- core
+DUGOOD
+# The commented-out call goes in the same assembled way, for the same reason.
+printf '# %s -u is fine in a comment\n' "$_du_d" >>"$_du_fx/good.sh"
+_du_bad="$(_diffutils_hits "$_du_fx/bad.sh" | wc -l | tr -d ' ')"
+_du_good="$(_diffutils_hits "$_du_fx/good.sh" | wc -l | tr -d ' ')"
+if [[ "$_du_bad" == 3 ]]; then
+  pass "diffutils gate: catches diff, cmp, and a diff piped from git (3/3)"
+else
+  fail "diffutils gate: missed a real cmp/diff call (found $_du_bad of 3)"
+fi
+if [[ "$_du_good" == 0 ]]; then
+  pass "diffutils gate: every git-subcommand form and a comment are exempt (no false fires)"
+else
+  fail "diffutils gate: false-fired on a legitimate git diff — $(_diffutils_hits "$_du_fx/good.sh" | tr '\n' ' ')"
+fi
+if _diffutils_hits "$HERE/scripts"/*.sh "$HERE/scripts/lib"/*.sh | grep -q .; then
+  fail "a script calls cmp/diff again — use core_files_identical (#572)"
 else
   pass "no script calls cmp (diffutils stays optional)"
 fi

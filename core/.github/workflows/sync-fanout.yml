@@ -245,6 +245,35 @@ jobs:
               continue
             fi
 
+            # THIRD post-condition: every Core workflow pin must name the target too (#484).
+            #
+            # The two checks above cannot see a failed pin rewrite. sync-core.sh fails such a
+            # repo — err() prints a ✗ and flips it into the failed bucket — but that verdict
+            # cannot reach here: sync-core.sh exits 0 by design (this step runs it under
+            # `bash -e`, so a non-zero would abort the fan-out and deny PRs to the repos that
+            # DID sync), and core.lock is deliberately still written and committed on a pin
+            # failure (the subtree pull has already landed; withholding the lock would add a
+            # self-blocking dirty tree on top of the drift). So a repo whose pins never moved
+            # satisfies `ahead >= 1` AND `locked == target` — and gets a PR, carrying the exact
+            # "vendors one Core, runs another" split #482 closed, with only a ✗ in the job log.
+            #
+            # Assert the artefact instead of trusting the producer: re-derive every
+            # dotgibson/dotfiles-core 40-hex pin from the files on disk and require it to equal
+            # the target. Offline, cheap, and independent of how the sync reported. `@v4` alias
+            # callers match no 40-hex and are correctly invisible here — taking the alias is a
+            # deliberate per-repo policy, not drift.
+            stale_pins=""
+            if [ -d "$path/.github/workflows" ]; then
+              stale_pins="$(grep -rhoE 'dotgibson/dotfiles-core/\.github/workflows/[^@[:space:]]+@[0-9a-f]{40}' \
+                "$path/.github/workflows" 2>/dev/null | sed 's/.*@//' | sort -u | grep -v "^${target_sha}$" || true)"
+            fi
+            if [ -n "$stale_pins" ]; then
+              echo "- ❌ \`$r\` workflow pin(s) still name $(echo "$stale_pins" | cut -c1-12 | paste -sd' ' -) != target \`$short\` — not opening a PR" >> "$summary"
+              echo "::error::$r: the workflow pin rewrite did not land — core.lock says $short but a .github/workflows/* pin does not. Fix the file and re-run; a PR here would vendor one Core and run another (#482/#484)."
+              fail=1
+              continue
+            fi
+
             # Push per repo, and NEVER let one repo's failure deny the others their PR.
             # This ran unguarded under `set -e`, so the first bad push aborted the whole
             # loop: on the v4.12.1 cut dotfiles-MacBook was refused and the remaining eight

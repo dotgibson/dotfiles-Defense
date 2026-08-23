@@ -38,6 +38,13 @@
 #     blib_write_zshrc_loader        # param-less (v4): the loader globs the numbered fragments
 #     blib_set_login_shell
 #   }
+#   provision() {
+#     # Reads install/packages.txt into the caller's own array, so a missing or unreadable
+#     # list is a REAL failure rather than an empty array with a success status (#460).
+#     # Prefer this over `mapfile -t pkgs < <(blib_read_pkgs …)`, which discards the status.
+#     blib_read_pkgs_into pkgs "$DOTFILES/install/packages.txt" || exit 1
+#     ((${#pkgs[@]})) && dnf install -y "${pkgs[@]}"
+#   }
 # ──────────────────────────────────────────────────────────────────────────────
 
 [[ -n "${_CORE_BOOTSTRAP_LIB_SH:-}" ]] && return 0
@@ -72,9 +79,37 @@ blib_is_wsl() {
   grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null
 }
 
+# ── displaced-file backup naming ──────────────────────────────────────────────
+# _blib_backup_suffix — the ONE definition of the `.pre-dotfiles.*` suffix every writer
+# in the fleet appends. It had been open-coded three times in two different formats:
+# blib_link and the .zshrc loader used `date +%s`, while the `link()` helper
+# scripts/new-os-repo.sh generates used `date +%Y%m%d-%H%M%S`.
+#
+# That broke an invariant an OS repo's `--uninstall` DOCUMENTS and depends on:
+#
+#     The backup suffix is a zero-padded YYYYMMDD-HHMMSS stamp, so a lexical sort IS
+#     chronological — the LAST glob match is the newest.
+#
+# False across the pair. A 10-digit epoch (`17…`) always sorts BEFORE a `20…` datestamp,
+# so a date-stamped backup wins "newest" regardless of its real age and --uninstall
+# restores the OLDER file over the newer one, silently. It was latent only because the
+# two writers happened to own disjoint destinations; one overlap — an OS repo wiring a
+# path Core also wires — and it fires (#464).
+#
+# So: ONE format, and it is the sortable one. A datestamp also has the edge over an epoch
+# for a file a human is meant to find and identify on disk.
+#
+# The `.$$` tail is the second half of #464: both formats resolved to one SECOND and both
+# writers use a bare `mv`, so two backups of the same destination inside one second
+# overwrote each other — unlikely by hand, easy in a test loop or a scripted re-run. The
+# PID only ever tiebreaks WITHIN a second (the stamp differs otherwise), so it does not
+# disturb the cross-second ordering the sort relies on.
+_blib_backup_suffix() { printf 'pre-dotfiles.%s.%s' "$(date +%Y%m%d-%H%M%S)" "$$"; }
+
 # ── symlink with backup ───────────────────────────────────────────────────────
 # blib_link <src> <dst> — replace an existing SYMLINK in place; back up a real file
-# to <dst>.pre-dotfiles.<epoch> first. Idempotent (safe to re-run a bootstrap): an
+# to <dst>.pre-dotfiles.<stamp>.<pid> first (see _blib_backup_suffix), ANNOUNCING the
+# move on stderr. Idempotent (safe to re-run a bootstrap): an
 # already-correct link is a no-op. A missing src is skipped (not a dangling link).
 # Honors BLIB_DRY (plan only) and updates the BLIB_* counters.
 #
@@ -88,7 +123,7 @@ blib_is_wsl() {
 # above means this branch is reached ONLY when the link points somewhere else, so every
 # relink notice is real information, never re-run noise (issue #430).
 blib_link() {
-  local src="$1" dst="$2" was=""
+  local src="$1" dst="$2" was="" bak=""
   if [[ ! -e "$src" ]]; then
     blib_say "skip (missing): ${src##*/}"
     BLIB_SKIPPED=$((BLIB_SKIPPED + 1))
@@ -120,7 +155,24 @@ blib_link() {
     rm -f "$dst"
     BLIB_RELINKED=$((BLIB_RELINKED + 1))
   elif [[ -e "$dst" ]]; then
-    mv "$dst" "$dst.pre-dotfiles.$(date +%s)"
+    # ANNOUNCE it. The move itself was always correct — the file is preserved and
+    # restorable, and --uninstall can put it back — but it happened MUTELY, and blib_link
+    # wires roughly 34 of ~40 destinations in an OS-repo bootstrap, so silent clobbering
+    # was the overwhelmingly common case rather than an edge one (#463). The only trace
+    # was an aggregate `N backed up` in the closing summary, which says THAT something was
+    # displaced and never WHAT or where it went.
+    #
+    # The audience for this path is precisely someone migrating an existing machine onto
+    # the dotfiles — the person with the most to lose and the least context. From where
+    # they sit, an unannounced move means their ~/.gitconfig simply stopped being theirs;
+    # recovering it means already knowing the `.pre-dotfiles.` convention exists. That the
+    # recovery path EXISTS is what made the silence expensive, not cheap.
+    #
+    # blib_warn (stderr) rather than blib_say: this is the one wiring outcome that touched
+    # a file the user owned, so it should survive a caller that pipes stdout to a log.
+    bak="$dst.$(_blib_backup_suffix)"
+    mv "$dst" "$bak"
+    blib_warn "backed up existing $dst -> $bak"
     BLIB_BACKED=$((BLIB_BACKED + 1))
   fi
   ln -s "$src" "$dst"
@@ -149,15 +201,102 @@ blib_seed() {
 
 # ── read a package list ───────────────────────────────────────────────────────
 # blib_read_pkgs <file> — print one clean package name per line, stripping inline
-# (#...) comments and all whitespace (package names contain none). Callers feed this
-# into their own `mapfile -t pkgs < <(blib_read_pkgs …)` and hand pkgs to apt/dnf/apk.
+# (#...) comments and all whitespace (package names contain none).
+#
+# A MISSING OR UNREADABLE FILE IS NOW AN ERROR, not silence (#460). This read with a bare
+# redirect and no existence check, and every caller reaches it through a process
+# substitution:
+#
+#     mapfile -t pkgs < <(blib_read_pkgs "$DOTFILES/install/packages.txt")
+#
+# `mapfile` reports the exit status of ITSELF, not of the process inside `< <( … )`. So a
+# missing file left the caller holding a zero-length array WITH A SUCCESS STATUS, and two
+# very different situations became indistinguishable:
+#
+#   · packages.txt deliberately all-comments  → "lists no packages — skipping"
+#   · packages.txt MISSING FROM THE CLONE     → "lists no packages — skipping"
+#
+# The second is a broken checkout — an incomplete clone, a bad sync, a typo'd path — and
+# it provisioned NOTHING while reporting that as intended. On a fresh machine that is the
+# difference between "no extras requested" and "none of your tooling was installed". Same
+# class as #459: the status of the thing that actually failed never reaches the caller.
+#
+# `-r`, NOT `-f`, deliberately: dotfiles-Debian passes a PROCESS SUBSTITUTION here
+# (`blib_read_pkgs <(pkg_filter_lines "$base_list" "$OS_ID")`) to drop the lines annotated
+# for other distros. That argument is a `/dev/fd/N` pipe, which `-f` rejects — an existence
+# check written the obvious way would break a working caller.
+#
+# Returning non-zero is NECESSARY BUT NOT SUFFICIENT for the process-substitution form,
+# which discards it regardless. Callers that need the status must move to
+# blib_read_pkgs_into below, which assigns in the caller's own frame; this guard makes the
+# failure LOUD (stderr) even where the status is thrown away.
 blib_read_pkgs() {
   local line
+  [[ -r "$1" ]] || {
+    blib_warn "package list not readable: $1"
+    return 1
+  }
   while IFS= read -r line; do
     line="${line%%#*}"           # drop everything from the first # onward
     line="${line//[[:space:]]/}" # package names contain no whitespace
-    [[ -n "$line" ]] && printf '%s\n' "$line"
+    [[ -n "$line" ]] || continue
+    printf '%s\n' "$line"
   done <"$1"
+  # Explicit, now that the status MEANS something: this used to end on
+  # `[[ -n "$line" ]] && printf …`, whose status is the loop's status, so a list whose
+  # final line was blank or a comment — the common shape — returned 1. Harmless while
+  # every caller discarded it; a landmine the moment one stops.
+  return 0
+}
+
+# blib_read_pkgs_into <arrayname> <file> — parse a package list into the CALLER'S OWN
+# array variable, so `|| die` actually works:
+#
+#     blib_read_pkgs_into pkgs "$DOTFILES/install/packages.txt" || exit 1
+#
+# This is the robust shape the process-substitution form cannot have. `mapfile -t pkgs
+# < <(blib_read_pkgs …)` runs the reader in a SUBSHELL and reports mapfile's status, so
+# the reader's failure is structurally unreachable. Assigning here — in the current shell,
+# with the redirect on the `while` rather than a pipe — keeps both the data and the status.
+#
+# Returns 1 on a missing/unreadable file (after emptying the array, so no stale contents
+# survive a failed read) and 2 on a malformed array name. Accepts a `/dev/fd/N` process
+# substitution exactly like blib_read_pkgs, so Debian's pkg-filter shape still works.
+#
+# BASH 3.2-SAFE, which rules out the two obvious implementations: `local -n` namerefs are
+# 4.3 and `mapfile` is 4.0, while lib/*.sh must run on the macOS system bash (PORTABILITY.md
+# §1). Hence the index-append loop and the eval. Note that under `set -u` on bash 3.2 an
+# EMPTY array expansion counts as unset, so callers still want the
+# `"${pkgs[@]+"${pkgs[@]}"}"` idiom used elsewhere in this file.
+blib_read_pkgs_into() {
+  local _name="$1" _file="$2" _line _n=0
+  # Validate BEFORE the eval below. The name is spliced into an assignment, so anything
+  # but a plain shell identifier is a code-injection hole rather than a typo. Rejected:
+  # empty, anything with a character outside [A-Za-z0-9_], and a leading digit.
+  case "$_name" in
+  '' | *[!A-Za-z0-9_]* | [0-9]*)
+    blib_warn "blib_read_pkgs_into: not a valid array name: $_name"
+    return 2
+    ;;
+  esac
+  # Empty FIRST, so a failed read cannot leave the caller reading a previous run's list.
+  eval "$_name=()"
+  [[ -r "$_file" ]] || {
+    blib_warn "package list not readable: $_file"
+    return 1
+  }
+  while IFS= read -r _line; do
+    _line="${_line%%#*}"
+    _line="${_line//[[:space:]]/}"
+    [[ -n "$_line" ]] || continue
+    # `arr[i]=$v` — bash 3.2 has no `+=` for arrays, and an assignment RHS undergoes
+    # neither word splitting nor globbing, so the unquoted $_line inside the eval is safe.
+    # The braces are for shellcheck (SC1087): ${_name} is the array NAME being spliced in,
+    # not an array element being read.
+    eval "${_name}[\$_n]=\$_line"
+    _n=$((_n + 1))
+  done <"$_file"
+  return 0
 }
 
 # ── module selection (Track B: --only / --skip) ───────────────────────────────
@@ -381,7 +520,8 @@ blib_link_core() {
     # atuin — the config 00-tools.zsh's `atuin init zsh` never had. DEFAULT path (no
     # ATUIN_CONFIG_DIR needed), linked unconditionally like the two above; inert without
     # the binary. NOTE: a hand-written ~/.config/atuin/config.toml is BACKED UP by
-    # blib_link (…pre-dotfiles.<epoch>) — re-apply anything local via ATUIN_* env in the
+    # blib_link (…pre-dotfiles.<stamp>.<pid>, and it says so) — re-apply anything local
+    # via ATUIN_* env in the
     # OS/host layer, which is also how a machine turns the daemon on. CAVEAT: an ATUIN_*
     # override only reaches atuin for a key the Core config does NOT itself set (atuin adds
     # the config file as a source AFTER the environment, so the file wins). See that file's
@@ -544,7 +684,9 @@ blib_link_role_layer() {
 # that wants a one-line "N linked · M seeded · K backed up" footer calls this after
 # its wire_links. Prefixes "(dry run) " under BLIB_DRY so a preview reads as a preview.
 # "backed up" and "relinked" are separate on purpose: the first promises a restorable
-# .pre-dotfiles.<epoch> file on disk, the second only that the old target was printed.
+# .pre-dotfiles.<stamp>.<pid> file on disk, the second only that the old target was
+# printed. Both are now also announced individually as they happen (#463) — this footer
+# is the tally, not the record.
 blib_wire_summary() {
   local pre=""
   _blib_dry && pre="(dry run) "
@@ -566,7 +708,7 @@ blib_wire_summary() {
 # $ZDOTDIR/.zshrc — see _blib_seed_zdotdir_rc.
 blib_write_zshrc_loader() {
   blib_want zsh || return 0   # the .zshrc loader belongs to the zsh group
-  local rc="$HOME/.zshrc"
+  local rc="$HOME/.zshrc" rc_bak=""
 
   if [[ -f "$rc" ]] && grep -q "dotfiles-managed v4" "$rc" 2>/dev/null; then
     # Already managed — but a box bootstrapped before the seeding below existed still
@@ -582,7 +724,15 @@ blib_write_zshrc_loader() {
     return 0
   fi
   blib_say "writing .zshrc loader"
-  [[ -f "$rc" ]] && cp "$rc" "$rc.pre-dotfiles.$(date +%s)"
+  # Same one format as blib_link, via the same helper (#464) — and announced, for the
+  # same reason (#463). This one is a `cp` rather than a `mv` because the heredoc below
+  # overwrites $rc in place; the user's prior ~/.zshrc is still displaced from the only
+  # location that matters to them, so it is still worth saying out loud.
+  if [[ -f "$rc" ]]; then
+    rc_bak="$rc.$(_blib_backup_suffix)"
+    cp "$rc" "$rc_bak"
+    blib_warn "backed up existing $rc -> $rc_bak"
+  fi
 
   cat >"$rc" <<'ZRC'
 # dotfiles-managed v4 — do not hand-edit; local tweaks go in ~/.config/zsh/99-local.zsh
@@ -681,6 +831,101 @@ _blib_priv() {
 # every privileged command instead of writing `sudo` inline. `_blib_priv` predates it and
 # stays as the internal spelling the helpers in this file already use.
 blib_priv() { _blib_priv "$@"; }
+
+# ── non-destructive write of a ROOT-OWNED system file ─────────────────────────
+# blib_install_system_file <rendered-content> <dst> — install CONTENT at DST under
+# $BLIB_SU, backing up whatever was there first. The system-file counterpart to blib_link:
+# same guarantee (nothing the user owned is destroyed unannounced), same backup naming, same
+# BLIB_BACKED tally, same BLIB_DRY behaviour.
+#
+# WHY THIS EXISTS. blib_link has backed up a displaced real file since the beginning, but the
+# other way a bootstrap writes to a machine — `_blib_priv tee` into /etc — had no equivalent,
+# so every OS repo hand-rolled it, and one did not. `dotfiles-Arch` rendered /etc/wsl.conf and
+# teed it over the top on every run of a script its own docs call idempotent. That was not a
+# theoretical hazard: on a real box the pre-existing /etc/wsl.conf carried `[boot] systemd=true`
+# and the run destroyed it (#475). A file under /etc is the one class where the user has the
+# least ability to notice and the most to lose — it is not in their home, no editor has it
+# open, and the loss surfaces at the next boot.
+#
+# THREE OUTCOMES, and the first is the common one:
+#   • byte-identical  → nothing is written, nothing is counted, nothing is said. This is what
+#     makes a second run genuinely idempotent rather than merely harmless-looking: without it
+#     every re-run would produce another backup, and a directory of twenty identical
+#     .pre-dotfiles copies is its own kind of damage.
+#   • present and different → `cp -a` to <dst>.pre-dotfiles.<stamp>.<pid>, then write. `cp -a`,
+#     NOT blib_link's `mv`: the original must stay in place with its owner, mode and timestamps
+#     intact, because /etc entries are frequently read by something that must not see the file
+#     briefly vanish, and because the backup should be root-owned like the original rather than
+#     inheriting whoever ran the bootstrap. The stamp comes from _blib_backup_suffix, so a
+#     system backup sorts and reads exactly like a dotfile one (#464) — one convention to know.
+#   • absent → write it, and say so. No backup, nothing to count.
+#
+# COMPARISON IS A BASH STRING COMPARE, deliberately, and this is the one place it beats
+# core_files_identical's `git hash-object`. This helper runs during provisioning, which on a
+# fresh box can be BEFORE git is installed — and a comparison that errors is indistinguishable
+# from "they differ", which would make every run take the backup-and-write branch: exactly the
+# failure mode #572 documents for a missing `cmp`. A string compare needs no binary at all.
+# Its one imprecision is that $(...) strips trailing newlines from both sides, so two renderings
+# differing ONLY in trailing blank lines compare equal. That is the right direction: the quiet
+# one. This helper always writes the same rendering, so the only way to reach that case is a
+# human having touched the file, and treating that as "no change" leaves their file alone
+# rather than backing it up and overwriting it to no visible purpose.
+#
+# The destination is read back through _blib_priv too — a 0600 root-owned file is not readable
+# by the invoking user, and reading it directly would fail and be misread as "differs".
+#
+# Returns 0 on success or no-op. On failure it warns, records via blib_note_fail so
+# blib_failures_report can surface it, and still returns 0 — a bootstrap must not die under
+# `set -e` because one /etc write was refused, and the tally is what keeps that honest.
+blib_install_system_file() {
+  local content="${1-}" dst="${2-}" cur="" bak=""
+  if [[ -z "$dst" ]]; then
+    blib_warn "blib_install_system_file: no destination given"
+    return 0
+  fi
+  # NORMALISE THE CONTENT ONCE, and compare and write the same normalised value. $(...) below
+  # strips trailing newlines from what is on disk but nothing strips them from the argument, so
+  # a caller passing a heredoc — the natural way to render a config file, and the way every
+  # /etc writer in the fleet does it — would compare unequal against the file this helper
+  # itself just wrote, and take the back-up-and-rewrite branch on EVERY run. That is precisely
+  # the non-idempotence the helper exists to remove, reintroduced one layer up.
+  while [[ "$content" == *$'\n' ]]; do content="${content%$'\n'}"; done
+  # `_blib_priv test -e`, not `[[ -e ]]`: the path may live in a directory the invoking user
+  # cannot traverse, where a plain test answers "absent" for a file that is very much there.
+  if _blib_priv test -e "$dst" 2>/dev/null; then
+    cur="$(_blib_priv cat "$dst" 2>/dev/null || true)"
+    if [[ "$cur" == "$content" ]]; then
+      BLIB_SKIPPED=$((BLIB_SKIPPED + 1))
+      return 0 # already exactly this — say nothing, count nothing, write nothing
+    fi
+    if _blib_dry; then
+      blib_say "would back up + write: $dst"
+      BLIB_BACKED=$((BLIB_BACKED + 1))
+      return 0
+    fi
+    bak="$dst.$(_blib_backup_suffix)"
+    if ! _blib_priv cp -a "$dst" "$bak" 2>/dev/null; then
+      blib_note_fail "could not back up $dst — leaving it untouched rather than overwriting it"
+      return 0
+    fi
+    # blib_warn (stderr), matching blib_link: this is a file the machine owned, and the notice
+    # must survive a caller that pipes stdout to a log.
+    blib_warn "backed up existing $dst -> $bak"
+    BLIB_BACKED=$((BLIB_BACKED + 1))
+  else
+    if _blib_dry; then
+      blib_say "would write: $dst"
+      return 0
+    fi
+    _blib_priv mkdir -p "$(dirname "$dst")" 2>/dev/null || true
+  fi
+  if printf '%s\n' "$content" | _blib_priv tee "$dst" >/dev/null 2>&1; then
+    blib_say "wrote $dst"
+  else
+    blib_note_fail "could not write $dst${bak:+ — the original is preserved at $bak}"
+  fi
+  return 0
+}
 
 # blib_resolve_su [--require] — resolve the escalator ONCE into BLIB_SU, and export it.
 #

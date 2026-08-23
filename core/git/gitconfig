@@ -205,6 +205,28 @@
 [includeIf "gitdir:~/clients/"]
 	path = ~/.config/git/config-work
 
+# ── Identity: refuse to guess one ─────────────────────────────────────────────
+# useConfigOnly stops git INVENTING an author from $USER@$(hostname) when name/email are
+# unset. On its own that would be a small hardening; here it is a bug fix (#476).
+#
+# bootstrap.sh seeds ~/.config/git/local.gitconfig from local.gitconfig.example, the include
+# at the bottom of this file picks it up, and the example used to ship a LIVE
+# `Your Name <you@example.com>`. So a freshly bootstrapped box had a perfectly valid identity
+# and `git commit` succeeded — authoring as Your Name. Before bootstrap that same box had no
+# identity at all and the commit would have failed loudly, which is the correct behaviour:
+# bootstrapping made the failure mode strictly worse, and the result lands in public repo
+# history where authorship cannot be fixed retroactively.
+#
+# The two halves go together. Commenting the example out alone is not enough — git would then
+# fall back to its guessed identity and still commit. Setting this alone is not enough either
+# — the seeded placeholder is included AFTER this file and would still supply a valid-looking
+# name. With both, an unconfigured box gets git's own error naming the two commands to run.
+#
+# Note `[alias] mine` below reads `git config user.email`, so it now fails on an
+# unconfigured box rather than matching nothing. That is the same improvement: loud, not silent.
+[user]
+	useConfigOnly = true
+
 # ── Layered includes (later overrides earlier; missing files are ignored) ─────
 # OS-specific (credential helper, excludesfile, gpg program) — each OS repo's os/*.gitconfig:
 [include]

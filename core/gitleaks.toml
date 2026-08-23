@@ -1,0 +1,57 @@
+# gitleaks.toml — the fleet's ONE secret-scanning policy.
+# ──────────────────────────────────────────────────────────────────────────────
+# Read by all four consumers, so author time and CI cannot disagree about what
+# counts as a finding:
+#
+#   · .pre-commit-config.yaml     — the gitleaks hook, at author time (commit diff)
+#   · scripts/audit-core.sh §8b   — `make audit` + Core's CI (working tree)
+#   · .github/workflows/lint-call.yml `secrets` job — every OS/role repo's CI
+#   · a consumer's own `make secrets`, where it has one (git HISTORY sweeps)
+#
+# Splitting these was the failure mode to avoid: a gate that is red in CI and green
+# locally teaches people to bypass it, and one that is red in ONE repo teaches that
+# repo to disable it. Same pinning discipline as scripts/tool-versions.env — one
+# definition, referenced everywhere, changed deliberately.
+#
+# EXTENDS the upstream rule set rather than replacing it (`useDefault = true`), so a
+# gitleaks bump brings new detections automatically. Nothing below removes a rule;
+# the single allowlist narrows one well-understood false-positive class.
+[extend]
+useDefault = true
+
+# ── the one allowlist: a variable REFERENCE is not a credential ───────────────
+# Several default rules match on "credential-shaped position" rather than on the
+# value's content — `curl-auth-user` fires on anything after `curl -u`, whatever it
+# is. Infra config in this fleet routinely puts a variable reference there, which is
+# exactly the SECURE shape (the value comes from the environment at runtime and never
+# enters the file), and it was being reported as a leak.
+#
+# The live example, from dotfiles-Defense's OpenSearch healthcheck:
+#
+#     test: ["CMD-SHELL", "curl -sk -u admin:$$OPENSEARCH_INITIAL_ADMIN_PASSWORD ..."]
+#
+# The `$$` is deliberate — it stops Compose interpolating at render time, so the
+# password stays out of `docker compose config` and `docker inspect` and is expanded
+# by the container shell instead. Flagging that as a leak inverts the incentive: it
+# reports the careful form and would be silent on the careless one.
+#
+# SCOPED TO THE VALUE, NOT THE FILE. `regexTarget = "secret"` means this allowlists a
+# matched value that IS a variable reference — it does not exempt a path, a rule, or a
+# repo, so a real credential on the very same line of the very same file is still
+# caught. Verified both directions before landing: it clears the Defense finding, and
+# `curl -u admin:hunter2Sup3rSecret` in the same position still fails.
+#
+# The anchors matter. `(^|:)` allows the `user:$VAR` shape that `curl -u` produces
+# while requiring the reference to be the WHOLE credential portion, and `$` at the end
+# means a value with anything appended after the reference is NOT allowlisted — so
+# `$VAR` passes and `${VAR}suffix-of-real-secret` does not.
+#
+#   \$+\{?NAME\}?   →  $VAR   $$VAR   ${VAR}   $${VAR}    (sh, Compose, CI)
+#   %NAME%          →  %VAR%                              (cmd/PowerShell, dotfiles-Windows)
+[[allowlists]]
+description = "the credential position holds only a variable reference, not a value"
+regexTarget = "secret"
+regexes = [
+  '''(^|:)\$+\{?[A-Za-z_][A-Za-z0-9_]*\}?$''',
+  '''(^|:)%[A-Za-z_][A-Za-z0-9_]*%$''',
+]

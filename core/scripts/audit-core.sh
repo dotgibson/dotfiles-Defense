@@ -271,7 +271,7 @@ META_ALLOWLIST=(
   README.md PORTING-MATRIX.md CONTRIBUTING.md CHANGELOG.md LICENSE SECURITY.md aliases.md CLAUDE.md
   ARCHITECTURE.md PORTABILITY.md VENDORING.md CODE_OF_CONDUCT.md
   PARITY.md RELEASE-STRATEGY.md RELEASE-RUNBOOK.md GITHUB-APP-AUTH.md V4-PROPOSAL.md
-  core.manifest .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc renovate.json .prettierrc.json
+  core.manifest .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc renovate.json .prettierrc.json gitleaks.toml
   Makefile cliff.toml
   nvim/.luacheckrc
   CODEOWNERS pull_request_template.md
@@ -662,6 +662,88 @@ EOF
   ((rt_fail)) || pass "RETURN traps (every one disarms the slot before the caller's frame sees it)"
 fi
 
+# ── 5f. bootstrap-lib helper adoption across the fleet ───────────────────────
+# Core ships lib/bootstrap-lib.sh so the shared half of a bootstrap stops being hand-forked
+# nine ways. Helpers get ADDED to it over time — usually because one repo hit a bug — and
+# nothing has ever checked whether the other eight picked them up. So the file grows a fix
+# and the fleet keeps the defect (#516).
+#
+# Measured when this section was written, and it is not a hypothetical spread:
+#   blib_resolve_su 2/9 · blib_sudo_keepalive_start 1/9 · blib_user_bindirs_on_path 1/9 ·
+#   blib_note_fail + blib_failures_report 2/9 · blib_wire_summary 7/9 ·
+#   blib_install_core_guard 7/9 · BLIB_DRY 9/9
+# Each gap is a live defect in the repos missing it: no blib_resolve_su means a hand-rolled
+# `[[ "$(id -u)" -eq 0 ]]`, an ARITHMETIC comparison where an empty `id` output evaluates as
+# 0 and the whole run proceeds unescalated; no blib_sudo_keepalive_start means sudo's
+# timestamp expires during a long install and the re-prompt goes to a discarded stderr, i.e.
+# a silent hang; no blib_failures_report means the script can record failures via
+# blib_note_fail and then exit 0 announcing "complete".
+#
+# REPORT, DO NOT BLOCK — deliberately, and this is the load-bearing design decision.
+# Seven of nine repos are short on arrival, so a failing gate would be red from its first
+# run, and a gate that is red on arrival is a gate someone turns off. It states the gap and
+# leaves remediation to per-repo work. Turn it into a fail only once the fleet is clean.
+#
+# --STRICT SAFETY: the "sibling not checked out" skip is worded with the literal
+# "out of scope" because --strict counts every OTHER skip as a real coverage gap and reds
+# the run. CI checks out only this repo, so without that wording this section would break
+# --strict everywhere it matters. Same graceful-degradation shape core-integrity.sh uses.
+#
+# Reads scripts/os-repos.txt with the light sed idiom (as freshness-dashboard.sh does) and
+# NOT the three-script pattern with a hardcoded fallback array: os-repos.txt documents that
+# adding a target is four coordinated edits, and test-core.sh asserts those four agree. A
+# fourth reader should not join that contract for a purely advisory check.
+hdr "bootstrap-lib helper adoption (advisory)"
+_ha_root="$(cd "$HERE/.." && pwd)"
+if [[ ! -r "$HERE/scripts/os-repos.txt" ]]; then
+  skip "helper adoption (scripts/os-repos.txt unreadable — out of scope)"
+else
+  # <helper> <what its absence costs>. Kept here rather than in bootstrap-lib.sh so the
+  # rationale lives with the check that reports it; VENDORING.md carries the human contract.
+  _ha_checked=0
+  _ha_missing=0
+  _ha_absent=0
+  while IFS= read -r _ha_repo; do
+    [ -n "$_ha_repo" ] || continue
+    _ha_dir="$(resolve_repo_dir "$_ha_root" "$_ha_repo")" || _ha_dir="$_ha_root/$_ha_repo"
+    if [[ ! -f "$_ha_dir/bootstrap.sh" ]]; then
+      _ha_absent=$((_ha_absent + 1))
+      continue
+    fi
+    _ha_checked=$((_ha_checked + 1))
+    _ha_gaps=""
+    for _ha_h in blib_resolve_su blib_sudo_keepalive_start blib_user_bindirs_on_path \
+      blib_note_fail blib_failures_report blib_wire_summary blib_install_core_guard BLIB_DRY; do
+      # A ROLE repo layers on top of an OS repo's bootstrap and does no package installation
+      # of its own, so the two helpers that exist for long privileged installs do not apply.
+      # Exempting them is what keeps the report actionable rather than noisy — the same shape
+      # as the doctor's own exemption list.
+      case "$_ha_repo:$_ha_h" in
+      dotfiles-Defense:blib_sudo_keepalive_start | dotfiles-Offense:blib_sudo_keepalive_start | \
+        dotfiles-Defense:blib_user_bindirs_on_path | dotfiles-Offense:blib_user_bindirs_on_path)
+        continue
+        ;;
+      esac
+      grep -q "$_ha_h" "$_ha_dir/bootstrap.sh" 2>/dev/null || _ha_gaps="$_ha_gaps $_ha_h"
+    done
+    if [[ -n "$_ha_gaps" ]]; then
+      _ha_missing=$((_ha_missing + 1))
+      printf '  %s%s%s %s does not call:%s\n' "${c_yel}" "•" "${c_rst}" "$_ha_repo" "$_ha_gaps"
+    fi
+  done < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$HERE/scripts/os-repos.txt")
+
+  if ((_ha_checked == 0)); then
+    skip "helper adoption (no sibling OS repo checked out — out of scope)"
+  elif ((_ha_missing)); then
+    # pass(), not fail(): see REPORT, DO NOT BLOCK above. The count is the signal; the
+    # per-repo lines printed just above are the detail.
+    pass "helper adoption: $_ha_missing of $_ha_checked checked-out repo(s) have not adopted every helper (advisory — see the lines above, VENDORING.md has the contract)"
+  else
+    pass "helper adoption: every checked-out OS repo calls the whole bootstrap-lib contract ($_ha_checked repo(s))"
+  fi
+  ((_ha_absent)) && skip "helper adoption: $_ha_absent repo(s) not checked out — out of scope"
+fi
+
 # ── 6. config files (toml / yaml parse) ──────────────────────────────────────
 # A malformed starship.toml / mise config.toml / ci.yml is still valid *text* —
 # so zsh -n and shellcheck never look at it — yet it breaks every one of the 9
@@ -772,10 +854,15 @@ if have gitleaks; then
   # "leaks found: N" and the file/line/rule stay hidden — the same non-answer this change
   # exists to remove. --no-color matches the flag already passed to luacheck, so the text
   # captured into a log is plain rather than escape sequences.
-  if gl_out="$(gitleaks dir . --no-banner --redact -v --no-color 2>&1)"; then
+  # -c gitleaks.toml: the ONE fleet policy (see that file's header). Without it this
+  # gate and lint-call.yml's `secrets` job would run different rule sets against the same
+  # class of tree — and a finding that is real here and allowlisted there (or the reverse)
+  # is worse than either gate alone, because it makes the disagreement look like a bug in
+  # the code rather than in the config.
+  if gl_out="$(gitleaks dir . -c gitleaks.toml --no-banner --redact -v --no-color 2>&1)"; then
     pass "gitleaks (no secrets in the working tree)"
   else
-    fail "gitleaks found potential secrets — run: gitleaks dir . --redact -v"
+    fail "gitleaks found potential secrets — run: gitleaks dir . -c gitleaks.toml --redact -v"
     # Safe to print BECAUSE of --redact: gitleaks replaces the matched value with
     # REDACTED, so the report names the file, line, rule and fingerprint without
     # reproducing the secret. Drop --redact and this becomes the one gate whose output
