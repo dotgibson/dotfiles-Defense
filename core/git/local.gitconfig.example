@@ -9,9 +9,14 @@
 #   git config -f ~/.config/git/local.gitconfig user.email "you@example.com"
 # ──────────────────────────────────────────────────────────────────────────────
 
+# COMMENTED OUT ON PURPOSE — uncomment and fill in. They used to ship as live values, which
+# meant a freshly bootstrapped box had a VALID identity and committed silently as
+# `Your Name <you@example.com>` (#476). `git/gitconfig` now sets `user.useConfigOnly = true`,
+# so with these commented out git refuses to guess and tells you exactly what to set. Both
+# halves are needed: a live placeholder here would still satisfy useConfigOnly.
 [user]
-	name  = Your Name
-	email = you@example.com
+	# name  = Your Name
+	# email = you@example.com
 	# signingkey = <gpg-key-id>     # gpg --list-secret-keys --keyid-format=long
 
 # Sign all commits by default (only if you set a signingkey above):

@@ -158,6 +158,44 @@ typeset -ga _CORE_DOCTOR_GROUPS=(
   "dev / repo"   "ast-grep shellcheck shfmt hyperfine watchexec uv jj difft git-absorb"
 )
 
+# ── Which of those rows Core actually EXPECTS a bootstrap to install ──────────────────
+# The third state. Every row above used to render as ✓ or ✗, and PORTING-MATRIX.md's footnote
+# ²¹ ("Available, not installed") says a documented subset of them is installed by NO Linux
+# repo's packages.txt and by NO bootstrap.sh — deliberately. Those two facts contradicted each
+# other: a correctly-provisioned box reported a wall of ✗ for tools that were never in scope.
+#
+# ✗ is the doctor's only alarm channel. When a healthy box shows nine permanent ones, the
+# operator stops reading them — and a REAL regression, a tool that was installed and broke,
+# lands in the same visual bucket as the ones that were never coming. That is alarm fatigue
+# engineered into the tool, and it also made the doctor unusable as a provisioning gate: there
+# was no exit code and no --json shape meaning "this box got everything it was supposed to
+# get" (#513).
+#
+# MEMBERSHIP IS A RULE, NOT A JUDGEMENT CALL: a tool belongs here iff its Tool cell in
+# PORTING-MATRIX.md carries a ROW-level ²¹, or one of the two footnotes ²¹ itself names as
+# "the same shape" (¹⁷ jnv, ¹⁹ gping). scripts/test-core.sh re-derives this list from the
+# matrix and fails if the two disagree — so the prose stops being hand-maintained, which is
+# the gap that let a probed tool ship with no matrix row at all (#514).
+#
+# THE KNOWN LIMITATION, recorded so it is not rediscovered: `jj` and `ast-grep` carry ²¹ only
+# in the Gentoo and Kali CELLS — Arch, openSUSE and Alpine package and install them. A
+# Core-side list cannot express "opt-in over there, expected here", and muting them globally
+# would hide a genuine ✗ on the repos that do install them. So they stay expected, and are
+# ✗ on the two repos where they are not. Fixing that properly needs a per-repo manifest
+# (an `install/expected-tools.txt` each bootstrap ships); this list is the fallback default
+# that keeps every repo rendering sensibly until one exists.
+typeset -ga _CORE_DOCTOR_OPTIN=(
+  lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
+)
+
+# _core_doctor_optin <tool> → 0 if the tool is opt-in (absence is expected, never an alarm).
+# A function rather than an inline loop because both renderers ask, and they must not drift.
+_core_doctor_optin() {
+  local _o
+  for _o in $_CORE_DOCTOR_OPTIN; do [[ "$_o" == "$1" ]] && return 0; done
+  return 1
+}
+
 # ── The doctor's WIRABLE inventory — ONE definition, read by BOTH renderers ───────────
 # The same single-source rule as _CORE_DOCTOR_GROUPS above, applied to the other axis. This
 # list lived as two `local -a` literals — one in _core_doctor_json, one in
@@ -297,6 +335,25 @@ _core_doctor_json() {
     _core_doctor_bin "$t"
     if _core_have "$REPLY"; then print -rn -- "\"$t\":true"; else print -rn -- "\"$t\":false"; fi
   done
+  # "expected" is what makes this object assertable (#513). "tools" alone can only answer
+  # "is every tool present", which is false on every correctly-provisioned box — footnote ²¹
+  # names a subset no bootstrap installs. With this a provisioning gate can ask the question
+  # that actually has a right answer:
+  #
+  #   jq -e 'all(.expected | to_entries[]; .value | not or (.key as $k | $tools[$k]))'
+  #   …or plainly: no tool with expected=true may have tools=false.
+  #
+  # A SEPARATE object rather than turning "tools" into a tri-state string: "tools" is a
+  # published shape with consumers, and widening bool→enum would break every one of them for
+  # a question they were not asking. Same key set and same order as "tools", so the two zip.
+  # The exit code deliberately does not move — core-doctor is read-only diagnostics and
+  # returns 0 on a bare box by design; a gate reads this field, not $?.
+  print -rn -- "},\"expected\":{"
+  first=1
+  for t in $alltools; do
+    ((first)) || print -rn -- ","; first=0
+    if _core_doctor_optin "$t"; then print -rn -- "\"$t\":false"; else print -rn -- "\"$t\":true"; fi
+  done
   print -rn -- "},\"wired\":{"
   first=1
   for t in $wir; do
@@ -369,7 +426,7 @@ _core_doctor_render() {
   # was mostly command replacements, but most of the inventory is now opt-in tooling that
   # shadows nothing — there is no classic `ast-grep` or `jj` to degrade to, so a blanket
   # promise of a fallback misread every ✗ outside the first group.
-  print -r -- "${c}dotfiles-core ${ver}${r} ${d}— core-doctor (✓ present · ✗ absent; the replacements below fall back to the classic command)${r}"
+  print -r -- "${c}dotfiles-core ${ver}${r} ${d}— core-doctor (✓ present | ✗ expected but missing | · opt-in, not installed)${r}"
 
   # Grouped tool report, straight off the one inventory defined above _core_doctor_json.
   # A tool is ✓ when it resolves on PATH, ✗ (dimmed) when it is absent — which for the
@@ -384,7 +441,7 @@ _core_doctor_render() {
   # `bin` and REPLY join _v here for the same reason: _core_doctor_bin writes REPLY, and
   # both are assigned once per tool inside the loop.
   local gi tool line _v bin REPLY
-  local -a missing=()
+  local -a missing=() optin=()
   for ((gi = 1; gi <= ${#groups}; gi += 2)); do
     print -r -- "${c}${groups[gi]}${r}"
     line=""
@@ -401,6 +458,13 @@ _core_doctor_render() {
         else
           line+="  ${g}✓${r} ${tool}"
         fi
+      elif _core_doctor_optin "$tool"; then
+        # ABSENT AND THAT IS CORRECT — footnote ²¹. Rendered, because "you could have this"
+        # is worth knowing, but with a glyph that is not an alarm and without joining the
+        # install list below. `·` rather than the `○` used in the wired block further down:
+        # there ○ means "installed but IDLE", and one glyph carrying two meanings on one
+        # screen is precisely the legibility problem this change is about.
+        line+="  ${d}· ${tool}${r}"; optin+=("$tool")
       else line+="  ${d}✗ ${tool}${r}"; missing+=("$tool"); fi
     done
     print -r -- " $line"
@@ -432,6 +496,13 @@ _core_doctor_render() {
       print -r -- "  ${d}so install per tool: ${_pfx} <pkg>${r}"
       print -r -- "  ${d}see core/PORTING-MATRIX.md for the per-tool name and install path${r}"
     fi
+  fi
+  # The opt-in rows get ONE line, not the block above. They are not a problem to fix, so
+  # they do not get a remedy; naming them is only so `·` is legible without the legend.
+  if ((${#optin})); then
+    print -r -- "${c}opt-in${r}"
+    print -r -- "  ${d}${optin[*]}${r}"
+    print -r -- "  ${d}no bootstrap installs these — · is informational, never a failure${r}"
   fi
 
   # Active-integration probe (U1): presence (command -v, above) is NOT the same as wired.

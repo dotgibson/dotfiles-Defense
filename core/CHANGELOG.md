@@ -13,6 +13,574 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Changed
+
+- **nvim plugin pins move forward for three plugins.** `flash.nvim`, `nvim-lspconfig` and
+  `nvim-treesitter` advance to the commits lazy.nvim had already resolved on a live box.
+
+  Every new SHA was verified to exist upstream and to be a strict fast-forward of the one it
+  replaces (`status=ahead`, `behind_by=0` in all three — no rewrite or force-push), and each
+  range was read before promotion:
+
+  - **`flash.nvim`** `b634694` → `5f0f270`, 2 commits: a Neovim 0.13 search-state fix (#496)
+    plus auto-generated vimdocs. Core calls `require("flash").jump()` — public API, untouched.
+  - **`nvim-lspconfig`** `bff1bd6` → `221c438`, 3 commits: the only functional change is
+    `lsp/ols.lua` skipping its config when the `odin` command is missing, and Core does not
+    configure `ols`. The two servers Core _does_ touch here are cosmetic — `gopls` gains one
+    docstring line in its type annotations, `volar` nine additive annotation lines (Core's
+    only mention of `volar` is the comment in `servers/vue_ls.lua` recording that rename).
+  - **`nvim-treesitter`** `074aa44` → `8b98b44`, 2 commits: a parser bot update, and `djot`
+    marked unmaintained. Core does not reference `djot`.
+
+  Nothing renames or removes an API Core calls.
+
+  **Provenance, because it is the failure mode this repo keeps re-learning:** these bumps were
+  found as an uncommitted edit to `dotfiles-MacBook`'s **vendored** `core/nvim/lazy-lock.json`
+  — the same shape as the v4.14.0 entry, which found the previous set sitting in
+  `dotfiles-Fedora`'s vendored tree. That tree is a copy: `scripts/sync-core.sh` refuses a
+  dirty repo outright, so the edit blocks the next fan-out rather than surviving it, and once
+  committed there it would be overwritten and lost on the following `lazy sync`. They belong
+  here, once, and reach every machine by fan-out.
+
+### Added
+
+- **`core-doctor` gets a third state, so `✗` means something again.** (#513)
+  `_CORE_DOCTOR_GROUPS` probes 41 tools; `PORTING-MATRIX.md`'s footnote ²¹ says a documented
+  subset of them is installed by **no** Linux repo's `packages.txt` and **no** `bootstrap.sh`,
+  deliberately. Both were rendered `✗`, so a correctly-provisioned box reported a wall of
+  failures for tools that were never in scope. `✗` is the doctor's only alarm channel — when a
+  healthy box shows nine permanent ones the operator stops reading them, and a real regression
+  lands in the same visual bucket as the ones that were never coming.
+
+  Now `✓ present | ✗ expected but missing | · opt-in, not installed`, with the opt-in rows
+  listed once under their own heading and kept out of the `install missing` block, which
+  exists to name things worth fixing. `·` rather than the `○` the issue proposed: `○` already
+  means "installed but **idle**" in the wired block below, and one glyph with two meanings on
+  one screen is the legibility problem this change is about.
+
+  `--json` grows an `expected` object beside `tools`, sharing its key set and order, so a
+  provisioning gate can finally assert _"no expected tool is missing"_ — a question that had
+  no expressible form, since `tools` alone can only answer "is every tool present", which is
+  false on every correctly-provisioned box. A separate object rather than widening `tools`
+  from bool to enum, which would break every existing consumer for a question they were not
+  asking. The exit code deliberately does not move: `core-doctor` is read-only diagnostics.
+
+  Membership is a **rule, not a judgement call** — a tool is opt-in iff its `PORTING-MATRIX.md`
+  Tool cell carries a row-level ²¹, or one of the two footnotes ²¹ itself names as the same
+  shape (¹⁷ `jnv`, ¹⁹ `gping`). A test re-derives the list from the matrix and fails if the two
+  disagree, so the prose is mechanically checked rather than hand-copied — the gap that let a
+  probed tool ship with no matrix row at all (#514). Known limitation, recorded rather than
+  papered over: `jj` and `ast-grep` carry ²¹ only in the Gentoo and Kali _cells_, and a
+  Core-side list cannot say "opt-in there, expected here", so they stay expected. Fixing that
+  properly needs a per-repo manifest; this is the fallback default until one exists.
+
+- **`bootstrap-test.yml` now asserts the OS overlay — the part an OS repo actually owns.**
+  (#473)
+  The `links-only` job asserted `loader.zsh`, `80-os.zsh`, `starship.toml`,
+  `lazygit/config.yml`, `nvim`, `.vimrc`, `.gitconfig`, plus conditional `atuin` and the
+  seeded `sesh`. It did **not** assert a single thing `blib_link_os_layer` produces — so a
+  regression in the OS overlay was invisible to the one test whose stated purpose is "the
+  part bootstrap.sh OWNS: the wiring it produces."
+
+  Now asserted: `~/.config/tmux/os.conf`, `~/.config/git/os.gitconfig`,
+  `~/.ssh/config.d/50-os.conf`, `~/.ssh/config`, `~/.config/jj/config.toml`,
+  `~/.config/mise/config.toml`, and `~/.local/bin/clip` + `clip-paste` — plus the ssh
+  permission side effects nothing checked (`0700` on `~/.ssh`, `~/.ssh/sockets` and
+  `~/.ssh/config.d`). Those modes are not cosmetic: ssh silently ignores a config under a
+  loose directory, so a bootstrap that linked the file but left `~/.ssh` at `0755`
+  produces a box where the config is present and **inert**, which is harder to diagnose
+  than a missing link.
+
+  Every check **self-arms on the caller tree** rather than taking a new input, following
+  the `os/*.zsh` and `atuin` precedent already in the file — a role repo ships no `os/`
+  overlay and correctly links nothing, and a repo on an older vendored `core/` has no
+  `core/jujutsu` to link, so an unconditional check would red a repo doing exactly the
+  right thing.
+
+  `0600` on `~/.ssh/config` is **deliberately not** asserted, and the workflow says why:
+  Core does not chmod that file and must not, because it is a symlink into the consumer's
+  vendored `core/` tree. The reasoning was already recorded in `lib/bootstrap-lib.sh`; it
+  is now recorded at the gate too, so the next audit does not re-file the request.
+
+- **New opt-in `packages_check` input — package names are gated at last.** (#474)
+  `--links-only` returns before `provision()`, so `install/packages.txt` — the most
+  volatile file in every OS repo, on distros including **rolling releases** — was validated
+  by no blocking gate anywhere in the fleet. Real drift already happened: `doggo` moved
+  AUR → `extra` on Arch and broke a file nobody had edited.
+
+  The `provision_stub` job does not cover this and cannot: it replaces the package managers
+  with no-ops, so a wrong package name is precisely the class of bug it is blind to.
+  `packages_check` covers that blind spot from the other side, resolving every name against
+  the real distro repos — `pacman -Si`, `dnf list`, `apk info`, `zypper info` — with no
+  download and no install.
+
+  The input is a **string** (the resolve command) rather than a boolean, so Core does not
+  have to own a distro-to-command table that would need editing here every time a repo
+  joins the fleet or a package manager changes its flags. A companion `packages_file`
+  input (default `install/packages.txt`) covers the repo whose list carries per-distro
+  annotations — dotfiles-Debian filters through its own `scripts/pkg-filter.sh` and should
+  point this at a pre-filtered file.
+
+  It reads the list with `blib_read_pkgs_into`, the **same parser** `bootstrap.sh` uses, so
+  CI cannot pass on a list bootstrap would read differently — and an unreadable list fails
+  loudly instead of resolving zero packages green, which for this job would otherwise be a
+  permanent silent false pass. Every unresolved name is collected and reported together
+  rather than failing on the first, since a rolling-release rename usually arrives in
+  batches.
+
+  `dotfiles-Arch` carries a repo-local `packages.yml` doing exactly this with a
+  `TODO(upstream)` pointing here; it collapses to a caller once this lands. Worth a
+  `schedule:` trigger in the caller as well as `pull_request` — a rename upstream breaks a
+  file nobody edited, so there is no PR to attach the failure to.
+
+- **`lint-call.yml` now runs a blocking secret scan, so the OS repos are covered for the
+  first time.** (#462, #472)
+  Core scanned itself twice — the gitleaks pre-commit hook at author time and
+  `audit-core.sh` §8b in CI — and pinned `GITLEAKS_VERSION` + `GITLEAKS_SHA256` in
+  `scripts/tool-versions.env`. Both scanned dotfiles-core. The reusable `lint-call.yml` is
+  the **only CI the OS repos have**, and it ran shellcheck, shfmt, `bash -n`, `zsh -n`,
+  actionlint and markdownlint — none of which looks for a credential.
+
+  So **no OS repo had ever had its own files scanned for secrets**, including the repos
+  that actually hold an `ssh/config` and seed a git identity. §8b's own comment names the
+  stake: Core "fans out to 9 PUBLIC repos, where a committed token amplifies N-way." Core
+  was covered; every fan-out target was not. GitHub push protection is a partial backstop
+  only — it matches _provider_ token patterns, so it misses a private key pasted into an
+  `ssh/config`, and the non-provider setting that would catch it is org-governed and off
+  by default.
+
+  Four decisions, each recorded in full on the job:
+
+  - **Unfiltered, so it can be marked required.** The callers' other workflows carry
+    `paths-ignore` filters and never start on a docs-only PR; a required check that never
+    reports blocks the PR forever, which is the practical reason `lint` cannot be required
+    today. This leg has no filter.
+  - **`gitleaks dir`, not `gitleaks git`** — the working tree, not history. One historical
+    finding would pin the check red permanently and wedge every PR once required, and
+    could only be cleared by a rewrite.
+  - **`--redact`** — the repos are public and Actions logs world-readable, so an
+    unredacted finding would write the secret into a log while reporting it.
+  - **The whole tree, `core/` included.** Every other leg excludes `core/**` because it is
+    gated upstream, but that reasoning is about lint _opinions_; a credential is a
+    credential wherever it sits.
+
+- **`gitleaks.toml` — one secret-scanning policy for the fleet.** Read by all four
+  consumers (the pre-commit hook, `audit-core.sh` §8b, the new `secrets` job, and a
+  consumer's own `make secrets`), so author time and CI cannot disagree about what counts
+  as a finding. Same discipline as `scripts/tool-versions.env`: one definition, referenced
+  everywhere, changed deliberately.
+
+  It **extends** the upstream rule set (`useDefault = true`), so a gitleaks bump still
+  brings new detections, and removes nothing. It narrows exactly one false-positive class:
+  a credential position holding a **variable reference** rather than a value. Several
+  default rules match on position rather than content — `curl-auth-user` fires on anything
+  after `curl -u` — and infra config in this fleet routinely puts a variable there, which
+  is the _secure_ shape. The fleet's only finding was dotfiles-Defense's OpenSearch
+  healthcheck:
+
+  ```yaml
+  test: ["CMD-SHELL", "curl -sk -u admin:$$OPENSEARCH_INITIAL_ADMIN_PASSWORD ..."]
+  ```
+
+  The `$$` is deliberate — it stops Compose interpolating at render time, keeping the
+  password out of `docker compose config` and `docker inspect`. Reporting that as a leak
+  inverts the incentive: it flags the careful form and is silent on the careless one.
+
+  The allowlist targets the matched **value**, not a path, rule or repo, so a real
+  credential on the same line of the same file is still caught — verified both directions
+  before landing. All twelve repos scan clean under it, so the gate is green on arrival
+  rather than red for a maintainer to chase.
+
+### Fixed
+
+- **`/os-package-availability` citations rotted between filing and fixing.**
+  (`.claude/commands/os-package-availability.md`)
+  The routine already had a rule for citations that are wrong _when written_ ("Read a line
+  before you cite it", added after the 2026-08-09 macbook run pointed at `duf` and
+  `visidata`). It had nothing for the other half: a citation that was **right when written
+  and stale by the time anyone acted on it**. Being careful does not prevent that one — these
+  reports are filed as issues and sit open while the files they point into keep moving, and a
+  bare line number is the part of a citation with no redundancy, so when it rots there is
+  nothing to detect the rot with.
+
+  The routine now requires an **anchor string** — the literal text of the line, or a short
+  unique fragment — quoted alongside every `file:line`, and says plainly that the text is the
+  address and the number is only a hint. It also tells whoever acts on an older report to
+  locate by the anchor and re-read before editing, and to treat _no match_ as a finding in its
+  own right: the line has been edited or removed, so the claim needs re-checking rather than
+  applying.
+
+  Prompted by the run that shipped it. The 2026-08-23 macbook report cited the `watchexec`
+  version stamp at `PORTING-MATRIX.md:552`; it was `:552` when written and `:577` when fixed,
+  because Core went v4.14.0 → v4.15.1 in between and that footnote was itself rewritten.
+  Nothing was wrong with the report — the file moved out from under it — and the anchor text
+  was still an exact match the whole time.
+
+- **A bootstrapped box committed as `Your Name <you@example.com>` and said nothing.** (#476)
+  `blib_seed` copies `git/local.gitconfig.example` to `~/.config/git/local.gitconfig`, and
+  `git/gitconfig` `[include]`s it — and the example shipped a **live** `name`/`email`. So a
+  freshly bootstrapped box had a perfectly valid identity, `git commit` succeeded, and the
+  author was the placeholder. Before bootstrap that same box had no identity at all and the
+  commit would have failed loudly, which is the correct behaviour: **bootstrapping made the
+  failure mode strictly worse**, and the result lands in public repo history where authorship
+  cannot be fixed retroactively.
+
+  Two coordinated edits, because either alone is inert: `git/gitconfig` now sets
+  `[user] useConfigOnly = true` so git refuses to invent an author, and the example's
+  `name`/`email` are commented out so the seeded copy — included _after_ that setting — cannot
+  supply one. An unconfigured box now gets git's own error naming the two commands to run;
+  filling the seed in works exactly as before. Note `[alias] mine` reads `git config
+  user.email` and so now fails on an unconfigured box rather than matching nothing — the same
+  improvement, loud rather than silent.
+
+- **The lazy-seed assertion asked git about the worktree, so it failed the maintainer and
+  passed the tarball.** (`scripts/test-core.sh`)
+  Section D's third assertion read `git status --porcelain nvim/lazy-lock.json` and required
+  it to be empty, under the heading "the state lockfile links back into the vendored tree (or
+  the seed was modified)". That asks whether the **worktree** is dirty, which is a different
+  question from "did this run write through into the vendored tree" — and it answered the
+  intended one wrongly in **both** directions:
+
+  - **False red.** `./scripts/update-nvim-plugins.sh` — the sanctioned way to move the nvim
+    pins — leaves an uncommitted seed by design, so `make audit` failed until the author
+    committed. A gate that fires on the workflow it exists to protect is one people learn to
+    route around, which is the same lesson the #465 comment directly above it already records
+    about consumer vendoring gates. Hit for real while landing the pins in this release.
+  - **False green.** The clause was guarded by `git rev-parse --show-toplevel`, so outside a
+    git checkout — a release tarball, a vendored `core/` — it short-circuited to true and the
+    assertion silently stopped asserting.
+
+  Now a pre-run snapshot of the seed is compared to the post-run file with
+  `core_files_identical` (git-hash based; diffutils is not guaranteed, #572). Neither failure
+  mode survives, and it needs no repository.
+
+  **What it does and does not prove, since the distinction is the whole point.** It does _not_
+  catch the #465 bug: lazy is stubbed here, nothing plays the part of lazy rewriting its
+  lockfile, and "the vendored file is untouched" would pass on the pre-fix code too — that is
+  why the previous comment declined to assert it, and assertions 1 and 2 remain what pin #465.
+  It _does_ catch `config/lazy.lua`'s own **seeding**, which unlike lazy really does run here,
+  against a config dir symlinked at the vendored tree: `seed` resolves to the real
+  `nvim/lazy-lock.json`, so an inverted `fs_copyfile`, an `fs_symlink`, or anything else that
+  writes the seed instead of reading it would corrupt the fleet's pins from a plain editor
+  start. Verified by sabotaging `lazy.lua` to append to the seed: the assertion fires and
+  names the file. The conflated condition was also split in two, so a symlinked state lockfile
+  and a mutated seed no longer report the same message.
+
+- **The atuin autostart premise was concurrency-sensitive, and it blocked every release.** (#495)
+  The block is hermetic with respect to atuin, systemd and the network — but not with respect
+  to another copy of **itself**. Its leak assertion reasons about what appeared under shared
+  `/tmp` during a window and its reap assertions about processes; neither can tell this run's
+  residue from a concurrent run's. The release path audits **twice** (`make release`, then
+  `make tag`), so a cut needed two consecutive lucky greens. The observed shape was the tell:
+  one unmodified tree went `pass 261  fail 0` and then `pass 260  fail 1` nine minutes later,
+  and across three attempts the failure _count_ varied — 6, then 4, then 0 — which a real
+  defect does not do. The only way through was `TAG_SKIP_AUDIT=1`, i.e. eroding the gate the
+  runbook depends on.
+
+  Three fixes, and the first is a defect in its own right whatever the root cause:
+
+  `_d_forks_alive` read the fork log with no existence check. Bash applies redirections left
+  to right, so the file is opened **before** `2>/dev/null` takes effect — a missing one printed
+  a raw `No such file or directory` on inherited stderr _and_ still returned `0`,
+  indistinguishable from a genuinely clean reap. Its sibling `_d_spawned` has always checked
+  `-s`; this one was the outlier.
+
+  The three call sites read `.forked` the instant the run returned, but the stub writes it from
+  the child it just forked — so "not there yet" and "never forked" were the same observation at
+  the wrong moment, and the failure named the wrong thing ("the stub never forked, so the
+  reaping assertion proved nothing"). Now a bounded poll, ~2s at 50ms.
+
+  And the block takes an exclusivity lock, skipping when another run holds it. A skip is
+  honest; a flaky fail is not. `mkdir` rather than `flock` (absent on macOS, and this suite
+  runs there) or `pgrep` — a process probe cannot work here at all, because `audit-core.sh`
+  runs `test-core.sh` in the **background of the same audit**, so it would find its own sibling
+  and skip every run. The holder's pid is recorded and a lock whose holder is gone is taken
+  over, so a SIGKILLed run cannot turn one crash into a permanently silent skip.
+
+- **`PORTING-MATRIX.md`: the Gentoo column again — a tool that got packaged, and a version
+  trap the matrix had only ever recorded for Debian.** Reported by the
+  `/os-package-availability` routine as `dotgibson/dotfiles-Gentoo#116`; the OS-layer half
+  lands in that repo. Verified 2026-08-23 against packages.gentoo.org and `gentoo/guru@master`.
+
+  - **`tree-sitter-cli` on Gentoo is `dev-util/tree-sitter-cli`, not `cargo³`** — 0.26.11 is
+    **stable on amd64** and clears ⁵'s 0.26.1 floor, so it needs neither a keyword line nor a
+    source build. `dotfiles-Gentoo` had been `cargo install`ing it on every privileged run.
+    Row and footnote ⁵ updated — ⁵ now carries this story for **two** distros in a fortnight,
+    Gentoo alongside the openSUSE one from #599.
+  - **New footnote ³³ — "the package exists" is not "the package is usable".** Gentoo is the
+    second target where `neovim` resolves and gives you a version Core's config cannot load:
+    the newest **stable** ebuild is 0.11.7 against nvim-treesitter `main`'s hard 0.12
+    requirement, with 0.12.0–0.12.3 sitting in the tree as `~arch`. Debian reaches the same
+    wrong version through a frozen archive (²⁸); Gentoo reaches it through **keywords**, which
+    no availability check can see. ³³ tabulates both and the Debian paragraph now points at it.
+  - **Gentoo's `ouch` cell is `cargo` by choice, not for lack of a package** — GURU carries
+    `app-arch/ouch` 0.8.1. ²¹ now says so, the way ²⁵ already did for `watchexec`, leaving
+    `ast-grep`¹¹ and `jnv`¹⁷ as the family's genuinely-unpackaged Gentoo entries.
+
+- **`--json` reported a failing result on a healthy tree, and its stdout was not parseable.** (#511)
+  Two independent breakages of the same contract, both live on an unmodified `main`.
+
+  `--json` exports `CORE_JSON=1` so nested gates keep stdout clean, and `skip()` prints nothing
+  in that mode. The fixtures run real gate scripts and assert on their human-readable output —
+  so a child inheriting the export lost exactly the lines being asserted on. This is the
+  **fourth** fixture bitten by it (`$EDITOR`, `LC_ALL`, `CORE_COLOR`, `CORE_JSON`), and the
+  third fixed one at a time: `tag-release` (#508), `sync-core` (#524), and now `fleet-drift`,
+  whose renamed-clone assertion greps for the `not checked out` line that `skip()` emits.
+  Reproduced before the fix: `test-core.sh --scope none --json` reported `fail:1` where the
+  identical run without `--json` reported `fail:0`.
+
+  Fixed at the default rather than the symptom. `test-core.sh` now does `export -n CORE_JSON`
+  once, after argument parsing: the value stays readable in its own shell, so its `skip()` is
+  still quiet and the JSON object still clean, but **no child inherits it** — closing the class
+  for every fixture, present and future, by both routes in (`--json` here, and `audit-core.sh
+  --json` putting it in the environment). The per-call `env -u CORE_JSON` pins are kept and
+  extended to every fixture that captures a gate's output, because they document the hazard at
+  the call site and keep each fixture correct if it is lifted elsewhere.
+
+  Separately, stdout carried three lines, not one: a fixture wrote `core payload v2` that an
+  earlier section had already committed, so `git commit` staged nothing and printed `nothing to
+  commit, working tree clean` — onto the stream `--json` promises carries only the object. That
+  no-op also hollowed out the fixture it sat in: it is the #587 two-prior-syncs reproduction,
+  and with no round-2 commit the remote never moved, so there was only ever one.
+
+- **Nothing ever ran `--json`, which is why three bugs in it shipped green.** (#511)
+  New `--json output contract` section: the suite runs itself at `--scope none --json` and
+  asserts stdout is exactly one line, that it **parses** as JSON (not that it contains a
+  substring — a truncated object can still match a grep), and that its `result` agrees with the
+  identical run without `--json`. `CORE_TEST_SELFJSON=1` in the child stops the recursion, and
+  `-u CORE_TEST_NESTED` is this section obeying its own rule: without it the child inherited the
+  audit's nesting flag, printed no summary at all, and the gate failed under `make audit` for a
+  reason unrelated to the contract. It sits above the zsh-gated block, whose `summary; exit` on
+  a zsh-less box would otherwise make it unreachable for precisely the `--scope none`
+  invocation it exists to check. Verified to bite: re-introducing the no-op commit fails it
+  with `stdout carried 3 lines, want 1`.
+
+- **`watchexec` 2.6.1 on Arch and Homebrew — the four-repo version stamp has split.**
+  (`PORTING-MATRIX.md`)
+  Footnote `²⁵`'s availability block asserted one version on behalf of four package repos:
+  "**Arch `extra`, openSUSE Tumbleweed, Homebrew, nixpkgs** — 2.5.1, current." Two of the four
+  have since moved. Arch `extra` carries **2.6.1-1** and Homebrew **2.6.1**; openSUSE
+  Tumbleweed and nixpkgs are still on 2.5.1. That bullet is now two, and the block carries a
+  `versions re-verified 2026-08-23` stamp beside the existing coverage dates.
+
+  Re-checked against each repo's own package pages, per the convention the footnote itself
+  declares — not a repology snapshot. The other three bullets hold unchanged: Alpine
+  `community` 2.5.1-r0, GURU 2.5.0 (top non-`9999` ebuild), and Fedora/Debian/Kali still
+  package it nowhere.
+
+  **The shape of the defect is the reusable part.** A bullet that lumps N repos into a single
+  version claim is true only while all N agree, and it rots silently the moment one moves —
+  there is no wrong-looking text to catch, because the line still reads as a fact. This one
+  surfaced through `/os-package-availability macbook` (dotfiles-MacBook#185), which is
+  **Homebrew-scoped by construction** and could only ever see one of the four; the Arch half
+  was found by re-reading the whole bullet rather than only the repo that was reported. Prefer
+  one bullet per repo where the versions are load-bearing.
+
+  The footnote's actual assertion — Homebrew packages `watchexec`, and the MacBook `Brewfile`
+  deliberately declines it — was correct throughout and is unchanged. No package list changed:
+  that same audit found all 77 `Brewfile` entries resolving under their canonical names.
+- **`PORTING-MATRIX.md`'s Alpine claims had drifted: a version floor stated fleet-wide that
+  holds on two of five branches, and two "no bootstrap installs it" absolutes that Alpine
+  falsifies.** (dotfiles-Alpine#122) Documentation only — no Core behaviour changes.
+
+  Footnote ⁵ quoted tree-sitter-cli `0.26.7` for **Alpine** as though it were the whole distro;
+  that is the v3.24/edge version. v3.21 carries `0.24.4-r0` and v3.22/v3.23 carry `0.25.10-r0`,
+  all three **below** nvim-treesitter's `>= 0.26.1` floor. The note is now split per release and
+  records that `dotfiles-Alpine`'s cargo fallback is **version**-guarded rather than
+  presence-guarded — a presence guard sees apk's 0.25.10, skips the build, and leaves the box
+  below the floor in silence. (The openSUSE half of this footnote, added by #599, is untouched.)
+
+  Footnote ¹⁷ said no `bootstrap.sh` installs `jnv`; `dotfiles-Alpine` does, via cargo
+  best-effort, so its cell is now `cargo³`. Footnote ²¹ had already been corrected on this
+  point by #565, and now that ¹⁷ agrees with it, ¹⁷ also names Gentoo's opt-in extras build
+  and defers to ²¹ as the authority rather than keeping a second count in sync by hand.
+
+  Footnote ³¹ said neither Charm tool is go-installed by any `bootstrap.sh`. `dotfiles-Alpine`
+  go-installs `glow` and always has — on the stale `github.com/charmbracelet/glow/v2` path,
+  which still resolves and so quietly pinned an abandoned major instead of failing. `glow` is
+  now a row in the module-path table at its real path, `charm.land/glow/v3`.
+
+  Footnote ¹⁴'s `testing`-only list gained `tealdeer`, which it had always omitted.
+
+- **`core.lock` recorded `core_tag=v4` — the moving alias, not the release it pins.** (#515)
+  Every cut writes the specific `vX.Y.Z` and then re-points the major alias `v4`, so the alias
+  is the newer tag and a bare `git describe --tags` picks it. All nine repos were stamped
+  `core_tag=v4`: a provenance field naming a target that is deliberately moved on the next
+  release. `core_version` was right beside it and correct, which is what makes this a bug
+  rather than a design choice — two adjacent fields describing one commit at two precisions,
+  with the less precise one feeding the tooling.
+
+  Not cosmetic, unlike its `core_branch` sibling (#453): `core_tag` is read twice. `fleet-drift`
+  renders it as the RECORDED column, so the fleet dashboard answered "which Core is this box
+  on?" with "4.x" for every repo; and it is written verbatim as the trailing `# vX.Y.Z` comment
+  on every SHA-pinned reusable caller the fan-out rewrites — the comment Renovate reads to pick
+  the next bump, so `# v4` handed Renovate a target that never changes.
+
+  Both `describe` calls now filter to the `vX.Y.Z` shape (the idiom `fleet-drift.sh` already
+  used), which excludes bare-major aliases by construction. When only an alias exists, describe
+  fails and `core_tag` is **omitted** — the field is documented as conditional, and an absent
+  tag is honest where `v4` was not. The fix reaches a repo on its next sync.
+
+- **The fan-out opened a PR for a repo whose workflow-pin rewrite had failed.** (#484)
+  `sync-core.sh` fails such a repo — `err()` prints a `✗` and counts it failed — but that
+  verdict cannot reach `sync-fanout.yml`: the script exits 0 by design (it runs under `bash -e`,
+  so a non-zero would abort the step and deny PRs to the repos that _did_ sync), and `core.lock`
+  is deliberately still written and committed, because withholding it would add a self-blocking
+  dirty tree on top of the drift. The gate's two post-conditions — branch ≥1 commit ahead, and
+  `core.lock` pins the target — are therefore **both satisfied** by exactly the repo that should
+  be held back, so the release shipped a tree that vendors one Core and runs another: the #482
+  split, reopened, with only a `✗` in the job log to say so.
+
+  The gate now asserts the artefact instead of trusting the producer. Before pushing, it
+  re-derives every `dotgibson/dotfiles-core/.github/workflows/<name>@<40-hex>` pin from the
+  files on disk and requires each to equal the released commit; a mismatch marks the repo ❌ and
+  skips the push, matching the two existing post-condition failures. Offline, and independent of
+  how the sync reported — so `sync-core.sh`'s exit-0 contract, which must not change, is
+  untouched. Callers on the mutable `@v4` alias match no 40-hex and are correctly ignored.
+
+- **`sync-core.sh` said "N workflow pin(s)" while counting workflow FILES.** (#491)
+  `_sync_pin_workflows` increments once per file rewritten, and one file can carry several
+  pins, so the number and the noun disagreed in both commit-message forms — while the `ok()`
+  line in the same function already said `file(s)`. Both now say `workflow file(s)`, and
+  `VENDORING.md` says the same; that sentence also documented only the older `core.lock → …`
+  form and now covers the `sync Core → …` one the materialize rework (#587) introduced.
+
+- **The carapace footnote still said three OS repos call the impossible `go install`.** They
+  no longer do, and had not for a while — the claim, and the "each is tracked in its own repo"
+  that followed it, was the last stale paragraph of footnote ²⁷. `dotfiles-Arch/bootstrap.sh`
+  prints a `paru -S carapace-bin` hint and go-installs only sesh; `dotfiles-openSUSE`'s
+  installs upstream's `linux_<arch>.rpm` via zypper and go-installs only doggo and sesh; and
+  `dotfiles-Offense` installs no carapace at all now that it is a pure Role layer. Rewritten as
+  a past-tense resolution note rather than decremented to "two", so the footnote still reads as
+  the contract those three fixes were made against. (dotgibson/dotfiles-Arch#111)
+
+- **The nvim lockfile no longer drifts inside the byte-verified vendored tree.** (#465)
+  `nvim/lazy-lock.json` is tracked inside `core/` — the one tree a consumer must keep
+  byte-for-byte upstream — and `lazy.nvim` **rewrites it in place** whenever plugins are
+  installed or updated, while an OS repo bootstrap-symlinks `~/.config/nvim` into that
+  very tree. So on any machine that runs nvim at all, a file in the vendored tree was
+  permanently dirty.
+
+  Not a tidiness problem, and not user error. **Opening the editor once was enough**: a
+  freshly-bootstrapped openSUSE box repinned 10 plugins and a fresh Gentoo box 2, with
+  nobody running `:Lazy update`. The consumer-side vendoring gates then fired — `make
+  check-core`, a `no-core-edits` pre-commit hook, `core-integrity` at PR time — all
+  correctly, all against the operator, because the writer was `lazy.nvim` and not a
+  person. `make test` was red on any box where nvim had been opened until someone ran
+  `git checkout -- core/nvim/lazy-lock.json`, and on a box without the guard installed a
+  routine `git add -A` swept the drift into an unrelated PR. A pre-push gate that a normal
+  editor session turns red is a gate people learn to ignore, which is the opposite of what
+  it is for.
+
+  "Don't edit `core/`" is not a rule an operator can keep when the writer is the very tool
+  the file configures. So the file moves, exactly as v4 already did for zsh history
+  (`15-history.zsh` put `HISTFILE` under `$XDG_STATE_HOME` because history is mutable
+  _state_, not config):
+
+  - `$XDG_STATE_HOME/nvim/lazy-lock.json` — the **mutable** lockfile this machine writes.
+  - `core/nvim/lazy-lock.json` — the read-only fleet **seed**, still the reproducible
+    plugin set every machine starts from. `make update-nvim-plugins` upstream remains the
+    only thing that moves it.
+
+  A first-run seed copy (state absent → copy the vendored pins) preserves reproducibility
+  on a fresh machine, which is the half a bare relocation would have lost.
+
+  `scripts/update-nvim-plugins.sh` follows the lockfile to the sandbox's state dir and
+  copies the synced pins back into the repo — and because `lazy.lua` seeds an empty state
+  dir from the committed file, a sync still rolls **forward** from the current pins rather
+  than re-resolving every plugin from its default branch.
+
+  **Consumers can drop their `lazy-lock.json` carve-out** once they vendor this Core.
+  `dotfiles-MacBook/test/verify-core.sh` excludes the file's _content_ from its
+  byte-for-byte gate while presence-checking it; with the drift gone, it can be gated like
+  everything else in `core/`.
+
+- **`blib_link` announces a backup instead of taking one silently.** (#463)
+  The regular-file branch moved a displaced file to `.pre-dotfiles.*` correctly — the
+  content was preserved and `--uninstall` could restore it — and then said nothing. Only
+  an aggregate `N backed up` in the closing summary hinted at it, which reports _that_
+  something moved and never _what_ or _where it went_.
+
+  `blib_link` wires roughly **34 of ~40 destinations** in an OS-repo bootstrap, so silent
+  clobbering was the overwhelmingly common case rather than an edge one. The audience for
+  that path is precisely someone migrating an existing machine onto the dotfiles — the
+  person with the most to lose and the least context — and from where they sit an
+  unannounced move means their `~/.gitconfig` simply stopped being theirs. That a recovery
+  path _existed_ is what made the silence expensive: reconstructing it required already
+  knowing the `.pre-dotfiles.` convention, which was documented only in a source comment.
+
+  It now warns on stderr, naming both the destination and the backup path. The managed
+  `~/.zshrc` writer, the other Core backup site, does the same.
+
+- **One backup timestamp format, so the lexical-sort invariant `--uninstall` relies on is
+  finally true.** (#464)
+  Backup filenames were written in two formats by three call sites: `blib_link` and the
+  `.zshrc` loader used `date +%s`, while the `link()` helper `scripts/new-os-repo.sh`
+  generates used `date +%Y%m%d-%H%M%S`. An OS repo's `unlink_dest` documents — and depends
+  on — "the suffix is a zero-padded `YYYYMMDD-HHMMSS` stamp, so a lexical sort IS
+  chronological; the LAST glob match is the newest."
+
+  That was **false across the pair**: a 10-digit epoch (`17…`) always sorts before a `20…`
+  datestamp, so a date-stamped backup won "newest" regardless of its real age and
+  `--uninstall` would restore the older file over the newer one with no error. It was
+  latent only because the two writers happened to own disjoint destinations; one overlap —
+  an OS repo wiring a path Core also wires — and it fires. The comment asserting the
+  invariant is what made it hard to spot in review, since it reads as already-verified.
+
+  Every writer now goes through one `_blib_backup_suffix` helper producing
+  `pre-dotfiles.<YYYYmmdd-HHMMSS>.<pid>`. The `.<pid>` tail closes the second half: both
+  formats resolved to one second and both writers use a bare `mv`, so two backups of the
+  same destination inside one second overwrote each other — easy to hit in a test loop or
+  a scripted re-run. The PID only ever tiebreaks _within_ a second, so cross-second
+  ordering is untouched.
+
+  `scripts/test-core.sh` now pins the format and, separately, the invariant itself: two
+  backups a second apart must come out of a plain `sort` in chronological order.
+
+- **A missing package list is a failure again, instead of an empty one.** (#460)
+  `blib_read_pkgs` read its file with a bare redirect and no existence check, and every
+  OS bootstrap reaches it through a process substitution:
+
+  ```bash
+  mapfile -t pkgs < <(blib_read_pkgs "$DOTFILES/install/packages.txt")
+  ```
+
+  `mapfile` reports the exit status of _itself_, not of the process inside `< <( … )`. So
+  a missing or unreadable file left the caller holding a **zero-length array with a success
+  status**, and two very different situations became indistinguishable: a `packages.txt`
+  that is deliberately all comments, and a `packages.txt` that is _missing from the clone_.
+  Both printed "lists no packages — skipping". The second is a broken checkout — an
+  incomplete clone, a bad sync, a typo'd path — and it provisioned **nothing at all** while
+  reporting that as intended. On a fresh machine that is the difference between "no extras
+  requested" and "none of your tooling was installed". Same class as #459: the status of
+  the thing that actually failed never reached the caller.
+
+  `blib_read_pkgs` now warns and returns 1 on an unreadable file, which makes the failure
+  loud even where the status is discarded. The check is `-r`, not `-f`, deliberately:
+  dotfiles-Debian passes a **process substitution** here to drop the lines annotated for
+  other distros, and that argument is a `/dev/fd/N` pipe that `-f` would reject.
+
+- **New `blib_read_pkgs_into <array> <file>`** — the shape the process-substitution form
+  cannot have. It assigns into the **caller's own array**, in the current shell, so
+  `blib_read_pkgs_into pkgs "$list" || exit 1` actually works:
+
+  ```bash
+  provision() {
+    blib_read_pkgs_into pkgs "$DOTFILES/install/packages.txt" || exit 1
+    ((${#pkgs[@]})) && dnf install -y "${pkgs[@]}"
+  }
+  ```
+
+  Returns 1 on an unreadable file (after emptying the array, so a caller that ignores the
+  status cannot install a stale list) and 2 on a malformed array name — the name is spliced
+  into an assignment, so validating it is a code-injection control, not a typo check. Kept
+  bash 3.2-safe, which rules out both obvious implementations: `local -n` namerefs are 4.3
+  and `mapfile` is 4.0, while `lib/*.sh` must run on the macOS system bash.
+
+  Four OS repos (openSUSE, Arch, Gentoo, Debian) had each hand-rolled a caller-side
+  precondition for this; Alpine, Fedora and Offense had not. Migrating a caller to this
+  helper replaces all of them with one gate that cannot be forgotten.
+
 ## [v4.15.1] - 2026-08-22
 
 ### Fixed

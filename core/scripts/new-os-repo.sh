@@ -196,12 +196,22 @@ CFG="\$HOME/.config"
 [[ -d "\$REPO/core" ]] || { echo "core/ subtree missing — run the subtree add first" >&2; exit 1; }
 
 link() { # link <src> <dest> — back up a real file once, then symlink
-  local src="\$1" dest="\$2"
+  local src="\$1" dest="\$2" bak=""
   [[ -e "\$src" ]] || return 0
   if [[ -L "\$dest" && "\$(readlink "\$dest")" == "\$src" ]]; then return 0; fi
   mkdir -p "\$(dirname "\$dest")"
   [[ -L "\$dest" ]] && rm -f "\$dest"
-  [[ -e "\$dest" ]] && mv "\$dest" "\$dest.pre-dotfiles.\$(date +%Y%m%d-%H%M%S)"
+  # ONE fleet-wide backup format: a zero-padded YYYYMMDD-HHMMSS stamp (so a lexical sort
+  # is chronological, which is what --uninstall relies on to pick the newest) plus \$\$
+  # (so two backups of the same dest inside one second cannot overwrite each other).
+  # Matches core/lib/bootstrap-lib.sh's _blib_backup_suffix — keep the two in step (#464).
+  # Announced, not silent: a displaced real file is the one wiring outcome that touched
+  # something the user owned (#463).
+  if [[ -e "\$dest" ]]; then
+    bak="\$dest.pre-dotfiles.\$(date +%Y%m%d-%H%M%S).\$\$"
+    mv "\$dest" "\$bak"
+    echo "backed up existing \${dest/#\$HOME/~} -> \${bak/#\$HOME/~}" >&2
+  fi
   ln -s "\$src" "\$dest"
   echo "linked \${dest/#\$HOME/~}"
 }

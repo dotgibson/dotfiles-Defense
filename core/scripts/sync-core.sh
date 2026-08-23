@@ -167,8 +167,21 @@ CORE_VERSION="$(tr -d '[:space:]' <"$HERE/core.version" 2>/dev/null || echo unkn
 # NOT trip `set -e`). Stamped into core.lock so fleet-drift can speak in NAMED releases,
 # not just SHAs (RELEASE-STRATEGY.md gap 1). Describe the resolved SHA first, falling
 # back to the branch tip when that object is local.
-CORE_TAG="$(git -C "$HERE" describe --tags "$CORE_SHA_FULL" 2>/dev/null \
-  || git -C "$HERE" describe --tags "$CORE_BRANCH" 2>/dev/null || echo '')"
+#
+# --match 'v[0-9]*.[0-9]*.[0-9]*' IS LOAD-BEARING, not tidiness (#515). Every release also
+# carries a MOVING major alias (`v4`), deliberately re-pointed on each cut so an OS repo can
+# track `@v4`. A bare `git describe --tags` picks whichever tag it likes among the several
+# pointing at one commit, and on v4.15.1 it picked `v4` — so all nine repos stamped
+# `core_tag=v4`: a provenance field naming a target that moves out from under it. The field
+# is not decoration. It is read twice: fleet-drift renders it as RECORDED, and it becomes the
+# trailing `# vX.Y.Z` comment on every rewritten workflow pin (_sync_pin_workflows below),
+# which is what Renovate reads to pick the next bump. `# v4` gives Renovate a target that
+# never changes. The two-dot shape excludes the alias by construction; when only the alias
+# exists, describe fails and CORE_TAG is empty — and an ABSENT core_tag is strictly better
+# than a wrong one, since the field is already documented as conditional. Same idiom as
+# scripts/fleet-drift.sh's reference-tag resolution.
+CORE_TAG="$(git -C "$HERE" describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' "$CORE_SHA_FULL" 2>/dev/null \
+  || git -C "$HERE" describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' "$CORE_BRANCH" 2>/dev/null || echo '')"
 
 echo ":: core version = $CORE_VERSION${CORE_TAG:+  (tag $CORE_TAG)}"
 echo ":: core remote  = $CORE_REMOTE  (branch $CORE_BRANCH @ $CORE_SHA)"
@@ -254,7 +267,9 @@ fi
 # next bump, and check-pins.sh compares it against core.lock's core_tag INDEPENDENTLY of
 # the SHA — so rewriting one without the other just trades a red gate for a different red
 # gate. It is written as core_tag verbatim (`git describe` output, which may be
-# v4.12.0-5-gabc1234 off a tag) precisely so the two agree by construction.
+# v4.12.0-5-gabc1234 off a tag) precisely so the two agree by construction — which is also
+# why core_tag's derivation filters out the moving `v4` alias (#515): a `# v4` comment here
+# would hand Renovate a bump target that never moves.
 #
 # Portable-sed shape: write to a temp and mv, never `sed -i` (BSD wants an arg, GNU does
 # not). Idempotent by construction — an unchanged file hashes identically and is left
@@ -465,10 +480,10 @@ for repo in "${TARGETS[@]}"; do
         # and `git log -- core/` is how a maintainer finds the sync that brought a file in.
         if git -C "$path" diff --cached --quiet -- core; then
           _lockmsg="chore(core): core.lock → ${CORE_SHA} (v$CORE_VERSION)"
-          ((_pins)) && _lockmsg="chore(core): core.lock + ${_pins} workflow pin(s) → ${CORE_SHA} (v$CORE_VERSION)"
+          ((_pins)) && _lockmsg="chore(core): core.lock + ${_pins} workflow file(s) → ${CORE_SHA} (v$CORE_VERSION)"
         else
           _lockmsg="chore(core): sync Core → v$CORE_VERSION (${CORE_SHA})"
-          ((_pins)) && _lockmsg="chore(core): sync Core → v$CORE_VERSION (${CORE_SHA}) + ${_pins} workflow pin(s)"
+          ((_pins)) && _lockmsg="chore(core): sync Core → v$CORE_VERSION (${CORE_SHA}) + ${_pins} workflow file(s)"
         fi
         # Emit the subtree trailer even though NOTHING here depends on it any more.
         # core.lock is the authoritative provenance (#587), and this sync no longer reads

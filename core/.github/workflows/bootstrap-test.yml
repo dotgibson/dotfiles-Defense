@@ -8,16 +8,23 @@
 # role stage and NO band-80 OS layer, so the 80-os.zsh assertion below arms itself on
 # whether the caller actually ships an os/*.zsh rather than assuming every caller does.
 #
-# Two jobs:
-#   1. lint        — shellcheck -x + bash -n + --help, on the runner (deterministic,
-#                    no container). Catches the syntax/guard class of bug directly.
-#   2. links-only  — run `bootstrap.sh --links-only` inside the target distro's
-#                    container and assert the symlink graph + the generated ~/.zshrc.
-#                    --links-only skips provision() (no package installs, no Gentoo
-#                    source builds); the tpm dir is pre-seeded so its first-run clone
-#                    is skipped (offline + deterministic). The actual zsh module LOAD
-#                    is already covered hermetically by dotfiles-core's test-core.sh,
-#                    so this asserts the part bootstrap.sh OWNS: the wiring it produces.
+# Four jobs, the last two opt-in:
+#   1. lint           — shellcheck -x + bash -n + --help, on the runner (deterministic,
+#                       no container). Catches the syntax/guard class of bug directly.
+#   2. links-only     — run `bootstrap.sh --links-only` inside the target distro container
+#                       and assert the symlink graph + the generated ~/.zshrc. --links-only
+#                       skips provision() (no package installs, no Gentoo source builds);
+#                       the tpm dir is pre-seeded so its first-run clone is skipped (offline
+#                       + deterministic). The actual zsh module LOAD is already covered
+#                       hermetically by dotfiles-core test-core.sh, so this asserts the part
+#                       bootstrap.sh OWNS: the wiring it produces — Core links, the OS
+#                       overlay (tmux/os.conf, git/os.gitconfig, ssh/config.d/50-os.conf),
+#                       the tools group, and the ssh directory modes.
+#   3. provision-stub — OPT-IN (`provision_stub: true`). Runs provision() with the package
+#                       managers stubbed. See the long note on that job for its real limits.
+#   4. packages-check — OPT-IN (`packages_check: "<resolve command>"`). Resolves every name
+#                       in the package list against the distro repos without downloading
+#                       anything, using the same parser bootstrap.sh reads the list with.
 #
 # WHAT THIS DOES NOT COVER — read this before trusting a green run.
 #
@@ -40,6 +47,16 @@
 # path. Anything else living only in provision() is still invisible to CI: if you are
 # changing that half of a bootstrap, the gate below will not tell you whether it works.
 #
+# TWO OPT-IN JOBS NARROW THAT GAP, and neither closes it. `provision_stub` executes
+# provision() with the package managers replaced by no-ops, so it covers the CONTROL FLOW
+# (a leaked trap, a bare refresh under set -e) and is blind to any real I/O — a wrong
+# package name is invisible to it, because nothing is ever installed. `packages_check`
+# covers exactly that blind spot from the other side: it resolves every name in the list
+# against the real distro repos without downloading anything, which is worth having on its
+# own schedule because a rename upstream breaks a file nobody edited. Between them the
+# package list and provision()s control flow are gated; the actual installation still is
+# not, and still needs a periodic real bootstrap on a real box.
+#
 # A caller stub (in an OS repo) looks like — pinned to the moving MAJOR tag @vN per the
 # `@vN` policy in RELEASE-STRATEGY.md, NOT @main: a caller's contract then changes only via
 # a Core release, and a MAJOR bump is the one intentional, reviewed caller edit — so a repo
@@ -53,6 +70,8 @@
 #         image: alpine:3.20
 #         prep:  apk add --no-cache bash zsh
 #         offensive: false        # true only for dotfiles-Offense
+#         # optional, and worth a `schedule:` trigger in the caller as well as pull_request:
+#         packages_check: apk info
 #
 # A role repo passes the same inputs; nothing extra. Band 80 is skipped automatically
 # because it has no os/*.zsh — see the note above.
@@ -81,6 +100,22 @@ on:
           enables it once its provision() tolerates a stub that returns 0 and writes no file.
         type: boolean
         default: false
+      packages_check:
+        description: >-
+          The distro RESOLVE-ONLY command to run against every name in the package list, e.g.
+          "pacman -Si", "dnf list", "apk info", "zypper --non-interactive info". Empty (the
+          default) disables the job. A STRING rather than a boolean on purpose: Core does not
+          want to own a distro-to-command table that would need editing here every time a
+          repo joins the fleet or a package manager changes its flags.
+        type: string
+        default: ""
+      packages_file:
+        description: >-
+          Path to the package list packages_check reads. Default install/packages.txt.
+          A repo whose list carries per-distro annotations (dotfiles-Debian filters through
+          its own scripts/pkg-filter.sh) should point this at a pre-filtered file instead.
+        type: string
+        default: install/packages.txt
 
 permissions:
   contents: read
@@ -205,6 +240,81 @@ jobs:
             # the profile file. Strip comment lines first, then reject any CORE_PROFILE= / :=.
             if grep -vE "^[[:space:]]*#" "$HOME/.zshrc" | grep -qE "CORE_PROFILE[[:space:]]*:?="; then
               echo "~/.zshrc must NOT assign CORE_PROFILE (v4 leaves resolution to the loader)" >&2; exit 1
+            fi
+
+            # ── the OS OVERLAY: the entire output of blib_link_os_layer ─────────────
+            # None of this was asserted (#473), which is the gap that mattered most: the
+            # overlay is exactly what an OS repo OWNS. A regression in os/<os>.conf or
+            # os/<os>.gitconfig wiring was invisible to the one test whose stated purpose
+            # is "the part bootstrap.sh OWNS: the wiring it produces."
+            #
+            # Every check below SELF-ARMS on the caller tree rather than taking a new
+            # workflow input, following the os/*.zsh and atuin precedent above. Two
+            # reasons: a role repo (Offense/Defense) ships no os/ overlay and correctly
+            # links nothing, so an unconditional check would red a repo doing exactly the
+            # right thing; and a repo still on an older vendored core/ has no
+            # core/jujutsu or core/ssh to link. Presence of the source file IS the
+            # question being asked, so derive it instead of declaring it — the check arms
+            # itself the moment that repo syncs Core.
+            if ls os/*.conf >/dev/null 2>&1 && [ ! -L "$HOME/.config/tmux/os.conf" ]; then
+              echo "MISSING symlink: $HOME/.config/tmux/os.conf" >&2; exit 1
+            fi
+            if ls os/*.gitconfig >/dev/null 2>&1 && [ ! -L "$HOME/.config/git/os.gitconfig" ]; then
+              echo "MISSING symlink: $HOME/.config/git/os.gitconfig" >&2; exit 1
+            fi
+            if [ -f ssh/os.conf ] && [ ! -L "$HOME/.ssh/config.d/50-os.conf" ]; then
+              echo "MISSING symlink: $HOME/.ssh/config.d/50-os.conf" >&2; exit 1
+            fi
+
+            # ── the rest of the `tools` group ───────────────────────────────────────
+            if [ -f core/jujutsu/config.toml ] && [ ! -L "$HOME/.config/jj/config.toml" ]; then
+              echo "MISSING symlink: $HOME/.config/jj/config.toml" >&2; exit 1
+            fi
+            if [ -f core/mise/config.toml ] && [ ! -L "$HOME/.config/mise/config.toml" ]; then
+              echo "MISSING symlink: $HOME/.config/mise/config.toml" >&2; exit 1
+            fi
+            for b in clip clip-paste; do
+              if [ -f "core/bin/$b" ] && [ ! -L "$HOME/.local/bin/$b" ]; then
+                echo "MISSING symlink: $HOME/.local/bin/$b" >&2; exit 1
+              fi
+            done
+
+            # ── ssh, including the permission side effects nothing checked ──────────
+            # ssh silently ignores a config in a world- or group-writable directory, so
+            # these modes are not cosmetic: a bootstrap that linked the file but left
+            # ~/.ssh at 0755 produces a box where the config is present and INERT, which
+            # is far harder to diagnose than a missing link.
+            #
+            # DELIBERATELY NOT ASSERTED: 0600 on ~/.ssh/config itself. Core does not chmod
+            # that file and must not — it is a symlink into the VENDORED core/ tree of the
+            # consumer, so a chmod would reach into a read-only tree in nine repos.
+            # The reasoning is recorded at lib/bootstrap-lib.sh (see "NO chmod on the
+            # config file itself"), and it ends with a plain instruction not to restore it.
+            # Recorded here too so the next audit does not re-file the same request.
+            if [ -f core/ssh/config ]; then
+              if [ ! -L "$HOME/.ssh/config" ]; then
+                echo "MISSING symlink: $HOME/.ssh/config" >&2; exit 1
+              fi
+              for d in "$HOME/.ssh" "$HOME/.ssh/sockets" "$HOME/.ssh/config.d"; do
+                if [ ! -d "$d" ]; then echo "MISSING dir: $d" >&2; exit 1; fi
+              done
+              # The mode check DEGRADES rather than failing when stat is absent. GNU and
+              # busybox both accept `stat -c %a`, but a minimal image may ship neither, and
+              # a gate that reds because its measuring tool is missing teaches people the
+              # gate is noise. Skip loudly instead: the directory assertions above already
+              # ran, and CI images that do have stat still enforce the mode.
+              if command -v stat >/dev/null 2>&1 && stat -c %a "$HOME/.ssh" >/dev/null 2>&1; then
+                for d in "$HOME/.ssh" "$HOME/.ssh/sockets" "$HOME/.ssh/config.d"; do
+                  mode=$(stat -c %a "$d")
+                  if [ "$mode" != "700" ]; then
+                    echo "WRONG MODE on $d: $mode (want 700 — ssh ignores a config under a loose dir)" >&2
+                    exit 1
+                  fi
+                done
+                echo "ssh dirs are 0700"
+              else
+                echo "NOTE: stat -c unavailable on this image — ssh dir modes not checked"
+              fi
             fi
 
             if [ "$OFFENSIVE" = "true" ]; then
@@ -360,4 +470,116 @@ jobs:
             done
 
             echo "bootstrap with stubbed provisioning OK"
+          '
+
+  # ── package-name resolution ──────────────────────────────────────────────────
+  # OPT-IN (`packages_check: "<resolve command>"`). The links-only job runs
+  # `--links-only`, which returns before provision() by design — so install/packages.txt,
+  # the most VOLATILE file in every OS repo, was validated by no blocking gate anywhere in
+  # the fleet (#474). Several of these distros are rolling releases, where a package is
+  # renamed or dropped without anybody touching the repo: `doggo` moved AUR to extra on
+  # Arch and broke a file nobody had edited.
+  #
+  # The provision-stub job above does NOT cover this and cannot: it replaces the package
+  # managers with no-ops, so a wrong package name is exactly the class of bug it is blind
+  # to (its own comment says so). /os-package-availability was the intended cover but is
+  # inert without CLAUDE_CODE_OAUTH_TOKEN and runs weekly at best.
+  #
+  # THE SCHEDULED RUN MATTERS AS MUCH AS THE PR RUN, and that is the caller's job: a
+  # rename upstream breaks a file nobody edited, so there is no PR to attach the failure
+  # to. A caller should invoke this on a cron as well as on pull_request.
+  #
+  # RESOLUTION ONLY — `pacman -Si` / `dnf list` / `apk info` read the sync DB and download
+  # nothing, so this is a fast job rather than a full provision.
+  #
+  # It reads the list with core/lib/bootstrap-lib.sh's blib_read_pkgs_into — the SAME
+  # parser bootstrap.sh uses. A gate that parses the list differently from the thing it
+  # gates is worse than no gate, and the _into form means an unreadable list fails loudly
+  # instead of resolving zero packages green (#460) — which for THIS job would otherwise be
+  # a permanent, silent false pass.
+  #
+  # dotfiles-Arch carries a repo-local packages.yml doing exactly this, with a
+  # TODO(upstream) pointing here; it collapses to a caller once this lands.
+  packages-check:
+    if: inputs.packages_check != ''
+    name: resolve package names (no install)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Resolve every package name (${{ inputs.image }})
+        env:
+          IMAGE: ${{ inputs.image }}
+          PREP: ${{ inputs.prep }}
+          RESOLVE: ${{ inputs.packages_check }}
+          PKGFILE: ${{ inputs.packages_file }}
+        # `docker run` rather than a job-level `container:`, matching the two jobs above.
+        # Not style: scripts/check-modern.sh requires every `container:`/`image:` value to be
+        # DIGEST-pinned, and this image arrives as a caller input (alpine:3.20, archlinux:latest)
+        # that no caller can pin per-run. The other jobs already solved it this way.
+        #
+        # NOTE: keep the script below apostrophe-free — it lives inside the single-quoted
+        # sh -euc argument, exactly like the links-only block.
+        run: |
+          docker run --rm -e PREP -e RESOLVE -e PKGFILE -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
+            # Same retrying prep as the jobs above: distro mirrors intermittently time out in
+            # CI, and a prep blip should not red a PR that changed nothing. Five tries, then a
+            # loud failure rather than a false green.
+            n=0
+            until eval "$PREP"; do
+              n=$((n+1))
+              if [ "$n" -ge 5 ]; then echo "prep failed after $n attempts" >&2; exit 1; fi
+              echo "prep attempt $n failed (mirror timeout?), retrying in $((n*10))s..." >&2
+              sleep $((n*10))
+            done
+
+            # The resolver is bash: it sources core/lib/bootstrap-lib.sh, which is bash
+            # (arrays, [[ ]]). The outer shell here is sh because that is all a base image is
+            # guaranteed to have before prep runs — prep is what installs bash.
+            # The RESOLVER terminator below is deliberately FLUSH-LEFT once this block
+            # scalar is dedented. A heredoc terminator must start at column 0; indented, it
+            # never matches, the rest of the script is swallowed as heredoc data, and
+            # `bash /tmp/resolve.sh` is never reached. `sh -n` only WARNS about that, so it
+            # passes a syntax check and fails as a silent no-op gate. Do not re-indent it.
+            cat >/tmp/resolve.sh <<"RESOLVER"
+            set -uo pipefail
+            [ -f core/lib/bootstrap-lib.sh ] || {
+              echo "::error::core/lib/bootstrap-lib.sh missing — this job reads the list with the same parser bootstrap.sh uses"
+              exit 1
+            }
+            # shellcheck disable=SC1091 # vendored in the caller at runtime; absent at lint time
+            . core/lib/bootstrap-lib.sh
+            command -v blib_read_pkgs_into >/dev/null || {
+              echo "::error::this repo vendored core/ predates blib_read_pkgs_into — run make sync"
+              exit 1
+            }
+            # The || is the whole point of the _into form: a missing or unreadable list is a
+            # broken checkout, not an empty package set, and must not pass as "0 to resolve".
+            blib_read_pkgs_into pkgs "$PKGFILE" || exit 1
+            if [ "${#pkgs[@]}" -eq 0 ]; then
+              echo "::error::$PKGFILE parsed to zero packages — that is a malformed list, not an empty one"
+              exit 1
+            fi
+            echo ":: resolving ${#pkgs[@]} package names with: $RESOLVE (no download, no install)"
+            # Collect EVERY unresolved name before failing, rather than exiting on the first.
+            # A rolling-release rename usually arrives in batches, and a gate that reports one
+            # name per CI round costs a round trip per package.
+            unresolved=""
+            for p in "${pkgs[@]}"; do
+              if ! $RESOLVE "$p" >/dev/null 2>&1; then
+                echo "  UNRESOLVED: $p"
+                unresolved="$unresolved $p"
+              fi
+            done
+            if [ -n "$unresolved" ]; then
+              echo "::error::unresolved package name(s):$unresolved"
+              echo "Renamed or dropped upstream — check the distro package search. Several of"
+              echo "these distros are ROLLING, so this can go red with nobody having edited the repo."
+              exit 1
+            fi
+            echo "all ${#pkgs[@]} package names resolve"
+          RESOLVER
+            bash /tmp/resolve.sh
           '

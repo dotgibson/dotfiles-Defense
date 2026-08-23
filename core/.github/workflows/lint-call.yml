@@ -29,9 +29,11 @@ name: lint (reusable)
 # EXCEPT markdownlint-cli2, which is npm rather than a release asset and is installed
 # from the same pinned version, mirroring ci.yml's own markdown step.
 #
-# THREE JOBS: `shell` (shellcheck/bash -n/RETURN-trap/zsh -n/owned-block/shfmt),
-# `actionlint` (the caller's workflows), and `markdown` (#452 — the file class the other
-# two never inspect, and the one a non-maintainer is most likely to read).
+# FOUR JOBS: `shell` (shellcheck/bash -n/RETURN-trap/zsh -n/owned-block/shfmt),
+# `actionlint` (the caller's workflows), `markdown` (#452 — the file class the other two
+# never inspect, and the one a non-maintainer is most likely to read), and `secrets`
+# (#462, #472 — gitleaks over the caller's working tree; the four linters above all read
+# syntax, structure or prose, and none of them looks for a credential).
 #
 # TWO legs need no pinned tool and are not linters — both are greps, and both encode a rule
 # that lives in scripts/lib/common.sh so the fleet-facing copy cannot drift from the tested
@@ -509,3 +511,128 @@ jobs:
             echo "tree is excluded and is gated by dotfiles-core's CI instead."
             echo "This warning becomes a BLOCKING failure in the next Core release."
           fi
+
+  # ── BLOCKING: secret scanning (gitleaks) ────────────────────────────────────
+  # Core scans itself TWICE — the gitleaks pre-commit hook at author time and
+  # audit-core.sh §8b in CI — and pins GITLEAKS_VERSION + GITLEAKS_SHA256 in
+  # scripts/tool-versions.env. Both scan dotfiles-core. This workflow is the ONLY CI the
+  # OS repos have, and until now it ran shellcheck, shfmt, bash -n, zsh -n, actionlint and
+  # markdownlint — none of which looks for a credential.
+  #
+  # Net effect: **no OS repo had ever had its own files scanned for secrets** (#462, #472).
+  # Those are the repos that actually hold an ssh/config and seed a git identity, and
+  # §8b's own comment names the stake: Core "fans out to 9 PUBLIC repos, where a committed
+  # token amplifies N-way." Core was covered; every fan-out target was not.
+  #
+  # GitHub push protection is only a partial backstop: it matches PROVIDER token patterns,
+  # so it does not catch a private key pasted into an ssh/config, and the non-provider
+  # setting that would is org-governed and off by default.
+  #
+  # This is wiring, not new machinery — the version is pinned, the checksum is pinned, and
+  # setup-core-tools already installs gitleaks with SHA-256 verification.
+  #
+  # FOUR DECISIONS, each load-bearing:
+  #
+  #   1. BLOCKING AND UNFILTERED. The callers' other workflows carry
+  #      `paths-ignore: ['**.md','LICENSE']` (and bootstrap.yml is path-scoped), so on a
+  #      docs-only PR they never start. A REQUIRED check that never reports blocks the PR
+  #      forever, which is the practical reason `lint` cannot be marked required today. A
+  #      secret scan wants to run on every PR anyway — a credential is as likely to arrive
+  #      in a README as in a script — so this leg has no filter and CAN be required.
+  #      Landing it blocking rather than advisory (the route the markdown leg took) is
+  #      measured, not assumed: gitleaks 8.30.1 over dotfiles-Arch scanned clean, so there
+  #      is no backlog to triage before turning it on.
+  #
+  #   2. `gitleaks dir`, NOT `gitleaks git`. The working tree at HEAD, not history. A
+  #      single historical finding would pin this check red PERMANENTLY and wedge every PR
+  #      the moment it is required — and it cannot be fixed forward, only by a rewrite.
+  #      History is swept out-of-band instead (several repos have a `make secrets` target
+  #      for exactly that).
+  #
+  #   3. `--redact`. Every one of these repos is public and Actions logs are
+  #      world-readable. An unredacted finding writes the secret into a log while
+  #      reporting it — turning the gate into a second disclosure. `-v --no-color` match
+  #      §8b so author-time, Core CI and fleet CI print the same report.
+  #
+  #   4. ONE POLICY FILE, Core's. The scan runs under Core's gitleaks.toml rather than
+  #      the stock rule set or the caller's own config, so every repo is measured the same
+  #      way and no repo can widen its own allowlist. It extends the upstream rules (a
+  #      gitleaks bump still brings new detections) and narrows exactly one false-positive
+  #      class: a credential position holding a VARIABLE REFERENCE rather than a value —
+  #      `curl -u admin:$$OPENSEARCH_INITIAL_ADMIN_PASSWORD`, which is the secure shape and
+  #      was the fleet's only finding. See that file's header.
+  #
+  #   5. THE WHOLE TREE, core/ INCLUDED. Every other leg excludes core/** because it is
+  #      gated upstream — but that reasoning is about lint OPINIONS (style, rule sets),
+  #      and a credential is a credential wherever it sits. Core's own §8b keeps core/
+  #      clean, so including it costs nothing and removes a blind spot rather than
+  #      duplicating a gate.
+  secrets:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Same inverted checkout as the other jobs: Core@v4 at ROOT for the composite action
+      # and the pins, the caller into caller/ as the tree we scan.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: ${{ github.repository_owner }}/dotfiles-core
+          ref: v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: caller
+
+      - name: Load pinned tool versions + checksums (Core single source)
+        run: |
+          f=scripts/tool-versions.env
+          if [ ! -f "$f" ]; then echo "::error::$f missing from the dotfiles-core checkout"; exit 1; fi
+          grep -E '^[A-Z0-9_]+=' "$f" >> "$GITHUB_ENV"
+
+      - name: Put core-tools bin on PATH
+        run: |
+          mkdir -p "$HOME/.local/core-tools/bin"
+          echo "$HOME/.local/core-tools/bin" >> "$GITHUB_PATH"
+
+      - name: Cache pinned gate tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/core-tools
+          key: core-tools-${{ runner.os }}-${{ hashFiles('scripts/tool-versions.env') }}-secrets
+          restore-keys: |
+            core-tools-${{ runner.os }}-${{ hashFiles('scripts/tool-versions.env') }}-
+
+      - name: Install pinned gate tools (verified)
+        uses: ./.github/actions/setup-core-tools
+        with:
+          gitleaks: "true"
+
+      # The same bindir assertion the shell job makes, and for the same reason: a
+      # preinstalled or PATH-shadowed gitleaks would run UNVERIFIED, defeating the pinned
+      # SHA-256 install this job exists to route through.
+      - name: Assert gitleaks resolves to the verified bindir
+        run: |
+          bindir="$HOME/.local/core-tools/bin"
+          p="$(command -v gitleaks || true)"
+          echo "gitleaks -> ${p:-<not found>}"
+          [ "$p" = "$bindir/gitleaks" ] || { echo "::error::gitleaks is '${p:-<not found>}', not the verified $bindir/gitleaks"; exit 1; }
+          gitleaks version
+
+      # -c points at Core's gitleaks.toml, from the ROOT checkout — the same policy file
+      # the pre-commit hook and audit-core.sh §8b pass. That is what makes this leg's
+      # verdict reproducible: a maintainer can run the identical command locally and get
+      # the identical answer, instead of discovering the fleet's rule set only in CI.
+      # Deliberately NOT the caller's own copy: the policy is Core's to set, and reading it
+      # from the caller would let one repo quietly widen its own allowlist.
+      - name: gitleaks (working tree, Core policy)
+        working-directory: caller
+        env:
+          GITLEAKS_CONFIG: ${{ github.workspace }}/gitleaks.toml
+        run: |
+          if [ ! -f "$GITLEAKS_CONFIG" ]; then
+            echo "::error::gitleaks.toml missing from the dotfiles-core checkout"; exit 1
+          fi
+          echo "scanning the working tree at HEAD (not history — see the note on this job)"
+          echo "policy: dotfiles-core gitleaks.toml"
+          gitleaks dir . -c "$GITLEAKS_CONFIG" --no-banner --redact -v --no-color

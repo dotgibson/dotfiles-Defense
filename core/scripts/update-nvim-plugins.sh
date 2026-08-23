@@ -12,8 +12,11 @@
 # The tracked lockfile pins all of them; `:Lazy restore` installs exactly those.
 #
 # How it works: run the REPO's real nvim config headlessly in a throwaway HOME whose
-# config dir is symlinked to nvim/, so lazy writes the lockfile straight back into
-# nvim/lazy-lock.json. `:Lazy! sync` installs/updates/cleans and rewrites the lock.
+# config dir is symlinked to nvim/. `:Lazy! sync` installs/updates/cleans and rewrites the
+# lock, which lands in the sandbox's XDG_STATE_HOME (config/lazy.lua points lazy's
+# `lockfile` at state, since a file lazy rewrites in place must not live in the vendored
+# tree — #465); this script then copies it back into nvim/lazy-lock.json. lazy.lua seeds an
+# empty state dir from that same file, so the sync rolls FORWARD from the committed pins.
 # The throwaway data dir means this never touches the maintainer's own nvim install;
 # the trade-off is it re-clones the plugins each run — fine for an occasional,
 # reviewed bump (the same "deliberate, not automatic" philosophy as update-plugins.sh).
@@ -83,12 +86,26 @@ BEFORE="$(mktemp "${TMPDIR:-/tmp}/lazy-lock.before.XXXXXX")"
   HAD_LOCK=1
 }
 
-# Throwaway XDG tree; config/nvim → the repo, so lazy writes nvim/lazy-lock.json.
+# Throwaway XDG tree; config/nvim → the repo, so the sandbox runs THIS repo's real config.
+#
+# The lockfile lazy writes is no longer nvim/lazy-lock.json directly: config/lazy.lua now
+# points `lockfile` at $XDG_STATE_HOME/nvim/lazy-lock.json, because a lockfile lazy rewrites
+# in place cannot live inside the byte-verified vendored tree (#465). So the sandbox's STATE
+# dir is where the sync lands, and this script copies the result back into the repo — which
+# is the correct division either way: lazy owns the machine's mutable lockfile, and THIS
+# SCRIPT is the one thing allowed to move the fleet's committed seed.
+#
+# The seeding in lazy.lua does the rest: the sandbox state dir starts empty, so the first
+# thing that config does is copy nvim/lazy-lock.json into it. A sync therefore still rolls
+# FORWARD from the repo's current pins rather than re-resolving every plugin from its
+# default branch — which is what makes the reported delta meaningful.
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/core-nvim-lock.XXXXXX")"
 cleanup() { rm -rf "$SANDBOX" "$BEFORE"; }
 trap cleanup EXIT
 mkdir -p "$SANDBOX/config" "$SANDBOX/data" "$SANDBOX/state" "$SANDBOX/cache"
 ln -s "$HERE/nvim" "$SANDBOX/config/nvim"
+# Where lazy will actually write it: stdpath("state") is $XDG_STATE_HOME/nvim.
+SANDBOX_LOCK="$SANDBOX/state/nvim/lazy-lock.json"
 
 printf '%s== syncing nvim plugins → upstream%s ==%s\n' \
   "$c_blu" "$([[ $DRY == 1 ]] && echo '  (dry-run)')" "$c_rst"
@@ -102,10 +119,17 @@ if ! HOME="$SANDBOX" XDG_CONFIG_HOME="$SANDBOX/config" XDG_DATA_HOME="$SANDBOX/d
   exit 1
 fi
 
-if [[ ! -f "$LOCK" ]]; then
-  printf '%s✗%s sync completed but %s was not written\n' "$c_red" "$c_rst" "$LOCK" >&2
+# Assert on the file lazy ACTUALLY writes, not on the repo copy — otherwise a sync that
+# silently wrote nothing would be masked by the seed copy still sitting in the repo, and
+# "no changes" would be reported for a run that did nothing at all.
+if [[ ! -f "$SANDBOX_LOCK" ]]; then
+  printf '%s✗%s sync completed but %s was not written\n' "$c_red" "$c_rst" "$SANDBOX_LOCK" >&2
   exit 1
 fi
+# Bring the synced pins back into the repo, where they are the fleet seed under review.
+# Both the diff report and the --dry-run restore below operate on $LOCK, exactly as before,
+# so everything downstream of here is unchanged.
+cp "$SANDBOX_LOCK" "$LOCK"
 
 # Report the delta (added/removed/changed plugin commits) in human terms.
 if core_files_identical "$BEFORE" "$LOCK"; then

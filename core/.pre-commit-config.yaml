@@ -57,6 +57,11 @@ repos:
     rev: v8.30.1
     hooks:
       - id: gitleaks
+        # The ONE fleet policy (gitleaks.toml) — the same file audit-core.sh §8b and
+        # lint-call.yml's `secrets` job pass. Author time and CI must agree on what
+        # counts as a finding; a hook that is greener than CI is a hook people trust
+        # and then get surprised by.
+        args: ["--config", "gitleaks.toml"]
 
   # NB: shfmt is intentionally NOT enforced — the scripts here use a deliberate
   # compact one-liner style that shfmt would expand (see scripts/audit-core.sh).
