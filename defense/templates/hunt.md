@@ -7,7 +7,7 @@
 
 ## Query / logic
 
-```
+```yaml
 # Sigma is the portable source of truth; paste the rule or the compiled query here.
 ```
 
