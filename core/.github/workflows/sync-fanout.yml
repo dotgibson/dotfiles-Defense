@@ -274,6 +274,29 @@ jobs:
               continue
             fi
 
+            # FOURTH post-condition: the vendored TREE must match the lock (#556).
+            #
+            # The three checks above all compare the LOCK to the INTENT — core.lock says the
+            # target, the pins say the target. None of them looks at what core/ actually
+            # CONTAINS, which is the axis #556 broke: sync-core.sh used to re-resolve the
+            # branch at materialize time, so a push to Core during the run could give core/ a
+            # newer tree than the sha stamped beside it. Every check here would still pass,
+            # the PR would open, and the mismatch would surface later as a scheduled
+            # core-integrity sweep calling the merged repo TAMPERED.
+            #
+            # The sync now pins the fetch, and asserts this itself per repo — but that
+            # verdict cannot reach here (sync-core.sh exits 0 by design; see the note above),
+            # so the belt goes where the PR decision is actually made. Same comparison
+            # core-integrity.sh makes: HEAD:core against <target>^{tree}.
+            vend="$(git -C "$path" rev-parse --verify --quiet 'HEAD:core' || true)"
+            exp="$(git -C "$core" rev-parse --verify --quiet "${target_sha}^{tree}" || true)"
+            if [ -z "$vend" ] || [ "$vend" != "$exp" ]; then
+              echo "- ❌ \`$r\` vendored core/ tree \`${vend:0:12}\` != Core@\`$short\` tree \`${exp:0:12}\` — not opening a PR" >> "$summary"
+              echo "::error::$r: core/ and core.lock name different commits (#556). A PR here would land a tree that core-integrity reports as TAMPERED."
+              fail=1
+              continue
+            fi
+
             # Push per repo, and NEVER let one repo's failure deny the others their PR.
             # This ran unguarded under `set -e`, so the first bad push aborted the whole
             # loop: on the v4.12.1 cut dotfiles-MacBook was refused and the remaining eight

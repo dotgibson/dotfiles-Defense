@@ -18,7 +18,7 @@
 # ONE SESSION PER PROJECT, keyed on the git root (not the cwd): every pane inside a repo
 # shares one conversation, which is the granularity you actually think in. A single global
 # session would hand you dotfiles-Offense's thread while you're sitting in dotfiles-core — the
-# fleet is ten repos, so that would be wrong most of the time.
+# system is eleven repos, so that would be wrong most of the time.
 # ──────────────────────────────────────────────────────────────────────────────
 set -u
 
@@ -36,7 +36,7 @@ root="$(git rev-parse --show-toplevel 2>/dev/null)" || root=""
 [[ -z "$root" ]] && root="$PWD"
 
 # Session name: readable stem + a hash of the FULL path so two repos that happen to share a
-# basename (a `docs/` in each of ten repos) don't collide onto one conversation. cksum, not
+# basename (a `docs/` in each of eleven repos) don't collide onto one conversation. cksum, not
 # md5sum/md5 — those diverge between Linux and macOS, and this file ships to both.
 # ${root##*/} rather than basename: the command substitution strips basename's trailing newline,
 # but `tr -c` runs BEFORE that and turns it into a trailing "_", so the name grew a stray

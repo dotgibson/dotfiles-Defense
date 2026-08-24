@@ -118,6 +118,10 @@ done
 # `ok`/`err` are kept as thin aliases for pass/fail so the call sites below read naturally.
 # shellcheck source=scripts/lib/common.sh
 source "${BASH_SOURCE[0]%/*}/lib/common.sh"
+# The tree-vs-lock comparison, shared with core-integrity.sh so this script's own
+# post-fan-out assertion means exactly what that gate will later report (#556).
+# shellcheck source=scripts/lib/core-lock.sh
+source "${BASH_SOURCE[0]%/*}/lib/core-lock.sh"
 ok() { pass "$@"; }
 err() { fail "$@"; }
 
@@ -150,8 +154,18 @@ blib_ok() { ok "$@"; }
 # the short form as its 12-char prefix (core.lock (B1) records the FULL hash because
 # core-integrity.sh resolves it to a tree object, and the subtree-split marker it can be
 # compared against is full too — a 12-char prefix would make both a string-prefix guess).
-CORE_SHA_FULL="$(git ls-remote "$CORE_REMOTE" "$CORE_BRANCH" 2>/dev/null | awk 'NR==1{print $1}')"
-[[ -n "$CORE_SHA_FULL" ]] || CORE_SHA_FULL="$(git -C "$HERE" rev-parse "$CORE_BRANCH" 2>/dev/null || echo unknown)"
+# `|| CORE_SHA_FULL=""` is load-bearing under `set -euo pipefail`. With pipefail on, an
+# unreachable remote makes the PIPELINE fail (awk succeeds, ls-remote does not), the
+# assignment inherits that status, and set -e killed the script right here — exit 128 with
+# NO output at all, because ls-remote's stderr is deliberately suppressed. Swallowing it
+# lets the local rev-parse fallback run and, failing that, delivers the explicit
+# unresolvable-Core refusal below instead of a bare, silent 128.
+CORE_SHA_FULL="$(git ls-remote "$CORE_REMOTE" "$CORE_BRANCH" 2>/dev/null | awk 'NR==1{print $1}')" || CORE_SHA_FULL=""
+# --verify --quiet, not a bare rev-parse: on an unresolvable ref `git rev-parse foo` prints
+# "foo" TO STDOUT and exits 128, so the `|| echo unknown` appended to it produced the
+# literal "foo\nunknown" — and CORE_SHA then took a 12-char slice of that. The `unknown`
+# sentinel the next line tests for could never actually be reached by this path.
+[[ -n "$CORE_SHA_FULL" ]] || CORE_SHA_FULL="$(git -C "$HERE" rev-parse --verify --quiet "$CORE_BRANCH" 2>/dev/null || echo unknown)"
 if [[ "$CORE_SHA_FULL" == unknown ]]; then CORE_SHA=unknown; else CORE_SHA="${CORE_SHA_FULL:0:12}"; fi
 
 # Human-readable version stamp (core.version) — vendored into each OS repo so its
@@ -180,8 +194,31 @@ CORE_VERSION="$(tr -d '[:space:]' <"$HERE/core.version" 2>/dev/null || echo unkn
 # exists, describe fails and CORE_TAG is empty — and an ABSENT core_tag is strictly better
 # than a wrong one, since the field is already documented as conditional. Same idiom as
 # scripts/fleet-drift.sh's reference-tag resolution.
-CORE_TAG="$(git -C "$HERE" describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' "$CORE_SHA_FULL" 2>/dev/null \
-  || git -C "$HERE" describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' "$CORE_BRANCH" 2>/dev/null || echo '')"
+#
+# The `|| describe "$CORE_BRANCH"` fallback this line used to carry was #556 wearing a
+# different hat. $CORE_BRANCH is re-resolved at describe time, so when the branch moved
+# after $CORE_SHA_FULL was taken, the fallback stamped a tag belonging to a DIFFERENT
+# commit — into core.lock, and onto every rewritten workflow pin comment in all nine
+# repos, which is the field Renovate reads. The rule stated just above settles it: an
+# ABSENT core_tag is strictly better than a wrong one. Now that the sync vendors
+# $CORE_SHA_FULL, describing anything else could only ever be describing the wrong thing.
+CORE_TAG="$(git -C "$HERE" describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' "$CORE_SHA_FULL" 2>/dev/null || echo '')"
+
+# A sync must vendor a NAMED commit. `unknown` means BOTH ls-remote and the local
+# rev-parse failed — offline, with a local clone that cannot resolve $CORE_BRANCH — and
+# what the script used to do there was materialize core/ from the branch and then skip
+# writing core.lock entirely. That is not a tolerated corner case; it is a second,
+# race-free producer of exactly the state this file now exists to prevent: core/ moves,
+# core.lock stays put, and the next `make core-integrity` calls the repo TAMPERED.
+#
+# Placed before the audit gate so it costs no time and mutates nothing, and applied to
+# --dry-run too: a rehearsal that would refuse should say so.
+if [[ "$CORE_SHA_FULL" == unknown ]]; then
+  err "could not resolve '$CORE_BRANCH' in $CORE_REMOTE, and $HERE cannot resolve it locally either"
+  fail "a sync must vendor a named commit: without one, core/ moves while core.lock does not — the state core-integrity reports as TAMPERED (#556)"
+  fail "fix: restore access to $CORE_REMOTE, or 'git fetch' so $HERE can resolve $CORE_BRANCH"
+  exit 1
+fi
 
 echo ":: core version = $CORE_VERSION${CORE_TAG:+  (tag $CORE_TAG)}"
 echo ":: core remote  = $CORE_REMOTE  (branch $CORE_BRANCH @ $CORE_SHA)"
@@ -205,12 +242,17 @@ if ((!DRY)) && [[ "${SYNC_SKIP_AUDIT:-0}" != 1 ]]; then
     exit 1
   fi
   ok "Core audit green — safe to fan out"
-  # 2. subtree pull fetches the REMOTE tip, not this working tree — so warn if local
-  #    HEAD differs from the $CORE_SHA that will actually be vendored. (Best-effort:
-  #    only when origin is resolvable; a detached/odd checkout just skips the check.)
-  local_head="$(git -C "$HERE" rev-parse --short=12 HEAD 2>/dev/null || echo '')"
-  if [[ -n "$local_head" && "$CORE_SHA" != unknown && "$local_head" != "$CORE_SHA" ]]; then
-    err "local HEAD ($local_head) != remote tip being fanned out ($CORE_SHA)"
+  # 2. The fan-out vendors $CORE_SHA_FULL, not this working tree — so refuse when local
+  #    HEAD is a different commit, because then the audit above validated something other
+  #    than what ships. Now that the vendored commit is pinned, this equality is exactly
+  #    the statement "the tree I audited is the tree that fans out".
+  #
+  #    FULL sha, not `rev-parse --short=12`: `--short` returns AT LEAST 12 characters and
+  #    more when 12 would be ambiguous in this repo, so comparing it against a hard 12-char
+  #    prefix is a latent spurious refusal that grows more likely as history does.
+  local_head="$(git -C "$HERE" rev-parse HEAD 2>/dev/null || echo '')"
+  if [[ -n "$local_head" && "$local_head" != "$CORE_SHA_FULL" ]]; then
+    err "local HEAD (${local_head:0:12}) != the pinned commit being vendored ($CORE_SHA)"
     fail "the audit above validated your LOCAL tree, not what will vendor — push/pull to align, or set SYNC_SKIP_AUDIT=1"
     exit 1
   fi
@@ -225,7 +267,7 @@ fi
 # that repo's pull fetches normally. Bounded by SYNC_JOBS (default 4; set 1 to disable),
 # using BATCHED waits (no `wait -n`) so it stays bash-3.2-safe on macOS. ──
 SYNC_JOBS="${SYNC_JOBS:-4}"
-if ((!DRY)) && ((SYNC_JOBS > 1)) && [[ "$CORE_SHA" != unknown ]]; then
+if ((!DRY)) && ((SYNC_JOBS > 1)); then
   echo ":: prefetching Core into up to $SYNC_JOBS repos in parallel (merge stays sequential)"
   _pf=0
   for repo in "${TARGETS[@]}"; do
@@ -234,7 +276,13 @@ if ((!DRY)) && ((SYNC_JOBS > 1)) && [[ "$CORE_SHA" != unknown ]]; then
     # conventional path keeps the "nothing there" case looking exactly as it did.
     path="$(resolve_repo_dir "$REPOS_ROOT" "$repo")" || path="$REPOS_ROOT/$repo"
     [[ -d "$path/.git" && -d "$path/core" ]] || continue
-    git -C "$path" fetch -q "$CORE_REMOTE" "$CORE_BRANCH" >/dev/null 2>&1 &
+    # Pinned, and through the same helper the serial loop uses — so a repo whose prefetch
+    # succeeded needs NO network below at all (_sync_fetch_pinned short-circuits on
+    # cat-file), which makes a re-run of the same sync fully offline. It also picks up
+    # --no-tags, which this loop was missing: without it every prefetch dragged Core's
+    # whole tag namespace into every OS repo, including the moving `v4` alias that the
+    # materialize helper's own comment blames for blocking later fetches.
+    _sync_fetch_pinned "$path" "$CORE_REMOTE" "$CORE_SHA_FULL" "$CORE_BRANCH" >/dev/null 2>&1 &
     _pf=$((_pf + 1))
     # `|| true` keeps the prefetch best-effort under `set -e`: a flaky background fetch
     # must never abort the script before the (real) serial merge loop below. A no-arg
@@ -365,11 +413,42 @@ _sync_pin_workflows() { # <repo-path> <full-sha> <tag> → prints how many files
 # `read-tree --prefix` is the same plumbing `git subtree add` uses to place a tree at a
 # path, so file modes (the exec bits audit-core.sh asserts) come straight from the tree
 # object rather than being reconstructed.
-_sync_materialize_core() { # <repo-path> <remote> <ref> → stages core/ at that commit
-  local path="$1" remote="$2" ref="$3"
-  # --no-tags: we want one commit, not the remote's tag namespace pulled into every
-  # OS repo (which is also how a stale local `v4` alias comes to block a later fetch).
-  git -C "$path" fetch -q --no-tags "$remote" "$ref" || return 1
+# Is the pinned commit's tree already in this repo's object store?
+#
+# `cat-file -e <sha>^{tree}` and not `rev-parse`: rev-parse resolves the tree ID by reading
+# the COMMIT header, and succeeds while the tree object itself is missing — which is
+# precisely the state a partial fetch leaves behind, and precisely what read-tree needs.
+_sync_have_core_object() { # <repo-path> <sha>
+  git -C "$1" cat-file -e "${2}^{tree}" 2>/dev/null
+}
+
+# Get the pinned commit into <repo-path>'s object store, however we can.
+#
+# Try the bare SHA first: GitHub sets uploadpack.allowReachableSHA1InWant, and the release
+# fan-out already proves this path works over HTTPS (sync-fanout.yml pins CORE_BRANCH to a
+# raw sha, which flows straight through here). When CORE_BRANCH is itself that sha the two
+# arms collapse, and a force-push that removed the pinned commit is then correctly a
+# FAILURE rather than a silent vendoring of whatever the ref points at now.
+#
+# The ref fetch is a fallback for remotes that do not allow unadvertised wants — and it is
+# strictly an OBJECT-DELIVERY mechanism. Nothing downstream reads FETCH_HEAD: the caller
+# read-trees the pinned sha. A fallback that fetched the ref and then read FETCH_HEAD would
+# re-create #556 inside the fix, since FETCH_HEAD is the new tip by definition.
+_sync_fetch_pinned() { # <repo-path> <remote> <sha> <ref>
+  local path="$1" remote="$2" sha="$3" ref="$4"
+  _sync_have_core_object "$path" "$sha" && return 0        # already warm → no network
+  if git -C "$path" fetch -q --no-tags "$remote" "$sha" >/dev/null 2>&1 &&
+    _sync_have_core_object "$path" "$sha"; then
+    return 0
+  fi
+  [[ "$ref" != "$sha" ]] || return 1                       # nothing else left to try
+  git -C "$path" fetch -q --no-tags "$remote" "$ref" >/dev/null 2>&1 || return 1
+  _sync_have_core_object "$path" "$sha"                    # the pin must be in what arrived
+}
+
+_sync_materialize_core() { # <repo-path> <remote> <sha> <ref> → stages core/ at that commit
+  local path="$1" remote="$2" sha="$3" ref="$4"
+  _sync_fetch_pinned "$path" "$remote" "$sha" "$ref" || return 1
   # Clear the prefix from index AND worktree: read-tree --prefix refuses to write over
   # existing index entries. --ignore-unmatch so a half-repaired repo (entries already
   # gone, directory still present) is recoverable rather than fatal.
@@ -378,7 +457,15 @@ _sync_materialize_core() { # <repo-path> <remote> <ref> → stages core/ at that
   # survive into the new tree and then read as drift to core-integrity, so clear the
   # directory outright. `${path:?}` guards an empty path expanding this to `rm -rf /core`.
   rm -rf -- "${path:?}/core"
-  git -C "$path" read-tree --prefix=core/ -u FETCH_HEAD || return 1
+  # The pinned tree BY SHA, never FETCH_HEAD (#556). FETCH_HEAD is whatever the ref
+  # resolved to during THIS fetch — a second, later resolution of the same moving branch
+  # that $CORE_SHA_FULL was taken from up top. When Core was pushed to during the ~250s
+  # pre-fan-out audit, the two disagreed: core/ got the new tip, core.lock recorded the
+  # old sha, and core-integrity later called the repo TAMPERED — pointing the operator at
+  # a hand-edit that never happened. Addressing the tree by sha closes the window instead
+  # of narrowing it, and makes the serial fan-out consistent by construction: every repo
+  # materializes the same commit no matter how long the loop takes.
+  git -C "$path" read-tree --prefix=core/ -u "${sha}^{tree}" || return 1
 }
 
 repos_updated=0 repos_skipped=0 repos_failed=0
@@ -395,7 +482,7 @@ for repo in "${TARGETS[@]}"; do
     continue
   fi
   if ((DRY)); then
-    echo "would: materialize $path/core at $CORE_REMOTE $CORE_BRANCH   (→ $CORE_SHA)"
+    echo "would: materialize $path/core at $CORE_REMOTE ${CORE_SHA_FULL:0:12}   (ref $CORE_BRANCH)"
     continue
   fi
   # bail if the OS repo has a dirty tree — subtree merges into a clean state only
@@ -411,11 +498,14 @@ for repo in "${TARGETS[@]}"; do
   # Snapshot the line-level FAIL counter: any err() emitted inside this repo's body
   # (pull failure, core.lock commit failure) flips the whole repo into the failed bucket.
   _repo_fail0=$FAIL
+  # HEAD before this repo is touched — named in the recovery hint if the post-materialize
+  # assertion below fails, so the operator is not left to work out what to reset to.
+  _repo_head0="$(git -C "$path" rev-parse HEAD 2>/dev/null || echo '')"
   # Unlike the subtree pull this replaces, materializing COMMITS NOTHING — it leaves the
   # new tree staged so core.lock and the workflow pins land in the SAME commit below.
   # One atomic commit per repo instead of two, and no window where core/ has moved but
   # core.lock has not (the state core-integrity.sh reports as TAMPERED).
-  if _sync_materialize_core "$path" "$CORE_REMOTE" "$CORE_BRANCH"; then
+  if _sync_materialize_core "$path" "$CORE_REMOTE" "$CORE_SHA_FULL" "$CORE_BRANCH"; then
     ok "$repo core/ materialized → $CORE_SHA"
     # B1: stamp provenance so the OS repo can answer "which Core do I carry?" in O(1),
     # OFFLINE, without parsing `git log --grep` for the subtree-split marker (which needs
@@ -423,86 +513,117 @@ for repo in "${TARGETS[@]}"; do
     # repo ROOT — outside core/, so a subtree pull never clobbers it. core-integrity.sh
     # resolves core_sha to a tree and compares it with the vendored core/; fleet-drift.sh
     # reads it as each repo's recorded Core.
-    if [[ "$CORE_SHA_FULL" != unknown ]]; then
-      {
-        echo "# GENERATED by dotfiles-core sync-core.sh — vendored Core provenance (B1)."
-        echo "# Regenerated ONLY by Core's fan-out ('make sync' in dotfiles-core) — never"
-        echo "# hand-edit, and never 'git subtree pull' by hand: that moves core/ but not"
-        echo "# this file, and core-integrity.sh then reports TAMPERED. See VENDORING.md."
-        echo "core_version=$CORE_VERSION"
-        echo "core_sha=$CORE_SHA_FULL"
-        # core_ref, NOT core_branch (#453). The field is written from $CORE_BRANCH, which
-        # is a branch name for a hand-run `make sync` but a PINNED COMMIT for a release
-        # fan-out — sync-fanout.yml sets CORE_BRANCH="$target_sha" deliberately, so each
-        # release PR vendors the exact released commit rather than a moving main. That
-        # pinning is correct and stays. What was wrong was persisting it into a field
-        # named, and documented in VENDORING.md, as a *branch*: the lock file disagreed
-        # with its own contract, and the value duplicated core_sha with nothing added.
-        #
-        # Named for what it actually holds, it earns its place: core_ref is the one field
-        # that says whether this repo was vendored by a release fan-out (a SHA) or by an
-        # ad-hoc sync off a branch (a name) — which core_sha alone cannot answer.
-        echo "core_ref=$CORE_BRANCH"
-        # Only emit core_tag once Core actually carries a tag — keeps core.lock
-        # byte-identical to the pre-tagging format until the first release, so the
-        # idempotency check below still skips a no-op re-sync (no spurious commit).
-        [[ -n "$CORE_TAG" ]] && echo "core_tag=$CORE_TAG"
-      } >"$path/core.lock"
-      # COMMIT it (as a follow-up to the subtree-pull commit) so the tree is clean for the
-      # NEXT run — otherwise the dirty-tree guard above would see the uncommitted core.lock
-      # and refuse to update this repo. Idempotent: a re-sync of the same SHA leaves
-      # core.lock byte-identical, so there's nothing staged and we skip the commit.
-      # Move the workflow pins in the SAME commit that stamps core.lock: the two name the
-      # same Core, so landing them apart leaves a window where the repo's own pin gate is
-      # red on main. See the _sync_pin_workflows block above for why (#482).
-      # `|| _pinfail=1` rather than a bare assignment: `set -e` is on, so a non-zero from
-      # the command substitution would abort the whole fan-out mid-fleet. We want THIS repo
-      # marked failed and the remaining repos still attempted — the same shape the dirty-tree
-      # guard uses.
-      _pinfail=0
-      _pins="$(_sync_pin_workflows "$path" "$CORE_SHA_FULL" "$CORE_TAG")" || _pinfail=1
-      # core.lock is still committed below even on a pin failure: the subtree pull has
-      # already landed, so leaving it uncommitted would only add a dirty tree that self-blocks
-      # the next run on top of the drift. The err() is what makes it non-silent — it flips
-      # this repo into the failed bucket, so the run cannot end "updated 8" with a repo whose
-      # pins never moved.
-      ((_pinfail)) && err "$repo: a workflow pin could not be rewritten (named above) — core.lock will be ahead of its pins; re-run after fixing the file"
-      git -C "$path" add core.lock
-      ((_pins)) && git -C "$path" add .github/workflows
-      # Staged-wide, not `-- core.lock`: a repo whose core.lock is already current but
-      # whose pins are stale (the state a fan-out predating this left behind) must still
-      # commit. Scoping the check to core.lock reported "current" and dropped the pin fix.
-      if git -C "$path" diff --cached --quiet; then
-        ok "$repo core.lock current → ${CORE_SHA_FULL:0:12} (v$CORE_VERSION)"
+    # No `CORE_SHA_FULL != unknown` guard here any more. The up-front gate makes
+    # `unknown` unreachable by this point, and what that guard used to do — materialize
+    # core/ and then skip core.lock entirely — was itself a producer of the TAMPERED
+    # state this file now exists to prevent (#556).
+    {
+      echo "# GENERATED by dotfiles-core sync-core.sh — vendored Core provenance (B1)."
+      echo "# Regenerated ONLY by Core's fan-out ('make sync' in dotfiles-core) — never"
+      echo "# hand-edit, and never 'git subtree pull' by hand: that moves core/ but not"
+      echo "# this file, and core-integrity.sh then reports TAMPERED. See VENDORING.md."
+      echo "core_version=$CORE_VERSION"
+      echo "core_sha=$CORE_SHA_FULL"
+      # core_ref, NOT core_branch (#453). The field is written from $CORE_BRANCH, which
+      # is a branch name for a hand-run `make sync` but a PINNED COMMIT for a release
+      # fan-out — sync-fanout.yml sets CORE_BRANCH="$target_sha" deliberately, so each
+      # release PR vendors the exact released commit rather than a moving main. That
+      # pinning is correct and stays. What was wrong was persisting it into a field
+      # named, and documented in VENDORING.md, as a *branch*: the lock file disagreed
+      # with its own contract, and the value duplicated core_sha with nothing added.
+      #
+      # Named for what it actually holds, it earns its place: core_ref is the one field
+      # that says whether this repo was vendored by a release fan-out (a SHA) or by an
+      # ad-hoc sync off a branch (a name) — which core_sha alone cannot answer.
+      echo "core_ref=$CORE_BRANCH"
+      # Only emit core_tag once Core actually carries a tag — keeps core.lock
+      # byte-identical to the pre-tagging format until the first release, so the
+      # idempotency check below still skips a no-op re-sync (no spurious commit).
+      [[ -n "$CORE_TAG" ]] && echo "core_tag=$CORE_TAG"
+    } >"$path/core.lock"
+    # COMMIT it (as a follow-up to the subtree-pull commit) so the tree is clean for the
+    # NEXT run — otherwise the dirty-tree guard above would see the uncommitted core.lock
+    # and refuse to update this repo. Idempotent: a re-sync of the same SHA leaves
+    # core.lock byte-identical, so there's nothing staged and we skip the commit.
+    # Move the workflow pins in the SAME commit that stamps core.lock: the two name the
+    # same Core, so landing them apart leaves a window where the repo's own pin gate is
+    # red on main. See the _sync_pin_workflows block above for why (#482).
+    # `|| _pinfail=1` rather than a bare assignment: `set -e` is on, so a non-zero from
+    # the command substitution would abort the whole fan-out mid-fleet. We want THIS repo
+    # marked failed and the remaining repos still attempted — the same shape the dirty-tree
+    # guard uses.
+    _pinfail=0
+    _pins="$(_sync_pin_workflows "$path" "$CORE_SHA_FULL" "$CORE_TAG")" || _pinfail=1
+    # core.lock is still committed below even on a pin failure: the subtree pull has
+    # already landed, so leaving it uncommitted would only add a dirty tree that self-blocks
+    # the next run on top of the drift. The err() is what makes it non-silent — it flips
+    # this repo into the failed bucket, so the run cannot end "updated 8" with a repo whose
+    # pins never moved.
+    ((_pinfail)) && err "$repo: a workflow pin could not be rewritten (named above) — core.lock will be ahead of its pins; re-run after fixing the file"
+    git -C "$path" add core.lock
+    ((_pins)) && git -C "$path" add .github/workflows
+    # Staged-wide, not `-- core.lock`: a repo whose core.lock is already current but
+    # whose pins are stale (the state a fan-out predating this left behind) must still
+    # commit. Scoping the check to core.lock reported "current" and dropped the pin fix.
+    if git -C "$path" diff --cached --quiet; then
+      ok "$repo core.lock current → ${CORE_SHA_FULL:0:12} (v$CORE_VERSION)"
+    else
+      # Name what actually moved. Since materializing stages core/ alongside core.lock,
+      # "core.lock → sha" would understate a run that replaced the whole vendored tree —
+      # and `git log -- core/` is how a maintainer finds the sync that brought a file in.
+      if git -C "$path" diff --cached --quiet -- core; then
+        _lockmsg="chore(core): core.lock → ${CORE_SHA} (v$CORE_VERSION)"
+        ((_pins)) && _lockmsg="chore(core): core.lock + ${_pins} workflow file(s) → ${CORE_SHA} (v$CORE_VERSION)"
       else
-        # Name what actually moved. Since materializing stages core/ alongside core.lock,
-        # "core.lock → sha" would understate a run that replaced the whole vendored tree —
-        # and `git log -- core/` is how a maintainer finds the sync that brought a file in.
-        if git -C "$path" diff --cached --quiet -- core; then
-          _lockmsg="chore(core): core.lock → ${CORE_SHA} (v$CORE_VERSION)"
-          ((_pins)) && _lockmsg="chore(core): core.lock + ${_pins} workflow file(s) → ${CORE_SHA} (v$CORE_VERSION)"
-        else
-          _lockmsg="chore(core): sync Core → v$CORE_VERSION (${CORE_SHA})"
-          ((_pins)) && _lockmsg="chore(core): sync Core → v$CORE_VERSION (${CORE_SHA}) + ${_pins} workflow file(s)"
-        fi
-        # Emit the subtree trailer even though NOTHING here depends on it any more.
-        # core.lock is the authoritative provenance (#587), and this sync no longer reads
-        # the trailer to find a base — but consumer tooling still uses it as a fallback
-        # (dotfiles-MacBook's verify-core warns when it disagrees with the lock), so an
-        # ACCURATE marker where one survives is strictly better than none. Informational,
-        # not load-bearing: a squash-merge may still eat it, and that is now harmless
-        # rather than the thing that breaks the next release.
-        _lockmsg="$_lockmsg
+        _lockmsg="chore(core): sync Core → v$CORE_VERSION (${CORE_SHA})"
+        ((_pins)) && _lockmsg="chore(core): sync Core → v$CORE_VERSION (${CORE_SHA}) + ${_pins} workflow file(s)"
+      fi
+      # Emit the subtree trailer even though NOTHING here depends on it any more.
+      # core.lock is the authoritative provenance (#587), and this sync no longer reads
+      # the trailer to find a base — but consumer tooling still uses it as a fallback
+      # (dotfiles-MacBook's verify-core warns when it disagrees with the lock), so an
+      # ACCURATE marker where one survives is strictly better than none. Informational,
+      # not load-bearing: a squash-merge may still eat it, and that is now harmless
+      # rather than the thing that breaks the next release.
+      _lockmsg="$_lockmsg
 git-subtree-dir: core
 git-subtree-split: ${CORE_SHA_FULL}"
-        if git -C "$path" commit -q -m "$_lockmsg"; then
-          ok "$repo core.lock committed → ${CORE_SHA_FULL:0:12} (v$CORE_VERSION)"
-          ((_pins)) && ok "$repo repointed ${_pins} workflow file(s) at ${CORE_SHA_FULL:0:12}${CORE_TAG:+ ($CORE_TAG)}"
-        else
-          err "$repo core.lock commit failed — commit it manually before re-running"
-        fi
+      if git -C "$path" commit -q -m "$_lockmsg"; then
+        ok "$repo core.lock committed → ${CORE_SHA_FULL:0:12} (v$CORE_VERSION)"
+        ((_pins)) && ok "$repo repointed ${_pins} workflow file(s) at ${CORE_SHA_FULL:0:12}${CORE_TAG:+ ($CORE_TAG)}"
+      else
+        err "$repo core.lock commit failed — commit it manually before re-running"
       fi
     fi
+    # ── POST-FAN-OUT ASSERTION: prove core/ and core.lock name the same commit ────
+    # The sync PRODUCES this pair, so it is the run that should catch them disagreeing.
+    # Before #556 it could not: a mismatch surfaced later, out of context, as a
+    # `TAMPERED (core/ edited since sync)` verdict from an unrelated `make core-integrity`
+    # — a diagnosis pointing at a hand-edit that never happened, which is the part that
+    # cost the most time to unpick.
+    #
+    # Same comparison core-integrity.sh makes, via the shared lib, so the two cannot drift.
+    # Resolved in "$path" and not "$HERE": after _sync_fetch_pinned the CONSUMER is
+    # guaranteed to hold the object, whereas $HERE may not under SYNC_SKIP_AUDIT=1.
+    #
+    # Asserted on HEAD:core after the commit — that is the artefact core-integrity will
+    # read. The idempotent "core.lock current" path is covered too: nothing was staged
+    # precisely because HEAD:core already carries the right tree.
+    _sync_vend="$(core_lock_vendored_tree "$path" || echo '')"
+    _sync_exp="$(core_lock_expected_tree "$path" "$CORE_SHA_FULL" || echo '')"
+    if [[ -n "$_sync_vend" && "$_sync_vend" == "$_sync_exp" ]]; then
+      ok "$repo core/ verified == Core@$CORE_SHA (tree ${_sync_vend:0:12})"
+    else
+      # err(), not exit: sync-fanout.yml runs this script under `bash -e`, so aborting
+      # here would deny PRs to every repo that synced correctly. Report, bucket this repo
+      # as failed, and keep going — the same shape the dirty-tree and pin guards use.
+      #
+      # And no auto-revert: on the idempotent path no commit was made, so a blind
+      # `reset --hard HEAD~1` would destroy a good prior commit. Name the target instead.
+      err "$repo: vendored core/ tree ${_sync_vend:0:12} != Core@$CORE_SHA tree ${_sync_exp:0:12} — core/ and core.lock disagree (#556)"
+      [[ -n "$_repo_head0" ]] && fail "recover with: git -C $path reset --hard ${_repo_head0:0:12}"
+    fi
+
     # (re)install the local core/ pre-commit guard so a later hand-edit of the vendored
     # subtree in this repo is rejected (this sync run itself is exempt via the env var above).
     blib_install_core_guard "$path" || true

@@ -28,10 +28,29 @@ set -euo pipefail
 # there would corrupt the caller's data and copy nothing. CLIP_TTY overrides the target
 # for the test suite, the same seam CLIP_PROC_VERSION provides above.
 #
-# Inside tmux this needs no special handling: Core's tmux.conf sets `set-clipboard on`,
-# so tmux consumes a pane's OSC 52 and forwards it to the outer terminal itself. No DCS
-# passthrough wrapping — that is for sequences tmux does NOT understand, and wrapping
-# one it does understand would break it.
+# Inside tmux, a PANE process needs no special handling: Core's tmux.conf sets
+# `set-clipboard on`, so tmux consumes the pane's OSC 52 and forwards it to the outer
+# terminal itself. No DCS passthrough wrapping — that is for sequences tmux does NOT
+# understand, and wrapping one it does understand would break it.
+#
+# The one binding that names `clip`, however, is NOT a pane process. tmux.reset.conf binds
+#     bind -T copy-mode-vi y  send -X copy-pipe-and-cancel "clip"
+# and `copy-pipe` runs its command through tmux's job_run() — a child of the DAEMONIZED
+# SERVER, which has called setsid() and so has no controlling terminal, and whose stderr
+# is dup2'd to /dev/null. The /dev/tty open below therefore fails with ENXIO, the error
+# message goes nowhere, and `clip` exits 1 silently: the OSC 52 branch is UNREACHABLE from
+# that binding.
+#
+# Prefix-`y` still copies today only because window_copy_copy_pipe() also calls
+# window_copy_copy_buffer(), which under `set-clipboard on` emits its OWN OSC 52 from the
+# server side. That is tmux covering for us, not this file working — so the moment
+# `set-clipboard` goes off, or tmux is built without it, copy-out dies on exactly the
+# headless box this fallback exists for, with a comment here claiming it is handled.
+#
+# Hence the tmux arm in _osc52_copy: `tmux load-buffer -w -` reaches the client from the
+# SERVER side and needs no tty at all — precisely what the copy-pipe child lacks. It stays
+# a fallback rather than a first choice, because a pane process should keep taking the
+# /dev/tty path, which works whether or not `set-clipboard` is on.
 _osc52_copy() {
   local tty="${CLIP_TTY:-/dev/tty}" b64
 
@@ -59,11 +78,38 @@ _osc52_copy() {
   # still passes the permission test — opening it is what fails, with ENXIO. A probe
   # would report success and then lose the copy. This also avoids the TOCTOU gap
   # between probing and writing.
-  if ! { printf '\033]52;c;%s\a' "$b64" >"$tty"; } 2>/dev/null; then
-    echo "clip: no clipboard backend, and no terminal at $tty for the OSC 52 fallback" >&2
-    echo "  (install wl-clipboard or xclip, or run this from a terminal session)" >&2
-    return 1
+  #
+  # One caveat stated rather than silently accepted: writing to a character device is
+  # LINE-buffered and this sequence contains no newline by construction, so a payload past
+  # BUFSIZ (~4 KB of base64, ~3 KB of copied text) leaves as several write() calls on a tty
+  # the foreground TUI also owns. If nvim redraws between two of them the sequence splits
+  # and the terminal copies a partial value. nvim blocks on the provider job, so the window
+  # is small — but it is real, and it grows with yank size.
+  if { printf '\033]52;c;%s\a' "$b64" >"$tty"; } 2>/dev/null; then
+    return 0
   fi
+
+  # The write failed, which under tmux means the copy-pipe case above: no controlling
+  # terminal, so it could never have worked. Hand the payload to the tmux SERVER instead —
+  # `-w` (tmux >= 3.2) makes it set the outer terminal's clipboard as well as holding the
+  # buffer locally. tmux.conf already targets >= 3.4 features, so the floor is met.
+  #
+  # The payload is reconstructed by decoding $b64 rather than being stashed on the way in.
+  # Holding the raw bytes would mean either a shell variable — not binary-safe, since
+  # command substitution strips trailing newlines and cannot carry a NUL — or a temp file,
+  # which would add mktemp/cat/rm to a path that runs on the most minimal boxes we support
+  # and would put a TOTP (optoken pipes one through here) on disk. Decoding costs one more
+  # process on an already-failed path and keeps both problems away. `-d` is accepted by
+  # GNU, busybox and BSD base64 alike; macOS never reaches here anyway, because the Darwin
+  # branch below execs pbcopy.
+  if [ -n "${TMUX:-}" ] && command -v tmux >/dev/null 2>&1 \
+    && printf '%s' "$b64" | base64 -d 2>/dev/null | tmux load-buffer -w - 2>/dev/null; then
+    return 0
+  fi
+
+  echo "clip: no clipboard backend, and no terminal at $tty for the OSC 52 fallback" >&2
+  echo "  (install wl-clipboard or xclip, or run this from a terminal session)" >&2
+  return 1
 }
 
 shopt -s nocasematch

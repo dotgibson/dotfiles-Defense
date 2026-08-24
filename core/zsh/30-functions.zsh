@@ -196,6 +196,34 @@ _core_doctor_optin() {
   return 1
 }
 
+# _core_doctor_unwired <tool> → 0 iff Core's band-00 detection MISSED this tool.
+#
+# Callers ask only about tools the LIVE probe has already found, so a 0 here means exactly
+# "it is here now, but it was not here when Core decided what to wire" — no alias, no shell
+# init, no HAVE_* flag, while the row above says ✓. The cause is always the same: a
+# directory that joined PATH after band 00 (80-os.zsh, an 85-* role fragment, 99-local.zsh,
+# or mise's per-directory chpwd hook), or an install that happened after this shell started.
+#
+# TWO gates, and both matter:
+#   1. No ledger at all → Core's detection never ran in this shell (the function unit
+#      harness sources ui+functions alone; so does any script, or `zsh -c`). Make NO claim:
+#      reporting 41 unwired tools there would be worse than saying nothing.
+#   2. No entry for this row → Core does not probe this tool. Also no claim. Without this,
+#      every row the doctor knows and 00-tools.zsh does not would false-positive.
+# Checked in the render and in --json as well, so the two renderers cannot disagree about
+# whether the axis applies.
+#
+# THE MIRROR CASE IS NOT HANDLED HERE, deliberately: a flag set for a binary that is now GONE
+# leaves a live alias pointing at nothing. That failure is LOUD (`command not found: procs`)
+# where this one is silent, so it wants its own glyph and its own remedy rather than being
+# folded in — tracked in #631, and ~5 lines here if it is taken.
+_core_doctor_unwired() {
+  (( ${+_CORE_PROBED} ))     || return 1   # detection never ran here
+  (( ${+_CORE_PROBED[$1]} )) || return 1   # Core does not probe this row
+  [[ ${_CORE_PROBED[$1]} == 1 ]] && return 1
+  return 0
+}
+
 # ── The doctor's WIRABLE inventory — ONE definition, read by BOTH renderers ───────────
 # The same single-source rule as _CORE_DOCTOR_GROUPS above, applied to the other axis. This
 # list lived as two `local -a` literals — one in _core_doctor_json, one in
@@ -326,14 +354,22 @@ _core_doctor_json() {
   # REPLY is declared HERE, with the rest — _core_doctor_bin writes it, and `local` inside
   # the loop would re-declare an already-set parameter (see the `local … _v` note in
   # _core_doctor_render for what that costs).
+  # `missed` joins the declarations here for the same reason REPLY does — it is appended to
+  # inside the loop, and a `local` there would re-declare a set parameter.
   local t first=1 REPLY
+  local -a missed=()
   print -rn -- "{\"version\":\"${ver}\",\"tools\":{"
   for t in $alltools; do
     ((first)) || print -rn -- ","; first=0
     # Probe the RESOLVED binary, but key the object on the CANONICAL name: consumers and
     # the render⇄json parity test both look up `.tools.bat`, not `.tools.batcat`.
     _core_doctor_bin "$t"
-    if _core_have "$REPLY"; then print -rn -- "\"$t\":true"; else print -rn -- "\"$t\":false"; fi
+    if _core_have "$REPLY"; then
+      print -rn -- "\"$t\":true"
+      # Collected on the present branch of the loop that is already running, rather than in
+      # a second pass: the question only applies to a tool that IS here now (#545).
+      _core_doctor_unwired "$t" && missed+=("$t")
+    else print -rn -- "\"$t\":false"; fi
   done
   # "expected" is what makes this object assertable (#513). "tools" alone can only answer
   # "is every tool present", which is false on every correctly-provisioned box — footnote ²¹
@@ -367,6 +403,23 @@ _core_doctor_json() {
   # able to see a degraded shell without the user going looking. Both false on the machines that
   # never opted in. NOT exposing an `opted_in` field on purpose: after degradation
   # ATUIN_DAEMON__ENABLED reads false, so it would lie.
+  # Detection divergence (#545). "ran" is the consumer's "this shell can answer the
+  # question at all" flag — false in any context where 00-tools.zsh never loaded (a script,
+  # `zsh -c`, the function unit harness), where "missed" is necessarily empty and means
+  # nothing. The gate a provisioning script wants is `jq -e '.detection.missed == []'`.
+  #
+  # NOT named "wiring": this object sits beside "wired", which answers an unrelated question
+  # (did an integration register its hooks in this shell), and a consumer reading both
+  # `.wired` and `.wiring.*` would conflate them.
+  print -rn -- "},\"detection\":{\"ran\":"
+  if (( ${+_CORE_PROBED} )); then print -rn -- true; else print -rn -- false; fi
+  print -rn -- ",\"missed\":["
+  first=1
+  for t in $missed; do
+    ((first)) || print -rn -- ","; first=0
+    print -rn -- "\"$t\""
+  done
+  print -rn -- "]"
   print -rn -- "},\"atuin_daemon\":{\"degraded\":"
   if [[ -n ${_CORE_ATUIN_DAEMON_DEGRADED:-} ]]; then print -rn -- true; else print -rn -- false; fi
   print -rn -- ",\"was_up\":"
@@ -414,11 +467,13 @@ _core_doctor_render() {
     return 1
     ;;
   esac
-  local g='' c='' d='' r=''
+  local g='' c='' d='' r='' y=''
   if [[ ( -t 1 || -n ${_CORE_FORCE_COLOR:-} ) && -z ${NO_COLOR:-} ]]; then
     # green/cyan stay local (doctor's own ✓/group semantics); the dim muted reuses
     # 05-ui.zsh's canonical $_CORE_C_MUTED so "muted grey" has one definition Core-wide.
+    # y is the ⚠ modifier on a present-but-unwired row (#545) — the same borrow pattern.
     g=$'\e[32m' c=$'\e[36m' d="${_CORE_C_MUTED:-$'\e[2;37m'}" r=$'\e[0m'
+    y="${_CORE_C_YEL:-$'\e[33m'}"
   fi
   local ver="unknown"
   [[ -r "$_CORE_VERSION_FILE" ]] && ver="$(<"$_CORE_VERSION_FILE")"
@@ -440,8 +495,11 @@ _core_doctor_render() {
   # of versions. Nothing caught it because no test drove the -v path.
   # `bin` and REPLY join _v here for the same reason: _core_doctor_bin writes REPLY, and
   # both are assigned once per tool inside the loop.
-  local gi tool line _v bin REPLY
-  local -a missing=() optin=()
+  local gi tool line _v bin mark REPLY
+  # `mark` joins _v/bin/REPLY up here for the reason spelled out just above: a `local` that
+  # re-declares an already-set parameter INSIDE the loop makes zsh print `name=value` into
+  # the report. That shipped once already, as literal `_v=0.26.1` lines.
+  local -a missing=() optin=() unwired=() latedirs=()
   for ((gi = 1; gi <= ${#groups}; gi += 2)); do
     print -r -- "${c}${groups[gi]}${r}"
     line=""
@@ -449,14 +507,22 @@ _core_doctor_render() {
       # `tool` is what we PRINT (the canonical name); `bin` is what we PROBE and fork.
       _core_doctor_bin "$tool"; bin=$REPLY
       if _core_have "$bin"; then
+        # ⚠ is a MODIFIER on ✓, not a fourth presence state: the tool genuinely IS present,
+        # so ✓ is not wrong — what is wrong is reading it as "Core wired this". Rendering it
+        # as an annotation (the same shape the atuin-daemon note below uses) keeps the
+        # legend's three states intact, and keeps the render⇄json parity test blind to it by
+        # construction: that test matches `[✓✗·] (name)`, so a suffixed glyph still yields
+        # exactly the tool name.
+        mark=""
+        if _core_doctor_unwired "$tool"; then mark="${y}⚠${r}"; unwired+=("$tool"); fi
         if ((show_versions)); then
           # Best-effort, like setup.sh's _doctor: pull the first semver-ish token from
           # the tool's own --version. Unparseable → just the ✓ (never an error). Assigned,
           # never re-declared: see the `local … _v` note above the loop.
           _v="$("$bin" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
-          line+="  ${g}✓${r} ${tool}${_v:+ ${d}${_v}${r}}"
+          line+="  ${g}✓${r} ${tool}${mark}${_v:+ ${d}${_v}${r}}"
         else
-          line+="  ${g}✓${r} ${tool}"
+          line+="  ${g}✓${r} ${tool}${mark}"
         fi
       elif _core_doctor_optin "$tool"; then
         # ABSENT AND THAT IS CORRECT — footnote ²¹. Rendered, because "you could have this"
@@ -503,6 +569,35 @@ _core_doctor_render() {
     print -r -- "${c}opt-in${r}"
     print -r -- "  ${d}${optin[*]}${r}"
     print -r -- "  ${d}no bootstrap installs these — · is informational, never a failure${r}"
+  fi
+
+  # Present, but Core never wired it (#545). Placed AFTER the opt-in block deliberately:
+  # the render⇄json parity test splits the body on "\nopt-in" and discards everything past
+  # it, so anything here is invisible to that comparison structurally, not just because the
+  # names are printed bare.
+  #
+  # The hint names the CAUSE, which is what makes it actionable. A directory that is on PATH
+  # now but was not at band 00 is a load-order problem the OS/role layer can fix by moving
+  # the prepend earlier; a tool whose directory was already there was simply installed after
+  # this shell started, and a new shell is the whole remedy.
+  if ((${#unwired})); then
+    print -r -- "${c}not wired${r}"
+    print -r -- "  ${d}${unwired[*]}${r}"
+    print -r -- "  ${d}present now, but absent when Core ran detection — no alias, no init${r}"
+    local _u _ud
+    for _u in $unwired; do
+      _core_doctor_bin "$_u"; _ud="${commands[$REPLY]:-}"
+      [[ -n "$_ud" ]] || continue
+      _ud="${_ud:h}"
+      [[ -n "${_CORE_PROBE_PATH:-}" && ":${_CORE_PROBE_PATH}:" == *":${_ud}:"* ]] && continue
+      [[ " ${latedirs[*]} " == *" $_ud "* ]] || latedirs+=("$_ud")
+    done
+    if ((${#latedirs})); then
+      print -r -- "  ${d}these joined PATH after detection: ${latedirs[*]}${r}"
+      print -r -- "  ${d}move the prepend into 00-tools.zsh's bindir list to fix it for good${r}"
+    else
+      print -r -- "  ${d}installed after this shell started — open a new shell${r}"
+    fi
   fi
 
   # Active-integration probe (U1): presence (command -v, above) is NOT the same as wired.

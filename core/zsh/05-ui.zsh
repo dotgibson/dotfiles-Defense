@@ -50,6 +50,13 @@ else
   typeset -ga _CORE_SPIN_FRAMES=('-' '\' '|' '/')
 fi
 
+# DELIBERATELY NOT the same function as 00-tools.zsh's `_have`, despite an identical body.
+# `_have` records every verdict into the _CORE_PROBED ledger (#545) so core-doctor can tell
+# "Core detected this at band 00" from "this merely happens to be on PATH now". `_core_have`
+# is the LIVE probe — the doctor itself calls it, and _core_confirm/_core_spin call it for
+# gum. Recording here would write the doctor's own live lookups into the ledger and make
+# every row it probed report as wired, which is precisely the false ✓ the ledger exists to
+# expose. The duplication is the point; do not merge them.
 _core_have() { command -v "$1" >/dev/null 2>&1; }
 # Colourise fd $1 (default 2 = stderr)? The fd must be a terminal AND NO_COLOR
 # unset (https://no-color.org). Each helper asks about the stream it ACTUALLY

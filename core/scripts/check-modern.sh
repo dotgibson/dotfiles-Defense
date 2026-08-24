@@ -70,10 +70,19 @@ while IFS= read -r pat; do
 done < <(_yaml_list banned_patterns)
 
 # ── 2) banned EOL runner labels (in runs-on: or a matrix os: list) ───────────
+# The `(-(arm|large|xlarge))?` group is load-bearing. The label class that terminates the
+# match has no hyphen in it, so without the group a ban on `ubuntu-22.04` did NOT match
+# `runs-on: ubuntu-22.04-arm` — the `-` fails every alternative. GitHub names those exact
+# variants in the same deprecation notices as the base labels (runner-images#14254 lists
+# `ubuntu-22.04` AND `ubuntu-22.04-arm`; #13518 lists `macos-14`, `macos-14-large`,
+# `macos-14-xlarge`), so the list was right and the matcher was leaky.
+# Matching the suffix here rather than adding six more entries keeps `banned_runners`
+# reading as ONE label per image, and covers every present and future variant of every
+# label already on it — including ones added later.
 while IFS= read -r rn; do
   [ -n "$rn" ] || continue
   while IFS= read -r hit; do note "EOL runner ($rn): $hit"; done \
-    < <(grep -HnE "(runs-on|os):.*(^|[[:space:],\"'[])${rn}([[:space:],\"'*]|\]|\$)" "${FILES[@]}" 2>/dev/null || true)
+    < <(grep -HnE "(runs-on|os):.*(^|[[:space:],\"'[])${rn}(-(arm|large|xlarge))?([[:space:],\"'*]|\]|\$)" "${FILES[@]}" 2>/dev/null || true)
 done < <(_yaml_list banned_runners)
 
 # ── 3) external action `uses:` must pin a 40-hex SHA (fleet's own owner exempt) ─
@@ -84,8 +93,27 @@ if _yaml_bool require_action_sha_pin; then
     ref="${m##*@}"
     spec="${m#*uses:}"; spec="${spec#"${spec%%[![:space:]]*}"}"  # text after `uses:`, ltrimmed
     owner="${spec%%/*}"
-    { [ -n "$exempt" ] && [ "$owner" = "$exempt" ]; } && continue   # own reusable workflows: @vN policy
-    grep -qE '^[0-9a-f]{40}$' <<<"$ref" || note "unpinned action (need a 40-hex SHA): $m"
+    # THE FIRST-PARTY EXEMPTION IS NARROW, and it has to be. This was a bare `continue` on an
+    # owner-string match, so `uses: dotgibson/anything@main` passed the gate outright — and
+    # nothing else in the tree asserted the `@vN` policy that JUSTIFIES the exemption, so the
+    # policy was documented in RELEASE-STRATEGY.md and enforced nowhere.
+    #
+    # What the policy actually says is narrower than "this owner is trusted": it is the moving
+    # MAJOR tag, on the fleet's own REUSABLE WORKFLOWS. So require that exact shape —
+    # dotgibson/<repo>/.github/workflows/<name>.yml@v<N> — and let anything else from the same
+    # owner fall through to the 40-hex requirement, which is the right default for a ref whose
+    # contract is not governed by the release process.
+    why="unpinned action (need a 40-hex SHA)"
+    if [ -n "$exempt" ] && [ "$owner" = "$exempt" ]; then
+      if grep -qE "^${exempt}/[A-Za-z0-9_.-]+/\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml@v[0-9]+$" <<<"$spec"; then
+        continue                                                     # @vN reusable workflow: the policy's own shape
+      fi
+      # Not the policy's shape — so it FALLS THROUGH to the same 40-hex requirement everything
+      # else faces, rather than being rejected outright. A first-party caller that chose to
+      # SHA-pin is stricter than @vN, not weaker, and must not be told off for it.
+      why="first-party ref outside the @vN reusable-workflow policy (use @vN, or pin a 40-hex SHA)"
+    fi
+    grep -qE '^[0-9a-f]{40}$' <<<"$ref" || note "$why: $m"
   done < <(grep -HnoE "uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[^[:space:]\"']+" "${FILES[@]}" 2>/dev/null || true)
 fi
 
@@ -177,6 +205,69 @@ if _yaml_bool require_explicit_persist_credentials && [ "${#WORKFLOWS[@]}" -gt 0
       }
     ' "$wf" 2>/dev/null || true)
   done
+fi
+
+# ── 7) no attacker-controlled expression spliced into a `run:` body ──────────
+# A `${{ }}` expression is substituted by the RUNNER, textually, before the shell ever
+# sees the script — so an attacker-controlled value (a PR title, a branch name) is not
+# data, it is source code. The fleet already routes those through `env:` and reads `$VAR`,
+# and says so at the call sites (auto-tag-call.yml, notify-web-call.yml) — but a comment
+# is not a gate, and `actionlint`, which the audit already runs, has no equivalent rule.
+#
+# Scoped to FILES, not WORKFLOWS: a composite action's `run:` is the same hazard, and
+# rule 3 already treats composite refs as in-scope.
+#
+# The context list deliberately excludes `inputs.*`. setup-core-tools/action.yml
+# interpolates `${{ inputs.bindir }}` inline in ~8 run: steps; that is a FIRST-PARTY
+# composite input, and banning it is a fix-first migration for no security gain.
+#
+# Structurally the same block-scalar walk as rule 6: find the `run:` key, take its
+# column, and treat every more-indented line as body until the first non-blank dedent.
+# Checking happens INSIDE each `${{ … }}` span rather than against the raw line, so a
+# context name appearing in prose or in a comment beside the step is not a false fire.
+if [ -n "$(_yaml_list banned_run_interpolation_contexts)" ]; then
+  _ctx_list="$(_yaml_list banned_run_interpolation_contexts | tr '\n' ' ')"
+  for f in "${FILES[@]}"; do
+    while IFS= read -r hit; do
+      [ -n "$hit" ] && note "untrusted expression interpolated into a run: body (route it through env: and read \$VAR): $hit"
+    done < <(awk -v ctxs="$_ctx_list" '
+      function flag(line, ln,   rest, p, q, expr, k) {
+        rest = line
+        while ((p = index(rest, "${{")) > 0) {
+          rest = substr(rest, p + 3)
+          q = index(rest, "}}")
+          if (q == 0) { expr = rest; rest = "" }
+          else        { expr = substr(rest, 1, q - 1); rest = substr(rest, q + 2) }
+          for (k = 1; k <= nctx; k++)
+            if (index(expr, ctx[k]) > 0) {
+              gsub(/^[[:space:]]+|[[:space:]]+$/, "", expr)
+              printf "%s:%d: ${{ %s }}\n", FILENAME, ln, expr
+              return
+            }
+        }
+      }
+      BEGIN { nctx = split(ctxs, ctx, " ") }
+      { l[NR] = $0 }
+      END {
+        for (i = 1; i <= NR; i++) {
+          if (l[i] !~ /^[[:space:]]*(-[[:space:]]+)?run:/) continue
+          # block scalar (`run: |`, `run: >-`, `run: |2`) vs a one-line `run: cmd`
+          if (l[i] !~ /^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*[|>][0-9]*[-+]?[[:space:]]*$/) {
+            flag(l[i], i)
+            continue
+          }
+          ind = index(l[i], "run:") - 1
+          for (e = i + 1; e <= NR; e++) {
+            if (l[e] ~ /^[[:space:]]*$/) continue          # blanks belong to the block
+            match(l[e], /^[[:space:]]*/)
+            if (RLENGTH <= ind) break                      # first real dedent ends it
+            flag(l[e], e)
+          }
+        }
+      }
+    ' "$f" 2>/dev/null || true)
+  done
+  unset _ctx_list
 fi
 
 if [ "$violations" -eq 0 ]; then

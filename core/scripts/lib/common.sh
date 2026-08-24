@@ -131,7 +131,7 @@ hdr() { ((QUIET)) || printf '\n%s== %s ==%s\n' "$c_blu" "$*" "$c_rst"; }
 # pays only for what it touched. They carried BYTE-IDENTICAL copies of this parser — the
 # exact "two copies that drift" pattern this lib exists to kill — so it lives here once.
 # FAIL-CLOSED default: unset → every area on (full run). An empty or unknown scope token
-# fails SAFE to the full run rather than silently narrowing a gate on the 10-repo fan-out.
+# fails SAFE to the full run rather than silently narrowing a gate on the nine-repo fan-out.
 : "${SCOPE_SHELL:=1}"
 : "${SCOPE_NVIM:=1}"
 : "${SCOPE_ATUIN:=1}"

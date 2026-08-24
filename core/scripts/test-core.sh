@@ -189,7 +189,7 @@ trap '_core_test_cleanup' EXIT
 
 # ── C. clipboard detection ladder (bin/clip / bin/clip-paste) ─────────────────
 # bin/clip is the single highest-fan-out runtime artifact in Core — used by zsh
-# (pbcopy alias), tmux (copy-pipe), AND nvim (clipboard provider), across all 8 OS
+# (pbcopy alias), tmux (copy-pipe), AND nvim (clipboard provider), across all nine OS
 # repos — yet its WSL→macOS→Wayland→X11→OSC 52 ladder had no test, only `bash -n`. We drive
 # the ladder HERMETICALLY: PATH is pointed at a fake bin holding a stub `uname` that
 # reports the OS we want, a stub `grep` that answers the /proc/version probe, and
@@ -359,6 +359,80 @@ else
   fail "clip: OSC 52 leaked to stdout (got '$_osc_stdout')"
 fi
 unset _osc_payload _osc_raw _osc_b64 _osc_stdout _osc_long _osc_multi
+
+# ── the tmux copy-pipe case (#525) ───────────────────────────────────────────
+# Every OSC 52 case above points CLIP_TTY at a writable FILE, so all of them exercise a
+# clip that has somewhere to write. The one binding that actually names `clip` does not:
+#
+#   tmux.reset.conf:  bind -T copy-mode-vi y  send -X copy-pipe-and-cancel "clip"
+#
+# `copy-pipe` runs its command through tmux's job_run(), a child of the daemonized server
+# — setsid'd, no controlling terminal, stderr to /dev/null. So /dev/tty fails to OPEN
+# (ENXIO; it still exists and still passes a -w permission test, which is why clip attempts
+# the write rather than probing), the error goes nowhere, and clip exits 1 in silence.
+#
+# `setsid` is the faithful reproduction of that shape, and the only one — a redirected or
+# closed stdin does not detach the controlling terminal. Absent on macOS, so this skips
+# there rather than pretending to cover it.
+if ! have setsid; then
+  skip "clip: tmux copy-pipe fallback (setsid not available — Linux-only reproduction)"
+else
+  _clip_reset
+  ln -s "$_real_tr" "$CBIN/tr"
+  ln -s "$(command -v base64)" "$CBIN/base64"
+  # A tmux stub that records the call and captures what was piped to it, so the assertion
+  # is "the payload arrived intact", not merely "something invoked tmux".
+  _tmux_log="$CBIN/tmux.calls"
+  # The stub touches a .done marker AFTER the payload is fully written. Waiting on the
+  # payload file itself would race: `cat >file` CREATES it empty and fills it after, so a
+  # reader that waits for existence can read nothing and call it corruption.
+  # `cat` by ABSOLUTE path: the stub inherits the stripped PATH="$CBIN", where cat does
+  # not exist. A bare `cat` there fails AFTER the shell has already created the redirect
+  # target, leaving a 0-byte payload that reads exactly like a corrupted copy.
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s"\nif [ "$1" = load-buffer ]; then %s >"%s.payload"; : >"%s.done"; exit 0; fi\nexit 1\n' \
+    "$_tmux_log" "$(command -v cat)" "$_tmux_log" "$_tmux_log" >"$CBIN/tmux"
+  chmod +x "$CBIN/tmux"
+
+  _clip_pipe_out="$(printf 'yanked\ttext\n' \
+    | setsid env PATH="$CBIN" TMUX=/tmp/fake,1,0 CLIP_PROC_VERSION="$CBIN/procversion" \
+        "$_real_bash" "$CLIP" </dev/stdin 2>&1)"
+  _clip_pipe_rc=$?
+  # setsid detaches, so the write to the log races our read by a few ms.
+  _cp_i=0
+  while [ ! -f "$_tmux_log.done" ] && [ "$_cp_i" -lt 50 ]; do sleep 0.1; _cp_i=$((_cp_i + 1)); done
+
+  if [ "$_clip_pipe_rc" -eq 0 ] && grep -q 'load-buffer -w -' "$_tmux_log" 2>/dev/null; then
+    pass "clip: with no controlling terminal inside tmux, falls back to tmux load-buffer -w"
+  else
+    fail "clip: the tmux copy-pipe path did not reach load-buffer (rc=$_clip_pipe_rc)"
+    [ -n "$_clip_pipe_out" ] && printf '%s\n' "$_clip_pipe_out" | sed 's/^/    /' >&2
+  fi
+
+  # The payload must survive the base64 round-trip EXACTLY — clip reconstructs the raw
+  # bytes by decoding, so a decode that mangled tabs or ate the trailing newline would be
+  # a silent corruption of every yank taken this way.
+  if [ -f "$_tmux_log.payload" ] \
+    && [ "$(od -An -c <"$_tmux_log.payload" | tr -s ' ')" = "$(printf 'yanked\ttext\n' | od -An -c | tr -s ' ')" ]; then
+    pass "clip: the tmux fallback payload round-trips byte-for-byte (tabs and trailing newline)"
+  else
+    fail "clip: the tmux fallback corrupted the payload"
+    [ -f "$_tmux_log.payload" ] && od -c "$_tmux_log.payload" | sed 's/^/    /' >&2
+  fi
+
+  # Outside tmux the same detached shape must still fail LOUDLY. A fallback that swallowed
+  # this would hide a genuinely missing backend, which is the failure the OSC 52 work in
+  # v4.13.0 set out to make visible.
+  _clip_reset
+  ln -s "$_real_tr" "$CBIN/tr"
+  ln -s "$(command -v base64)" "$CBIN/base64"
+  if printf 'x' | setsid env PATH="$CBIN" CLIP_PROC_VERSION="$CBIN/procversion" \
+      "$_real_bash" "$CLIP" </dev/stdin >/dev/null 2>&1; then
+    fail "clip: detached with no tmux and no backend should exit non-zero"
+  else
+    pass "clip: detached with no tmux and no backend still fails loudly (no silent success)"
+  fi
+  unset _clip_pipe_out _clip_pipe_rc _tmux_log _cp_i
+fi
 
 # clip-paste (paste) — mirror ladder; the WSL leg also strips the CR powershell adds.
 _clip_reset
@@ -1126,7 +1200,7 @@ fi
 # this asserts the contract the workflow depends on: known paths map to the right gates,
 # the __ALL__ sentinel runs everything, and — the regression that matters — an
 # UNRECOGNISED top-level path FAILS CLOSED to the full run instead of silently skipping
-# a gate on the 10-repo fan-out. Pure bash, so it runs even where zsh/nvim are absent.
+# a gate on the nine-repo fan-out. Pure bash, so it runs even where zsh/nvim are absent.
 # ── failing-gate detail (scripts/lib/common.sh :: fail_detail) ────────────────
 # WHY THIS IS TESTED. The audit used to discard every linter's own report, so a red CI run
 # named a gate and nothing else — "✗ markdownlint reported issues", no rule, no file, no
@@ -2760,15 +2834,30 @@ if ((_sc_subtree)); then
   #    sources, so the code under test is the shipped code, not a copy of its logic.
   mkdir -p "$SCF/coreremote/scripts/lib" "$SCF/coreremote/lib"
   cp "$HERE/scripts/sync-core.sh" "$SCF/coreremote/scripts/"
-  cp "$HERE/scripts/lib/common.sh" "$SCF/coreremote/scripts/lib/"
+  # core-lock.sh too: sync-core.sh sources it for its post-fan-out assertion (#556), so
+  # without this the whole F6 block dies at `source` rather than failing an assertion.
+  cp "$HERE/scripts/lib/common.sh" "$HERE/scripts/lib/core-lock.sh" "$SCF/coreremote/scripts/lib/"
   cp "$HERE/lib/ux.sh" "$HERE/lib/bootstrap-lib.sh" "$SCF/coreremote/lib/"
   printf '9.9.9\n' >"$SCF/coreremote/core.version"
   printf 'dotfiles-Test\ndotfiles-Other\ndotfiles-NotCloned\n' >"$SCF/coreremote/scripts/os-repos.txt"
   printf 'core payload v1\n' >"$SCF/coreremote/payload.txt"
   # The stub audit: exits with whatever $SCF/auditrc says, so a single file flips the
   # pre-fan-out gate between green and red without touching the script under test.
-  printf '#!/usr/bin/env bash\nexit "$(cat "%s/auditrc" 2>/dev/null || echo 0)"\n' "$SCF" \
-    >"$SCF/coreremote/scripts/audit-core.sh"
+  # The stub also PUSHES TO CORE when $SCF/pushduring exists — which reproduces #556
+  # exactly and deterministically: the tip moves strictly between sync-core.sh's up-front
+  # `ls-remote` and its per-repo fetch, with no sleeps and no timing dependence. That is
+  # the real-world shape (a PR merging while the ~250s pre-fan-out audit runs), and the
+  # audit gate is the one place in the run guaranteed to sit inside that window.
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'if [ -s "%s/pushduring" ]; then\n' "$SCF"
+    printf '  cat "%s/pushduring" > "%s/coreremote/payload.txt"\n' "$SCF" "$SCF"
+    printf '  rm -f "%s/pushduring"\n' "$SCF"
+    printf '  git -C "%s/coreremote" add -A\n' "$SCF"
+    printf '  git -C "%s/coreremote" -c commit.gpgsign=false commit -q -m "core raced" >/dev/null 2>&1\n' "$SCF"
+    printf 'fi\n'
+    printf 'exit "$(cat "%s/auditrc" 2>/dev/null || echo 0)"\n' "$SCF"
+  } >"$SCF/coreremote/scripts/audit-core.sh"
   chmod +x "$SCF/coreremote/scripts/audit-core.sh" "$SCF/coreremote/scripts/sync-core.sh"
   printf '0\n' >"$SCF/auditrc"
   _scg "$SCF/coreremote" init -q >/dev/null 2>&1
@@ -3183,7 +3272,7 @@ if ((_sc_subtree)); then
   else
     fail "sync-core: comment-less pin mishandled ($(cat "$_sc_wf/pinned-no-comment.yml"))"
   fi
-  # The two must-not-touch cases. `@v4` is a deliberate per-repo policy (8 of 10 repos take
+  # The two must-not-touch cases. `@v4` is a deliberate per-repo policy (8 of the 9 repos take
   # the moving alias); converting it to a SHA pin would change that repo's update model
   # behind its back. And a third-party action pinned to a sha with a `# vX.Y.Z` comment has
   # exactly the shape of our own pins — rewriting it would point actions/checkout at a
@@ -3253,6 +3342,147 @@ if ((_sc_subtree)); then
   else
     skip "sync-core: unwritable-workflow case (suite is running as root)"
   fi
+
+  # ── #556: a push to Core DURING the run must not desync core/ from core.lock ──
+  # sync-core.sh resolves the tip once up front, then audits (~250s on a real fleet), then
+  # vendors. It used to re-resolve the BRANCH at vendor time, so a push inside that window
+  # gave core/ the new tree while core.lock recorded the old sha. `make core-integrity`
+  # then reported TAMPERED (core/ edited since sync) — for a tree nobody hand-edited,
+  # which is the part that cost the most time to diagnose. Observed three times in one
+  # afternoon on a normally-active day.
+  #
+  # Note the local-HEAD guard cannot see this: $SCF/core is still at the pre-push tip, so
+  # it agrees with the up-front resolution. That is exactly why the bug shipped.
+  _sc_race_n=0
+  _sc_race_check() { # _sc_race_check <label-suffix> [ENV=VAL ...]  — extra env goes to _sc_run
+    local want_sha want_tree got_tree locked payload trailer pre token
+    _scg "$SCF/core" pull -q --ff-only >/dev/null 2>&1 || true
+    want_sha="$(_scg "$SCF/coreremote" rev-parse HEAD)"
+    want_tree="$(_scg "$SCF/coreremote" rev-parse "${want_sha}^{tree}")"
+    # The payload as it stands BEFORE this race — that is what must end up vendored. A
+    # fixed marker string will not do: the previous case's race commit becomes this one's
+    # baseline, so the second run would compare a value against itself and pass vacuously
+    # while no race had actually occurred.
+    pre="$(cat "$SCF/coreremote/payload.txt")"
+    _sc_race_n=$((_sc_race_n + 1))
+    token="core payload RACED-$_sc_race_n"
+    printf '0\n' >"$SCF/auditrc"   # ensure the gate is green for this run
+    printf '%s\n' "$token" >"$SCF/pushduring"
+    _sc_out="$(_sc_run "${@:2}")"; _sc_rc=$?
+    payload="$(cat "$SCF/repos/dotfiles-Test/core/payload.txt" 2>/dev/null || echo MISSING)"
+    locked="$(sed -n 's/^core_sha=//p' "$SCF/repos/dotfiles-Test/core.lock" 2>/dev/null)"
+    got_tree="$(_scg "$SCF/repos/dotfiles-Test" rev-parse 'HEAD:core')"
+    trailer="$(_scg "$SCF/repos/dotfiles-Test" log -1 --format=%B | sed -n 's/^git-subtree-split: //p')"
+
+    if [[ "$payload" == "$pre" ]] && [[ "$payload" != *"$token"* ]] \
+      && [[ "$locked" == "$want_sha" ]] \
+      && [[ "$got_tree" == "$want_tree" ]] && grep -qE 'failed 0' <<<"$_sc_out"; then
+      pass "sync-core: a push to Core during the audit does not desync core/ from core.lock ($1)"
+    else
+      fail "sync-core: #556 race — core/ and core.lock disagree ($1)"
+      printf '    payload=%s\n    expected=%s\n    raced-in=%s\n    locked=%s want=%s\n    tree=%s want=%s\n' \
+        "$payload" "$pre" "$token" "${locked:0:12}" "${want_sha:0:12}" \
+        "${got_tree:0:12}" "${want_tree:0:12}" >&2
+    fi
+    # The subtree trailer is a THIRD artefact stamped from the same snapshot; consumer
+    # tooling (dotfiles-MacBook's verify-core) warns when it disagrees with the lock.
+    if [[ "$trailer" == "$want_sha" || -z "$trailer" ]]; then
+      pass "sync-core: the git-subtree-split trailer names the vendored commit ($1)"
+    else
+      fail "sync-core: trailer ${trailer:0:12} != vendored ${want_sha:0:12} ($1)"
+    fi
+    # The assertion must have RUN and been GREEN — otherwise everything above could hold
+    # while the guard itself is dead code that would never catch a future regression.
+    if grep -q 'core/ verified ==' <<<"$_sc_out"; then
+      pass "sync-core: the post-fan-out tree-vs-lock assertion runs and passes ($1)"
+    else
+      fail "sync-core: the post-fan-out assertion did not run, or ran and failed ($1)"
+    fi
+    rm -f "$SCF/pushduring"
+  }
+
+  # A: the direct-SHA fetch path. GitHub sets uploadpack.allowReachableSHA1InWant, and the
+  #    release fan-out already relies on it (sync-fanout.yml pins CORE_BRANCH to a raw sha).
+  _scg "$SCF/coreremote" config uploadpack.allowReachableSHA1InWant true
+  _sc_race_check "direct-sha fetch"
+
+  # B: the SAME assertions with that config OFF, so the ref-fetch fallback is exercised.
+  #    This is the case that catches a fallback written against FETCH_HEAD — which would
+  #    re-create #556 inside the fix, since FETCH_HEAD is the new tip by definition.
+  _scg "$SCF/coreremote" config --unset uploadpack.allowReachableSHA1InWant || true
+  _sc_race_check "ref-fetch fallback"
+
+  # C: with the parallel prefetch on. A warm-up that fetched the moving BRANCH could
+  #    smuggle the newer tip into the object store and have read-tree pick it up. SYNC_JOBS
+  #    is passed through _sc_run's env-prefix parameter, which the outer runner already
+  #    supports — overriding it wins over the SYNC_JOBS=1 baked into the runner.
+  _scg "$SCF/coreremote" config uploadpack.allowReachableSHA1InWant true
+  _sc_race_check "SYNC_JOBS=4 prefetch" SYNC_JOBS=4
+
+  # ── #556: an unresolvable Core must hard-fail BEFORE anything is written ──────
+  # Previously `unknown` was tolerated: the run materialized core/ from the branch and
+  # skipped core.lock entirely — a second, race-free producer of the same TAMPERED state.
+  _sc_head_before="$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)"
+  _sc_out="$(_sc_run CORE_REMOTE="$SCF/nope" CORE_BRANCH=nosuchref)"; _sc_rc=$?
+  if ((_sc_rc != 0)) && grep -q 'must vendor a named commit' <<<"$_sc_out" \
+    && [[ "$(_scg "$SCF/repos/dotfiles-Test" rev-parse HEAD)" == "$_sc_head_before" ]] \
+    && [[ -z "$(_scg "$SCF/repos/dotfiles-Test" status --porcelain)" ]]; then
+    pass "sync-core: an unresolvable Core hard-fails before any repo is written"
+  else
+    fail "sync-core: unresolvable Core did not refuse cleanly (rc=$_sc_rc)"
+    printf '%s\n' "$_sc_out" | sed 's/^/    /' >&2
+  fi
+
+  # ── #556: core_tag must never describe a commit other than the vendored one ───
+  # The `|| describe "$CORE_BRANCH"` fallback re-resolved the branch at describe time, so a
+  # moved branch stamped a tag belonging to a DIFFERENT commit — into core.lock and onto
+  # every rewritten workflow pin comment, which is the field Renovate reads.
+  _sc_old_sha="$(_scg "$SCF/coreremote" rev-parse HEAD)"
+  _scg "$SCF/coreremote" tag -f v9.9.9 "$_sc_old_sha" >/dev/null 2>&1
+  printf 'core payload newer\n' >"$SCF/coreremote/payload.txt"
+  _scg "$SCF/coreremote" add -A
+  _scg "$SCF/coreremote" commit -q -m "core c-newer"
+  _scg "$SCF/coreremote" tag -f v9.9.10 >/dev/null 2>&1
+  _scg "$SCF/core" fetch -q --tags origin >/dev/null 2>&1 || true
+  _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1 CORE_BRANCH="$_sc_old_sha")"
+  _sc_tag="$(sed -n 's/^core_tag=//p' "$SCF/repos/dotfiles-Test/core.lock" 2>/dev/null)"
+  if [[ "$_sc_tag" != v9.9.10 ]] \
+    && ! grep -rq '# v9.9.10' "$SCF/repos/dotfiles-Test/.github/workflows" 2>/dev/null; then
+    pass "sync-core: core_tag never names a tag belonging to a different commit"
+  else
+    fail "sync-core: core_tag stamped v9.9.10 for a run that vendored ${_sc_old_sha:0:12}"
+  fi
+  _scg "$SCF/core" pull -q --ff-only >/dev/null 2>&1 || true
+  unset _sc_old_sha _sc_tag
+  unset _sc_race_n
+  unset -f _sc_race_check
+
+  # ── core_lock_classify: the shared comparison, both verdicts ──────────────────
+  # core-integrity.sh had NO behavioural coverage, so extracting its classifier into a
+  # shared lib could have changed the verdict silently. Drive the lib directly.
+  # shellcheck source=scripts/lib/core-lock.sh
+  source "$HERE/scripts/lib/core-lock.sh"
+  _sc_run SYNC_SKIP_AUDIT=1 >/dev/null 2>&1
+  _sc_rec="$(sed -n 's/^core_sha=//p' "$SCF/repos/dotfiles-Test/core.lock")"
+  if [[ "$(core_lock_classify "$SCF/repos/dotfiles-Test" "$_sc_rec" "$SCF/coreremote")" == pristine ]]; then
+    pass "core_lock_classify: a freshly synced repo is pristine"
+  else
+    fail "core_lock_classify: a freshly synced repo was not reported pristine"
+  fi
+  printf 'hand edit\n' >>"$SCF/repos/dotfiles-Test/core/payload.txt"
+  _scg "$SCF/repos/dotfiles-Test" add -A
+  DOTFILES_ALLOW_CORE_EDIT=1 _scg "$SCF/repos/dotfiles-Test" commit -q -m "hand edit core/"
+  if [[ "$(core_lock_classify "$SCF/repos/dotfiles-Test" "$_sc_rec" "$SCF/coreremote")" == TAMPERED* ]]; then
+    pass "core_lock_classify: a hand-edited core/ is reported TAMPERED"
+  else
+    fail "core_lock_classify: a hand-edited core/ was NOT caught"
+  fi
+  if [[ "$(core_lock_classify "$SCF/repos/dotfiles-Test" "$(printf '0%.0s' {1..40})" "$SCF/coreremote")" == UNVERIFIABLE* ]]; then
+    pass "core_lock_classify: a sha absent from Core history is UNVERIFIABLE, not TAMPERED"
+  else
+    fail "core_lock_classify: an absent sha was misclassified"
+  fi
+  unset _sc_rec
 else
   skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
 fi
@@ -6710,6 +6940,339 @@ for _it in DIRENV GH UV TY; do
 done
 unset _it
 
+# ── A2b. _cache_eval convergence (#580) ──────────────────────────────────────
+# _cache_eval decides "is this cache usable?" on `-s` alone, and it writes the generator's
+# output straight at the destination. Both halves were wrong, and both failed SILENTLY —
+# `2>/dev/null` is deliberate there (a generator's chatter must never be sourced), so a
+# broken generator leaves nothing behind but the file itself.
+#
+# These fixtures drive the REAL _cache_eval, extracted from 00-tools.zsh by its own
+# function header, against stub generators — the same "parse the shipped source, do not
+# re-spell it" discipline the probe-coverage guards below use. Extracting rather than
+# sourcing the whole file is deliberate: band 00 activates mise/atuin/starship against the
+# host, which is neither hermetic nor fast.
+#
+# Each case runs the SAME shell twice. One run cannot tell "regenerated once" from
+# "regenerates forever" — and forever is the actual defect.
+hdr "_cache_eval convergence (#580)"
+CEV="$SANDBOX/cache-eval"
+mkdir -p "$CEV/bin"
+
+# exits 0, prints nothing — a renamed/removed generator subcommand, the observed trigger.
+printf '#!/bin/sh\nexit 0\n' >"$CEV/bin/ce-empty"
+# prints a PARTIAL script, then fails — truncated init, the case that never self-heals.
+printf '#!/bin/sh\nprintf %%s "alias ce=true\\nif [ "\nexit 1\n' >"$CEV/bin/ce-partial"
+# prints nothing and fails — exit status alone would catch this one; -s alone would not.
+printf '#!/bin/sh\nexit 3\n' >"$CEV/bin/ce-emptyfail"
+# a healthy generator, to prove the fix does not break the path that always worked.
+printf '#!/bin/sh\nprintf %%s "# ce good\\nalias cegood=true\\n"\n' >"$CEV/bin/ce-good"
+chmod +x "$CEV/bin"/ce-*
+
+# Run <tool> through _cache_eval N times in N separate shells; echo one line per run:
+#   <size-in-bytes|MISSING> <would-regenerate-next: YES|no> <sourced-ok: ok|ERR>
+_ce_runs() { # _ce_runs <tool> <count>
+  local _i
+  for _i in $(seq 1 "$2"); do
+    XDG_CACHE_HOME="$CEV/cache" PATH="$CEV/bin:$PATH" HOME="$SANDBOX" \
+      zsh -fc '
+        setopt NO_CLOBBER   # 10-options.zsh sets this; the >| redirections depend on it
+        eval "$(sed -n "/^_cache_eval() {/,/^}/p" "'"$HERE"'/zsh/00-tools.zsh")"
+        _cache_eval '"$1"' '"$1"' && _ok=ok || _ok=ERR
+        c="$XDG_CACHE_HOME/zsh/'"$1"'.zsh"
+        if [[ -e "$c" ]]; then _sz=$(wc -c <"$c" | tr -d " "); else _sz=MISSING; fi
+        printf "%s %s %s\n" "$_sz" "$([[ -s $c ]] && echo no || echo YES)" "$_ok"
+      ' 2>/dev/null
+  done
+}
+
+# 1. exits 0, prints nothing. Pre-fix: a 0-byte cache, so `-s` fails on EVERY later shell
+#    and each one re-forks a generator that can never succeed — invisible, forever.
+rm -rf "$CEV/cache"
+_ce_out="$(_ce_runs ce-empty 2)"
+if [[ -z "$(printf '%s\n' "$_ce_out" | awk '$2!="no"')" ]]; then
+  pass "_cache_eval: a generator that exits 0 and prints nothing converges (no re-fork per shell)"
+else
+  fail "_cache_eval: empty-output generator never converges — every shell re-forks it"
+  printf '%s\n' "$_ce_out" | sed 's/^/    /' >&2
+fi
+
+# 2. prints nothing AND fails. Same convergence requirement; separate case because a fix
+#    that only checked $? would pass this and still leave case 1 broken.
+rm -rf "$CEV/cache"
+_ce_out="$(_ce_runs ce-emptyfail 2)"
+if [[ -z "$(printf '%s\n' "$_ce_out" | awk '$2!="no"')" ]]; then
+  pass "_cache_eval: a generator that prints nothing and exits non-zero converges"
+else
+  fail "_cache_eval: failing empty generator never converges"
+  printf '%s\n' "$_ce_out" | sed 's/^/    /' >&2
+fi
+
+# 3. partial output then failure. `>|` truncates BEFORE the generator runs, so pre-fix the
+#    cache held `alias ce=true\nif [ ` — non-empty AND newer than the binary, so BOTH halves
+#    of the freshness test go false and that truncated init is sourced on every shell from
+#    then on. Assert the fragment never lands, not merely that the run succeeded.
+rm -rf "$CEV/cache"
+_ce_runs ce-partial 2 >/dev/null
+if [[ ! -f "$CEV/cache/zsh/ce-partial.zsh" ]] || ! grep -q 'if \[ *$' "$CEV/cache/zsh/ce-partial.zsh"; then
+  pass "_cache_eval: a partially-written init is never installed (no truncated cache to source)"
+else
+  fail "_cache_eval: installed a TRUNCATED init — every later shell sources it"
+  sed 's/^/    /' "$CEV/cache/zsh/ce-partial.zsh" >&2
+fi
+
+# 4. the last-good cache survives a generator that breaks later. Warm a good cache, then
+#    swap the binary for a broken one and make it NEWER so the mtime half fires. Degrading
+#    a working shell because a generator regressed is a strictly worse outcome than
+#    serving yesterday's completions.
+rm -rf "$CEV/cache"
+printf '#!/bin/sh\nprintf %%s "# ce keep\\nalias cekeep=true\\n"\n' >"$CEV/bin/ce-keep"
+chmod +x "$CEV/bin/ce-keep"
+_ce_runs ce-keep 1 >/dev/null
+printf '#!/bin/sh\nexit 0\n' >"$CEV/bin/ce-keep"
+chmod +x "$CEV/bin/ce-keep"
+touch "$CEV/bin/ce-keep"          # binary newer than cache -> the -nt half fires
+_ce_out="$(_ce_runs ce-keep 2)"
+if grep -q 'alias cekeep=true' "$CEV/cache/zsh/ce-keep.zsh" 2>/dev/null \
+  && [[ -z "$(printf '%s\n' "$_ce_out" | awk '$2!="no"')" ]]; then
+  pass "_cache_eval: keeps the last good cache when a generator breaks, and still converges"
+else
+  fail "_cache_eval: lost the last good cache (or kept re-forking) after a generator broke"
+  printf '%s\n' "$_ce_out" | sed 's/^/    /' >&2
+fi
+
+# 5. the happy path still works — a fix that quarantined everything would pass 1-4.
+rm -rf "$CEV/cache"
+_ce_out="$(_ce_runs ce-good 2)"
+if [[ -z "$(printf '%s\n' "$_ce_out" | awk '$2!="no" || $3!="ok"')" ]] \
+  && grep -q 'alias cegood=true' "$CEV/cache/zsh/ce-good.zsh"; then
+  pass "_cache_eval: a healthy generator still caches and sources its init"
+else
+  fail "_cache_eval: broke the working path"
+  printf '%s\n' "$_ce_out" | sed 's/^/    /' >&2
+fi
+unset _ce_out
+# ── CI modernization floor: rules 2 and 7 (#521) ─────────────────────────────
+# check-modern.sh had no behavioural coverage — every rule was "green on this tree",
+# which cannot distinguish a rule that PASSES from a rule that never MATCHES. Rule 2 was
+# in exactly that state: it had banned `ubuntu-22.04` since the floor was written and
+# would have waved `ubuntu-22.04-arm` straight through.
+#
+# Hermetic: a throwaway git repo (the gate inventories through `git ls-files`, so a plain
+# directory yields "no workflow/action files to check" and every assertion below would
+# vacuously pass) holding only the script, its lib and a crafted workflow.
+hdr "CI modernization floor (scripts/check-modern.sh rules 2 + 7)"
+if ! have git; then
+  skip "check-modern rule fixtures (git not installed)"
+else
+  CMF="$SANDBOX/check-modern"
+  rm -rf "$CMF"
+  mkdir -p "$CMF/scripts/lib" "$CMF/lib" "$CMF/.github/workflows"
+  cp "$HERE/scripts/check-modern.sh" "$CMF/scripts/"
+  cp "$HERE/scripts/modern-baseline.yml" "$CMF/scripts/"
+  cp "$HERE/scripts/lib/common.sh" "$CMF/scripts/lib/"
+  cp "$HERE/lib/ux.sh" "$CMF/lib/"
+  git -C "$CMF" init -q 2>/dev/null
+  git -C "$CMF" add -A 2>/dev/null
+
+  # _cm_run <workflow-body> → the gate's stderr for that single workflow
+  _cm_run() {
+    printf '%s\n' "$1" >"$CMF/.github/workflows/probe.yml"
+    git -C "$CMF" add -A 2>/dev/null
+    # stdout (the one-line verdict) to /dev/null INSIDE the subshell, then the subshell's
+    # stderr — where note() writes the violations — up to our stdout. Written this way
+    # round rather than `2>&1 >/dev/null`, which does the same thing but reads as the
+    # classic mistake.
+    { ( cd "$CMF" && bash scripts/check-modern.sh >/dev/null ) || true; } 2>&1
+  }
+
+  # A clean baseline workflow: proves the fixture reaches the gate at all, so a later
+  # "no violations" result means the rule passed rather than the harness misfiring.
+  _cm_clean='name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo hi'
+  if [[ -z "$(_cm_run "$_cm_clean")" ]] \
+    && ( cd "$CMF" && bash scripts/check-modern.sh 2>/dev/null | grep -q 'meets the modern baseline' ); then
+    pass "check-modern fixture: a clean workflow reaches the gate and passes (harness is live)"
+  else
+    fail "check-modern fixture: harness misfire — a clean workflow did not reach the gate"
+    _cm_run "$_cm_clean" | sed 's/^/    /' >&2
+  fi
+
+  # Rule 2: the variant suffixes. `ubuntu-22.04-arm` and `macos-14-xlarge` are named in the
+  # SAME deprecation notices as their base labels, and both were slipping the ban.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 5
+    steps:
+      - run: echo hi
+  b:
+    runs-on: macos-14-xlarge
+    timeout-minutes: 5
+    steps:
+      - run: echo hi
+  c:
+    runs-on: macos-14-large
+    timeout-minutes: 5
+    steps:
+      - run: echo hi')"
+  if [[ "$(grep -c 'EOL runner' <<<"$_cm_out")" == 3 ]]; then
+    pass "check-modern rule 2: -arm / -large / -xlarge variants of a banned runner are caught"
+  else
+    fail "check-modern rule 2: variant-suffixed runners slipped the ban (want 3 hits)"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
+  # …and the base labels must still be caught (a suffix group that swallowed the plain
+  # form would pass the test above while silently disabling the rule it extends).
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - run: echo hi')"
+  if grep -q 'EOL runner (ubuntu-22.04)' <<<"$_cm_out"; then
+    pass "check-modern rule 2: the bare banned label is still caught (suffix group is optional)"
+  else
+    fail "check-modern rule 2: the suffix group broke the plain-label match"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
+  # A supported runner whose name merely CONTAINS a banned one must not fire.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo hi')"
+  if ! grep -q 'EOL runner' <<<"$_cm_out"; then
+    pass "check-modern rule 2: a supported runner does not fire the ban"
+  else
+    fail "check-modern rule 2: false positive on a supported runner"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
+  # Rule 3's first-party exemption must be the POLICY's shape, not the whole owner. A bare
+  # owner match let `uses: dotgibson/anything@main` through outright — wider than the @vN
+  # policy it was named for, and asserted nowhere else, so the policy was documented in
+  # RELEASE-STRATEGY.md and enforced by nothing.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  ok1:
+    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v4
+  bad1:
+    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@main
+  bad2:
+    uses: dotgibson/some-action@v1')"
+  if [[ "$(grep -c 'outside the @vN reusable-workflow policy' <<<"$_cm_out")" == 2 ]] \
+    && ! grep -q 'lint-call.yml@v4' <<<"$_cm_out"; then
+    pass "check-modern rule 3: first-party @main and non-workflow refs are caught, @vN is not"
+  else
+    fail "check-modern rule 3: the owner exemption is still wider than the @vN policy"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+  # A SHA-pinned first-party ref must also pass — the exemption is a shortcut, not the only
+  # acceptable form, and a repo that chose to pin its caller must not be told off for it.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  ok:
+    uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')"
+  if ! grep -qE 'unpinned action|@vN reusable-workflow policy' <<<"$_cm_out"; then
+    pass "check-modern rule 3: a SHA-pinned first-party ref is still accepted"
+  else
+    fail "check-modern rule 3: SHA-pinned first-party ref was rejected"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
+  # Rule 7: a `${{ }}` expression is substituted by the runner, textually, BEFORE the
+  # shell parses the script — so an attacker-controlled value there is code, not data.
+  # Both the block-scalar and the one-line `run:` forms must be caught.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: block scalar
+        run: |
+          echo "${{ github.event.pull_request.title }}"
+      - name: one-line
+        run: echo "${{ github.head_ref }}"')"
+  if [[ "$(grep -c 'untrusted expression interpolated' <<<"$_cm_out")" == 2 ]]; then
+    pass "check-modern rule 7: untrusted context spliced into a run: body is caught (block + inline)"
+  else
+    fail "check-modern rule 7: template injection into run: was not caught (want 2 hits)"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+
+  # The three shapes that must NOT fire, asserted together because each is a live pattern
+  # somewhere in the fleet and a false positive here is a red gate on every repo:
+  #   - the same value routed through env: and read as $VAR (the prescribed remedy);
+  #   - `inputs.*`, a first-party composite input (setup-core-tools/action.yml, ~8 steps);
+  #   - a banned context in `if:` / `env:` / `concurrency:`, which are not shell.
+  _cm_out="$(_cm_run 'name: p
+on: [push]
+permissions:
+  contents: read
+concurrency: ci-${{ github.head_ref }}
+jobs:
+  a:
+    if: github.actor != "bot"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: routed through env
+        env:
+          T: ${{ github.event.pull_request.title }}
+        run: |
+          echo "$T"
+      - name: first-party composite input
+        run: echo "${{ inputs.bindir }}"
+      - name: dedent ends the block
+        run: |
+          echo safe
+      - name: not a run body
+        uses: ./.github/actions/x
+        with:
+          v: ${{ github.event.number }}')"
+  if ! grep -q 'untrusted expression interpolated' <<<"$_cm_out"; then
+    pass "check-modern rule 7: env:-routed, inputs.*, if:/concurrency: and with: do not fire"
+  else
+    fail "check-modern rule 7: false positive — this shape is the prescribed remedy"
+    printf '%s\n' "$_cm_out" | sed 's/^/    /' >&2
+  fi
+  unset _cm_out _cm_clean
+  unset -f _cm_run
+fi
+
 # ── A3. profile filtering (CORE_PROFILE ceilings + env/file resolution) ───────
 # A2 proves the FULL chain; this proves the minimal/standard ceilings, that outer
 # fragments (>=70) ALWAYS load regardless of profile, that an unknown/unset profile falls
@@ -6940,7 +7503,7 @@ check "core-doctor --help returns 0 (not mis-read)" \
 # describing state that can change under a LIVE shell, so a consumer polling it needs both
 # booleans to keep meaning what they say.
 check "core-doctor --json emits parseable JSON with tools/wired/atuin_daemon/resolved" \
-  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"expected\",\"wired\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"])"'
+  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"expected\",\"wired\",\"detection\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"]); assert set(d[\"detection\"]) == set([\"ran\",\"missed\"]); assert isinstance(d[\"detection\"][\"ran\"], bool) and isinstance(d[\"detection\"][\"missed\"], list)"'
 # The human report and --json now BOTH derive from _CORE_DOCTOR_GROUPS, so they agree by
 # construction and this assertion should be tautological. It is kept precisely for that
 # reason: it is the guard that stays red if someone reintroduces a second literal — which is
@@ -7046,6 +7609,58 @@ have = set(os.environ[\"_OPTIN\"].split())
 assert want, \"parsed no footnote-21 rows out of PORTING-MATRIX.md\"
 assert want == have, \"matrix-only: %s | list-only: %s\" % (sorted(want - have), sorted(have - want))
 "'
+# ── detection divergence: `✓` must stop meaning "Core wired this" (#545) ─────
+# HAVE_* is decided at band 00 against a PATH that keeps changing afterwards (mise's chpwd
+# hook, 80-os.zsh, an 85-* role fragment, 99-local.zsh). core-doctor probes LIVE against the
+# finished PATH, so a tool contributed by any of those rendered a clean ✓ while Core had
+# wired nothing — no alias, no init, no flag. These drive the _CORE_PROBED ledger directly:
+# `check` sources ui+functions ONLY, so band 00 never runs and the ledger is whatever the
+# body sets, which is exactly the control this needs.
+check "core-doctor marks a present-but-unwired tool with ⚠ and names it" \
+  '_core_have() { return 0 }
+   typeset -gA _CORE_PROBED=(eza 1 procs 0)
+   out=$(_CORE_FORCE_COLOR= core-doctor)
+   [[ $out == *"procs⚠"* ]] || { print -r -- "no ⚠ on procs"; exit 1 }
+   [[ $out != *"eza⚠"* ]]   || { print -r -- "⚠ on eza, which WAS probed"; exit 1 }
+   [[ $out == *"not wired"* ]] || { print -r -- "no not-wired block"; exit 1 }
+   [[ $out != *"mark="* ]]  || { print -r -- "local re-declaration leaked mark= into the report"; exit 1 }'
+# The sentinel. Without a ledger, 00-tools.zsh never ran in this shell — a script, `zsh -c`,
+# or this very harness — and the honest answer is to make NO claim. Reporting 41 unwired
+# tools there would be worse than silence, and would red every unit harness in the suite.
+check "core-doctor makes no wiring claim when detection never ran" \
+  '_core_have() { return 0 }
+   out=$(_CORE_FORCE_COLOR= core-doctor)
+   [[ $out != *"⚠"* ]]        || { print -r -- "⚠ rendered with no ledger"; exit 1 }
+   [[ $out != *"not wired"* ]] || { print -r -- "not-wired block rendered with no ledger"; exit 1 }'
+check_dep "core-doctor --json reports detection.ran=false when band 00 never loaded" python3 \
+  '_core_have() { return 0 }
+   core-doctor --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert d[\"detection\"][\"ran\"] is False, d[\"detection\"]; assert d[\"detection\"][\"missed\"] == [], d[\"detection\"]"'
+# Second gate: a row Core does not probe AT ALL must draw no claim either. Without this,
+# every doctor row with no 00-tools.zsh probe behind it would false-positive as unwired.
+check "core-doctor makes no wiring claim for a row Core never probes" \
+  '_core_have() { return 0 }
+   typeset -gA _CORE_PROBED=(eza 1)
+   out=$(_CORE_FORCE_COLOR= core-doctor)
+   [[ $out != *"op⚠"* ]] || { print -r -- "⚠ on a row with no ledger entry"; exit 1 }'
+# The parity test above stubs _core_have FALSE and never populates the ledger, so it cannot
+# fire this axis at all — which makes "the ⚠ is invisible to it by construction" an untested
+# claim. Re-run the same comparison with the axis ACTIVELY firing.
+check_dep "the render⇄json tool sets still match with the ⚠ axis firing" python3 \
+  '_core_have() { return 0 }
+   typeset -gA _CORE_PROBED=(procs 0 jnv 0)
+   _CD_R="$(NO_COLOR=1 core-doctor 2>&1)" _CD_J="$(core-doctor --json)" python3 -c "
+import json, os, re
+# Same two trims as the parity test this mirrors: line 1 is the legend (it contains the
+# glyphs), and everything from the opt-in recap on re-lists names. The not-wired block sits
+# AFTER opt-in precisely so this second trim covers it structurally.
+body = os.environ[\"_CD_R\"].split(chr(10), 1)[1]
+body = body.split(chr(10) + \"opt-in\")[0]
+shown = set(re.findall(r\"[✓✗·] ([A-Za-z0-9_.-]+)\", body))
+keys  = set(json.loads(os.environ[\"_CD_J\"])[\"tools\"])
+assert shown, \"parsed no tools out of the rendered report\"
+assert shown == keys, \"render-only: %s | json-only: %s\" % (sorted(shown - keys), sorted(keys - shown))
+"'
+
 # Orphan guard: a name here that is not in _CORE_DOCTOR_GROUPS mutes nothing and reads as if
 # it does — the failure mode of every list maintained beside another list.
 check "every _CORE_DOCTOR_OPTIN entry is actually in the doctor inventory" \
@@ -7084,21 +7699,42 @@ assert not missing, \"detected by 00-tools.zsh but absent from core-doctor: %s\"
 # suite goes quiet. That is the #447 failure mode itself (the doctor promising a tool Core
 # never wired), so assert it directly, with the three exceptions named rather than waived.
 #
-# op is deliberate: the doctor probes it live and no alias or function is gated on it. fd and
-# bat are set from FD_BIN/BAT_BIN after resolving fdfind/batcat, so their assignments do not
-# match `^_have`. A NEW name showing up here is not a fourth exception to add — it means a
-# doctor row has no detection behind it, which is the bug.
+# THE EXEMPTION LIST IS NOW EMPTY, and that is the point (#545). It used to read
+# `exempt=(op fd bat)` with this rationale:
+#
+#     op is deliberate: the doctor probes it live and no alias or function is gated on it.
+#
+# which was simply false. 50-op.zsh:7 gates FOUR verbs — opsecret, openv, optoken, opssh —
+# behind its own `command -v op`, at band 50, which still runs before 80-os.zsh, an 85-* role
+# fragment and 99-local.zsh. So `op` had the exact divergence this test was meant to police,
+# sitting inside the doctor's own inventory behind a comment asserting it could not.
+#
+# fd and bat were excused because their flags are set from FD_BIN/BAT_BIN (after resolving
+# fdfind/batcat), so the assignments do not match `^_have`. Both now record into the
+# _CORE_PROBED ledger under their CANONICAL names, which is what the doctor keys on — so the
+# excuse is gone rather than merely tolerated.
+#
+# Two shapes are parsed, because detection is now recorded in two places: the classic
+# `_have <tool> && HAVE_<X>=1` line, and an explicit `_CORE_PROBED[<tool>]=1`. Note `$` is
+# outside the character class in the second pattern, so the generic `_CORE_PROBED[$1]=1`
+# inside `_have` itself cannot match and be mistaken for a tool named `$1` — load-bearing.
+#
+# A NEW name showing up here is not an exception to add — it means a doctor row has no
+# detection behind it, which is the bug.
 # Pure zsh so it runs everywhere; _CORE_DOCTOR_GROUPS is the inventory the parity test above
 # already proves equal to both renderers' output.
-check "every core-doctor row has a HAVE_* probe behind it (or is a documented exception)" \
-  'paired=(); exempt=(op fd bat); missing=()
-   for line in ${(f)"$(<'"$HERE"'/zsh/00-tools.zsh)"}; do
-     [[ $line =~ "^_have +([A-Za-z0-9_.-]+) +&& +HAVE_[A-Z0-9_]+=1" ]] && paired+=($match[1])
+check "every core-doctor row has detection behind it (the exemption list is empty)" \
+  'paired=(); missing=()
+   for f in '"$HERE"'/zsh/00-tools.zsh '"$HERE"'/zsh/50-op.zsh; do
+     for line in ${(f)"$(<$f)"}; do
+       [[ $line =~ "^_have +([A-Za-z0-9_.-]+) +&& +HAVE_[A-Z0-9_]+=1" ]] && paired+=($match[1])
+       [[ $line =~ "_CORE_PROBED\[([A-Za-z0-9_.-]+)\]=1" ]] && paired+=($match[1])
+     done
    done
-   (( ${#paired} >= 30 )) || { print -r -- "parsed only ${#paired} _have lines"; exit 1; }
+   (( ${#paired} >= 30 )) || { print -r -- "parsed only ${#paired} detection lines"; exit 1; }
    for ((gi = 2; gi <= ${#_CORE_DOCTOR_GROUPS}; gi += 2)); do
      for t in ${=_CORE_DOCTOR_GROUPS[gi]}; do
-       (( ${paired[(I)$t]} )) || (( ${exempt[(I)$t]} )) || missing+=($t)
+       (( ${paired[(I)$t]} )) || missing+=($t)
      done
    done
    (( ${#missing} == 0 )) || { print -r -- "doctor rows with no detection behind them: $missing"; exit 1; }'
@@ -7947,6 +8583,48 @@ ucheck "bindirs: a tool in ~/.cargo/bin sets HAVE_PROCS and gets its alias (#425
   "source '$TOOLS_FILE'; source '$ALIASES_FILE'; [[ -n \${HAVE_PROCS:-} && \${aliases[ps]} == procs ]]" \
   HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
 
+# (a2) THE #545 AXIS, END TO END: a bindir that joins PATH AFTER band 00 leaves the tool
+# present but unwired, and the doctor must say so. This is the real shape — 80-os.zsh, an
+# 85-* role fragment or 99-local.zsh prepending a directory — reproduced by exporting PATH
+# between sourcing 00-tools.zsh and asking the doctor. Needs python3 for the JSON read;
+# `have` is checked inline because ucheck has no dep variant.
+if have python3; then
+  # python3 by ABSOLUTE path: $UBSYS is deliberately a near-empty PATH (grep + head only),
+  # and widening it for these two cases would change the environment every other bindir
+  # assertion is pinned against.
+  _UB_PY="$(command -v python3)"
+  _ub_fixture latebin:procs
+  ucheck "detection: a bindir that joins PATH after band 00 is reported in detection.missed (#545)" \
+    "source '$TOOLS_FILE'
+     export PATH=\"\$HOME/latebin:\$PATH\"
+     source '$UI'; source '$FN'
+     core-doctor --json | '$_UB_PY' -c \"
+import json, sys
+d = json.load(sys.stdin)
+assert d['detection']['ran'] is True, d['detection']
+assert d['tools']['procs'] is True, 'the live probe should still see it'
+assert 'procs' in d['detection']['missed'], d['detection']
+\"" \
+    HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+  # …and the mirror case, which is what stops the above passing against a doctor that flags
+  # EVERYTHING. Same tool, but in a directory 00-tools.zsh prepends itself (#425's
+  # arrangement), so detection saw it and nothing is missed.
+  _ub_fixture .cargo/bin:procs
+  ucheck "detection: a tool detected at band 00 is NOT reported missed (no false positives)" \
+    "source '$TOOLS_FILE'; source '$UI'; source '$FN'
+     core-doctor --json | '$_UB_PY' -c \"
+import json, sys
+d = json.load(sys.stdin)
+assert d['detection']['ran'] is True, d['detection']
+assert d['tools']['procs'] is True, d['tools']
+assert d['detection']['missed'] == [], d['detection']
+\"" \
+    HOME="$UBHOME" PATH="$UBSYS" CARGO_HOME= GOBIN= GOPATH=
+  unset _UB_PY
+else
+  skip "detection: the #545 end-to-end cases (python3 not installed)"
+fi
+
 # (b) THE SEVERE ONE: atuin's own installer dir, whose miss silently loses history.
 _ub_fixture .atuin/bin:atuin
 ucheck "bindirs: a tool in ~/.atuin/bin sets HAVE_ATUIN (so atuin init zsh runs)" \
@@ -8572,6 +9250,44 @@ ucheck "atuin daemon: a stale socket file (no listener) degrades too, not just a
 ucheck "atuin daemon: a listening socket keeps the daemon enabled (accept-but-silent is out of scope)" \
   "rm -f '$SANDBOX/live-atuin.sock'; zmodload zsh/net/socket; zsocket -l '$SANDBOX/live-atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -z \${_CORE_ATUIN_DAEMON_DEGRADED:-} && -n \$_CORE_ATUIN_DAEMON_WAS_UP ]]" \
   ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/live-atuin.sock"
+# (d2) THE CANDIDATE LIST (#518). atuin PR #3910 (merged 2026-08-12, ships in 18.20.0) moves
+#      the default socket for `systemd_socket = false` — the shape Core recommends — to
+#      $TMPDIR/atuin-$UID/atuin.sock. The client got a legacy search list; this guard had
+#      none and resolved ONE expression, so on 18.20.0 every shell would export
+#      ATUIN_DAEMON__ENABLED=false at its first precmd and unhook, with NO warning
+#      (_CORE_ATUIN_DAEMON_WAS_UP is never set on that path). Silent, fleet-wide, and in the
+#      cheap direction — which is exactly why it would go unnoticed.
+#
+#      Each case puts a REAL listener on exactly one candidate and leaves the others absent,
+#      so a guard that probed only the other path degrades and the assertion fails.
+ATSOCKTMP="$SANDBOX/atsock"
+mkdir -p "$ATSOCKTMP/atuin-$(id -u)" "$ATSOCKTMP/xdgrun" "$ATSOCKTMP/xdgdata/atuin"
+# The 18.20.0 default, with XDG_RUNTIME_DIR set — i.e. a systemd box, where the OLD single
+# expression would have resolved $XDG_RUNTIME_DIR/atuin.sock and found nothing.
+ucheck "atuin daemon: finds the 18.20.0 default \$TMPDIR/atuin-\$UID/atuin.sock (#518)" \
+  "rm -f '$ATSOCKTMP/atuin-$(id -u)/atuin.sock'; zmodload zsh/net/socket; zsocket -l '$ATSOCKTMP/atuin-$(id -u)/atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -n \$_CORE_ATUIN_DAEMON_WAS_UP ]]" \
+  ATUIN_DAEMON__ENABLED=true TMPDIR="$ATSOCKTMP" XDG_RUNTIME_DIR="$ATSOCKTMP/xdgrun" \
+  XDG_DATA_HOME="$ATSOCKTMP/xdgdata"
+# The legacy systemd path — a daemon predating 18.20.0, or one with systemd_socket = true,
+# which PR #3910 left unchanged. Must still be reached.
+ucheck "atuin daemon: still reaches the legacy \$XDG_RUNTIME_DIR/atuin.sock (#518)" \
+  "rm -f '$ATSOCKTMP/xdgrun/atuin.sock'; zmodload zsh/net/socket; zsocket -l '$ATSOCKTMP/xdgrun/atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -n \$_CORE_ATUIN_DAEMON_WAS_UP ]]" \
+  ATUIN_DAEMON__ENABLED=true TMPDIR="$ATSOCKTMP/nowhere" XDG_RUNTIME_DIR="$ATSOCKTMP/xdgrun" \
+  XDG_DATA_HOME="$ATSOCKTMP/xdgdata"
+# The legacy data-dir path — macOS and anywhere XDG_RUNTIME_DIR is unset.
+ucheck "atuin daemon: still reaches the legacy data-dir socket (#518)" \
+  "rm -f '$ATSOCKTMP/xdgdata/atuin/atuin.sock'; zmodload zsh/net/socket; zsocket -l '$ATSOCKTMP/xdgdata/atuin/atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == true && -n \$_CORE_ATUIN_DAEMON_WAS_UP ]]" \
+  ATUIN_DAEMON__ENABLED=true TMPDIR="$ATSOCKTMP/nowhere" XDG_RUNTIME_DIR= \
+  XDG_DATA_HOME="$ATSOCKTMP/xdgdata"
+# An EXPLICIT ATUIN_DAEMON__SOCKET_PATH must win outright and probe nothing else. Point it at
+# an absent path while a live listener sits on a candidate: the guard must still degrade, or
+# the config knob has stopped being authoritative — which would be a worse bug than the one
+# this change fixes, since it silently overrides what the user asked for.
+ucheck "atuin daemon: an explicit socket path wins outright (candidates are not tried) (#518)" \
+  "rm -f '$ATSOCKTMP/xdgrun/atuin.sock'; zmodload zsh/net/socket; zsocket -l '$ATSOCKTMP/xdgrun/atuin.sock'; source '$TOOLS_FILE'; _core_atuin_daemon_guard; [[ \$ATUIN_DAEMON__ENABLED == false && -n \$_CORE_ATUIN_DAEMON_DEGRADED ]]" \
+  ATUIN_DAEMON__ENABLED=true ATUIN_DAEMON__SOCKET_PATH="$SANDBOX/absent-atuin.sock" \
+  TMPDIR="$ATSOCKTMP" XDG_RUNTIME_DIR="$ATSOCKTMP/xdgrun" XDG_DATA_HOME="$ATSOCKTMP/xdgdata"
+
 # (e) AUTOSTART — atuin supervises its own daemon there (the no-systemd answer for
 #     Alpine/macOS), so an absent socket is EXPECTED, not a fault. Don't disable it — and don't
 #     keep re-probing for the life of the shell either: stand down means UNHOOK.
@@ -9633,8 +10349,10 @@ else
   ocheck "opsecret builds the op:// read path" \
     'out=$(opsecret Personal/AWS/key); [[ $out == *"op read op://Personal/AWS/key"* ]]'
   # optoken copies the OTP via clip and confirms — present clip → success + the ok line.
-  ocheck "optoken fetches the OTP and copies it via clip" \
-    'out=$(optoken Personal/GitHub 2>&1); (( $? == 0 )) && [[ $out == *"TOTP copied"* ]]'
+  # "sent", not "copied": clip's OSC 52 last resort returns success once the escape is
+  # WRITTEN, which is not the same as a terminal having accepted it (#525).
+  ocheck "optoken fetches the OTP and hands it to clip" \
+    'out=$(optoken Personal/GitHub 2>&1); (( $? == 0 )) && [[ $out == *"TOTP sent"* ]]'
   ocheck "opssh lists stored SSH keys (rc 0)" \
     'out=$(opssh 2>&1); (( $? == 0 )) && [[ $out == *mykey* ]]'
   # uniform --help contract: each op verb answers --help on stdout, rc 0.

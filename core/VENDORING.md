@@ -131,6 +131,26 @@ rules govern what it touches:
 Nothing else is rewritten — a third-party action pinned in the identical
 `@<sha> # <version>` shape is matched on the `dotgibson/dotfiles-core/` prefix and skipped.
 
+**A sync vendors the commit it resolved, not "whatever the branch says now".** `sync-core.sh`
+resolves Core once, up front, and everything downstream is addressed by that **SHA**: the
+audit gate refuses unless local `HEAD` is that commit, the fetch asks for it by name, the
+tree is materialized as `<sha>^{tree}`, and `core_sha`, `core_tag` and the
+`git-subtree-split:` trailer are all stamped from it. Before #556 the vendoring step
+re-resolved the _branch_, so a push to Core inside the ~250s pre-fan-out audit gave `core/`
+a newer tree than the sha recorded beside it — and the mismatch surfaced later, out of
+context, as a `TAMPERED (core/ edited since sync)` verdict on a tree nobody had touched.
+
+Two consequences worth knowing. A fan-out is now consistent **by construction**: repos are
+still vendored serially, but every one of them materializes the same commit no matter how
+long the loop takes. And the sync **checks its own work** — after each repo it compares
+`HEAD:core` against the pinned tree, using the same shared comparison `core-integrity.sh`
+makes (`scripts/lib/core-lock.sh`), so a run that somehow still landed inconsistent fails in
+the run that caused it rather than in whatever command next happens to check.
+
+If Core cannot be resolved at all — no network _and_ no local clone that knows the ref — the
+sync now **refuses outright** instead of vendoring from the branch and skipping `core.lock`,
+which was itself a way to produce the `TAMPERED` state with no race required.
+
 **Do not pull the subtree by hand.** A raw `git subtree pull` updates `core/` but not
 `core.lock`, so `core-integrity.sh` compares your tree against a commit the lock no longer
 describes and reports `TAMPERED` until the lock is regenerated. `sync-core.sh` commits both

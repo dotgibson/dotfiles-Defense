@@ -129,7 +129,7 @@ same one-liners those surfaces print.
 | `please` | re-run the last command with sudo (previews + confirms first) |
 | `pullall [dir]` | pull every git repo under a dir in parallel (prunes, stashes, fast-forwards trunk) |
 | `core [verb]` | the front door: `core help` / `doctor` / `version` / `update` |
-| `core-doctor` | health report: which tools are present, which integrations are actually wired |
+| `core-doctor` | health report: which tools are present, which Core actually wired, which integrations registered |
 | `core-version` | which Core version this machine carries (reads `core.version`) |
 
 Note `cdup`, not `up` — `up` is the package-updater in `zsh/60-update.zsh`.

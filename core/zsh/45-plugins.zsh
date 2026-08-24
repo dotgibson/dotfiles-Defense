@@ -32,7 +32,7 @@ ZPLUGINDIR="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins"
 
 # ── Pinned plugin revisions ───────────────────────────────────────────────────
 # These plugins are the ONLY third-party CODE that runs in every interactive shell
-# on every one of the eight OS repos, yet they were the one thing this repo left
+# on every one of the nine OS repos, yet they were the one thing this repo left
 # UNPINNED while pinning its CI linters (ci.yml), pre-commit hooks (rev:), and even
 # GitHub Actions by SHA. An unpinned `master` clone means an upstream breaking
 # change — or a compromised tag — fans out to every machine on the next install.
@@ -45,7 +45,7 @@ typeset -gA ZPLUGIN_PINS=(
   jeffreytse/zsh-vi-mode                      91cafe4a09b6670cb8e761aa413e5f7b9e00816f
   zsh-users/zsh-history-substring-search      14c8d2e0ffaee98f2df9850b19944f32546fdea5
   zsh-users/zsh-autosuggestions               85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
-  zsh-users/zsh-syntax-highlighting           c4d95591843d49838b7ad30081e7aba3135a6703
+  zsh-users/zsh-syntax-highlighting           2fc57d63067c18b1100ecdbf684fa5baf49459d1
   Aloxaf/fzf-tab                              24105b15714bfec37989ed5c5b6e60f572253019
   MichaelAquilina/zsh-you-should-use          5f3d129864ee4505043d88c3486224f1d75b692e
   olets/zsh-transient-prompt                 bdd5917f38db4b4995134e8fb0251ce01cd9a068

@@ -164,12 +164,11 @@ setup notes live in each OS repo's README and the [docs site][docs]; the essenti
 2. Preview the plan (optional)
 
    ```sh
-   # MacOS
+   # every repo — macOS, the Linux distros, and the two role repos
    ./bootstrap.sh --links-only --dry-run
-
-   # Linux distros (Fedora, Arch, openSUSE, Alpine, Gentoo)
-   ./bootstrap.sh --links-only
    ```
+
+   All nine bootstraps implement `--dry-run`; it was previously shown for macOS only.
 
 3. Provision + Wire
 

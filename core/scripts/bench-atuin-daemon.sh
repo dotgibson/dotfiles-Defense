@@ -12,8 +12,8 @@
 # real musl box for the autostart path. This script does NOT stand in for those. What
 # a plain Linux container DOES reproduce is the TOPOLOGY of the Alpine path — no
 # systemd user manager, XDG_RUNTIME_DIR unset, so atuin falls back to
-# ~/.local/share/atuin/atuin.sock, which is exactly the path _core_atuin_daemon_guard
-# (zsh/00-tools.zsh) resolves. That is enough to measure the contention mechanism
+# ~/.local/share/atuin/atuin.sock — one of the candidates _core_atuin_daemon_guard
+# (zsh/00-tools.zsh) probes. That is enough to measure the contention mechanism
 # directly and to confirm atuin and the guard agree on the socket path — a fact the
 # behavioral suite can today only assert from reading upstream's settings.rs.
 #
@@ -143,8 +143,8 @@ about p99.
 
   --systemd   Measure the SYSTEMD-UNIT path instead: run the daemon from a sandbox-scoped
               TRANSIENT unit (systemd-run --user), with XDG_RUNTIME_DIR pointed at the
-              sandbox, so atuin resolves its default $XDG_RUNTIME_DIR/atuin.sock — the
-              branch the default mode structurally cannot reach. It never touches your real
+              sandbox, so atuin resolves $XDG_RUNTIME_DIR/atuin.sock — the candidate the
+              default mode structurally cannot reach. It never touches your real
               atuin-daemon.service. Without a systemd user bus it SKIPs; it never falls back
               to the no-systemd path, because those numbers under a systemd label are the
               one thing this flag exists to prevent. The autostart arm is skipped (autostart
@@ -904,21 +904,34 @@ if db_reset && daemon_start; then
     printf '   –  socket-path agreement NOT asserted this run: ATUIN_DAEMON__SOCKET_PATH was\n'
     printf '      forced, and the guard honours that same variable first, so agreement here\n'
     printf '      is by construction and proves nothing.\n'
-  elif ((SYSTEMD)); then
-    printf '   %s✓%s socket-path agreement: atuin bound %s\n' "$c_grn" "$c_rst" "$SOCK"
-    # shellcheck disable=SC2016
-    printf '     %s\n' \
-      '(= $XDG_RUNTIME_DIR/atuin.sock — the FIRST branch of the expression' \
-      ' _core_atuin_daemon_guard resolves, the one the default mode cannot reach)'
   else
-    printf '   %s✓%s socket-path agreement: atuin bound %s\n' "$c_grn" "$c_rst" \
-      "${SOCK/#"$SB"/\$HOME}"
-    # The ${...} below is QUOTED PROSE — the guard's expression reproduced verbatim so the
-    # two can be compared by eye. Expanding it here would print this sandbox's path twice.
-    # shellcheck disable=SC2016
-    printf '     %s\n' \
-      '(= ${XDG_DATA_HOME:-$HOME/.local/share}/atuin/atuin.sock — the expression' \
-      ' _core_atuin_daemon_guard resolves in zsh/00-tools.zsh)'
+    # ASSERTED, not narrated (#518). This used to printf a ✓ next to a hand-copy of the
+    # guard's single socket expression — prose that would keep printing ✓ while the guard
+    # and atuin had drifted apart, which is the one failure this check exists to catch.
+    #
+    # The guard now probes a CANDIDATE LIST (upstream PR #3910 moved the default in 18.20.0),
+    # so the meaningful claim is membership: whatever atuin bound must be one of the paths
+    # the guard will try. Reproduced here rather than sourced because this is bash and the
+    # guard is zsh — so the list is derived the same way and compared, and the assertion
+    # fails loudly if a path is added there and not here.
+    _bench_socks=(
+      "${TMPDIR:-/tmp}/atuin-$(id -u)/atuin.sock"
+      "${XDG_RUNTIME_DIR:-}/atuin.sock"
+      "${XDG_DATA_HOME:-$HOME/.local/share}/atuin/atuin.sock"
+    )
+    _bench_match=0
+    for _bs in "${_bench_socks[@]}"; do [ "$_bs" = "$SOCK" ] && _bench_match=1; done
+    if ((_bench_match)); then
+      printf '   %s✓%s socket-path agreement: atuin bound %s\n' "$c_grn" "$c_rst" \
+        "${SOCK/#"$SB"/\$HOME}"
+      printf '     %s\n' '(one of the candidates _core_atuin_daemon_guard probes in zsh/00-tools.zsh)'
+    else
+      printf '   %s✗%s socket-path DISAGREEMENT: atuin bound %s\n' "$c_red" "$c_rst" "$SOCK"
+      printf '     %s\n' 'but _core_atuin_daemon_guard probes none of that path — it would' \
+        'disable the daemon on every shell of a correctly opted-in machine. Candidates:'
+      for _bs in "${_bench_socks[@]}"; do printf '       %s\n' "$_bs"; done
+    fi
+    unset _bench_match _bs
   fi
   # Ownership is a property of the MODE, not of which socket-agreement claim was printable,
   # so it runs whenever a unit is supervising the daemon. Hanging it off the `elif` above

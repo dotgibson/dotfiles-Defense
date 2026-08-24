@@ -43,6 +43,8 @@ set -uo pipefail
 HERE="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
 # shellcheck source=scripts/lib/common.sh
 source "$HERE/scripts/lib/common.sh"
+# shellcheck source=scripts/lib/core-lock.sh
+source "$HERE/scripts/lib/core-lock.sh"
 
 ROOT="$(cd "$HERE/.." && pwd)" # siblings of dotfiles-core by default
 STRICT=0
@@ -105,27 +107,21 @@ else
   )
 fi
 
-# Read a `key=value` (core.lock) value from a file.
+# Both helpers now live in scripts/lib/core-lock.sh, sourced above. They moved because
+# sync-core.sh needs the SAME comparison to check its own work before it reports success
+# (#556) — and a producer whose self-check is a second implementation of the reporter's
+# verdict can pass its own assertion and still be reported dirty here.
 _read_kv() { # _read_kv <file> <key>
-  sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*//p" "$1" 2>/dev/null | head -n1
+  core_lock_read_kv "$1" "$2"
 }
 
 # Classify a repo's vendored core/ against the commit its core.lock pins. PURE: only
 # reads (callers run it in a command substitution — a subshell — so any shared-state
 # write would be lost). The caller decides the verdict from the returned status string
-# ("pristine" is the only clean one).
+# ("pristine" is the only clean one). $HERE is Core: the expected tree is resolved in
+# Core's object store, which is this gate's vantage point.
 _classify() { # _classify <repo-dir> <recorded-sha>
-  local dir="$1" rec="$2" vend exp
-  [[ -n "$rec" ]] || { echo "no core_sha recorded"; return; }
-  # The vendored tree object — present in any checkout, even a depth-1 clone.
-  vend="$(git -C "$dir" rev-parse --verify --quiet 'HEAD:core' 2>/dev/null)" ||
-    { echo "no vendored core/ (not a subtree consumer?)"; return; }
-  # What that core.lock CLAIMS the tree should be: dotfiles-core's whole tree at the
-  # pinned commit. Absent object → the lock points at a commit not in Core's history
-  # (a phantom/rewritten sha) — itself a real problem, so surface it, don't crash.
-  exp="$(git -C "$HERE" rev-parse --verify --quiet "${rec}^{tree}" 2>/dev/null)" ||
-    { echo "UNVERIFIABLE (locked sha not in Core history)"; return; }
-  if [[ "$vend" == "$exp" ]]; then echo "pristine"; else echo "TAMPERED (core/ edited since sync)"; fi
+  core_lock_classify "$1" "$2" "$HERE"
 }
 
 hdr "Core integrity — vendored core/ vs the commit each core.lock pins"
