@@ -7,13 +7,13 @@ technique, its data source, and a validation note that names the **exact
 purple loop is closed in the file itself: run the attack there, confirm the rule
 fires here.
 
-| Dir        | Holds                                                 | Start from (upstream)                          |
-| ---------- | ----------------------------------------------------- | ---------------------------------------------- |
-| `sigma/`   | portable rules (the source of truth)                  | SigmaHQ                                        |
-| `sysmon/`  | Sysmon config baseline(s)                             | Olaf Hartong `sysmon-modular`; SwiftOnSecurity |
-| `network/` | Zeek scripts + Suricata rules                         | Zeek pkgs; ET Open ruleset                     |
-| `siem/`    | compiled saved-searches, props/transforms, dashboards | compile from `sigma/`                          |
-| `navigator/` | ATT&CK Navigator layer (heatmap) + `COVERAGE.md` report | generate from `sigma/`                       |
+| Dir          | Holds                                                   | Start from (upstream)                          |
+| ------------ | ------------------------------------------------------- | ---------------------------------------------- |
+| `sigma/`     | portable rules (the source of truth)                    | SigmaHQ                                        |
+| `sysmon/`    | Sysmon config baseline(s)                               | Olaf Hartong `sysmon-modular`; SwiftOnSecurity |
+| `network/`   | Zeek scripts + Suricata rules                           | Zeek pkgs; ET Open ruleset                     |
+| `siem/`      | compiled saved-searches, props/transforms, dashboards   | compile from `sigma/`                          |
+| `navigator/` | ATT&CK Navigator layer (heatmap) + `COVERAGE.md` report | generate from `sigma/`                         |
 
 Workflow: write Sigma → convert to your backend → stand up the lab (`siemup`) →
 run the matching attack from Offense → confirm it fires → tune → commit rule +
@@ -149,47 +149,47 @@ purple-validatable out of the box.
 
 **`credential_access/`**
 
-| Rule | Event / source | ATT&CK | Validate with (Offense fold · htpx pair) |
-| ---- | -------------- | ------ | ------------------------------------- |
-| `kerberoasting_rc4_tgs` | 4769 RC4 (0x17) | T1558.003 | Kerberos · kerberoast-getuserspns |
-| `asrep_roast_probing_4771` | 4771 0x18 (correlation) | T1558.004 | Kerberos · asreproast-getnpusers |
-| `password_spray_4625` | 4625 (value_count correlation) | T1110.003 | Kerberos/Poisoning · password-spray-kerbrute |
-| `dcsync_replication_4662` | 4662 replication right | T1003.006 | DCSync/NTDS · dcsync-secretsdump |
-| `gpp_cpassword_sysvol_5145` | 5145 SYSVOL prefs XML | T1552.006 | SMB · gpp-cpassword |
-| `coercion_named_pipes_5145` | 5145 IPC$ pipe (spoolss/efsrpc/…) | T1187 | Poisoning & relay · coerce-petitpotam |
-| `dpapi_backupkey_5145` | 5145 IPC$ `protected_storage` | T1555 | Credential access · dpapi-backupkey |
-| `ntds_dump_ntdsutil_vss_4688` | proc create (ntdsutil/VSS) | T1003.003 | DCSync/NTDS · ntds-ntdsutil |
-| `lsass_handle_access` | Sysmon 10 (LSASS) | T1003.001 | Lateral movement · lsass-dump-lsassy |
+| Rule                          | Event / source                    | ATT&CK    | Validate with (Offense fold · htpx pair)     |
+| ----------------------------- | --------------------------------- | --------- | -------------------------------------------- |
+| `kerberoasting_rc4_tgs`       | 4769 RC4 (0x17)                   | T1558.003 | Kerberos · kerberoast-getuserspns            |
+| `asrep_roast_probing_4771`    | 4771 0x18 (correlation)           | T1558.004 | Kerberos · asreproast-getnpusers             |
+| `password_spray_4625`         | 4625 (value_count correlation)    | T1110.003 | Kerberos/Poisoning · password-spray-kerbrute |
+| `dcsync_replication_4662`     | 4662 replication right            | T1003.006 | DCSync/NTDS · dcsync-secretsdump             |
+| `gpp_cpassword_sysvol_5145`   | 5145 SYSVOL prefs XML             | T1552.006 | SMB · gpp-cpassword                          |
+| `coercion_named_pipes_5145`   | 5145 IPC$ pipe (spoolss/efsrpc/…) | T1187     | Poisoning & relay · coerce-petitpotam        |
+| `dpapi_backupkey_5145`        | 5145 IPC$ `protected_storage`     | T1555     | Credential access · dpapi-backupkey          |
+| `ntds_dump_ntdsutil_vss_4688` | proc create (ntdsutil/VSS)        | T1003.003 | DCSync/NTDS · ntds-ntdsutil                  |
+| `lsass_handle_access`         | Sysmon 10 (LSASS)                 | T1003.001 | Lateral movement · lsass-dump-lsassy         |
 
 **`privilege_escalation/`**
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `adcs_esc1_san_mismatch_4886` | 4886/4887 cert request | T1649 | AD CS abuse · adcs-esc1-certipy |
-| `potato_seimpersonate_4688` / `potato_seimpersonate_sysmon_1` | proc create (service→shell); per-channel pair (Security-4688 `SubjectUserName` / Sysmon-1 `User`) | T1134.001 | Win privesc · potato-seimpersonate |
-| `shadow_credentials_keycredentiallink_5136` | 5136 msDS-KeyCredentialLink | T1556 | AD attack paths · shadow-credentials-certipy |
-| `rbcd_allowedtoact_5136` | 5136 msDS-AllowedToActOnBehalf… | T1098 | AD attack paths · rbcd-impacket |
+| Rule                                                          | Event / source                                                                                    | ATT&CK    | Validate with                                |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------- |
+| `adcs_esc1_san_mismatch_4886`                                 | 4886/4887 cert request                                                                            | T1649     | AD CS abuse · adcs-esc1-certipy              |
+| `potato_seimpersonate_4688` / `potato_seimpersonate_sysmon_1` | proc create (service→shell); per-channel pair (Security-4688 `SubjectUserName` / Sysmon-1 `User`) | T1134.001 | Win privesc · potato-seimpersonate           |
+| `shadow_credentials_keycredentiallink_5136`                   | 5136 msDS-KeyCredentialLink                                                                       | T1556     | AD attack paths · shadow-credentials-certipy |
+| `rbcd_allowedtoact_5136`                                      | 5136 msDS-AllowedToActOnBehalf…                                                                   | T1098     | AD attack paths · rbcd-impacket              |
 
 **`lateral_movement/`**
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `wmiexec_wmiprvse_child_4688` | proc create (WmiPrvSE child) | T1047 | Lateral movement · wmiexec-impacket |
-| `rdp_hijack_tscon_4688` | proc create (tscon /dest:) | T1563.002 | Lateral movement · rdp-hijack-tscon |
-| `service_creation_psexec_7045` | 7045 service install | T1569.002 | Lateral movement · pth-lateral-nxc |
-| `passthehash_4624_fanout` | 4624 type-3 (value_count correlation) | T1550.002 / T1021 | Lateral movement · pth-lateral-nxc |
+| Rule                            | Event / source                                    | ATT&CK            | Validate with                                            |
+| ------------------------------- | ------------------------------------------------- | ----------------- | -------------------------------------------------------- |
+| `wmiexec_wmiprvse_child_4688`   | proc create (WmiPrvSE child)                      | T1047             | Lateral movement · wmiexec-impacket                      |
+| `rdp_hijack_tscon_4688`         | proc create (tscon /dest:)                        | T1563.002         | Lateral movement · rdp-hijack-tscon                      |
+| `service_creation_psexec_7045`  | 7045 service install                              | T1569.002         | Lateral movement · pth-lateral-nxc                       |
+| `passthehash_4624_fanout`       | 4624 type-3 (value_count correlation)             | T1550.002 / T1021 | Lateral movement · pth-lateral-nxc                       |
 | `unconstrained_delegation_4624` | 4624 type-3 Kerberos, DC machine account → non-DC | T1187 / T1550.003 | Poisoning & relay · PURPLE-TEAM unconstrained-deleg-4624 |
 
 **`discovery/`**
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `sharphound_ldap_sweep_4662` | 4662 dir-access (value_count correlation) | T1087.002 / T1069.002 | AD enumeration · bloodhound-sharphound |
-| `ldap_recon_explicit_creds_4648` | 4648 explicit-cred fan-out (value_count correlation) | T1087.002 / T1046 | recon · PURPLE-TEAM 4648 row |
-| `host_recon_command_burst` | proc create, distinct discovery commands per host (value_count correlation) | T1033 / T1082 / T1018 / T1016 / T1049 / T1057 / T1007 / T1087.001 / T1135 | Situational awareness · `whoami`/`net`/`nltest` sweep |
-| `local_group_enum_sweep_4798_4799` | 4798/4799 local group membership enumerated, distinct hosts per principal (value_count correlation) | T1069.001 / T1087.001 | AD enumeration · SharpHound LocalGroup / `net localgroup \\host` |
-| `host_enum_srvsvc_wkssvc_5145` | 5145 IPC$ to the srvsvc/wkssvc pipes, distinct hosts per principal (value_count correlation) | T1135 / T1049 / T1033 | SMB enumeration · smb-enum-nxc |
-| `host_recon_powershell_4104` | 4104 script blocks, distinct discovery cmdlets per host (value_count correlation) | T1033 / T1082 / T1018 / T1016 / T1049 / T1057 / T1007 / T1087.001 / T1135 | Situational awareness · the same sweep from an **interactive** PowerShell session |
+| Rule                               | Event / source                                                                                      | ATT&CK                                                                    | Validate with                                                                     |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `sharphound_ldap_sweep_4662`       | 4662 dir-access (value_count correlation)                                                           | T1087.002 / T1069.002                                                     | AD enumeration · bloodhound-sharphound                                            |
+| `ldap_recon_explicit_creds_4648`   | 4648 explicit-cred fan-out (value_count correlation)                                                | T1087.002 / T1046                                                         | recon · PURPLE-TEAM 4648 row                                                      |
+| `host_recon_command_burst`         | proc create, distinct discovery commands per host (value_count correlation)                         | T1033 / T1082 / T1018 / T1016 / T1049 / T1057 / T1007 / T1087.001 / T1135 | Situational awareness · `whoami`/`net`/`nltest` sweep                             |
+| `local_group_enum_sweep_4798_4799` | 4798/4799 local group membership enumerated, distinct hosts per principal (value_count correlation) | T1069.001 / T1087.001                                                     | AD enumeration · SharpHound LocalGroup / `net localgroup \\host`                  |
+| `host_enum_srvsvc_wkssvc_5145`     | 5145 IPC$ to the srvsvc/wkssvc pipes, distinct hosts per principal (value_count correlation)        | T1135 / T1049 / T1033                                                     | SMB enumeration · smb-enum-nxc                                                    |
+| `host_recon_powershell_4104`       | 4104 script blocks, distinct discovery cmdlets per host (value_count correlation)                   | T1033 / T1082 / T1018 / T1016 / T1049 / T1057 / T1007 / T1087.001 / T1135 | Situational awareness · the same sweep from an **interactive** PowerShell session |
 
 `host_recon_powershell_4104` is the independent-feed twin of `host_recon_command_burst`,
 not a keyword variant of it. Every selection in that rule needs a **process** with a known
@@ -203,31 +203,31 @@ on `Path` at alert time.
 
 **`persistence/`**
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `scheduled_task_suspicious_4698` | 4698 task created | T1053.005 | Persistence · schtask-persist |
-| `wmi_event_subscription_consumer` | Sysmon 20 | T1546.003 | Persistence · wmi-subscription |
-| `rogue_account_creation_4720` | 4720 account created | T1136.002 / T1136.001 | Persistence · rogue-account |
-| `machine_account_creation_burst_4741` | 4741 burst (value_count correlation) | T1136.002 | AD attack paths · rbcd-impacket |
+| Rule                                  | Event / source                       | ATT&CK                | Validate with                   |
+| ------------------------------------- | ------------------------------------ | --------------------- | ------------------------------- |
+| `scheduled_task_suspicious_4698`      | 4698 task created                    | T1053.005             | Persistence · schtask-persist   |
+| `wmi_event_subscription_consumer`     | Sysmon 20                            | T1546.003             | Persistence · wmi-subscription  |
+| `rogue_account_creation_4720`         | 4720 account created                 | T1136.002 / T1136.001 | Persistence · rogue-account     |
+| `machine_account_creation_burst_4741` | 4741 burst (value_count correlation) | T1136.002             | AD attack paths · rbcd-impacket |
 
 **`defense_impairment/`**
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `dcshadow_rogue_dc_4742` | 4742 `GC/` SPN write (+5137/4662) | T1207 | AD attack paths · dcshadow |
+| Rule                     | Event / source                    | ATT&CK | Validate with              |
+| ------------------------ | --------------------------------- | ------ | -------------------------- |
+| `dcshadow_rogue_dc_4742` | 4742 `GC/` SPN write (+5137/4662) | T1207  | AD attack paths · dcshadow |
 
 **`impact/`** (the ransomware chain — process creation 4688 / Sysmon 1, plus 4663 and Sysmon 11 for the encryption sweep)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `recovery_inhibition_process` | proc create (vssadmin/wbadmin/bcdedit) | T1490 | ransomware-precursor · inhibit-recovery-vssadmin |
-| `service_stop_burst` | proc create, distinct service stops per host (value_count correlation) | T1489 | ransomware-precursor · inhibit-recovery-vssadmin |
-| `data_destruction_wipe` | proc create (cipher `/w`, sdelete, fsutil setZeroData, diskpart clean) | T1485 | ransomware-precursor · destruction commands |
-| `bitlocker_abuse_encryption` | proc create (manage-bde `-on`/`-protectors -add`, `Enable-BitLocker`) | T1486 | ransomware-precursor · ShrinkLocker-style BitLocker abuse |
-| `service_stop_protected_services` | proc create, ONE stop of a named backup/AV/DB service | T1489 | ransomware-precursor · service-stop-preransom |
-| `mass_file_encryption_4663` | 4663 write/delete handles, distinct files per host+process (value_count correlation) | T1486 | ransomware-precursor · ransomware-encrypt-files |
-| `mass_file_encryption_sysmon_11` | Sysmon 11 FileCreate, distinct files per host+image (value_count correlation) | T1486 | ransomware-precursor · ransomware-encrypt-files |
-| `account_access_removal_4725` | 4724/4725/4726, distinct target accounts per actor (value_count correlation) | T1531 | account-lockout-defenders · account-removal-4725 |
+| Rule                              | Event / source                                                                       | ATT&CK | Validate with                                             |
+| --------------------------------- | ------------------------------------------------------------------------------------ | ------ | --------------------------------------------------------- |
+| `recovery_inhibition_process`     | proc create (vssadmin/wbadmin/bcdedit)                                               | T1490  | ransomware-precursor · inhibit-recovery-vssadmin          |
+| `service_stop_burst`              | proc create, distinct service stops per host (value_count correlation)               | T1489  | ransomware-precursor · inhibit-recovery-vssadmin          |
+| `data_destruction_wipe`           | proc create (cipher `/w`, sdelete, fsutil setZeroData, diskpart clean)               | T1485  | ransomware-precursor · destruction commands               |
+| `bitlocker_abuse_encryption`      | proc create (manage-bde `-on`/`-protectors -add`, `Enable-BitLocker`)                | T1486  | ransomware-precursor · ShrinkLocker-style BitLocker abuse |
+| `service_stop_protected_services` | proc create, ONE stop of a named backup/AV/DB service                                | T1489  | ransomware-precursor · service-stop-preransom             |
+| `mass_file_encryption_4663`       | 4663 write/delete handles, distinct files per host+process (value_count correlation) | T1486  | ransomware-precursor · ransomware-encrypt-files           |
+| `mass_file_encryption_sysmon_11`  | Sysmon 11 FileCreate, distinct files per host+image (value_count correlation)        | T1486  | ransomware-precursor · ransomware-encrypt-files           |
+| `account_access_removal_4725`     | 4724/4725/4726, distinct target accounts per actor (value_count correlation)         | T1531  | account-lockout-defenders · account-removal-4725          |
 
 They are one chain, not seven alerts: T1489 clears the locks, T1490 destroys the
 rollback, T1485/T1486 are the objective. Two of them on one host inside a window is
@@ -260,10 +260,10 @@ Two techniques carry a deliberate set of rules, covering different halves:
 
 **`collection/`** (host-side collection — proc create 4688 / Sysmon 1, plus 4663 for the read sweep)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `mass_file_read_4663` | 4663 read handles (`AccessList` `%%4416`, or `AccessMask` `0x1`), distinct files per host+process (value_count correlation) | T1005 | collection/exfil · local-data-collection |
-| `archive_staging_utility` | proc create (rar/7z/tar/makecab under a password or into a staging path) | T1560.001 / T1074.001 | collection/exfil · archive-staging-rar |
+| Rule                      | Event / source                                                                                                              | ATT&CK                | Validate with                            |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------- |
+| `mass_file_read_4663`     | 4663 read handles (`AccessList` `%%4416`, or `AccessMask` `0x1`), distinct files per host+process (value_count correlation) | T1005                 | collection/exfil · local-data-collection |
+| `archive_staging_utility` | proc create (rar/7z/tar/makecab under a password or into a staging path)                                                    | T1560.001 / T1074.001 | collection/exfil · archive-staging-rar   |
 
 The two are the halves of one step, and they chain: `mass_file_read_4663` catches the
 **sweep** that fills a staging directory, `archive_staging_utility` catches the
@@ -290,135 +290,135 @@ the rule gets muted, and a muted rule is a blind spot.
 
 **`linux/`** (Linux host telemetry — `product: linux`, `category: process_creation`; auditd/Sysmon-for-Linux)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
+| Rule                   | Event / source                                             | ATT&CK    | Validate with                      |
+| ---------------------- | ---------------------------------------------------------- | --------- | ---------------------------------- |
 | `ccache_theft_staging` | ccache path in argv of a copy/transfer/interpreter process | T1558.005 | Kerberos · cp/base64 an `*.ccache` |
 
 **`cloud/`** (multi-cloud — Entra `product: azure`, AWS `product: aws`, GCP `product: gcp`)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `entra_illicit_consent_grant` | Entra AuditLogs "Consent to application" | T1528 | M365/Entra · consent-grant |
-| `entra_sp_credential_backdoor` | Entra AuditLogs "Add SP credentials" | T1098.001 | M365/Entra · sp-cred-backdoor |
-| `entra_directory_role_grant` | Entra AuditLogs "Add member to role" | T1098.003 | M365/Entra · entra-directory-role |
-| `aws_iam_access_key_created` | CloudTrail `CreateAccessKey` | T1098.001 | AWS IAM · aws-iam-backdoor-key |
-| `aws_login_profile_created` | CloudTrail Create/UpdateLoginProfile | T1098 | AWS IAM · aws-console-login-profile |
-| `aws_iam_privesc_policy` | CloudTrail policy attach/put/version + group add | T1098.003 | AWS IAM · aws-iam-privesc-policy |
-| `aws_s3_bulk_exfil` | CloudTrail S3 `GetObject`, distinct object keys per principal (value_count correlation) | T1530 | AWS S3 · aws-s3-mass-exfil |
-| `aws_data_destruction` | CloudTrail snapshot/bucket/object/table deletes per principal (event_count correlation) | T1485 | AWS destruction · cloud-snapshot-destroy |
-| `gcp_service_account_key_created` | GCP audit `CreateServiceAccountKey` | T1098.001 | GCP IAM · gcp-sa-key |
+| Rule                              | Event / source                                                                          | ATT&CK    | Validate with                            |
+| --------------------------------- | --------------------------------------------------------------------------------------- | --------- | ---------------------------------------- |
+| `entra_illicit_consent_grant`     | Entra AuditLogs "Consent to application"                                                | T1528     | M365/Entra · consent-grant               |
+| `entra_sp_credential_backdoor`    | Entra AuditLogs "Add SP credentials"                                                    | T1098.001 | M365/Entra · sp-cred-backdoor            |
+| `entra_directory_role_grant`      | Entra AuditLogs "Add member to role"                                                    | T1098.003 | M365/Entra · entra-directory-role        |
+| `aws_iam_access_key_created`      | CloudTrail `CreateAccessKey`                                                            | T1098.001 | AWS IAM · aws-iam-backdoor-key           |
+| `aws_login_profile_created`       | CloudTrail Create/UpdateLoginProfile                                                    | T1098     | AWS IAM · aws-console-login-profile      |
+| `aws_iam_privesc_policy`          | CloudTrail policy attach/put/version + group add                                        | T1098.003 | AWS IAM · aws-iam-privesc-policy         |
+| `aws_s3_bulk_exfil`               | CloudTrail S3 `GetObject`, distinct object keys per principal (value_count correlation) | T1530     | AWS S3 · aws-s3-mass-exfil               |
+| `aws_data_destruction`            | CloudTrail snapshot/bucket/object/table deletes per principal (event_count correlation) | T1485     | AWS destruction · cloud-snapshot-destroy |
+| `gcp_service_account_key_created` | GCP audit `CreateServiceAccountKey`                                                     | T1098.001 | GCP IAM · gcp-sa-key                     |
 
 **`kubernetes/`** (kube-apiserver audit — `product: kubernetes`)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `k8s_privileged_pod_created` | audit: privileged/hostPID/hostPath pod create | T1610/T1611 | Kubernetes · k8s-privileged-pod |
-| `k8s_pod_exec_attach` | audit: `pods/exec`+`pods/attach` create | T1609 | Kubernetes · k8s-exec |
-| `k8s_clusteradmin_binding` | audit: roleRef `cluster-admin` binding | T1098 | Kubernetes · k8s-clusteradmin-binding |
+| Rule                         | Event / source                                | ATT&CK      | Validate with                         |
+| ---------------------------- | --------------------------------------------- | ----------- | ------------------------------------- |
+| `k8s_privileged_pod_created` | audit: privileged/hostPID/hostPath pod create | T1610/T1611 | Kubernetes · k8s-privileged-pod       |
+| `k8s_pod_exec_attach`        | audit: `pods/exec`+`pods/attach` create       | T1609       | Kubernetes · k8s-exec                 |
+| `k8s_clusteradmin_binding`   | audit: roleRef `cluster-admin` binding        | T1098       | Kubernetes · k8s-clusteradmin-binding |
 
 **`okta/`** (Okta System Log — `product: okta`)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `okta_mfa_factor_reset` | `user.mfa.factor.reset_all`/deactivate | T1556.006 | Okta · okta-mfa-reset |
-| `okta_api_token_created` | `system.api_token.create` | T1098 | Okta · okta-api-token |
-| `okta_idp_created` | `system.idp.lifecycle.create`/activate | T1556/T1484.002 | Okta · okta-idp-backdoor |
+| Rule                     | Event / source                         | ATT&CK          | Validate with            |
+| ------------------------ | -------------------------------------- | --------------- | ------------------------ |
+| `okta_mfa_factor_reset`  | `user.mfa.factor.reset_all`/deactivate | T1556.006       | Okta · okta-mfa-reset    |
+| `okta_api_token_created` | `system.api_token.create`              | T1098           | Okta · okta-api-token    |
+| `okta_idp_created`       | `system.idp.lifecycle.create`/activate | T1556/T1484.002 | Okta · okta-idp-backdoor |
 
 **`github/`** (GitHub Enterprise audit log — `product: github`, `service: audit`; field `action`)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `github_self_hosted_runner_registered` | `self_hosted_runner.created` | T1543 | GitHub · gh-self-hosted-runner |
-| `github_branch_protection_tamper` | `protected_branch.destroy` / `protected_branch.policy_override` | T1685 | GitHub · gh-branch-protection-off |
-| `github_credential_backdoor` | `repo.create_deploy_key` / `personal_access_token.access_granted` | T1098 | GitHub · gh-deploy-key-backdoor |
+| Rule                                   | Event / source                                                    | ATT&CK | Validate with                     |
+| -------------------------------------- | ----------------------------------------------------------------- | ------ | --------------------------------- |
+| `github_self_hosted_runner_registered` | `self_hosted_runner.created`                                      | T1543  | GitHub · gh-self-hosted-runner    |
+| `github_branch_protection_tamper`      | `protected_branch.destroy` / `protected_branch.policy_override`   | T1685  | GitHub · gh-branch-protection-off |
+| `github_credential_backdoor`           | `repo.create_deploy_key` / `personal_access_token.access_granted` | T1098  | GitHub · gh-deploy-key-backdoor   |
 
 **`registry/`** (Harbor container-registry audit log — `product: harbor`, `service: audit`; field `operation`)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `harbor_image_pushed_trusted_tag` | `operation=push` `resource_type=artifact` | T1525 | Harbor · harbor-image-backdoor |
-| `harbor_robot_account_created` | `operation=create` `resource_type=robot` | T1098 | Harbor · harbor-robot-backdoor |
-| `harbor_artifact_deleted` | `operation=delete` artifact/repository | T1070 | Harbor · harbor-artifact-delete |
+| Rule                              | Event / source                            | ATT&CK | Validate with                   |
+| --------------------------------- | ----------------------------------------- | ------ | ------------------------------- |
+| `harbor_image_pushed_trusted_tag` | `operation=push` `resource_type=artifact` | T1525  | Harbor · harbor-image-backdoor  |
+| `harbor_robot_account_created`    | `operation=create` `resource_type=robot`  | T1098  | Harbor · harbor-robot-backdoor  |
+| `harbor_artifact_deleted`         | `operation=delete` artifact/repository    | T1070  | Harbor · harbor-artifact-delete |
 
 **`gitlab/`** (GitLab audit events — `product: gitlab`, `service: audit`; field `event_type`)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `gitlab_rogue_runner_associated` | `set_runner_associated_projects` | T1543 | GitLab · gl-runner-hijack |
-| `gitlab_protected_branch_tamper` | `protected_branch_removed` / `protected_branch_created` | T1685 | GitLab · gl-protected-branch-off |
-| `gitlab_token_backdoor` | `project_access_token_created` / `personal_access_token_created` / `deploy_token_created` | T1098 | GitLab · gl-token-backdoor |
+| Rule                             | Event / source                                                                            | ATT&CK | Validate with                    |
+| -------------------------------- | ----------------------------------------------------------------------------------------- | ------ | -------------------------------- |
+| `gitlab_rogue_runner_associated` | `set_runner_associated_projects`                                                          | T1543  | GitLab · gl-runner-hijack        |
+| `gitlab_protected_branch_tamper` | `protected_branch_removed` / `protected_branch_created`                                   | T1685  | GitLab · gl-protected-branch-off |
+| `gitlab_token_backdoor`          | `project_access_token_created` / `personal_access_token_created` / `deploy_token_created` | T1098  | GitLab · gl-token-backdoor       |
 
 **`vault/`** (HashiCorp Vault audit device — `product: vault`, `service: audit`; fields `request.operation`/`request.path`)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `vault_bulk_secret_read` | `read` on `secret/` path (value_count correlation) | T1555 | Vault · vault-secret-exfil |
-| `vault_approle_backdoor` | create/update on `auth/approle/role/` or `sys/auth/` | T1098 | Vault · vault-approle-backdoor |
-| `vault_audit_device_disabled` | `delete` on `sys/audit/` path | T1685 | Vault · vault-audit-disable |
+| Rule                          | Event / source                                       | ATT&CK | Validate with                  |
+| ----------------------------- | ---------------------------------------------------- | ------ | ------------------------------ |
+| `vault_bulk_secret_read`      | `read` on `secret/` path (value_count correlation)   | T1555  | Vault · vault-secret-exfil     |
+| `vault_approle_backdoor`      | create/update on `auth/approle/role/` or `sys/auth/` | T1098  | Vault · vault-approle-backdoor |
+| `vault_audit_device_disabled` | `delete` on `sys/audit/` path                        | T1685  | Vault · vault-audit-disable    |
 
 **`terraform/`** (Terraform Cloud audit trail — `product: terraform`, `service: audit`; fields `resource.type`/`resource.action`)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `tfc_rogue_agent_pool` | `agent_pool` `create` | T1543 | Terraform · tfc-agent-hijack |
-| `tfc_token_backdoor` | `authentication_token` `create` | T1098 | Terraform · tfc-token-backdoor |
-| `tfc_variable_injection` | `variable` `create`/`update` | T1072 | Terraform · tfc-var-injection |
+| Rule                     | Event / source                  | ATT&CK | Validate with                  |
+| ------------------------ | ------------------------------- | ------ | ------------------------------ |
+| `tfc_rogue_agent_pool`   | `agent_pool` `create`           | T1543  | Terraform · tfc-agent-hijack   |
+| `tfc_token_backdoor`     | `authentication_token` `create` | T1098  | Terraform · tfc-token-backdoor |
+| `tfc_variable_injection` | `variable` `create`/`update`    | T1072  | Terraform · tfc-var-injection  |
 
 **`jenkins/`** (Jenkins Audit Trail plugin — `product: jenkins`, `service: audit`; keyword/URI matches)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `jenkins_script_console` | `/script` / `/scriptText` request | T1059 | Jenkins · jenkins-script-console |
-| `jenkins_api_token_created` | `ApiTokenProperty/generateNewToken` request | T1098 | Jenkins · jenkins-api-token |
-| `jenkins_job_backdoor` | `/createItem` / `/job/<name>/configSubmit` request | T1072 | Jenkins · jenkins-job-backdoor |
+| Rule                        | Event / source                                     | ATT&CK | Validate with                    |
+| --------------------------- | -------------------------------------------------- | ------ | -------------------------------- |
+| `jenkins_script_console`    | `/script` / `/scriptText` request                  | T1059  | Jenkins · jenkins-script-console |
+| `jenkins_api_token_created` | `ApiTokenProperty/generateNewToken` request        | T1098  | Jenkins · jenkins-api-token      |
+| `jenkins_job_backdoor`      | `/createItem` / `/job/<name>/configSubmit` request | T1072  | Jenkins · jenkins-job-backdoor   |
 
 **`snowflake/`** (Snowflake `ACCOUNT_USAGE.QUERY_HISTORY` — `product: snowflake`, `service: audit`; fields `query_type`/`query_text`)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `snowflake_data_unload` | `QUERY_TYPE=UNLOAD` (COPY INTO location) | T1567.002 | Snowflake · snowflake-exfil-stage |
-| `snowflake_user_created` | `CREATE_USER` / priv `GRANT` | T1136.003 | Snowflake · snowflake-rogue-user |
-| `snowflake_network_policy_change` | `NETWORK POLICY` in query text | T1686.001 | Snowflake · snowflake-network-policy |
+| Rule                              | Event / source                           | ATT&CK    | Validate with                        |
+| --------------------------------- | ---------------------------------------- | --------- | ------------------------------------ |
+| `snowflake_data_unload`           | `QUERY_TYPE=UNLOAD` (COPY INTO location) | T1567.002 | Snowflake · snowflake-exfil-stage    |
+| `snowflake_user_created`          | `CREATE_USER` / priv `GRANT`             | T1136.003 | Snowflake · snowflake-rogue-user     |
+| `snowflake_network_policy_change` | `NETWORK POLICY` in query text           | T1686.001 | Snowflake · snowflake-network-policy |
 
 **`google_workspace/`** (Google Workspace admin/token/user audit — `product: google_workspace`; field `eventName`)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `gws_illicit_oauth_grant` | token `authorize` | T1528 | Workspace · gws-oauth-grant |
-| `gws_admin_role_grant` | `GRANT_DELEGATED_ADMIN_PRIVILEGES` / `ASSIGN_ROLE` | T1098.003 | Workspace · gws-super-admin |
-| `gws_external_mail_forwarding` | `email_forwarding_out_of_domain` | T1114.003 | Workspace · gws-mail-forward |
+| Rule                           | Event / source                                     | ATT&CK    | Validate with                |
+| ------------------------------ | -------------------------------------------------- | --------- | ---------------------------- |
+| `gws_illicit_oauth_grant`      | token `authorize`                                  | T1528     | Workspace · gws-oauth-grant  |
+| `gws_admin_role_grant`         | `GRANT_DELEGATED_ADMIN_PRIVILEGES` / `ASSIGN_ROLE` | T1098.003 | Workspace · gws-super-admin  |
+| `gws_external_mail_forwarding` | `email_forwarding_out_of_domain`                   | T1114.003 | Workspace · gws-mail-forward |
 
 **`cloudflare/`** (Cloudflare account audit log — `product: cloudflare`, `service: audit`; fields `resource.type`/`action.type`)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `cloudflare_api_token_created` | `resource.type=api_token` `create` | T1098 | Cloudflare · cf-api-token |
-| `cloudflare_waf_rule_disabled` | `firewall_rule`/`ruleset` `delete`/`update` | T1686.001 | Cloudflare · cf-waf-disable |
-| `cloudflare_worker_deployed` | `resource.type=worker`/`workers_script` `create`/`update` | T1648 | Cloudflare · cf-worker-deploy |
+| Rule                           | Event / source                                            | ATT&CK    | Validate with                 |
+| ------------------------------ | --------------------------------------------------------- | --------- | ----------------------------- |
+| `cloudflare_api_token_created` | `resource.type=api_token` `create`                        | T1098     | Cloudflare · cf-api-token     |
+| `cloudflare_waf_rule_disabled` | `firewall_rule`/`ruleset` `delete`/`update`               | T1686.001 | Cloudflare · cf-waf-disable   |
+| `cloudflare_worker_deployed`   | `resource.type=worker`/`workers_script` `create`/`update` | T1648     | Cloudflare · cf-worker-deploy |
 
 **`npm/`** (npm account/org audit log — `product: npm`, `service: audit`; field `action`)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `npm_malicious_package_publish` | `package.publish` by non-CI actor | T1195.002 | npm · npm-malicious-publish |
-| `npm_maintainer_added` | `package.owner_add` / `team.user_add` | T1098 | npm · npm-owner-add |
-| `npm_publish_2fa_disabled` | `package.edit` `mfa=none` | T1685 | npm · npm-2fa-disable |
+| Rule                            | Event / source                        | ATT&CK    | Validate with               |
+| ------------------------------- | ------------------------------------- | --------- | --------------------------- |
+| `npm_malicious_package_publish` | `package.publish` by non-CI actor     | T1195.002 | npm · npm-malicious-publish |
+| `npm_maintainer_added`          | `package.owner_add` / `team.user_add` | T1098     | npm · npm-owner-add         |
+| `npm_publish_2fa_disabled`      | `package.edit` `mfa=none`             | T1685     | npm · npm-2fa-disable       |
 
 **`pypi/`** (PyPI project journal — `product: pypi`, `service: audit`; field `action`)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `pypi_token_release_upload` | `new release` not via trusted publisher | T1195.002 | PyPI · pypi-malicious-publish |
-| `pypi_collaborator_added` | `add Owner` / `add Maintainer` | T1098 | PyPI · pypi-role-add |
-| `pypi_trusted_publisher_added` | add `trusted publisher` entry | T1098 | PyPI · pypi-trusted-publisher |
+| Rule                           | Event / source                          | ATT&CK    | Validate with                 |
+| ------------------------------ | --------------------------------------- | --------- | ----------------------------- |
+| `pypi_token_release_upload`    | `new release` not via trusted publisher | T1195.002 | PyPI · pypi-malicious-publish |
+| `pypi_collaborator_added`      | `add Owner` / `add Maintainer`          | T1098     | PyPI · pypi-role-add          |
+| `pypi_trusted_publisher_added` | add `trusted publisher` entry           | T1098     | PyPI · pypi-trusted-publisher |
 
 **`slack/`** (Slack Enterprise Grid audit logs — `product: slack`, `service: audit`; field `action`)
 
-| Rule | Event / source | ATT&CK | Validate with |
-| ---- | -------------- | ------ | ------------- |
-| `slack_app_installed` | `app_installed` (broad read scopes) | T1098 | Slack · slack-malicious-app |
-| `slack_external_shared_channel` | `shared_channel_invite_sent` / `_accepted` | T1567 | Slack · slack-external-share |
-| `slack_2fa_enforcement_disabled` | `pref.two_factor_auth_changed` (fires on the change; the direction lives in Slack's `details`) | T1685 | Slack · slack-2fa-disable |
+| Rule                             | Event / source                                                                                 | ATT&CK | Validate with                |
+| -------------------------------- | ---------------------------------------------------------------------------------------------- | ------ | ---------------------------- |
+| `slack_app_installed`            | `app_installed` (broad read scopes)                                                            | T1098  | Slack · slack-malicious-app  |
+| `slack_external_shared_channel`  | `shared_channel_invite_sent` / `_accepted`                                                     | T1567  | Slack · slack-external-share |
+| `slack_2fa_enforcement_disabled` | `pref.two_factor_auth_changed` (fires on the change; the direction lives in Slack's `details`) | T1685  | Slack · slack-2fa-disable    |
 
 `password_spray`, `asrep_roast_probing`, `sharphound_ldap_sweep`,
 `ldap_recon_explicit_creds_4648`, `host_recon_command_burst`,
@@ -461,22 +461,22 @@ spots carry a `DEPLOY-REQUIRED:` marker in a YAML comment; run
 fill each one. (Advisory, exits 0 — the repo ships the placeholders on purpose; a
 comment isn't enforcement, so this is the discoverable checklist instead.)
 
-| Rule | Substitute | Until you do |
-| ---- | ---------- | ------------ |
-| `privilege_escalation/rbcd_allowedtoact_5136` | `filter_delegation_admins` → your delegation-admin accounts | can't tell admin from user; pair with `machine_account_creation_burst_4741` for fidelity that doesn't need it |
-| `defense_impairment/dcshadow_rogue_dc_4742` | `filter_real_dcs` → your real DC computer accounts | a `GC/` SPN write onto another real DC would alert (low risk — rare regardless) |
+| Rule                                             | Substitute                                                                                            | Until you do                                                                                                                                                                                                            |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `privilege_escalation/rbcd_allowedtoact_5136`    | `filter_delegation_admins` → your delegation-admin accounts                                           | can't tell admin from user; pair with `machine_account_creation_burst_4741` for fidelity that doesn't need it                                                                                                           |
+| `defense_impairment/dcshadow_rogue_dc_4742`      | `filter_real_dcs` → your real DC computer accounts                                                    | a `GC/` SPN write onto another real DC would alert (low risk — rare regardless)                                                                                                                                         |
 | `lateral_movement/unconstrained_delegation_4624` | `TargetUserName` → your DC computer accounts, **and** `filter_dc_destinations` → those DCs' hostnames | **inert** — the rule matches only the `DC1$`/`DC2$` examples, so a coerced logon from any other DC is missed entirely. This is the one placeholder that makes its rule a no-op rather than merely noisy; fill it first. |
-| `cloud/entra_illicit_consent_grant` | `filter_known_apps` → sanctioned app (client) IDs | verified LOB apps holding mail/file scopes alert (the high-risk-scope match still scopes it) |
-| `snowflake/snowflake_data_unload` | `filter_known_stages` → sanctioned named stages | a named *internal* stage (not `@%`/`@~`) alerts alongside external ones |
-| `collection/mass_file_read_4663` | `filter_indexers` → your backup / AV / indexing / sync agents | **the loudest unfilled placeholder in the repo.** Reads are constant, so an unfilled list means the nightly backup trips it, someone mutes the rule, and the mute is the blind spot. Fill before deploying, not after. |
-| `collection/archive_staging_utility` | `filter_backup_tooling` → your backup / packaging / build tooling | the staging-path half alerts on CI and installer builds that archive into `%TEMP%`; the password-protected half is unaffected and stays high-confidence |
-| `credential_access/lsass_handle_access` | `filter_av` → your endpoint-protection agent binaries | in a non-Defender shop the EDR reads LSASS continuously and this `high` rule fires steadily |
-| `persistence/rogue_account_creation_4720` | `filter_provisioning` → your IAM/JML and helpdesk provisioning principals | every routine onboarding alerts |
-| `cloudflare/cloudflare_worker_deployed` | `filter_ci` → the deploy pipeline's Cloudflare identity | every CI Worker deploy is a `high` alert |
-| `cloud/aws_iam_privesc_policy` | `filter_iac` → your IaC / access-management automation principal(s) | Terraform's routine policy attachments alert alongside operator-driven ones |
-| `cloud/aws_s3_bulk_exfil` | `filter_bulk_readers` → your backup / replication / analytics / ETL role ARNs | the S3 twin of `filter_indexers`: object reads are constant, so an unfilled list means the nightly backup or an Athena scan trips the correlation and the rule gets muted |
-| `cloud/aws_data_destruction` | `filter_iac` → your IaC / automation principal(s) | a `terraform destroy` of an ephemeral environment and a scheduled snapshot-retention job both look exactly like the attack from CloudTrail alone |
-| `impact/account_access_removal_4725` | `filter_identity_admins` → your help-desk / JML / IAM provisioning principals | bulk offboarding alerts. This list is what makes the rule *sharp*, not merely quiet — the signal is an actor who does **not** normally administer identity |
+| `cloud/entra_illicit_consent_grant`              | `filter_known_apps` → sanctioned app (client) IDs                                                     | verified LOB apps holding mail/file scopes alert (the high-risk-scope match still scopes it)                                                                                                                            |
+| `snowflake/snowflake_data_unload`                | `filter_known_stages` → sanctioned named stages                                                       | a named *internal* stage (not `@%`/`@~`) alerts alongside external ones                                                                                                                                                 |
+| `collection/mass_file_read_4663`                 | `filter_indexers` → your backup / AV / indexing / sync agents                                         | **the loudest unfilled placeholder in the repo.** Reads are constant, so an unfilled list means the nightly backup trips it, someone mutes the rule, and the mute is the blind spot. Fill before deploying, not after.  |
+| `collection/archive_staging_utility`             | `filter_backup_tooling` → your backup / packaging / build tooling                                     | the staging-path half alerts on CI and installer builds that archive into `%TEMP%`; the password-protected half is unaffected and stays high-confidence                                                                 |
+| `credential_access/lsass_handle_access`          | `filter_av` → your endpoint-protection agent binaries                                                 | in a non-Defender shop the EDR reads LSASS continuously and this `high` rule fires steadily                                                                                                                             |
+| `persistence/rogue_account_creation_4720`        | `filter_provisioning` → your IAM/JML and helpdesk provisioning principals                             | every routine onboarding alerts                                                                                                                                                                                         |
+| `cloudflare/cloudflare_worker_deployed`          | `filter_ci` → the deploy pipeline's Cloudflare identity                                               | every CI Worker deploy is a `high` alert                                                                                                                                                                                |
+| `cloud/aws_iam_privesc_policy`                   | `filter_iac` → your IaC / access-management automation principal(s)                                   | Terraform's routine policy attachments alert alongside operator-driven ones                                                                                                                                             |
+| `cloud/aws_s3_bulk_exfil`                        | `filter_bulk_readers` → your backup / replication / analytics / ETL role ARNs                         | the S3 twin of `filter_indexers`: object reads are constant, so an unfilled list means the nightly backup or an Athena scan trips the correlation and the rule gets muted                                               |
+| `cloud/aws_data_destruction`                     | `filter_iac` → your IaC / automation principal(s)                                                     | a `terraform destroy` of an ephemeral environment and a scheduled snapshot-retention job both look exactly like the attack from CloudTrail alone                                                                        |
+| `impact/account_access_removal_4725`             | `filter_identity_admins` → your help-desk / JML / IAM provisioning principals                         | bulk offboarding alerts. This list is what makes the rule *sharp*, not merely quiet — the signal is an actor who does **not** normally administer identity                                                              |
 
 #### What `status:` means here
 
