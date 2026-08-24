@@ -1,0 +1,14 @@
+# .github/core-gates.txt — how this repo satisfies dotfiles-core's reusable gates.
+#
+# ONE LINE PER GATE THIS REPO DOES NOT CALL. Anything that calls the reusable workflow is
+# derived from its own `uses:` line and needs no entry here (dotgibson/dotfiles-core#607).
+#
+#   <gate> own  <how it is satisfied here>
+#   <gate> none <why this repo does not need it>
+#
+# The value is entirely in these lines: without them a rollout audit cannot tell
+# "not covered" from "covered elsewhere", which has already produced two issues filed in
+# good faith against gates this repo does satisfy (#154, #178).
+
+bootstrap-test own fresh-bootstrap.yml boots a bare ubuntu:24.04 carrying only zsh and git and runs bootstrap.sh FOR REAL, asserting both that the config bootstrap completes and that the host-tool probe reports honestly. That is stronger than bootstrap-test.yml's --links-only leg, which returns before provision().
+claude-routines-call own claude-routines.yml runs this repo's own .claude routine rail on a weekly cron, one cron per routine. The reusable carries os-package-availability, which is an OS-layer question; this repo is a role layer and its routines are detection-side instead.
