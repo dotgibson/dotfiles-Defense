@@ -13,6 +13,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.16.0] - 2026-08-23
+
 ### Changed
 
 - **nvim plugin pins move forward for three plugins.** `flash.nvim`, `nvim-lspconfig` and
