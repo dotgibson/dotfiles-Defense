@@ -12,7 +12,15 @@ name: core-integrity (reusable)
 #   permissions: { contents: read }
 #   jobs:
 #     guard:
-#       uses: dotgibson/dotfiles-core/.github/workflows/core-integrity-call.yml@main
+#       uses: dotgibson/dotfiles-core/.github/workflows/core-integrity-call.yml@v4
+#
+# @v4, NOT @main — the moving MAJOR tag, per the `@vN` policy in RELEASE-STRATEGY.md and the
+# same idiom every other *-call.yml stub in this directory documents. A caller's contract then
+# changes only via a Core release. This stub read `@main` and was the ONE first-party ref in
+# .github/ that did, which mattered more than a stray doc comment usually would: rule 3 of the
+# modern floor exempts the whole `dotgibson` owner from the SHA-pin requirement precisely
+# BECAUSE first-party refs follow @vN, so a stub advertising @main quietly undercut the
+# premise the exemption rests on.
 #
 # It checks out the calling repo + this repo (the reference, full history), then runs
 # scripts/core-integrity.sh --self against the caller — the SAME content-addressed

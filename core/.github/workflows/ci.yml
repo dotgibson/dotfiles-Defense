@@ -41,7 +41,7 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# The linters CI installs are pinned for a REPRODUCIBLE 10-repo gate — a new upstream
+# The linters CI installs are pinned for a REPRODUCIBLE nine-repo gate — a new upstream
 # release can't silently turn CI red with zero repo changes. Those pins now live in
 # ONE place, scripts/tool-versions.env, which each job loads into $GITHUB_ENV via the
 # "Load pinned tool versions" step below (no version literals left in this file). The
@@ -51,7 +51,7 @@ jobs:
   # Change detection so a docs- or nvim-only push doesn't pay the full matrix.
   # SAFE DEFAULT: if the diff base can't be resolved (first push, force-push, a
   # shallow checkout), every flag is 'true' and nothing downstream is skipped — a
-  # detection miss must never hide a needed check from the 10-repo fan-out. Infra
+  # detection miss must never hide a needed check from the nine-repo fan-out. Infra
   # changes (scripts/, .github/, the manifest, the pre-commit/Makefile config) are
   # cross-cutting and likewise force the full run.
   changes:

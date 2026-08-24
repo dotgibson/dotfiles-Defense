@@ -10,7 +10,7 @@ name: pr-link-check
 #
 # Deliberately its OWN workflow rather than a job in ci.yml, for one reason: it has
 # to re-run when the PR BODY changes (`types: edited`), and putting that trigger on
-# ci.yml would re-run the whole 10-repo audit matrix — macOS + seven distros + bench —
+# ci.yml would re-run the whole audit matrix — ubuntu + macOS + alpine + arch + bench —
 # every time someone fixes a typo in a description. This job is a checkout and one
 # GraphQL query, so it can afford the chatty trigger that makes the escape hatch
 # feel instant.

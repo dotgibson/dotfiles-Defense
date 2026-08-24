@@ -231,6 +231,14 @@ update_check = false
 # opposite case — those are asserted here on purpose.
 # sync_frequency = 300  # seconds between daemon-driven syncs (upstream default)
 # systemd_socket = false  # take the socket from systemd socket activation instead of socket_path
-# socket_path = "…/atuin.sock"  # LEFT UNSET on purpose: the default is $XDG_RUNTIME_DIR/atuin.sock
+# socket_path = "…/atuin.sock"  # LEFT UNSET on purpose — atuin resolves the default itself,
+#                               # and that default MOVED in 18.20.0 (upstream PR #3910): with
+#                               # systemd_socket = false it is now $TMPDIR/atuin-$UID/atuin.sock,
+#                               # where it used to be $XDG_RUNTIME_DIR/atuin.sock (falling back to
+#                               # the data dir where that is unset). systemd_socket = true is
+#                               # unchanged. Core's guard probes all three, newest first, so it
+#                               # follows a daemon across the version boundary either way — which
+#                               # only works while this key stays unset: setting it makes the guard
+#                               # probe that path and nothing else, by design.
                                 # (falling back to the data dir where that is unset, e.g. macOS), and
                                 # an absolute path here would be an OS-specific value in a Core file.

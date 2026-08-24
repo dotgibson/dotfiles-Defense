@@ -94,10 +94,11 @@ lib/ux.sh
 #    an OS repo calls blib_link_core + blib_link_os_layer; the CONTRACT for a
 #    role repo is blib_link_core + blib_link_role_layer and never
 #    blib_link_os_layer, because the OS band belongs to the repo underneath it.
-#    TODAY neither role repo is there yet: dotfiles-Defense hand-rolls the band
-#    in its own wire_defense_stage, and dotfiles-Offense still calls
-#    blib_link_os_layer because it still owns the Kali OS layer. Both adopt
-#    blib_link_role_layer once this Core release fans out. ─────────────────────
+#    dotfiles-Offense HAS adopted it: it shed its OS-native layer entirely (no
+#    os/ directory, no install/packages.txt) and calls blib_link_role_layer, with
+#    the Kali package lane moving to dotfiles-Debian's only:kali tier.
+#    dotfiles-Defense has not: it still hand-rolls the band in its own
+#    wire_defense_stage, and adopting the helper is what remains. ──────────────
 lib/bootstrap-lib.sh
 # ── jujutsu (jj) — OPT-IN colocated git companion; symlinked to ~/.config/jj/config.toml.
 #    Additive — never replaces git. Inert without the jj binary; zsh aliases are HAVE_JJ-gated.

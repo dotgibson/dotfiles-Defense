@@ -997,10 +997,17 @@ DB=""
 #
 # WHY `auto` AND `on` DO NOT FORCE ATUIN_DAEMON__SOCKET_PATH. With XDG_RUNTIME_DIR unset,
 # atuin resolves its default socket under the sandbox data dir — the same expression
-# _core_atuin_daemon_guard resolves, and specifically the macOS branch of it. Letting atuin
-# pick therefore asserts socket-path AGREEMENT between client, daemon and guard for free, on
-# exactly the machines this premise is about; pinning the path would withdraw that claim
-# (bench-atuin-daemon.sh makes the same argument about its own forced-path mode).
+# _core_atuin_daemon_guard probes as its data-dir candidate, and specifically the one that
+# matters on macOS. Letting atuin pick therefore asserts socket-path AGREEMENT between
+# client, daemon and guard for free, on exactly the machines this premise is about; pinning
+# the path would withdraw that claim (bench-atuin-daemon.sh makes the same argument about
+# its own forced-path mode).
+#
+# On atuin >= 18.20.0 the default moved to $TMPDIR/atuin-$UID/atuin.sock (upstream PR #3910),
+# which the guard also probes — so the agreement claim survives the version boundary. What it
+# rests on is TMPDIR being pinned INTO the sandbox in AT_VARS below; without that, "let atuin
+# pick" would send it to the real /tmp and the arms would be measuring a socket this run does
+# not own.
 #
 # readok is NOT cosmetic. atuin_db_rows returns -1 when it cannot read the DB, and -1 is
 # indistinguishable from a legitimate count in arithmetic: `after - before` with an
@@ -1510,8 +1517,20 @@ measure() {
     "XDG_CONFIG_HOME=$SB/.config"
     "XDG_CACHE_HOME=$SB/.cache"
     "XDG_STATE_HOME=$SB/.local/state"
+    # TMPDIR INTO THE SANDBOX (#518). atuin 18.20.0 (upstream PR #3910) resolves its default
+    # daemon socket as $TMPDIR/atuin-$UID/atuin.sock — no longer under XDG_RUNTIME_DIR. Under
+    # `env -i` with TMPDIR unset that becomes /tmp/atuin-$UID/atuin.sock: OUTSIDE this
+    # sandbox, in a location the developer's own daemon may already be holding. The arms
+    # would then measure someone else's daemon, or collide with it. Unsetting
+    # XDG_RUNTIME_DIR is no longer sufficient isolation on its own.
+    #
+    # $LOCALDIR, not $SB: it is already the short /tmp/atverify.<tag>.XXXXXX path chosen for
+    # the AF_UNIX sun_path cap (~108 bytes), and adding "/home" plus "/atuin-<uid>/atuin.sock"
+    # underneath it eats that budget for no reason.
+    "TMPDIR=$LOCALDIR/tmp"
     "TERM=dumb"
   )
+  mkdir -p "$LOCALDIR/tmp"
   AT_ENV=(env -i "${AT_VARS[@]}")
   DB="$SB/.local/share/atuin/history.db"
 

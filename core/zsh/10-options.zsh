@@ -91,6 +91,6 @@ zstyle ':completion:*' cache-path "${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompcach
 zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#)*=0=01;31'
 # NB: intentionally NO `zstyle ':completion:*' rehash true`. That re-stats EVERY $PATH
 # entry on EVERY completion attempt — perceptible latency on an NFS home, linuxbrew, or
-# a large mise-shims $PATH, and it fans out to all 8 OS repos. A newly-installed binary
+# a large mise-shims $PATH, and it fans out to all nine OS repos. A newly-installed binary
 # surfaces after `hash -r` or a new shell; the maint runner already refreshes the
 # command hash after installs, so the per-Tab stat storm buys nothing here.

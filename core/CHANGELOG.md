@@ -3,8 +3,9 @@
 All notable changes to **dotfiles-core** are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-Core is the single source of truth vendored into nine repos via
-`git subtree pull --prefix=core <core-remote> main --squash` (see `scripts/sync-core.sh`).
+Core is the single source of truth vendored into nine repos by `scripts/sync-core.sh`,
+which materializes `core/` at the exact commit it resolved (it stopped using
+`git subtree pull` in #587, and stopped re-resolving the branch at vendor time in #556).
 Every entry below is therefore a change those repos receive on their next sync —
 this file is the human-readable record of _what_ a sync will bring, complementing
 the SHA that `scripts/sync-core.sh` now prints. To cut a release, move the
@@ -12,6 +13,395 @@ the SHA that `scripts/sync-core.sh` now prints. To cut a release, move the
 commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
+
+## [v4.17.0] - 2026-08-24
+
+### Added
+
+- **The CI floor gains rule 7: no attacker-controlled expression may be spliced into a
+  `run:` body.** A `${{ }}` expression is substituted by the _runner_, textually, before the
+  shell ever parses the script — so a PR title or a branch name is not data at that point,
+  it is source code. The remedy is to route it through `env:` and read `$VAR`, which the
+  shell treats as a value.
+
+  The fleet already does this everywhere, and says so at the call sites — `auto-tag-call.yml`
+  spells out that "caller-supplied values reach the script through the ENVIRONMENT, never
+  spliced into the `run:` body", and `notify-web-call.yml` states the same. But a comment is
+  not a gate: nothing stopped the next reusable workflow from splicing
+  `${{ github.event.pull_request.title }}` straight into a shell block. `actionlint`, which
+  the audit already runs, has no equivalent rule, so this was a real gap in current coverage.
+
+  `banned_run_interpolation_contexts` in `modern-baseline.yml` lists `github.event.`,
+  `github.head_ref`, `github.actor` and `github.triggering_actor`. `inputs.` is deliberately
+  absent: `setup-core-tools/action.yml` interpolates `${{ inputs.bindir }}` inline in ~8
+  `run:` steps, and that is a first-party composite input — banning it would be a fix-first
+  migration for no security gain.
+
+  Enforcement is the same block-scalar walk rule 6 uses for the checkout/`with:`
+  association: find the `run:` key, take its column, and treat every more-indented line as
+  body until the first non-blank dedent. Matching happens _inside_ each `${{ … }}` span
+  rather than against the raw line, so a context name appearing in prose beside a step is
+  not a false fire. Scoped to workflows _and_ composite actions, since a composite's `run:`
+  is the same hazard.
+
+  Green on the current tree with no workflow edits. (#521)
+
+- **`core-doctor` now says when a tool is present but Core never wired it.** A `✓` used to
+  read as "Core wired this" when all it ever meant was "this is on `PATH` right now" — and
+  the difference was invisible.
+
+  Every `HAVE_*` flag is decided at band 00, against a `PATH` that keeps changing afterwards:
+  `mise activate` registers a `chpwd` hook that rewrites it on every `cd`, `80-os.zsh` loads
+  at band 80, an `85-*` role fragment at 85, and `99-local.zsh` — the user's own escape hatch
+  — at 99. A tool contributed by any of them gets no flag, no alias and no shell init. The
+  doctor, which probes live against the finished `PATH`, reported it `✓` anyway.
+
+  Such a row now renders `✓ procs⚠` plus a `not wired` block that names the tool **and the
+  directory that joined late**, which is what makes it actionable — the remedy is to move
+  that prepend into `00-tools.zsh`'s bindir list. Where the directory was already there, the
+  tool was simply installed after the shell started, and the message says so instead.
+
+  `⚠` is a **modifier on `✓`, not a fourth presence glyph**: the tool genuinely is present,
+  so `✓` is not wrong. That keeps the legend's three states intact, and keeps the
+  render⇄JSON parity test blind to it by construction.
+
+  `--json` gains `detection.ran` / `detection.missed`. Named `detection`, not `wiring`,
+  because it sits beside `wired` — which answers the unrelated question of whether an
+  integration registered its hooks — and a consumer reading both would conflate them. The
+  gate is `jq -e '.detection.missed == []'`.
+
+  **How it is recorded matters.** The obvious approach — have `core-doctor` parse
+  `00-tools.zsh`'s `_have <tool> && HAVE_<X>=1` lines at runtime — handles only the
+  flag-_name_ irregulars (`ast-grep`→`HAVE_ASTGREP` but `git-absorb`→`HAVE_GIT_ABSORB`, three
+  lines apart) and is blind to every probe that does not take that shape: the `fd`/`bat`
+  ladder, the derived flags, the `git-absorb` exec-path backfill. It would need those special
+  cases anyway, plus a parser, plus logic to locate the file at runtime in a vendored tree.
+
+  So `_have` records its own verdict instead, into a `_CORE_PROBED` ledger keyed on the
+  canonical tool name — which makes every irregular disappear. It stores `0` as well as `1`,
+  because "Core probed this and said no" must be distinguishable from "Core does not probe
+  this tool at all", or every row the doctor knows and `00-tools.zsh` does not would
+  false-positive. Cost: ~45 array stores at startup, no forks, no stats — the zero-fork
+  contract is untouched.
+
+  Two gates keep it honest: no ledger at all means band 00 never ran in this shell (a script,
+  `zsh -c`, the unit harness) and **no claim is made**; no entry for a row means Core does not
+  probe it, and again no claim. Both are checked in the render and in `--json`, so the two
+  renderers cannot disagree about whether the axis applies.
+
+  `05-ui.zsh`'s `_core_have` is deliberately **not** merged with `_have` despite an identical
+  body, and now says so: it is the live probe the doctor itself calls, so recording there
+  would write the doctor's own lookups into the ledger and make every row it probed report as
+  wired — exactly the false `✓` this exists to expose. (#545)
+
+### Fixed
+
+- **`_cache_eval` now converges on a generator that produces nothing.** It decided whether a
+  cache was usable on `-s` alone — "the file is non-empty" — and wrote the generator's output
+  straight at the destination with `>|`, which truncates _before_ the generator runs and never
+  looks at its exit status. Two failure modes followed, and both were invisible:
+
+  - **Generator exits 0 and prints nothing** → a 0-byte cache. `-s` then fails forever, so the
+    _next_ shell regenerates, and the next. The cache never converges: every interactive shell
+    pays a fork for a tool that is permanently un-cached, with no error, no output and nothing
+    in the prompt to show for it.
+  - **Generator prints part of a script and then dies** → the cache is non-empty _and_ newer
+    than the binary, so **both** halves of the freshness test go false and a truncated init is
+    sourced on every shell from then on. That one never self-heals.
+
+  The silence is not incidental. `2>/dev/null` on the generator is deliberate and correct — a
+  generator's chatter must never be sourced into the shell — so the "command not found"-shaped
+  signal is discarded by design, and the file is all that is left to judge by.
+
+  Now the output goes to a temp file and is installed only if the generator **exited 0, wrote
+  something, and the result parses** (`zsh -n`, the same "prove it parses before you keep it"
+  discipline `update-plugins.sh` applies to a rolled plugin pin). A generator that breaks after
+  a good cache existed keeps the last good cache — degrading a working shell because a
+  generator regressed is strictly worse than serving yesterday's completions — and the cache is
+  touched so the mtime half stops re-firing. With nothing good to fall back on, a comment-only
+  negative cache lands: valid zsh, sources to a no-op, and non-empty, so the per-shell fork
+  stops. It regenerates when the binary's mtime moves, which an upgrade does.
+
+  The `zsh -n` fork is paid on the regeneration path only — once per tool per upgrade, not once
+  per shell — and is skipped where `zsh` is not on `$PATH` rather than failing every
+  regeneration.
+
+  **Why now:** the trigger is a renamed or removed generator subcommand, and `_cache_eval`
+  gained three new callers in #578 — one of them `ty`, a pre-1.0 type checker whose
+  `generate-shell-completion` is exactly the CLI surface that gets renamed before 1.0. Eleven
+  tools reach this path, counting the `brew shellenv` / `pyenv init` callers OS repos add
+  through the documented Core→OS API.
+
+  The suite gains five fixtures, each running the same shell **twice** — one run cannot tell
+  "regenerated once" from "regenerates forever", and forever is the defect. Four of the five
+  fail against the previous implementation. (#580)
+
+- **The banned-runner rule was silently missing the `-arm` / `-large` / `-xlarge` variants.**
+  This was a defect in a rule the floor already declared, not a new floor. The label class
+  that terminates the match contains no hyphen, so with `ubuntu-22.04` in `banned_runners`,
+  `runs-on: ubuntu-22.04-arm` did **not** match — the `-` fails every alternative. Same for
+  `macos-14-large` and `macos-14-xlarge`.
+
+  That matters because GitHub names those exact labels in the same deprecation notices as
+  their base images: `runner-images#14254` lists `ubuntu-22.04` **and** `ubuntu-22.04-arm`;
+  `#13518` lists `macos-14`, `macos-14-large` and `macos-14-xlarge`. The list was right; the
+  matcher was leaky, and had been since the floor was written.
+
+  Fixed by matching an optional variant suffix rather than adding six more list entries —
+  that keeps `banned_runners` reading as one label per image and covers every present and
+  future variant of every label on it, including ones added later. (#521)
+
+- **`check-modern.sh` gains its first behavioural coverage.** Every rule was previously
+  only "green on this tree", which cannot distinguish a rule that _passes_ from a rule that
+  never _matches_ — and rule 2 was in exactly that state. The new fixtures build a throwaway
+  git repo (the gate inventories through `git ls-files`, so a plain directory yields "no
+  workflow/action files to check" and every assertion would vacuously pass) and assert both
+  directions: that each rule fires on the violating shape, and that the prescribed remedy,
+  `inputs.*`, and `if:`/`env:`/`concurrency:`/`with:` contexts do **not** fire. Both new
+  rules' fixtures fail against the previous script. (#521)
+
+- **`clip`'s OSC 52 fallback was unreachable from the one tmux binding that names it.**
+  `bin/clip`'s header claimed tmux needed no special handling, because `set-clipboard on`
+  makes tmux consume a pane's OSC 52 and forward it. That is true for a **pane** process —
+  nvim, `optoken`, the cheat popup. It is not true for the yank binding:
+
+  ```text
+  tmux.reset.conf:  bind -T copy-mode-vi y  send -X copy-pipe-and-cancel "clip"
+  ```
+
+  `copy-pipe` runs its command through tmux's `job_run()` — a child of the **daemonized
+  server**, which has called `setsid()` and has no controlling terminal, and whose stderr is
+  `dup2`'d to `/dev/null`. So the `/dev/tty` open fails with `ENXIO`, the error message goes
+  nowhere, and `clip` exits 1 in silence.
+
+  Prefix-`y` still copied only because `window_copy_copy_pipe()` also calls
+  `window_copy_copy_buffer()`, which under `set-clipboard on` emits its **own** OSC 52 from
+  the server side. That is tmux covering for us, not `clip` working — so the comment credited
+  the wrong mechanism, and the next person to touch `set-clipboard` would have lost copy-out
+  on exactly the headless box the fallback was written for, with an in-file comment saying it
+  was handled.
+
+  `_osc52_copy` now falls back to `tmux load-buffer -w -`, which reaches the client from the
+  **server** side and needs no tty at all. The raw payload is reconstructed by decoding the
+  base64 rather than being stashed on the way in: a shell variable is not binary-safe
+  (command substitution strips trailing newlines and cannot carry a NUL), and a temp file
+  would add `mktemp`/`cat`/`rm` to a path that runs on the most minimal boxes we support —
+  and would put a TOTP on disk, since `optoken` pipes one through here. Verified byte-exact
+  for tabs and trailing newlines.
+
+  The large-payload write-splitting hazard is now stated in the file rather than left
+  implicit: writing to a character device is line-buffered and the sequence contains no
+  newline, so a payload past `BUFSIZ` leaves as several `write()` calls on a tty the
+  foreground TUI also owns.
+
+  New fixtures reproduce the real shape with `setsid` — the only faithful reproduction, since
+  a redirected or closed stdin does not detach the controlling terminal — and skip on macOS,
+  which has no `setsid`. Both fail against the previous `bin/clip`. (#525)
+- **`tmux-cheat`'s `copy()` discarded `clip`'s exit status,** so a failed copy was completely
+  silent. It now propagates, and the caller reports through `tmux display-message` rather
+  than stderr: the script runs under `display-popup -E`, which tears the popup down the
+  instant the command exits, so anything on stderr is painted and destroyed in the same
+  frame. (#525)
+- **`optoken` overclaimed.** OSC 52 succeeds as soon as the escape is **written**, not when a
+  terminal accepts it — clipboard writes are refused by default in several emulators and
+  unimplemented in others, and the failure is a silent drop. The message is now "TOTP sent to
+  the clipboard". The function also now documents a disclosure its own rationale did not
+  cover: under `set-clipboard on` tmux accepts the escape **and** creates a tmux paste
+  buffer, so the code is readable via `tmux show-buffer` by anything that can reach the tmux
+  socket — which "never lands in your shell history/scrollback" does not address. (#525)
+
+- **`make sync` vendored the branch tip while stamping the SHA it resolved ~250s earlier.**
+  `sync-core.sh` resolves Core's tip once, up front, then runs the pre-fan-out audit, then
+  vendored by re-resolving the **branch**. Those are two different resolutions of `main`. A
+  push to Core inside that window — a docs PR merging, say — gave `core/` the newer tree
+  while `core.lock` recorded the older SHA, and `make core-integrity` then reported the repo
+  `TAMPERED (core/ edited since sync)`. For a tree nobody hand-edited. The diagnosis pointed
+  at the wrong thing entirely, which is the part that cost the most time. Reported firing
+  three times in a single afternoon.
+
+  The fix pins everything to the commit that was resolved: the fetch asks for that SHA
+  (falling back to a ref fetch purely as an object-delivery mechanism on remotes that refuse
+  unadvertised wants), and the tree is materialized as `<sha>^{tree}` — never `FETCH_HEAD`,
+  which is by definition the new tip and would have re-created the bug inside its own fix.
+
+  A serial fan-out is now consistent **by construction**: every repo materializes the same
+  commit however long the loop takes. And a warm repo needs no network at all, because the
+  fetch short-circuits on `cat-file`, which makes a re-run of the same sync fully offline.
+
+  Two further instances of the same bug are fixed with it, neither of which was in the
+  report:
+
+  - **`core_tag`** was resolved with a `|| git describe "$CORE_BRANCH"` fallback that
+    re-resolved the branch at describe time — so a moved branch stamped a tag belonging to a
+    **different commit**, into `core.lock` _and_ onto every rewritten workflow pin comment in
+    all nine repos. That comment is what Renovate reads to pick the next bump.
+  - **The `git-subtree-split:` trailer** was stamped from the same stale snapshot. Consumer
+    tooling (`dotfiles-MacBook`'s `verify-core`) warns when it disagrees with the lock, so
+    the fleet was emitting a wrong marker too.
+
+  And the `unknown` path turned out to be a third producer of the identical symptom, with no
+  race required: it materialized `core/` from the branch and then skipped writing `core.lock`
+  entirely. A sync must vendor a **named** commit, so that now refuses outright, before the
+  audit and before anything is written. Two latent defects on that path are fixed as well —
+  an unreachable remote killed the script at `set -e` with exit 128 and **no output at all**
+  (`ls-remote`'s stderr is deliberately suppressed), and the bare `git rev-parse` fallback
+  echoed the unresolvable ref to stdout, so the `unknown` sentinel it was tested against
+  could never actually be produced by that path.
+
+  The sync now **checks its own work**: after each repo it compares `HEAD:core` against the
+  pinned tree. That comparison moved into a new shared `scripts/lib/core-lock.sh` so the
+  producer's self-check and `core-integrity.sh`'s verdict are one implementation — two would
+  let a sync pass its own assertion and still be reported dirty. It reports and buckets the
+  repo as failed rather than exiting, because `sync-fanout.yml` runs the script under
+  `bash -e` and an abort would deny PRs to every repo that synced correctly; and it prints
+  the recovery command rather than auto-reverting, since on the idempotent path no commit was
+  made and a blind `reset --hard HEAD~1` would destroy a good one.
+
+  `sync-fanout.yml` gains the matching post-condition. Its three existing ones all compare
+  the **lock to the intent**; none looked at what `core/` actually contained, which is the
+  axis this bug broke.
+
+  The audit gate now compares **full** SHAs — `rev-parse --short=12` returns _more_ than 12
+  characters when 12 would be ambiguous, a latent spurious refusal that grows more likely as
+  history does — and the parallel prefetch is pinned too, picking up the `--no-tags` it was
+  missing (without it every prefetch dragged Core's whole tag namespace, including the moving
+  `v4` alias, into every OS repo).
+
+  Twelve new fixtures. The race is reproduced **deterministically**, with no sleeps, by
+  having the stub audit push to Core mid-run — the audit gate is the one place guaranteed to
+  sit inside the window. It runs three ways: direct-SHA fetch, with `allowReachableSHA1InWant`
+  **off** so the fallback is exercised (the case that catches a `FETCH_HEAD`-based fallback),
+  and with the parallel prefetch on. `core-integrity.sh` also gains its first behavioural
+  coverage, since extracting its classifier could otherwise have changed the verdict
+  silently. All three race fixtures fail against the previous implementation. (#556)
+
+- **`op` had this bug, inside the doctor's own inventory, behind a test comment asserting it
+  could not.** The coverage guard excused `op` on the grounds that "the doctor probes it live
+  and no alias or function is gated on it". That was false: `50-op.zsh`'s `command -v op`
+  guard gates **four** verbs — `opsecret`, `openv`, `optoken`, `opssh` — and band 50 still
+  runs before `80-os.zsh`, an `85-*` role fragment and `99-local.zsh`.
+
+  `op` now records into the ledger too, and with `fd`/`bat` recording under their canonical
+  names, **the guard's exemption list is empty** — a list that had grown to three entries,
+  one of them wrong, now has none. (#545)
+
+- **The atuin daemon guard now probes a candidate list, not one path — before upstream moves
+  it.** atuin PR #3910 (merged 2026-08-12, shipping in **18.20.0**) changes the default daemon
+  socket for `systemd_socket = false` — the shape Core recommends — from
+  `$XDG_RUNTIME_DIR/atuin.sock` (falling back to the data dir where that is unset) to
+  **`$TMPDIR/atuin-$UID/atuin.sock`**. `systemd_socket = true` is unchanged.
+
+  atuin's own client gained a legacy search list so it can still reach an older daemon.
+  `_core_atuin_daemon_guard` had none: it resolved exactly one expression. On 18.20.0, with
+  the plain always-running unit Core recommends, the daemon would bind the new path, `zsocket`
+  would fail, and **every shell would export `ATUIN_DAEMON__ENABLED=false` at its first precmd
+  and unhook the watchdog — permanently, with no warning**, because
+  `_CORE_ATUIN_DAEMON_WAS_UP` is never set on that path. It fails in the cheap direction
+  (history still lands; only the lock relief is lost), which is exactly why it would have gone
+  unnoticed on every systemd machine at once.
+
+  The guard now tries the 18.20.0 default first, then the two legacy locations, stopping at
+  the first that answers — the same shape as the `git-absorb` exec-path loop, so the zero-fork
+  discipline is intact. An explicit `ATUIN_DAEMON__SOCKET_PATH` still wins outright and probes
+  nothing else, because a config knob that silently got second-guessed would be a worse bug
+  than the one this fixes.
+
+  **The cost, stated rather than hidden:** a genuinely-absent daemon now pays N failed connects
+  per probe instead of one. Each is ~0.06–0.10 ms (measured in this file's own bench), the
+  probe is throttled, and the degrade is one-way — so such a box pays it at most twice before
+  unhooking for good.
+
+  Verified independently against upstream rather than taken from the scout's report: 18.19.0
+  is still the newest **stable** release, so this lands with roughly a release of lead time.
+  The anchors stay at `18.19.0` — bumping them asserts a measurement nobody has taken yet, and
+  that needs an on-box `atuin daemon start && ss -lx | grep atuin` against an 18.20.0 beta.
+
+  Three prose claims that the change falsifies are corrected with it (`atuin/config.toml`,
+  `PORTING-MATRIX.md`, and the socket-path note in `bench-atuin-daemon.sh`), and two harness
+  bugs it would have introduced are fixed:
+
+  - `bench-atuin-daemon.sh` **printed** a ✓ beside a hand-copy of the guard's single
+    expression. That is prose, and it would have kept printing ✓ while the guard and atuin had
+    drifted apart — the one failure the check exists to catch. It now **asserts** membership of
+    the candidate list and fails loudly otherwise.
+  - `verify-atuin-guard.sh` isolated atuin's socket into its sandbox by unsetting
+    `XDG_RUNTIME_DIR`. Under 18.20.0 that is no longer sufficient: with `TMPDIR` unset under
+    `env -i`, atuin would resolve `/tmp/atuin-$UID/atuin.sock` — outside the sandbox, and
+    possibly a socket the developer's own daemon is already holding. `TMPDIR` is now pinned
+    into the sandbox. (#518)
+
+- **Docs caught up with a fleet topology change they were still describing the old way.**
+  `dotfiles-Offense` shed its OS-native layer entirely — no `os/`, no `install/packages.txt`,
+  no `scripts/tool-versions.env` — and adopted `blib_link_role_layer`, with the Kali package
+  lane moving to `dotfiles-Debian`'s `only:kali` / `skip:kali` tiers. `dotfiles-Debian` is
+  therefore a first-class ubuntu/debian/**kali** target now, not the frozen-Ubuntu-LTS one the
+  docs described.
+
+  That single move is what made most of the surviving drift, rather than several independent
+  errors:
+
+  - `core.manifest` and `PORTING-MATRIX.md` both said **neither** role repo had adopted the
+    role-layer helper. `Offense` has; `Defense` still hand-rolls the band in
+    `wire_defense_stage`, and migrating it is what actually remains.
+  - The matrix said `Offense` "also carries its own OS-native layer (Debian/apt,
+    kali-rolling)". It does not.
+  - Two footnotes asserted Kali "installs it nowhere" and "installs nothing from this family".
+    Both are false: `dotfiles-Debian`'s `only:kali` tier installs a substantial subset.
+  - Three Kali cells were demonstrably wrong — `lazygit` was marked `²¹` (available, not
+    installed) and `starship` `script³` when both are apt packages there, and `atuin` was
+    marked `³` (best-effort script) when it is a pinned, checksummed release asset.
+
+  The Kali column as a whole is **not** re-derived here, and the table now says so: a caveat
+  marks it as inherited-not-verified until `/os-package-availability` has run against the new
+  owner. Correcting three cells and claiming the column is verified would be the same mistake
+  the `²¹` footnote block already made once.
+
+  Also corrected: footnote `¹⁴` listed `ouch` among Alpine's `testing`-repo tools, but Alpine's
+  own bootstrap says it is unpackaged there outright; the OSC 52 `clip` fallback was still
+  described as a pending fix, having shipped in **v4.13.0** (and gained the tmux server-side
+  path in #525); and `README.md` offered `--dry-run` to macOS only, when all nine bootstraps
+  implement it and the Linux list also omitted Debian, Defense and Offense.
+
+  Finally, eleven stale fleet counts across `ci.yml`, `pr-link-check.yml`, `zsh/10-options.zsh`,
+  `zsh/45-plugins.zsh`, `tmux/scripts/tmux-claude.sh`, `scripts/lib/common.sh` and
+  `scripts/test-core.sh` — variously "8 OS repos", "10-repo fan-out" and "ten repos" — now
+  agree with `scripts/os-repos.txt` (**nine** vendoring repos; **eleven** including Core and
+  `dotfiles-Windows`). Two were wrong in a more interesting way than the count: `common.sh`
+  disagreed with itself two functions apart, and `pr-link-check.yml` described ci.yml's matrix
+  as "macOS + seven distros" when it is ubuntu + macOS + alpine + arch. (#519)
+
+- **The CI floor's first-party SHA-pin exemption was wider than the policy it was named for.**
+  Rule 3 exempted any `uses:` whose owner is `dotgibson` with a bare owner-string match, so
+  `uses: dotgibson/anything@main` passed the gate outright.
+
+  `RELEASE-STRATEGY.md`'s exemption is narrower than that: it is the `@vN` moving-major policy
+  for the fleet's own **reusable workflows**. Nothing asserted that shape, so the policy was
+  documented in one place and enforced in none.
+
+  The exemption now requires `dotgibson/<repo>/.github/workflows/<name>.yml@v<N>`. Anything
+  else from the same owner **falls through** to the 40-hex requirement rather than being
+  rejected outright — a first-party caller that chose to SHA-pin is stricter than `@vN`, not
+  weaker, and must not be told off for it.
+
+  **Fix-first, in the same PR:** `core-integrity-call.yml`'s copy-paste caller stub documented
+  `@main`. It was the only non-`@v4` first-party ref in `.github/`, and it contradicted
+  `bootstrap-test.yml`, which spells out that stubs pin `@vN` "NOT @main". That mattered more
+  than a stray doc comment usually would — the stub advertised the exact shape whose acceptance
+  the exemption's own premise depends on being impossible. (#521)
+
+### Changed
+
+- **`zsh-syntax-highlighting` pin moves to `2fc57d63067c`.** The only pin of the eight that
+  was behind; the other seven and every `nvim/lazy-lock.json` entry were already current.
+
+  The range is **one upstream commit, and it touches only `tests/README.md`** (+2/-2, fixing
+  relative links) — verified against the upstream compare before landing rather than inferred
+  from the SHA moving. So this is a pin refresh with no runtime change at all, which is worth
+  saying plainly: this plugin runs a highlighter on every keystroke, so "the pin moved" and
+  "behaviour moved" are worth keeping distinct in the record.
+
+  `update-plugins.sh` re-fetches and `zsh -n` parses each rolled pin before writing, so the
+  new commit is proven fetchable and syntactically valid, not just newer.
 
 ## [v4.16.0] - 2026-08-23
 

@@ -147,11 +147,17 @@ format() { # emits:  <ansi pretty>\t<copy-token>
     { printf "%s%-6s%s %-24s %s%s%s\t%s\n", gc, $1, rst, $2, dim, $3, rst, $2 }'
 }
 
-copy() { # $1 = text to put on the clipboard
+copy() { # $1 = text to put on the clipboard — returns non-zero if nothing landed
+  # The exit status is PROPAGATED, not swallowed. `clip`'s last resort is an OSC 52
+  # escape, which genuinely fails on a box with no clipboard backend and no terminal to
+  # write to; discarding that left the caller announcing a copy that never happened.
   if command -v clip >/dev/null 2>&1; then
     printf '%s' "$1" | clip
   elif command -v pbcopy >/dev/null 2>&1; then
     printf '%s' "$1" | pbcopy
+  else
+    echo "tmux-cheat: no clipboard tool (clip or pbcopy) on PATH" >&2
+    return 1
   fi
 }
 
@@ -167,4 +173,12 @@ sel=$(format | fzf --ansi --delimiter=$'\t' --with-nth=1 \
   --header='Enter: copy to clipboard   ·   Esc: close' \
   --color='border:#7aa2f7,prompt:#7dcfff,header:#565f89')
 [ -n "$sel" ] || exit 0
-copy "$(printf '%s' "$sel" | cut -f2-)"
+# A failed copy has to reach the user through tmux, not through stderr: this runs under
+# `display-popup -E`, which tears the popup down the instant the command exits, so
+# anything written to stderr here is painted and destroyed in the same frame.
+# `display-message` lands in the status line and survives the popup closing.
+if copy "$(printf '%s' "$sel" | cut -f2-)"; then
+  exit 0
+fi
+tmux display-message "cheat: copy failed — no clipboard backend reachable" 2>/dev/null || true
+exit 1

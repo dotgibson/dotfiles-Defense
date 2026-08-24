@@ -58,7 +58,44 @@ for _d in "$HOME/.local/bin" \
 done
 unset _d  # file top level — no function scope to contain it
 
-_have() { command -v "$1" >/dev/null 2>&1; }
+# ── The detection LEDGER (#545) ───────────────────────────────────────────────
+# Every HAVE_* flag below is decided against the PATH as it stands HERE, at band 00. That
+# PATH is not final and never can be: `mise activate` registers a chpwd hook that rewrites
+# it on every cd, 80-os.zsh loads at band 80, an 85-* role fragment at 85, and 99-local.zsh
+# — the user's own escape hatch — at 99. A tool contributed by any of them gets no flag, no
+# alias and no shell init.
+#
+# core-doctor, meanwhile, probes LIVE against the finished PATH, and so reported such a tool
+# `✓`. That disagreement is not itself the bug (#425 is the standing note that it IS one);
+# the bug is that it was SILENT, and that a `✓` reads as "Core wired this" when all it ever
+# meant was "this is on PATH right now".
+#
+# So record the verdict where it is produced. _CORE_PROBED[<tool>] is 1 when band-00
+# detection SAW the tool and 0 when it looked and did not — and the difference matters:
+# without the 0, "Core probed this and said no" is indistinguishable from "Core does not
+# probe this tool at all", and every row the doctor knows but Core does not would
+# false-positive as unwired.
+#
+# WHY HERE AND NOT A PARSER. The obvious alternative is to have core-doctor parse this
+# file's `_have <tool> && HAVE_<X>=1` lines at runtime. That handles only the flag-NAME
+# irregulars (ast-grep→HAVE_ASTGREP but git-absorb→HAVE_GIT_ABSORB, three lines apart) and
+# is blind to every probe that does not take that shape — the fd/bat ladder below, the
+# derived flags, the git-absorb exec-path backfill. It would need those special cases
+# anyway, plus a parser, plus logic to find this file at runtime in a vendored tree. Keyed
+# on the argument to _have, which is the canonical tool name in every case, none of that
+# arises.
+#
+# COST: ~45 associative-array stores at startup. No forks, no stats — the zero-fork
+# contract this file is built on is untouched.
+#
+# The `if`/`return` form, not `command -v … && …`: the one-liner inverts the exit status on
+# the else branch, which would break all 38 `_have x && HAVE_X=1` lines at once.
+typeset -gA _CORE_PROBED=()
+_have() {
+  if command -v "$1" >/dev/null 2>&1; then _CORE_PROBED[$1]=1; return 0; fi
+  _CORE_PROBED[$1]=0
+  return 1
+}
 
 # ── Cache helper: source a tool's init script, regenerate only when the binary
 # is newer than the cache (or the cache is missing). Turns an eval-of-subprocess
@@ -92,15 +129,63 @@ _cache_eval() { # _cache_eval [--salt <sig>] <name> <command...>
   [[ -z "$bin" ]] && return 0
   if [[ ! -s "$cache" || "$bin" -nt "$cache" ]]; then
     [[ -d "$dir" ]] || mkdir -p "$dir"
-    # `>|` forces the overwrite: 10-options.zsh sets NO_CLOBBER, under which a plain
-    # `>` onto an existing cache raises "file exists" (a shell-level redirection
-    # error that 2>/dev/null does NOT suppress). This regen path runs whenever the
-    # tool's binary is newer than the cache — e.g. right after a brew upgrade. It
-    # surfaced only for the band-45 callers (carapace, gh/uv/ty) because they run AFTER
-    # 10-options.zsh sets NO_CLOBBER; the 00-tools.zsh callers run before it.
-    "$@" >|"$cache" 2>/dev/null
+    # GENERATE TO A TEMP FILE, INSTALL ONLY ON SUCCESS (#580). The obvious shape —
+    # `"$@" >|"$cache"` — truncates the destination BEFORE the generator runs and never
+    # looks at its exit status, which produced two failure modes, both SILENT. The
+    # silence is not incidental: `2>/dev/null` is deliberate and correct, because a
+    # generator's chatter must never be sourced into the shell, so the
+    # "command not found"-shaped signal is discarded by design and the file is all
+    # that is left to judge by.
+    #
+    #   * Generator exits 0 and prints nothing -> a 0-byte cache. `-s` above then fails
+    #     FOREVER, so the next shell regenerates, and the next: the cache never
+    #     converges and every interactive shell pays a fork for a tool that is
+    #     permanently un-cached. No error, no output, nothing in the prompt.
+    #   * Generator prints a partial script and then dies -> the cache is non-empty AND
+    #     newer than $bin, so BOTH halves of the test above go false and a TRUNCATED
+    #     init is sourced on every subsequent shell. That one never self-heals.
+    #
+    # The trigger is a renamed or removed generator subcommand, which is exactly the
+    # shape a pre-1.0 CLI ships (`ty generate-shell-completion` is one of the callers).
+    #
+    # `zsh -n` before installing is the same "prove it parses before you keep it"
+    # discipline update-plugins.sh applies to a rolled plugin pin, and it is what makes
+    # the truncated-cache case impossible rather than merely unlikely. It costs one
+    # fork — but only here, on the regeneration path, which runs once per tool per
+    # upgrade, not once per shell. Resolved through $commands so a box without zsh on
+    # PATH skips the check instead of failing every regeneration.
+    local tmp="$cache.$$" zn="${commands[zsh]}"
+    if "$@" >|"$tmp" 2>/dev/null && [[ -s "$tmp" ]] \
+      && { [[ -z "$zn" ]] || "$zn" -n "$tmp" 2>/dev/null; }; then
+      # `>|` on the temp file for the same reason the destination needed it: 10-options.zsh
+      # sets NO_CLOBBER, under which a plain `>` onto an existing file raises a
+      # shell-level redirection error that 2>/dev/null does NOT suppress. It surfaced
+      # only for the band-45 callers (carapace, gh/uv/ty) because they run AFTER
+      # 10-options.zsh; the 00-tools.zsh callers run before it.
+      mv -f "$tmp" "$cache"
+    elif [[ -s "$cache" ]]; then
+      # A generator that broke AFTER a good cache existed. Keep the last good cache
+      # rather than degrade a working shell — but TOUCH it, or the `-nt` half of the
+      # test above keeps firing and we are back to a fork per shell, which is the very
+      # defect this block exists to fix.
+      rm -f "$tmp"
+      touch "$cache"
+    else
+      # Nothing good to fall back on. Write a comment-only NEGATIVE cache: valid zsh,
+      # sources to a no-op, and — the point — non-empty, so `-s` converges and the
+      # per-shell fork stops. It regenerates when the binary's mtime moves, which an
+      # upgrade does. Caching a failure is a real cost; paying it silently forever is
+      # a worse one.
+      rm -f "$tmp"
+      print -r -- "# _cache_eval: '$1' produced no usable output — negative cache (#580).
+# Sources to a no-op so this shell stops re-forking a generator that cannot succeed.
+# Retry by upgrading the binary (its mtime invalidates this) or deleting this file." >|"$cache"
+    fi
   fi
-  source "$cache"
+  # Guard the source: a cache dir that could not be created (read-only $HOME, a full
+  # disk) leaves no file, and an unguarded `source` would print a shell error on every
+  # startup — noisier than the missing completion it is reporting.
+  [[ -s "$cache" ]] && source "$cache"
 }
 
 # ── WSL predicate: is this Linux userland hosted by Windows? ───────────────────
@@ -257,9 +342,24 @@ if [[ -z ${HAVE_GIT_ABSORB:-} && -n ${commands[git]:-} ]]; then
     unset _gx  # file top level — no function scope to contain it
   fi
 fi
-[[ -n ${FD_BIN:-} ]] && HAVE_FD=1
-[[ -n ${BAT_BIN:-} ]] && HAVE_BAT=1
+# Both branches above can set the flag without _have ever having returned true for
+# `git-absorb` (the exec-path hit is invisible to `command -v`), and the PATH-hit case set
+# it via _have. One idempotent line covers all three, so the ledger agrees with the flag.
+[[ -n ${HAVE_GIT_ABSORB:-} ]] && _CORE_PROBED[git-absorb]=1
+# The ledger entries use the CANONICAL row name, which is what core-doctor keys on. On
+# Debian the ladder above probed `fd` (0, absent) and then `fdfind` (1) — so without this,
+# the canonical `fd` row would carry the ladder's 0 and read as "installed but not wired"
+# on every Debian-family box, which is exactly backwards.
+[[ -n ${FD_BIN:-} ]] && { HAVE_FD=1; _CORE_PROBED[fd]=1; }
+[[ -n ${BAT_BIN:-} ]] && { HAVE_BAT=1; _CORE_PROBED[bat]=1; }
+# BROWSER needs no ledger entry: there is no single canonical name to probe (w3m/lynx/
+# links2/links/elinks all qualify), which is exactly why the doctor has no browser row.
 [[ -n ${BROWSER_BIN:-} ]] && HAVE_BROWSER=1  # terminal web browser (20-aliases.zsh: web + headless BROWSER)
+
+# The PATH the flags above were decided against. Kept ONLY so core-doctor can name which
+# directory joined late when it reports an unwired tool — the ledger, not this, is what
+# says whether detection ran. One assignment, no fork.
+typeset -g _CORE_PROBE_PATH=$PATH
 
 # ── Tool env — set BEFORE the init evals below ────────────────────────────────
 # starship reads its theme from the default ~/.config/starship.toml (bootstrap
@@ -658,12 +758,49 @@ _core_atuin_daemon_guard() {
   # expansion is free here, while the throttle gate above stays expansion-free. Re-resolving each
   # probe also means the knob can be changed mid-session and takes effect at the next window.
   typeset -gi _CORE_ATUIN_DAEMON_INTERVAL=${CORE_ATUIN_PROBE_INTERVAL:-60}
-  # Same default atuin resolves: $XDG_RUNTIME_DIR/atuin.sock, falling back to the data dir
-  # where XDG_RUNTIME_DIR is unset (macOS). Re-resolved on EVERY probe, never cached: if
-  # XDG_RUNTIME_DIR is torn down mid-session (systemd removes /run/user/$UID at the last logout —
-  # the SAME event that stops the daemon under Linger=no) we must follow atuin to the path it will
-  # actually use, not keep probing one nobody binds any more.
-  local sock="${ATUIN_DAEMON__SOCKET_PATH:-${XDG_RUNTIME_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/atuin}/atuin.sock}"
+  # WHERE THE DAEMON LISTENS — a CANDIDATE LIST, not one expression, because upstream moved
+  # the default and the old shape had no way to follow it.
+  #
+  # atuin PR #3910 (merged 2026-08-12, ships in 18.20.0) changes the default for
+  # `systemd_socket = false` — the shape Core recommends — from
+  #   $XDG_RUNTIME_DIR/atuin.sock  (→ $XDG_DATA_HOME/atuin/atuin.sock where that is unset)
+  # to
+  #   $TMPDIR/atuin-$UID/atuin.sock   ($TMPDIR defaulting to /tmp)
+  # `systemd_socket = true` is unchanged. The atuin CLIENT got a legacy search list so it can
+  # still reach an older daemon; this guard had none, and resolved exactly one path.
+  #
+  # The consequence of leaving it: on 18.20.0 with the plain always-running unit Core
+  # recommends, the daemon binds the new path, zsocket fails, and every shell exports
+  # ATUIN_DAEMON__ENABLED=false at its first precmd and unhooks the watchdog — permanently.
+  # _CORE_ATUIN_DAEMON_WAS_UP is never set, so NO WARNING FIRES. It fails in the cheap
+  # direction (history still lands; only the lock relief is lost), which is precisely why it
+  # would go unnoticed on every systemd machine at once.
+  #
+  # Same shape as the git-absorb exec-path loop above: an explicit env override wins
+  # outright, otherwise try each plausible location and stop at the first that answers.
+  # Zero forks — every candidate is parameter expansion, and the loop body is a connect.
+  #
+  # STATING THE COST rather than hiding it: a genuinely-absent daemon now pays N failed
+  # connects per PROBE instead of one. Each is a connect(2) to a non-existent path at
+  # ~0.06-0.10ms (measured in this file's own bench), the probe is throttled to once per
+  # _INTERVAL, and the degrade path is one-way — so a box with no daemon pays it at most
+  # twice before unhooking for good.
+  #
+  # Re-resolved on EVERY probe, never cached: if XDG_RUNTIME_DIR is torn down mid-session
+  # (systemd removes /run/user/$UID at the last logout — the SAME event that stops the daemon
+  # under Linger=no) we must follow atuin to the path it will actually use, not keep probing
+  # one nobody binds any more.
+  #
+  # ORDER mirrors upstream's own resolution: the 18.20.0 default first, then the two legacy
+  # locations a daemon predating it would still be holding.
+  local -a socks
+  if [[ -n ${ATUIN_DAEMON__SOCKET_PATH:-} ]]; then
+    socks=("$ATUIN_DAEMON__SOCKET_PATH")   # explicit config wins outright — probe nothing else
+  else
+    socks=("${TMPDIR:-/tmp}/atuin-${UID}/atuin.sock")
+    [[ -n ${XDG_RUNTIME_DIR:-} ]] && socks+=("$XDG_RUNTIME_DIR/atuin.sock")
+    socks+=("${XDG_DATA_HOME:-$HOME/.local/share}/atuin/atuin.sock")
+  fi
   # A real connect, because a stale socket FILE passes a plain -S test — which is exactly
   # the case that hangs. zsocket returns non-zero immediately when nothing is listening;
   # on success it hands back an open fd in $REPLY that we close right away. REPLY is
@@ -678,12 +815,15 @@ _core_atuin_daemon_guard() {
   # the existence test would leave the daemon enabled on exactly the stale socket this
   # guard exists to catch. Cost of being wrong that way is the lock relief, and
   # core-doctor says so; cost of the other way is the failure mode itself.
-  local REPLY
-  if zmodload -F zsh/net/socket +b:zsocket 2>/dev/null && zsocket -- "$sock" 2>/dev/null; then
-    exec {REPLY}>&-
-    typeset -g _CORE_ATUIN_DAEMON_WAS_UP=1 # "a connect worked here, at least once"
-    typeset -gi _CORE_ATUIN_DAEMON_NEXT=$((now + _CORE_ATUIN_DAEMON_INTERVAL))
-    return $_rc
+  local REPLY sock
+  if zmodload -F zsh/net/socket +b:zsocket 2>/dev/null; then
+    for sock in $socks; do
+      zsocket -- "$sock" 2>/dev/null || continue
+      exec {REPLY}>&-
+      typeset -g _CORE_ATUIN_DAEMON_WAS_UP=1 # "a connect worked here, at least once"
+      typeset -gi _CORE_ATUIN_DAEMON_NEXT=$((now + _CORE_ATUIN_DAEMON_INTERVAL))
+      return $_rc
+    done
   fi
   # DEGRADE — one way, and terminal. Unhook FIRST, so nothing below can leave the hook armed to
   # warn a second time; "once" is structural, not a fourth flag to keep in sync.
