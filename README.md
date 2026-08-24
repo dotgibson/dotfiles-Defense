@@ -82,11 +82,11 @@ The full docs live on the [documentation site][docs].
 
 The system is three layers; Defense is the blue Role stacked on an OS layer:
 
-| Layer | Lives in | Owns |
-| --- | --- | --- |
-| **Core** | [`dotfiles-core`](https://github.com/dotgibson/dotfiles-core), vendored under `core/` | zsh, tmux, nvim, git, starship — identical everywhere |
-| **OS-native** | your existing `dotfiles-{Fedora,Arch,…}` layer | package manager, clipboard, paths |
-| **Role (defensive)** | `defense/`, `detections/`, `docker/` — **unique to this repo** | detection engineering + hunt lab |
+| Layer                | Lives in                                                                              | Owns                                                  |
+| -------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| **Core**             | [`dotfiles-core`](https://github.com/dotgibson/dotfiles-core), vendored under `core/` | zsh, tmux, nvim, git, starship — identical everywhere |
+| **OS-native**        | your existing `dotfiles-{Fedora,Arch,…}` layer                                        | package manager, clipboard, paths                     |
+| **Role (defensive)** | `defense/`, `detections/`, `docker/` — **unique to this repo**                        | detection engineering + hunt lab                      |
 
 ### Languages
 

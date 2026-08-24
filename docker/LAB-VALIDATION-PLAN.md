@@ -9,11 +9,11 @@ attack → telemetry → the shipped detection fires — instead of a manual not
 Detections split by where their telemetry comes from; each plane has a cheapest path to a
 reproducible "does it fire?" check that does **not** need a live attack range:
 
-| Plane | Detections | Telemetry | Check |
-| ----- | ---------- | --------- | ----- |
-| **Network** | `dns-c2`, `reverse-tunnel`, `icmp-tunnel`, `tls-c2` (+JA3), `coercion`, `kerberoast` | PCAP | `zeek -r x.pcap <script>` / `suricata -r x.pcap` → assert notice/sid. Offline, deterministic, hermetic. |
-| **Host / Sigma** | the 4624/4662/5136/5145/4688/4741… corpus | Windows EVTX / JSON | `chainsaw hunt x.evtx -s detections/sigma/` (or zircolite) → assert the rule matched. No Windows VM. |
-| **Cloud / SaaS** | azure/aws/gcp/okta/snowflake/… | audit-log JSON | compile rule → run over a sample-event fixture → assert a hit. |
+| Plane            | Detections                                                                           | Telemetry           | Check                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Network**      | `dns-c2`, `reverse-tunnel`, `icmp-tunnel`, `tls-c2` (+JA3), `coercion`, `kerberoast` | PCAP                | `zeek -r x.pcap <script>` / `suricata -r x.pcap` → assert notice/sid. Offline, deterministic, hermetic. |
+| **Host / Sigma** | the 4624/4662/5136/5145/4688/4741… corpus                                            | Windows EVTX / JSON | `chainsaw hunt x.evtx -s detections/sigma/` (or zircolite) → assert the rule matched. No Windows VM.    |
+| **Cloud / SaaS** | azure/aws/gcp/okta/snowflake/…                                                       | audit-log JSON      | compile rule → run over a sample-event fixture → assert a hit.                                          |
 
 The unlock is **replay against committed/synthesized fixtures**: deterministic and
 CI-gateable, without standing up Windows hosts or a live range. Executing the real

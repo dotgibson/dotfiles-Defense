@@ -17,12 +17,12 @@ to one base OS, `tools.lst` becomes that distro's real `packages.txt`.
 The probe reports **three** states, not two, because "not on `$PATH`" and "not
 on the box" are different problems with different fixes:
 
-| state                     | meaning                                                  |
-| ------------------------- | -------------------------------------------------------- |
-| `found: <tool>`           | on `$PATH` under its own name                             |
-| `found: <tool> (as <alt>)`| on `$PATH` under a known alternate name — e.g. `vol` found as `vol.py` |
-| `unreachable: …`          | installed, but somewhere `$PATH` never looks — prints the path and the `ln -s` that fixes it |
-| `missing: <tool>`         | genuinely absent — install it via your OS layer            |
+| state                      | meaning                                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| `found: <tool>`            | on `$PATH` under its own name                                                                |
+| `found: <tool> (as <alt>)` | on `$PATH` under a known alternate name — e.g. `vol` found as `vol.py`                       |
+| `unreachable: …`           | installed, but somewhere `$PATH` never looks — prints the path and the `ln -s` that fixes it |
+| `missing: <tool>`          | genuinely absent — install it via your OS layer                                              |
 
 Both `found` states are clean; the other two are each counted and summarised on
 their own line at the end (`N tool(s) missing` / `N tool(s) installed but off

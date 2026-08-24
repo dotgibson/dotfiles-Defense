@@ -30,7 +30,7 @@ manual Kali box. Two planes:
 
 `run-validation.sh` reads [`manifest.tsv`](manifest.tsv) — one row per detection:
 
-```
+```text
 name<TAB>engine<TAB>generator<TAB>detection-script<TAB>expected-signal
 ```
 

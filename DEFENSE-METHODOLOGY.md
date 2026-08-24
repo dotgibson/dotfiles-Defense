@@ -24,16 +24,16 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Offens
 
 ## ATT&CK tactic → data source → detection
 
-| ATT&CK tactic            | Primary data sources    | Where detections live | Validate with (Offense)        |
-| ------------------------ | ----------------------- | --------------------- | --------------------------- |
-| Recon / Discovery        | Zeek, 4688/4769, 4798/4799, 5145 | network, sigma | recon / Kerberoast folds  |
-| Credential Access        | Sysmon 10, 4625/4771    | sysmon, sigma         | Responder / cracking folds  |
-| Lateral Movement         | 4624 type 3, Zeek SMB   | sigma, network        | lateral-movement fold       |
-| Priv Esc / Persistence   | Sysmon 1/13, 4720/7045  | sysmon, sigma         | LOLBAS / persistence folds  |
-| Coercion / Relay / AD CS | 5145 pipes, 4886 SAN    | siem                  | coercion → relay → DC fold  |
-| Collection               | 4663 file reads, 4688 archive cmds | sigma      | collection / exfil fold     |
-| Exfil / C2               | Suricata, Zeek conn/dns/ssl | network           | reverse-shell / pivot folds |
-| Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn | sigma, network | ransomware chain (teardown → recovery → payload); cryptomining pair |
+| ATT&CK tactic            | Primary data sources                                              | Where detections live | Validate with (Offense)                                             |
+| ------------------------ | ----------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------- |
+| Recon / Discovery        | Zeek, 4688/4769, 4798/4799, 5145                                  | network, sigma        | recon / Kerberoast folds                                            |
+| Credential Access        | Sysmon 10, 4625/4771                                              | sysmon, sigma         | Responder / cracking folds                                          |
+| Lateral Movement         | 4624 type 3, Zeek SMB                                             | sigma, network        | lateral-movement fold                                               |
+| Priv Esc / Persistence   | Sysmon 1/13, 4720/7045                                            | sysmon, sigma         | LOLBAS / persistence folds                                          |
+| Coercion / Relay / AD CS | 5145 pipes, 4886 SAN                                              | siem                  | coercion → relay → DC fold                                          |
+| Collection               | 4663 file reads, 4688 archive cmds                                | sigma                 | collection / exfil fold                                             |
+| Exfil / C2               | Suricata, Zeek conn/dns/ssl                                       | network               | reverse-shell / pivot folds                                         |
+| Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn | sigma, network        | ransomware chain (teardown → recovery → payload); cryptomining pair |
 
 The right-hand column is the point: every row has a Offense fold that proves the
 detection works.
