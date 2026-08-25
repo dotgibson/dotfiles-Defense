@@ -219,7 +219,7 @@ three drifted variants, until #449. Core owns these now:
 | Don't write | Because Core already does it |
 | --- | --- |
 | `direnv hook zsh` | `core/zsh/00-tools.zsh`, band 00 — loads under every `CORE_PROFILE` |
-| `gh completion -s zsh` | `core/zsh/45-plugins.zsh`, after `compinit` and after carapace |
+| `gh completion -s zsh` | `core/zsh/00-tools.zsh`, band 00 — generated into an `fpath` dir and autoloaded, with a `compdef` re-assert at band 45 so carapace's bridge does not win |
 | `uv generate-shell-completion zsh` | same |
 | `ty generate-shell-completion zsh` | same |
 | your own `_IS_WSL` probe | `_core_is_wsl` (`core/zsh/00-tools.zsh`) |
@@ -265,6 +265,67 @@ It reads `scripts/os-repos.txt` and looks at each sibling's `bootstrap.sh`, so i
 in CI, where only Core is checked out. Role repos (`dotfiles-Defense`, `dotfiles-Offense`)
 layer on an OS bootstrap and install no packages, so the two keepalive/PATH helpers are
 exempt for them.
+
+### The gates you run OVER the vendored tree
+
+The contract above is about what your `bootstrap.sh` calls. This is the other half, unwritten
+until #623: a repo also runs **its own gates** over `core/`, and those have to agree with
+Core's policy or they measure a different thing.
+
+**Secret scanning is the concrete case.** Core's reusable `lint-call.yml` states the rule —
+_one policy file, Core's, so every repo is measured the same way and no repo can widen its own
+allowlist_ — and passes `-c` accordingly. So must yours:
+
+```sh
+gitleaks dir . -c core/gitleaks.toml --no-banner --redact
+```
+
+Without `-c`, gitleaks uses the **stock** rule set, where several rules match on
+credential-shaped _position_ rather than on content. On the 2026-08-23 sync that flagged the
+vendored `core/CHANGELOG.md` in four repos — Core's own explanation of the allowlist read as
+a violation of it, on a sync carrying no credential.
+
+**A repo-local `.gitleaks.toml` is permitted, but it must extend Core's, not replace it.**
+gitleaks auto-discovers a config at the scan root, so a private one silently governs _every_
+scan in that repo — including invocations that pass no `-c` and look, from the command line,
+like a stock scan. If you need a distro-specific rule:
+
+```toml
+[extend]
+path = "core/gitleaks.toml"
+```
+
+`useDefault` is not needed and should be omitted: Core's own config already extends the
+upstream defaults, and that inheritance carries through. Verified with the pinned gitleaks
+8.30.1 — the variable-reference form Core allowlists passes, and a real literal credential in
+the same position is still caught.
+
+`audit-core.sh` §5g reports repos that do neither — **advisory, not blocking**, and skipped
+entirely when the siblings are not checked out, exactly like §5f above.
+
+### Declaring how you satisfy a gate you do not call
+
+Core publishes its CI as **reusable workflows**, and most repos consume them as a 3–5 line
+caller. Some do not — usually because they cover _more_, not less. That divergence is
+defensible; being **invisible** is the problem.
+
+Coverage used to be inferred by reading each repo's `uses:` lines, and that inference is
+wrong for any repo that satisfies a gate its own way. It has misfired twice, identically and
+both times in good faith — dotgibson/dotfiles-MacBook#154 and #178 — because a rollout audit
+had no way to tell _not covered_ from _covered elsewhere_.
+
+So if your repo does not call one of Core's reusable workflows, say why in
+`.github/core-gates.txt`, one line per gate:
+
+```text
+<gate> own  <how it is satisfied here>
+<gate> none <why this repo does not need it>
+```
+
+Only the exceptions need a line — anything calling the reusable is derived from its own
+`uses:`. `scripts/fleet-coverage.sh` renders the register, `make fleet-coverage` prints it,
+and `audit-core.sh` §5h asserts every gate × repo cell is filled, so a **new** gate cannot
+ship without each repo declaring a position on it.
 
 #### `ssh/config` — the one with a deletion order (#450)
 
@@ -325,7 +386,21 @@ If `make fleet-drift` shows you `BEHIND`, the fix is to merge that PR — not to
 Use `scripts/new-os-repo.sh`, which scaffolds the layout and runs:
 
 ```sh
-git subtree add --prefix=core <core-remote> main --squash
+git subtree add --prefix=core <core-remote> refs/tags/v4 --squash
+```
+
+**A released tag, never `main`.** The fan-out pins each repo to the exact commit a
+release tag points at (`sync-fanout.yml` passes `CORE_BRANCH=<sha>`), so `core.lock`
+records that commit and `git describe` stamps the named tag. A tree vendored from
+whatever `main` happened to be is not that commit, and `core-integrity` — which
+validates `core/` against the commit `core.lock` records — reports a freshly
+hand-vendored repo as TAMPERED before it has done anything wrong.
+
+`subtree add` writes no `core.lock`. Stamp provenance from a Core checkout, which is
+the only sanctioned writer of that file:
+
+```sh
+CORE_BRANCH=refs/tags/v4 ./scripts/sync-core.sh dotfiles-<Distro>
 ```
 
 Then register the repo **here**, which takes **four coordinated edits**, not one:
@@ -340,9 +415,9 @@ natively in PowerShell and vendors no `core/` at all.
 
 **The scaffold is a starting point, not the finished contract.** A freshly generated repo
 has no `core.lock`, no core-guard hook, and no `core-integrity` workflow — so it carries
-no provenance and nothing yet stops a hand-edit to `core/`. Its generated README also
-suggests a raw `git subtree pull`, which is the stale-lock path this document warns about.
-Close all four before treating the repo as part of the fleet: run one `sync-core.sh` from
-Core (which writes `core.lock` and installs the guard), add the `core-integrity` and
-`bootstrap` workflow callers, and fix the generated README's update instructions to point
-at the fan-out.
+no provenance and nothing yet stops a hand-edit to `core/`.
+Close all three before treating the repo as part of the fleet: run one `sync-core.sh` from
+Core (which writes `core.lock` and installs the guard), and add the `core-integrity` and
+`bootstrap` workflow callers. (The generated README used to suggest a raw
+`git subtree pull` — the stale-lock path this document warns about — and now points at the
+fan-out instead.)

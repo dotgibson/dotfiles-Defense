@@ -125,16 +125,30 @@ Core flows in one direction — authored here, copied out:
    dotfiles-Windows  ──  no subtree; Core reimplemented natively in PowerShell
 ```
 
-Each machine repo vendors Core under `core/` once:
+Each machine repo vendors Core under `core/` once — from a **released tag, never
+`main`**. The automated fan-out pins every repo to the exact commit a release tag
+points at, so a tree vendored from `main` is not a commit any `core.lock` would
+record, and `core-integrity` reports the fresh subtree as TAMPERED:
 
 ```bash
-git subtree add --prefix=core https://github.com/dotgibson/dotfiles-core main --squash
+git subtree add --prefix=core https://github.com/dotgibson/dotfiles-core refs/tags/v4 --squash
 ```
 
-After a Core change, one helper fans it out to the whole fleet:
+`refs/tags/v4` is the moving major alias — the latest release in the v4 line. Pin a
+specific `vX.Y.Z` instead when you want the tree frozen at a known version.
+
+That leaves the repo with `core/` but **no `core.lock`**, so stamp provenance from a
+Core checkout before treating the repo as vendored (`sync-core.sh` is the only
+sanctioned writer of that file):
 
 ```bash
-./scripts/sync-core.sh            # subtree-pull main into every os-repos.txt target
+CORE_BRANCH=refs/tags/v4 ./scripts/sync-core.sh dotfiles-<Distro>
+```
+
+After a Core change, the same helper fans it out to the whole fleet:
+
+```bash
+./scripts/sync-core.sh            # materialize main's tree into every os-repos.txt target
 ./scripts/sync-core.sh --dry-run  # preview, change nothing
 ```
 

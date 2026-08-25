@@ -188,6 +188,80 @@ _cache_eval() { # _cache_eval [--salt <sig>] <name> <command...>
   [[ -s "$cache" ]] && source "$cache"
 }
 
+# ── _cache_completion <tool> <command...> — the same cache, WITHOUT the source ──
+# A completion generator is not an init script, and treating it as one is what made `uv`
+# the single most expensive thing in Core's startup. `_cache_eval` ends in `source`, so a
+# cached completion is read into EVERY interactive shell: 6,976 lines for uv, against 212
+# for gh and 325 for ty. Measured with hyperfine against a 12.9 ms baseline, sourcing the
+# cached uv+ty inits costs +37 ms per shell — to serve a completion most shells never
+# invoke (#579). direnv+gh together are +0.6 ms, i.e. noise; essentially all of it is uv.
+#
+# clap_complete's output is ALREADY built for this: it opens with `#compdef <tool>` and
+# closes with the standard autoload shim. Dropped into an fpath directory as `_<tool>`, zsh
+# autoloads it lazily on the first `uv <TAB>` and the per-shell cost goes to zero. Measured:
+# 49.8 ms ± 1.7 sourcing → 12.8 ms ± 0.7 autoloading, a 3.9x improvement that returns the
+# whole 37 ms.
+#
+# Two invariants are kept verbatim from _cache_eval, because they are the reason that
+# function is trusted: ${commands[…]} for a fork-free probe that stays SILENT on a box
+# without the tool, and the `$bin -nt` mtime key so an upgrade regenerates. The atomic
+# tmp -> `zsh -n` -> `mv -f` install is kept for the same reason too — a truncated
+# completion in fpath is worse than none, because it never self-heals.
+#
+# WHY THE CACHE DIR AND NOT zsh/completions/: that directory is Core's AUTHORED completions
+# and is listed per-file in core.manifest precisely so an added or removed one is caught.
+# A generated file there fails the audit, correctly.
+#
+# THE NEGATIVE CACHE IS A DOTFILE, NOT AN `_<tool>` STUB. _cache_eval writes a comment-only
+# no-op when a generator cannot succeed, so `-s` converges and the shell stops re-forking it
+# (#580). The same convergence is needed here, but the same TRICK would be a bug: any file
+# named `_uv` in fpath is a completion function, so a stub would register an empty completion
+# for uv and SHADOW the carapace bridge that would otherwise have served it. The marker is
+# `.<tool>.failed` instead — compinit only scans names beginning with `_`, so it is invisible
+# to the completion system while still giving the mtime comparison something to converge on.
+_cache_completion() { # _cache_completion <tool> <command...>
+  local tool="$1"
+  shift
+  local dir="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/completions"
+  local cache="$dir/_$tool" fail="$dir/.$tool.failed"
+  # Same fork-free resolution, and the same silence, as _cache_eval: $1 after the shift is
+  # the generator's own command word, so a box without the tool writes nothing and says
+  # nothing. This is why these callers need no HAVE_* flag.
+  local bin="${commands[$1]}"
+  [[ -z "$bin" ]] && return 0
+  # Converge on whichever record we have — a good completion, or a recorded failure. Either
+  # way the binary's mtime is the only thing that re-opens the question.
+  local stamp="$cache"
+  [[ -s "$cache" ]] || stamp="$fail"
+  [[ -e "$stamp" && ! "$bin" -nt "$stamp" ]] && return 0
+  [[ -d "$dir" ]] || mkdir -p "$dir"
+  local tmp="$cache.$$" zn="${commands[zsh]}"
+  if "$@" >|"$tmp" 2>/dev/null && [[ -s "$tmp" ]] \
+    && { [[ -z "$zn" ]] || "$zn" -n "$tmp" 2>/dev/null; }; then
+    mv -f "$tmp" "$cache"
+    rm -f "$fail"
+    # INVALIDATE THE COMPDUMP, or the new file is invisible for up to 24 hours.
+    # 10-options.zsh takes `compinit -C` when the dump is under a day old, and -C skips the
+    # scan for new completion functions entirely — so a freshly written _uv would simply not
+    # be seen. This works because of the band order and nothing else: generation is band 00,
+    # compinit is band 10, so THIS shell pays one full compinit and every later shell keeps
+    # the fast path. Deleting the dump here rather than testing mtimes there also keeps the
+    # cost on the regeneration path, which runs once per tool per upgrade.
+    local zcd="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompdump"
+    rm -f "$zcd" "$zcd.zwc"
+  elif [[ -s "$cache" ]]; then
+    # Generator broke after a good completion existed: keep it, but touch it so the `-nt`
+    # test stops firing and we do not fork once per shell forever.
+    rm -f "$tmp"
+    touch "$cache"
+  else
+    # Nothing good to keep. Record the failure OUTSIDE fpath — see the note above on why a
+    # stub `_<tool>` would be actively harmful — so this converges without shadowing anything.
+    rm -f "$tmp"
+    : >|"$fail"
+  fi
+}
+
 # ── WSL predicate: is this Linux userland hosted by Windows? ───────────────────
 # THE ONE Core→OS API for that question, alongside _cache_eval above. Six os/*.zsh
 # layers each carried a byte-identical copy of this probe to gate their Windows-interop
@@ -571,6 +645,24 @@ fi
 # OLDER than the cache and the stale hook evals a path that no longer exists, once per
 # prompt. `unset` the cache file to recover.
 _cache_eval direnv direnv hook zsh
+
+# ── tool-native completions: gh / uv / ty, GENERATED here and autoloaded from fpath ──
+# These used to sit in 45-plugins.zsh as `_cache_eval`, which sourced them into every shell.
+# They are here now for one reason: the fpath directory must be POPULATED BEFORE compinit
+# scans it, and compinit runs in 10-options.zsh. Band 00 is the only band that is guaranteed
+# to precede it.
+#
+# Nothing here calls compdef, so the old objection to band 00 — compdef does not exist until
+# compinit has run — no longer applies: generation writes a file, and the completion system
+# picks it up on its own. The compdef that IS still needed, to keep these in front of
+# carapace's bridged versions, stays at band 45 where carapace is; see the note there.
+#
+# A side effect worth having: band 45 is profile-gated (loader.zsh ceils `minimal` at 30),
+# so gh/uv/ty completions did not exist at all under the minimal and standard profiles.
+# Generated at band 00 and registered by compinit at band 10, they now do.
+_cache_completion gh gh completion -s zsh
+_cache_completion uv uv generate-shell-completion zsh
+_cache_completion ty ty generate-shell-completion zsh
 
 # ── atuin daemon (OPT-IN) — degrade to direct writes when it isn't reachable ───
 # atuin's daemon owns the SQLite writes and shells talk to it over a unix socket, which

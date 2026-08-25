@@ -55,6 +55,9 @@ sync: ## Subtree-pull Core into every OS repo (THE maintain button) — writes t
 sync-dry: ## Show what `sync` would do, touching nothing
 	@./scripts/sync-core.sh --dry-run
 
+fleet-coverage: ## Which repo satisfies which reusable gate, and how (the coverage register)
+	@./scripts/fleet-coverage.sh
+
 fleet-drift: ## Report which OS repos (+ Windows) lag the latest RELEASED Core tag — the vendoring-drift dashboard
 	@./scripts/fleet-drift.sh
 

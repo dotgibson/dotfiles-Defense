@@ -9,8 +9,8 @@
 #
 # Assumes:
 #   - all OS repos are cloned as siblings under one parent dir (see REPOS_ROOT)
-#   - each OS repo already did the one-time:
-#       git subtree add --prefix=core <core-remote> main --squash
+#   - each OS repo already did the one-time (from a RELEASED tag, never main — #588):
+#       git subtree add --prefix=core <core-remote> refs/tags/v4 --squash
 #
 # Usage:
 #   ./scripts/sync-core.sh                # pull core into every repo found
@@ -20,9 +20,15 @@
 # Env overrides:
 #   REPOS_ROOT        parent dir holding the repos   (default: parent of this repo)
 #   CORE_REMOTE       remote name/URL for dotfiles-core in each OS repo (default: origin of core)
-#   CORE_BRANCH       Core branch to vendor          (default: main)
+#   CORE_BRANCH       Core ref to vendor             (default: main)
+#                     `main` is right for a maintainer's ad-hoc `make sync` — the fan-out
+#                     always overrides it with the released commit (sync-fanout.yml passes
+#                     CORE_BRANCH=<sha>). Vendoring a repo for the FIRST time is the other
+#                     case: pass a released tag, or core.lock records a commit no release
+#                     points at (#588).
 #   SYNC_JOBS         parallel prefetch jobs; 1 disables the warm-up (default: 4)
 #   SYNC_SKIP_AUDIT   set to 1 to skip the pre-fan-out audit gate (escape hatch; see below)
+#   SYNC_SKIP_STALE   set to 1 to skip the pre-flight 'targets are current' check (#622)
 #
 # FAN-OUT GATE: this is the single point where Core is vendored into the OS-repo fleet, so a
 # defect here amplifies N-way — exactly what audit-core.sh exists to prevent. The repo's
@@ -86,9 +92,11 @@ sync-core.sh — THE maintain button: subtree-pull Core into every OS repo's cor
 Env overrides:
   REPOS_ROOT        parent dir holding the repos   (default: parent of this repo)
   CORE_REMOTE       remote name/URL for dotfiles-core in each OS repo (default: core's origin)
-  CORE_BRANCH       Core branch to vendor          (default: main)
+  CORE_BRANCH       Core ref to vendor             (default: main; pass a released tag
+                    such as refs/tags/v4 when vendoring a repo for the first time)
   SYNC_JOBS         parallel prefetch jobs; 1 disables the warm-up (default: 4)
   SYNC_SKIP_AUDIT   set to 1 to skip the pre-fan-out audit gate (documented escape hatch)
+  SYNC_SKIP_STALE   set to 1 to skip the pre-flight check that each target is up to date
 
 Refuses to fan out a red tree: runs scripts/audit-core.sh first (--dry-run exempt).
 EOF
@@ -224,6 +232,69 @@ echo ":: core version = $CORE_VERSION${CORE_TAG:+  (tag $CORE_TAG)}"
 echo ":: core remote  = $CORE_REMOTE  (branch $CORE_BRANCH @ $CORE_SHA)"
 echo ":: repos root   = $REPOS_ROOT"
 echo
+
+# ── Pre-flight: refuse to vendor onto a STALE clone ───────────────────────────────────
+# The dirty-tree guard below asks "has this repo got uncommitted work?" and nothing asked
+# "is this repo current with its remote?". So a sync materialized core/ onto whatever the
+# local clone happened to be, reported `updated 9 / failed 0`, and the operator found out at
+# `git push` — nine repos already committed to, every push rejected as non-fast-forward
+# (#622, observed on the 2026-08-23 sync with all nine between 1 and 5 commits behind).
+#
+# WHY THIS IS PRE-FLIGHT AND NOT PER-REPO: the whole complaint is learning about it after the
+# fan-out has written to nine repos. Checked here, nothing has been mutated yet.
+#
+# WHY THE OBVIOUS RECOVERY IS WRONG, and this is the part worth stating in the error. Rebasing
+# the sync commit onto the updated remote is NOT always correct. Materializing core/ is safe to
+# replay — _sync_materialize_core is fully determined by the Core SHA — but _sync_pin_workflows
+# is a `sed` over the target's OWN existing workflow files, so its result is a function of a
+# tree that no longer exists. It can apply cleanly and still be wrong. The correct recovery is
+# to bring each repo up to date and RE-RUN the sync, which is idempotent by design.
+#
+# Applied to --dry-run too, and placed before the audit gate, for the same reason as the
+# `unknown`-commit refusal above: a rehearsal that would refuse should say so, and it should
+# not cost the operator a 400-second audit first. Escape hatch: SYNC_SKIP_STALE=1.
+if [[ "${SYNC_SKIP_STALE:-0}" != 1 ]]; then
+  echo ":: pre-flight: is each target current with its remote?"
+  _stale_n=0 _stale_list="" _stale_unreach=0
+  for repo in "${TARGETS[@]}"; do
+    path="$(resolve_repo_dir "$REPOS_ROOT" "$repo")" || path="$REPOS_ROOT/$repo"
+    # Not cloned / no subtree yet: the fan-out loop already reports those as skips. Saying
+    # it twice, before it has even been attempted, is noise.
+    [[ -d "$path/.git" ]] || continue
+    # No upstream (detached HEAD, or a branch that tracks nothing) means there is no remote
+    # counterpart to be behind — nothing to assert, so stay quiet rather than guess.
+    _ups="$(git -C "$path" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+    [[ -n "$_ups" ]] || continue
+    if ! git -C "$path" fetch -q --no-tags "${_ups%%/*}" 2>/dev/null; then
+      # Unreachable remote is NOT a refusal: this guard exists to catch a stale clone, and a
+      # network blip is a different failure. Say so and let the sync proceed.
+      _stale_unreach=$((_stale_unreach + 1))
+      skip "$repo (could not reach ${_ups%%/*} — staleness unverified)"
+      continue
+    fi
+    # left-right of HEAD...@{upstream} → "<ahead>\t<behind>". Ahead is fine and expected
+    # (unpushed local work); only BEHIND makes the sync commit land on a stale base.
+    _lr="$(git -C "$path" rev-list --left-right --count "HEAD...$_ups" 2>/dev/null || true)"
+    _behind="${_lr##*[!0-9]}"
+    [[ -n "$_behind" ]] || continue
+    if ((_behind > 0)); then
+      _stale_n=$((_stale_n + 1))
+      _stale_list="$_stale_list
+    $repo — $_behind behind $_ups"
+    fi
+  done
+  if ((_stale_n > 0)); then
+    err "$_stale_n of ${#TARGETS[@]} target repo(s) are BEHIND their remote:$_stale_list"
+    fail "vendoring onto a stale base produces commits whose push is rejected as non-fast-forward"
+    fail "fix: bring each repo up to date (git pull --ff-only), then RE-RUN this sync — it is idempotent"
+    fail "do NOT rebase the sync commit instead: materializing core/ replays safely, but the workflow"
+    fail "     pin rewrite is a sed over the target's own files and may apply cleanly while being wrong"
+    fail "override (you had better be sure): SYNC_SKIP_STALE=1"
+    exit 1
+  fi
+  ((_stale_unreach)) || ok "every cloned target is current with its remote"
+  echo
+fi
 
 # ── Pre-fan-out gate: Core must be audit-green, and what you audited must be what
 # fans out. Skipped for --dry-run (nothing is written) and via SYNC_SKIP_AUDIT=1. ──

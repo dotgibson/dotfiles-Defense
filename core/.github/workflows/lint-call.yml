@@ -40,9 +40,11 @@ name: lint (reusable)
 # one:
 #
 #   * RETURN-trap discipline. Here rather than in SHELLCHECK_OPTS because shellcheck
-#     genuinely cannot see the bug — the broken line is valid bash — and because
-#     bootstrap-test.yml never runs provision(), so no gate in the fleet executes the code
-#     where it detonates (#512, #461). BLOCKING, and verified against all nine fleet repos
+#     genuinely cannot see the bug — the broken line is valid bash — and because the gate
+#     that would catch it at runtime barely exists: bootstrap-test.yml's default job returns
+#     before provision(), and the jobs that do enter it are opt-in or repo-local, so most of
+#     the fleet still executes none of the code where it detonates (#512, #461; the coverage
+#     picture is in that workflow's own header). BLOCKING, and verified against all nine repos
 #     plus Core before landing: every one was green, so nobody was red on arrival.
 #   * Core-owned block duplication (#449). The mirror of audit-core.sh §5c: that gate catches
 #     OS-specifics leaking INTO Core, and nothing caught portable logic stranded OUTSIDE it
@@ -52,10 +54,11 @@ name: lint (reusable)
 #     they see this leg before they can possibly have vendored the Core that lets them
 #     delete their copy. See the long note on that step.
 #
-# A THIRD leg is advisory for the same red-on-arrival reason, measured rather than assumed:
-# markdown (#452). Seven of the nine fleet repos carry findings today (0 to 52 each), so
-# landing it blocking would red most of the fleet before a maintainer could act. Numbers,
-# and why the backlog is smaller than it looks, are on the `markdown` job below.
+# The markdown leg (#452) shipped advisory for one release cycle for that same
+# red-on-arrival reason, and is now BLOCKING (#592). It was measured rather than assumed:
+# eight of the nine fleet repos carried findings, 162 in total, ~130 of them MD060 table
+# alignment. All nine were cleared first and the flip landed only once markdownlint-cli2 was
+# green on every one — so no repo is red on arrival. Notes are on the `markdown` job below.
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -441,7 +444,7 @@ jobs:
   # on ubuntu-latest, and MARKDOWNLINT_VERSION comes from the same tool-versions.env pin
   # that audit-core.sh §9 already checks against the pre-commit hook rev.
   markdown:
-    name: markdown lint (markdownlint — advisory)
+    name: markdown lint (markdownlint)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -477,10 +480,10 @@ jobs:
       # from the workspace root would silently apply CORE's config to the caller's files.
       # The two agree today; the point is that the caller owns its own rules.
       #
-      # The if/else swallows the drift exit so the step is non-blocking WITHOUT
-      # continue-on-error — same shape as the shfmt leg, so a genuine install failure
-      # still reds the job rather than being reported as "advisory".
-      - name: markdownlint (repo-owned markdown) — advisory
+      # BLOCKING since #592, after the whole fleet was cleared. It shipped advisory for one
+      # release cycle because a new leg is red-on-arrival by construction: callers pin the
+      # moving @v4 tag, so they see it the moment auto-tag moves.
+      - name: markdownlint (repo-owned markdown)
         working-directory: caller
         run: |
           excludes=(':!:core/**')
@@ -488,29 +491,22 @@ jobs:
           [ -n "$EXTRA_EXCLUDES" ] && excludes+=($EXTRA_EXCLUDES)
           mapfile -t files < <(git ls-files '*.md' "${excludes[@]}")
           if [ ${#files[@]} -eq 0 ]; then echo "no repo-owned .md"; exit 0; fi
-          # HARD-FAIL if the linter is missing, BEFORE the advisory if/else below. Without
-          # this the `if markdownlint-cli2 …` arm cannot tell "127, not installed" from
-          # "1, found issues": a broken install would be reported as an ordinary advisory
-          # warning and the leg would look like it ran for the rest of the release cycle.
-          # An advisory gate that silently never runs is worse than no gate — it reads as
-          # coverage. The install step above is the usual failure point and reds on its
+          # HARD-FAIL if the linter is missing, BEFORE the scan below. KEPT after the flip
+          # to blocking, and it matters more now, not less: `markdownlint-cli2` exiting 127
+          # because it is absent and exiting 1 because it found issues are different facts,
+          # and only the second is the caller's to fix. Without this a broken install reads
+          # as coverage. The install step above is the usual failure point and reds on its
           # own; this catches the case where it "succeeds" without putting the bin on PATH.
           command -v markdownlint-cli2 >/dev/null || {
             echo "::error::markdownlint-cli2 is not on PATH after the pinned install step"
             exit 1
           }
           echo "linting ${#files[@]} repo-owned markdown file(s) against this repo's .markdownlint.jsonc"
-          if markdownlint-cli2 "${files[@]}"; then
-            echo "markdown is clean"
-          else
-            echo "::warning::markdownlint reported issues (advisory, not blocking)"
-            echo "Most of the fleet's backlog is MD060 (table pipe alignment), which is"
-            echo "auto-fixable. From the repo root:"
-            echo "    npx markdownlint-cli2 --fix \$(git ls-files '*.md' ':!:core/**')"
-            echo "Rules live in this repo's own .markdownlint.jsonc — the vendored core/"
-            echo "tree is excluded and is gated by dotfiles-core's CI instead."
-            echo "This warning becomes a BLOCKING failure in the next Core release."
-          fi
+          # Remediation when this fails — most findings are mechanical:
+          #     npx markdownlint-cli2 --fix $(git ls-files '*.md' ':!:core/**')
+          # Rules come from the CALLER's own .markdownlint.jsonc (hence working-directory
+          # above); the vendored core/ tree is excluded and gated by dotfiles-core's own CI.
+          markdownlint-cli2 "${files[@]}"
 
   # ── BLOCKING: secret scanning (gitleaks) ────────────────────────────────────
   # Core scans itself TWICE — the gitleaks pre-commit hook at author time and

@@ -440,10 +440,56 @@ EOF
 _core_owned_block_owner() { # _core_owned_block_owner <rule-id>
   case "$1" in
   direnv-hook) echo "core/zsh/00-tools.zsh (band 00 — loads under every CORE_PROFILE)" ;;
-  gh-completion | uv-completion | ty-completion) echo "core/zsh/45-plugins.zsh (after compinit + carapace)" ;;
+  gh-completion | uv-completion | ty-completion) echo "core/zsh/00-tools.zsh (band 00, generated into an fpath dir; compdef re-assert in 45-plugins.zsh after carapace)" ;;
   wsl-detect) echo "core/zsh/00-tools.zsh :: _core_is_wsl" ;;
   *) return 1 ;;
   esac
+}
+
+# ── _core_gitleaks_policy_hits: a secret scan measured by Core's policy, or nobody's ──
+# _core_gitleaks_policy_hits <file> — print `<line>:<reason>` for every gitleaks invocation
+# in <file> that does not carry a config flag. Silence = clean.
+#
+# WHY. Core's reusable lint-call.yml secrets leg states the rule: ONE POLICY FILE, Core's, so
+# every repo is measured the same way and no repo can widen its own allowlist. The rule is
+# stated in Core and honoured by Core's reusable — and nothing enforced it on the repo side.
+# On the 2026-08-23 sync four repos ran their own gitleaks with NO config, so they used the
+# stock rule set; `curl-auth-user` matches on credential-shaped POSITION rather than content,
+# so the vendored core/CHANGELOG.md — which documents that very allowlist and quotes the
+# example it was written for — was flagged. Core's explanation of the rule read as a
+# violation of it, on a sync that carried no credential (#623).
+#
+# Two more repos were green only because each keeps its OWN root .gitleaks.toml that gitleaks
+# auto-discovers — the "repo widens its own allowlist" case the policy argues against, failing
+# in the quiet direction, which is worse (#624).
+#
+# THE RULE IS "CARRIES A CONFIG FLAG", NOT "NAMES CORE'S FILE", and that is deliberate. A repo
+# may legitimately need a local rule set for a distro-specific pattern Core has no business
+# knowing about; the honest shape there is to EXTEND Core's rather than replace it. So this
+# scan answers "is a policy passed at all", and whether that policy descends from Core's is
+# the separate question audit-core.sh §5g asks of the config file itself. Splitting them keeps
+# each check able to say something true on its own.
+#
+# THE FALSE-POSITIVE TRAP, which cost real time while surveying for the issue: a naive
+# `-c|--config` match also fires on the `-c` inside `--exit-code`, which two of the repos in
+# scope actually pass. The flag must be matched as a WHOLE WORD — hence the `(^|[[:space:]])`
+# prefix and the `(=|[[:space:]])` suffix on the short form.
+#
+# Comment lines are skipped, so a repo may describe the policy in the comment above the call —
+# which every already-corrected repo does, at length.
+_core_gitleaks_policy_hits() { # _core_gitleaks_policy_hits <file>
+  local f="${1:-}" line n=0 body
+  [ -f "$f" ] || return 0
+  while IFS= read -r line; do
+    n=$((n + 1))
+    body="${line#"${line%%[![:space:]]*}"}"
+    case "$body" in '#'* | '@#'*) continue ;; esac
+    # An invocation, not a mention: `gitleaks` followed by one of its scanning subcommands.
+    printf '%s\n' "$line" | grep -qE '(^|[^[:alnum:]_-])gitleaks[[:space:]]+(dir|detect|git)([[:space:]]|$)' || continue
+    # Whole-word config flag. `--exit-code` must NOT count as `-c`.
+    printf '%s\n' "$line" | grep -qE '(^|[[:space:]])(-c(=|[[:space:]])|--config(=|[[:space:]]))' && continue
+    printf '%s:%s\n' "$n" "no-config"
+  done <"$f"
 }
 
 # ── _audit_ls: the file set the CONTENT gates inspect ─────────────────────────
@@ -484,6 +530,68 @@ _core_owned_block_owner() { # _core_owned_block_owner <rule-id>
 # --exclude-standard honours .gitignore, so scratch files and build output stay out.
 # Lives here rather than in audit-core.sh so test-core.sh can exercise the REAL
 # implementation instead of a copy that could drift from it.
+# ── _core_conflict_marker_hits: a resolution that left a marker behind ────────
+# _core_conflict_marker_hits <file> — print the line number of every leftover VCS
+# conflict marker in <file>. Silence = clean. Consumed by audit-core.sh §5h.
+#
+# WHY THIS EXISTS. bcdd7dd (#650) committed a literal `|||||||` base marker into
+# CHANGELOG.md, at the end of [Unreleased]'s Fixed section, and it sat on main
+# undetected. It is the base half of a zdiff3 conflict that was resolved by deleting the
+# open/separator/close lines but not the base one — the half that only exists under
+# zdiff3/diff3, which is exactly why the eye skips it.
+#
+# It is not cosmetic. git refuses to parse a conflict region that contains a stray marker,
+# so rebasing a branch onto main produced `error: could not parse conflict hunks in
+# CHANGELOG.md`. [Unreleased] is the one section every user-visible change is REQUIRED to
+# touch (CONTRIBUTING.md), so one stray marker there taxes every future branch in the repo.
+#
+# NOTHING ELSE CATCHES IT. `bash -n`/`zsh -n` never see a markdown file; markdownlint reads
+# the line as ordinary paragraph text; gitleaks looks for credentials. The marker is valid
+# text everywhere, which is the same reason §5d/§5e exist as textual scans.
+#
+# ASSEMBLED FROM FRAGMENTS, exactly as _core_pipefail_hits and _core_return_trap_hits are,
+# and here it is load-bearing rather than tidy: the scanner reads every tracked file and
+# common.sh is one of them, so a pattern written literally would report the line that
+# defines it. This is also why the gate needs NO allowlist — see §5h.
+#
+# THE SEPARATOR IS TREATED DIFFERENTLY, and deliberately. The open/base/close markers each
+# carry a trailing space and a ref, so they are unambiguous on sight. A bare row of seven
+# `=` is not: it is also a setext H1 underline, and .markdownlint.jsonc runs MD003 at its
+# default `consistent`, which permits setext as long as a file is consistent about it. So
+# the separator counts only when the file ALSO carries an unambiguous marker — the same
+# file-level precondition idiom _core_pipefail_hits uses when it gates on `set -o pipefail`
+# before scanning at all.
+#
+# THE TRADE-OFF THAT BUYS: a resolution that deleted every marker EXCEPT the separator is
+# not caught. That is accepted knowingly — a lone separator is textually indistinguishable
+# from a legitimate underline, and a gate that reds a correct document is a gate someone
+# turns off (the reasoning §5f spells out). Every marker that names a ref is always caught,
+# and the #650 defect was one of those.
+_core_conflict_marker_hits() { # _core_conflict_marker_hits <file>
+  local f="${1:-}" open base close sep named
+  [ -f "$f" ] || return 0
+  # Seven of each, built rather than typed. `printf %.0s` repeats the char per argument.
+  #
+  # THE BASE MARKER IS BUILT AS A CHARACTER CLASS, and it has to be: `|` is ERE's
+  # alternation operator, so a literal row of seven pipes dropped into the pattern below
+  # reads as eight EMPTY alternatives — an expression that matches the empty string
+  # everywhere and therefore reports nothing anywhere. It fails OPEN, silently, which is
+  # the worst way for a gate to be wrong. `[|]` is the same one character, inert.
+  open="$(printf '<%.0s' 1 2 3 4 5 6 7)"
+  base="$(printf '[|]%.0s' 1 2 3 4 5 6 7)"
+  close="$(printf '>%.0s' 1 2 3 4 5 6 7)"
+  sep="$(printf '=%.0s' 1 2 3 4 5 6 7)"
+  # The three that name a ref: marker, then a space, at column 0. Always a defect.
+  named="^($open|$base|$close) "
+  # -I skips binaries (assets/ carries images); -a would spray NUL bytes at the caller.
+  if grep -qIE "$named" "$f" 2>/dev/null; then
+    # File is genuinely conflicted, so a bare separator here is a marker too, not an underline.
+    grep -nIE "$named|^$sep\$" "$f" 2>/dev/null | cut -d: -f1
+  else
+    grep -nIE "$named" "$f" 2>/dev/null | cut -d: -f1
+  fi
+}
+
 _audit_ls() { # _audit_ls <pathspec>… — content-gate file set, deduped
   {
     git ls-files -- "$@" 2>/dev/null
