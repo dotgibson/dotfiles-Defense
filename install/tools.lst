@@ -31,7 +31,7 @@ chainsaw           # WithSecureLabs — NOT kyverno/chainsaw, which shares the n
 hayabusa           # Yamato-Security; ships as hayabusa-<ver>-lin-x64-gnu
 
 # ── detection content ───────────────────────────────────────────────────────────
-sigma              # sigma-cli (pySigma)
+sigma-cli          # sigma-cli (pySigma)
 yara               # yara rules engine
 
 # ── endpoint / forensics ────────────────────────────────────────────────────────
