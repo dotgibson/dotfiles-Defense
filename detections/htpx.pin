@@ -35,6 +35,25 @@
 # git subtree. This repo deliberately does NOT vendor it: nothing here builds from the
 # corpus, two gates read it, and a ~200-file subtree plus a second sync obligation is a
 # steep price for that. #196 chose the pin.
+#
+# ── THIS SHA NEED NOT MATCH dotfiles-Offense'S ────────────────────────────────
+# Offense is the other consumer of the same corpus, and it tracks htpx differently: it
+# VENDORS the tree at offensive/companion/ and records the revision in companion.lock. So
+# the fleet holds two independently-pinned htpx revisions, advanced by two different
+# triggers — Offense's by htpx's fan-out on a RELEASE TAG, this one by a reviewed manual
+# bump.
+#
+# They drift apart routinely, and that is FINE. A release fans out to Offense
+# automatically and leaves this pin alone until someone bumps it on purpose — which is the
+# whole reason for pinning: the gates' verdict must not move on its own. The lag
+# self-corrects at the next bump.
+#
+# It is written down because the mismatch LOOKS like a bug when you first meet it —
+# Offense's PURPLE-TEAM.md rendering one snapshot of the corpus while HTPX-COVERAGE.md
+# here describes another, with both repos' gates green. Neither is wrong; they are
+# describing different revisions. Do NOT "fix" it by making this pin track Offense's sha
+# or htpx's releases: that trades a reviewed decision for a cadence set elsewhere, which
+# is exactly what the pin exists to prevent. dotgibson/dotfiles-Offense#251.
 repo	dotgibson/htpx
 branch	main
 sha	b80741fdc07406ac652866c903530caf0f778acf
