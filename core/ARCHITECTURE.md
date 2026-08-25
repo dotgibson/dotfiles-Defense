@@ -168,12 +168,15 @@ The zsh fragment chain is sourced in one canonical order, declared in
 `NN-*.zsh` fragments in `$ZSH_CFG` and sources them by their `NN` prefix:
 
 ```text
-00-tools → 05-ui → 10-options → 15-history → 20-aliases → 25-git → 30-functions
-      → 35-fzf → 40-bindings → 45-plugins → 50-op → 55-maint → 60-update
+00-tools → 02-capabilities → 05-ui → 10-options → 15-history → 20-aliases → 25-git
+      → 30-functions → 35-fzf → 40-bindings → 45-plugins → 50-op → 55-maint → 60-update
       → 80-os → 85-<role> → 99-local
 ```
 
-The order encodes real dependencies: `00-tools` initializes atuin and `35-fzf`
+The order encodes real dependencies: `02-capabilities` reads the OS layer's capability
+declaration before any consumer (the earliest is `30-functions`), and sits inside the Core
+band so every `CORE_PROFILE` loads it — `minimal`'s ceiling is 30, and a lean profile must
+not silently lose the dispatch table; `00-tools` initializes atuin and `35-fzf`
 defines its widgets before `45-plugins` loads zsh-vi-mode (which fires the binding
 hook); `10-options` runs `compinit` before `45-plugins` (fzf-tab and carapace need
 it — and so do the tool-native `gh`/`uv`/`ty` completions Core registers on the line

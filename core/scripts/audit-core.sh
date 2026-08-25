@@ -11,6 +11,10 @@
 # Checks (each is a section; a failure in one does not abort the others):
 #   1. manifest <-> filesystem drift   — every manifest path exists; every
 #                                         tracked Core file is listed or allowlisted
+#  1b. routine reference integrity     — every .claude/ path the maintenance routines
+#                                         say they READ exists and is tracked (the
+#                                         mirror of §1: an accounted-for file that was
+#                                         never tracked is invisible to git ls-files)
 #   2. executable-bit assertions       — *.sh and bin/clip* must be +x in the
 #                                         git index; zsh/*.zsh must NOT be (sourced)
 #   3. shell syntax                     — bash -n on bash scripts; zsh -n on zsh modules
@@ -270,7 +274,7 @@ trap 'exit 143' TERM
 META_ALLOWLIST=(
   README.md PORTING-MATRIX.md CONTRIBUTING.md CHANGELOG.md LICENSE SECURITY.md aliases.md CLAUDE.md
   ARCHITECTURE.md PORTABILITY.md VENDORING.md CODE_OF_CONDUCT.md
-  PARITY.md RELEASE-STRATEGY.md RELEASE-RUNBOOK.md GITHUB-APP-AUTH.md V4-PROPOSAL.md
+  PARITY.md RELEASE-STRATEGY.md RELEASE-RUNBOOK.md GITHUB-APP-AUTH.md V4-PROPOSAL.md V5-PROPOSAL.md
   core.manifest .gitignore .gitattributes .editorconfig .pre-commit-config.yaml .markdownlint.jsonc .shellcheckrc renovate.json .prettierrc.json gitleaks.toml
   Makefile cliff.toml
   nvim/.luacheckrc
@@ -331,6 +335,74 @@ if have git && git rev-parse --git-dir >/dev/null 2>&1; then
   pass "reverse-drift scan complete (tracked files all accounted for)"
 else
   skip "reverse-drift scan (not a git checkout)"
+fi
+
+# ── 1b. routine reference integrity (the inverse of §1's reverse drift) ──────
+# §1 above asks, in both directions, whether every TRACKED file is accounted for. This
+# asks the mirror question: is every file the maintenance routines say they READ actually
+# there, and actually shipped? Those are different failures and §1 structurally cannot see
+# the second one — its reverse walk is fed by `git ls-files`, so a file that was never
+# tracked is not in the stream and `is_listed` is never called on it. The manifest
+# direction never looks either: .claude/ is repo-meta, allowlisted wholesale by
+# META_PREFIXES, which is correct and is also why nothing was watching.
+#
+# WHY IT EXISTS. #661 taught /tool-scout to consult a decided-and-rejected ledger at
+# .claude/tool-decisions.md, shipped the three files that reference it, and did not ship
+# the ledger: .gitignore's `.claude/*` negations are per-DIRECTORY, so commands/ and
+# agents/ vendored out while the file they point at stayed untracked (#700). The routine's
+# own instruction is to say "none" when a candidate has no prior decision — so with no
+# file every candidate resolves to "none", in the exact voice that means CHECKED. The
+# report then asserts the ledger was consulted while consulting nothing, which is worse
+# than the ambiguity #634 was filed to remove, because the absence is no longer visible.
+# It is the same shape as core.manifest naming a verify-core backstop that never existed
+# (#454): an assertion pointing at a file nobody created.
+#
+# TWO VERDICTS, NOT ONE. "absent" and "present but untracked" are different bugs with
+# different fixes — author the file, versus negate it in .gitignore — and this defect was
+# the second, which every report of it so far has called the first. Collapsing them into
+# one message would hand the reader the wrong repair.
+#
+# PLAIN `git ls-files`, NOT _audit_ls. The rule is in common.sh: a gate asking "what does
+# GIT RECORD?" takes the tracked list, and _audit_ls deliberately adds
+# untracked-but-not-ignored files. Here that inclusion would be fatal rather than noisy —
+# an ignored file is exactly what this gate exists to catch, and _audit_ls would wave the
+# one on the author's disk straight through while every clone stayed broken.
+#
+# WHY IT BLOCKS ON ARRIVAL, the §5i argument: the tree is green the moment this lands (the
+# four references all resolve), so every future hit is a regression introduced by the
+# commit under test, not inherited fleet drift.
+hdr "routine reference integrity"
+if ! have git || ! git rev-parse --git-dir >/dev/null 2>&1; then
+  skip "routine reference integrity (not a git checkout)"
+else
+  cref_fail=0
+  # Newline-DELIMITED, not merely newline-separated: the leading and trailing newlines let
+  # the membership test below match a whole line without a subprocess, and without
+  # `.claude/tool-decisions.md` being satisfied by a hypothetical `x.claude/tool-decisions.md`.
+  # A `grep -qxF` per reference would be the obvious spelling and is exactly what §5d
+  # forbids — a shell string piped into a reader that exits early.
+  cref_tracked=$'\n'"$(git ls-files)"$'\n'
+  while IFS= read -r cref_src; do
+    [[ -z "$cref_src" ]] && continue
+    while IFS= read -r cref_hit; do
+      [[ -z "$cref_hit" ]] && continue
+      cref_line="${cref_hit%%:*}"
+      cref_path="${cref_hit#*:}"
+      if [[ ! -e "$cref_path" ]]; then
+        fail "$cref_src:$cref_line names $cref_path, which does not exist — a routine instructed to read a missing file reports 'none' rather than failing, so the absence reads as a clean check"
+        cref_fail=1
+      elif [[ "$cref_tracked" != *$'\n'"$cref_path"$'\n'* ]]; then
+        fail "$cref_src:$cref_line names $cref_path, which exists here but is NOT TRACKED — it reaches no clone, no CI run and none of the nine vendored repos. Negate it in .gitignore (#700)"
+        cref_fail=1
+      fi
+    done <<EOF
+$(_core_claude_ref_hits "$cref_src")
+EOF
+  done <<EOF
+$(git ls-files '.claude/commands/*.md' '.claude/agents/*.md')
+EOF
+  ((cref_fail)) || pass "routine reference integrity (every .claude/ path the routines name resolves and is tracked)"
+  unset cref_fail cref_tracked cref_src cref_hit cref_line cref_path
 fi
 
 # ── 2. executable-bit assertions ─────────────────────────────────────────────
@@ -770,10 +842,24 @@ fi
 # A repo that legitimately needs local rules is not doing anything wrong; replacing Core's
 # policy rather than extending it is.
 #
-# REPORT, DO NOT BLOCK, for the same reason §5f gives: repos are short on arrival, and a gate
-# that is red from its first run is a gate someone turns off. Same "out of scope" skip wording
-# too — --strict counts every OTHER skip as a coverage gap, and CI checks out only this repo.
-hdr "secret-scan policy adoption (advisory)"
+# BLOCKING as of #624 — it shipped advisory, for the reason §5f gives: repos are short on
+# arrival, and a gate that is red from its first run is a gate someone turns off. That reason
+# has expired. The fleet is clean: dotfiles-Alpine and dotfiles-Gentoo each carried a private
+# .gitleaks.toml that gitleaks auto-discovered, so every local scan there ran under a rule set
+# that was simultaneously narrower than Core's (stock defaults, Core's variable-reference
+# allowlist dropped) and wider (whole-path exemptions). Both are gone, both verified clean under
+# core/gitleaks.toml — working tree and, for Gentoo, all 271 commits of history. All 9 repos now
+# measure the same way, so this can hold the line instead of narrating it. Same move §5i makes,
+# for the same stated reason.
+#
+# The failure is quiet by nature — a private allowlist widens over time with nothing comparing
+# it to Core's, and the next person to look sees a passing gate. Advisory is the wrong posture
+# for a finding whose whole hazard is that it looks fine.
+#
+# Same "out of scope" skip wording as §5f — --strict counts every OTHER skip as a coverage gap,
+# and CI checks out only this repo, so this is inert there and bites locally and in any sweep
+# that clones the fleet.
+hdr "secret-scan policy adoption"
 _gp_root="$(cd "$HERE/.." && pwd)"
 if [[ ! -r "$HERE/scripts/os-repos.txt" ]]; then
   skip "gitleaks policy (scripts/os-repos.txt unreadable — out of scope)"
@@ -813,7 +899,7 @@ else
   if ((_gp_checked == 0)); then
     skip "gitleaks policy (no sibling OS repo checked out — out of scope)"
   elif ((_gp_bad)); then
-    pass "gitleaks policy: $_gp_bad of $_gp_checked checked-out repo(s) do not measure by Core's policy (advisory — see the lines above; VENDORING.md has the contract)"
+    fail "gitleaks policy: $_gp_bad of $_gp_checked checked-out repo(s) do not measure by Core's policy (see the lines above; VENDORING.md has the contract)"
   else
     pass "gitleaks policy: every checked-out OS repo scans under Core's policy ($_gp_checked repo(s))"
   fi
@@ -1071,6 +1157,35 @@ if [[ -r "$VERSIONS_ENV" && -r "$PRECOMMIT_CFG" ]]; then
   _check_pin "pre-commit/pre-commit-hooks" PRECOMMIT_HOOKS_VERSION pre-commit-hooks
 else
   skip "version consistency ($VERSIONS_ENV or $PRECOMMIT_CFG unreadable)"
+fi
+
+# ── 9a. os.capabilities schema (the shipped example is held to the fleet's gate) ──
+# scripts/check-capabilities.sh defines the v5 capability schema (#663) and is the
+# validator each OS repo runs on its own os/<os>.capabilities. Core has no declaration
+# of its own — it is the CONSUMER, not an OS layer — so what there is to gate here is
+# the EXAMPLE the nine repos copy from.
+#
+# That is not a formality. examples/os.capabilities.example is the thing a human reads
+# when authoring a real one (#667), so an example carrying a key the validator rejects
+# would hand every OS repo the same defect nine times, and Core's own reader would skip
+# it in silence. Running the fleet's gate on the fleet's template closes that: the
+# example cannot drift from the schema without reddening this audit.
+hdr "os.capabilities schema (example ↔ validator)"
+CAP_CHECK="scripts/check-capabilities.sh"
+CAP_EXAMPLE="examples/os.capabilities.example"
+if [[ -x "$CAP_CHECK" && -r "$CAP_EXAMPLE" ]]; then
+  if cap_out="$("$CAP_CHECK" "$CAP_EXAMPLE" 2>&1)"; then
+    pass "os.capabilities example validates against the schema"
+  else
+    while IFS= read -r cap_line; do
+      [ -n "$cap_line" ] || continue
+      fail "os.capabilities: $cap_line"
+    done <<EOF
+$cap_out
+EOF
+  fi
+else
+  skip "os.capabilities schema ($CAP_CHECK or $CAP_EXAMPLE missing)"
 fi
 
 # ── 9b. tool download integrity (every downloaded *_VERSION has a *_SHA256) ────

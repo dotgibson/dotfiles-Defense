@@ -14,9 +14,19 @@ mise.local.toml
 # toolchain + its settings) and the shared maintenance routines (slash commands +
 # subagents) so every session — local or remote — has them. settings.local.json
 # stays ignored (it's per-machine).
+#
+# EVERY SHARED FILE NEEDS ITS OWN NEGATION, and a top-level file needs one even when
+# the routine that reads it is already negated. `.claude/*` matches files as well as
+# directories, so tool-decisions.md — the decided-and-rejected ledger #661 taught
+# /tool-scout to read — was written, referenced from three places, and never tracked
+# (#700). The directory negations below made that invisible: commands/ and agents/
+# were negated, so the files POINTING at the ledger vendored out fine while the ledger
+# itself did not. Adding a shared file here means adding its line here too;
+# audit-core.sh §1b is the backstop that says so out loud.
 .claude/*
 !.claude/hooks/
 !.claude/settings.json
 !.claude/commands/
 !.claude/agents/
+!.claude/tool-decisions.md
 .claude/settings.local.json

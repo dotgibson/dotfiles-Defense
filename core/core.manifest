@@ -11,7 +11,7 @@ core.version
 # ── zsh ───────────────────────────────────────────────────────────────────────
 # Numbered load-order (v4). The loader globs NN-*.zsh across $ZSH_CFG, sorts by the
 # NN prefix, and sources in THIS order:
-#   00-tools -> 05-ui -> 10-options -> 15-history -> 20-aliases -> 25-git
+#   00-tools -> 02-capabilities -> 05-ui -> 10-options -> 15-history -> 20-aliases -> 25-git
 #         -> 30-functions -> 35-fzf -> 40-bindings -> 45-plugins -> 50-op
 #         -> 55-maint -> 60-update  (then the OS layer at 80-os, role at 85-*, host at 99-local)
 # The NN prefix — not a hand-listed name array — is the contract now. Bands: Core 00-69,
@@ -26,6 +26,7 @@ core.version
 # numbered fragment (no NN- prefix) — it DRIVES the glob, so it is never sourced by it.
 zsh/loader.zsh         # canonical glob+sort+profile+byte-compile+source loop, vendored so OS .zshrc files stop duplicating it
 zsh/00-tools.zsh       # detection + the single init point (zoxide/starship/atuin/mise/direnv) + the Core→OS API (_cache_eval, _core_is_wsl)
+zsh/02-capabilities.zsh # reads the OS layer's os.capabilities declaration into _CORE_CAP (the OS repo authors that file; it is NOT Core, so it is not listed here)
 zsh/05-ui.zsh          # terminal-UX primitives (_core_err/warn/ok/hint/confirm/spin) — gum-aware
 zsh/10-options.zsh     # setopts + completion system (compinit, cached) + zstyles
 zsh/15-history.zsh     # HISTFILE/HISTSIZE/SAVEHIST + history setopts + secret-ignore
@@ -115,6 +116,13 @@ mise/config.toml
 # ── sesh — portable session-manager config (SEEDED to ~/.config/sesh/sesh.toml;
 #    copied, not symlinked — engagement layouts live in dotfiles-Offense) ──────────
 sesh/sesh.toml.example
+# ── tealdeer — the `tldr` binary's config; symlinked to
+#    ~/.config/tealdeer/config.toml. Turns ON auto_update, which upstream ships
+#    OFF: `help` is a Core alias (20-aliases.zsh, HAVE_TLDR) but nothing on any
+#    box refreshes the page cache — maint/dotfiles-maint.sh has no tldr step —
+#    so a fresh box's `help` fails until you run `tldr --update` by hand.
+#    Deliberately holds only pre-1.8.0 keys: 1.9.0 errors on unknown ones. ──────
+tealdeer/config.toml
 # ── ssh — portable client config; symlinked to ~/.ssh/config. Host-local and
 #    OS-specific bits go to ~/.ssh/config.d/ drop-ins (ssh/os.conf -> 50-os.conf),
 #    which the file Includes FIRST so they win ssh's first-match-wins resolution.

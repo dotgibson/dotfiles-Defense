@@ -592,6 +592,64 @@ _core_conflict_marker_hits() { # _core_conflict_marker_hits <file>
   fi
 }
 
+# ── _core_claude_ref_hits: a routine pointing at a file nobody ships ─────────
+# _core_claude_ref_hits <file> — print `LINE:PATH` for every backticked `.claude/…`
+# path <file> names. Silence = the file references nothing under .claude/. Consumed by
+# audit-core.sh §1b, which decides whether each path RESOLVES and is TRACKED.
+#
+# EXTRACTION ONLY, and the split is deliberate. Judging existence needs a worktree and
+# judging trackedness needs an index; a scanner that did either could not be driven
+# against the $SANDBOX fixtures test-core.sh writes. So this prints what was referenced
+# and the audit prints what is wrong with it — the same division _core_pipefail_hits
+# uses when it reports a line and leaves the verdict to §5d.
+#
+# WHY THIS EXISTS. #661 taught /tool-scout to read a decided-and-rejected ledger at
+# .claude/tool-decisions.md and shipped three files that reference it — and not the
+# ledger. .gitignore's `.claude/*` has per-directory negations, so commands/ and agents/
+# vendored out while the file they point at was never tracked (#700). The routine then
+# resolves every candidate to "none", in the exact voice that means CHECKED, so the
+# report asserts the ledger was consulted while consulting nothing.
+#
+# NOTHING ELSE CATCHES IT. audit-core.sh §1's reverse-drift check reads `git ls-files`,
+# so it sees tracked files that are unaccounted for and has no concept of an
+# accounted-for file that was never tracked. .claude/ is allowlisted wholesale as
+# repo-meta, so the manifest direction never looks either. markdownlint does not resolve
+# links, and these are code spans rather than links in the first place.
+#
+# BACKTICKED ONLY. Every reference in the routine docs today is a code span (measured:
+# four, all `.claude/tool-decisions.md`), and prose that merely says ".claude" in passing
+# is not a claim about a file. Requiring the backticks keeps the gate keyed on the form
+# that means "this exact path".
+#
+# GLOBS ARE SKIPPED. A pattern is not a path — `.claude/commands/*.md` describes a set and
+# resolving it would mean inventing a semantics the referencing prose does not have.
+# A trailing `:NN` line reference is stripped: `.claude/commands/tool-scout.md:164` is a
+# citation of the same file, and the line number is not part of the name.
+_core_claude_ref_hits() { # _core_claude_ref_hits <file>
+  local f="${1:-}" line n p
+  [ -f "$f" ] || return 0
+  # Backtick assembled rather than typed: this file is itself scanned by §5i's
+  # every-tracked-file walk, and the discipline of building the delimiter is the same one
+  # _core_conflict_marker_hits follows for the reason spelled out there.
+  local bt; bt="$(printf '\140')"
+  # Fed by a heredoc rather than a pipe: this file sets no `set -e`, but audit-core.sh
+  # runs with pipefail, and a grep that matches nothing exits 1 — through a pipe that
+  # makes a clean "no references here" read as a scanner failure. The heredoc form is
+  # also what §5d asks of every producer→reader pair in this tree.
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    n="${line%%:*}"; p="${line#*:}"
+    p="${p#"$bt"}"; p="${p%"$bt"}"   # strip the delimiters
+    p="${p%:[0-9]*}"                  # `…/tool-scout.md:164` cites a line, not a file
+    case "$p" in
+      *'*'* | *'?'* | */) continue ;; # a pattern or a directory, not a file claim
+    esac
+    printf '%s:%s\n' "$n" "$p"
+  done <<EOF
+$(grep -nIo "${bt}\.claude/[^${bt}]*${bt}" "$f" 2>/dev/null)
+EOF
+}
+
 _audit_ls() { # _audit_ls <pathspec>… — content-gate file set, deduped
   {
     git ls-files -- "$@" 2>/dev/null

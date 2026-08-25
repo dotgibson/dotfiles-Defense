@@ -18,6 +18,16 @@ Read what the system already ships so you do not propose something in use:
 `zsh/20-aliases.zsh` (what is detected and aliased), `mise/config.toml` (pinned
 runtimes), `zsh/45-plugins.zsh` and `nvim/lazy-lock.json` (pinned plugins).
 
+Then read `.claude/tool-decisions.md` — the tools Core has already **considered and declined**,
+with the reasoning and the issue behind each. The files above describe what Core *has*, so
+without this one a rejected tool looks exactly like an unevaluated one and gets re-proposed with
+a fresh case-for and no counter-argument attached (#634).
+
+A listed tool is not automatically dead. It may be re-proposed only *against* the recorded
+reasoning, naming **what changed** — a new release, a wider packaging footprint, or a shift in
+how the stack is used. "It is good" is not what changed; neither is your not having seen it
+before. Report the prior decision per candidate either way, including an explicit "none".
+
 ## Research discipline
 
 - **Verify, do not trust a single source.** For each candidate, check the actual

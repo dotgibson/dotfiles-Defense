@@ -136,10 +136,16 @@ zle -N _fzf_history_clean
 
 # =========================================================
 # Widget: Ctrl+G — session picker (sesh, with graceful fallback)
-# 2026 refresh: was a hand-rolled find+fzf sessionizer; now delegates to the same
-# tmux-sesh.sh that prefix+f uses, so shell and tmux share one picker. sesh is
-# zoxide-aware and names sessions from the git repo; the script falls back to the
-# old find+fzf behaviour if sesh isn't installed yet.
+# 2026 refresh: was a hand-rolled find+fzf sessionizer; now drives sesh directly.
+# sesh is zoxide-aware and names sessions from the git repo; when it is ABSENT this
+# delegates to tmux-sesh.sh, which falls back to the old find+fzf behaviour.
+#
+# NB: shell and tmux do NOT share one picker, though this comment used to say so.
+# The sesh-present path below is its own inline copy — tmux-sesh.sh's richer picker
+# (--height 100%, a border label, and ctrl-a/t/g/d mode-switch reloads) is reached
+# only on the fallback. Keep the two in step by hand, or make the widget shell out
+# to the script unconditionally; see .claude/tool-decisions.md's `sesh picker` row,
+# which is where the option of replacing both with sesh's own TUI is recorded.
 # =========================================================
 _tmux_sessionizer() {
   local picker="$HOME/.config/tmux/scripts/tmux-sesh.sh"

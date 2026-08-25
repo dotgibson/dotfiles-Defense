@@ -21,7 +21,7 @@
 #                the FULL run
 #   • atuin      zsh/00-tools.zsh + atuin/**      → shell AND atuin
 #   • nvim       nvim/**                         → nvim
-#   • shell      zsh/ bin/ maint/ tmux/ sesh/ starship/ mise/ git/ **/*.sh → shell
+#   • shell      zsh/ bin/ maint/ tmux/ sesh/ starship/ mise/ git/ tealdeer/ **/*.sh → shell
 #   • inert      *.md + repo-meta dotfiles + examples/ (nothing links it) → no gate
 #   • anything else → FAIL CLOSED: force the full run and log it. Getting the inert
 #     list wrong only costs a wasted full run (safe); the old code's failure mode was
@@ -66,7 +66,7 @@ while IFS= read -r f; do
     shell=true
     atuin=true
     ;;
-  zsh/* | bin/* | maint/* | tmux/* | sesh/* | starship/* | mise/* | git/* | *.sh) shell=true ;;
+  zsh/* | bin/* | maint/* | tmux/* | sesh/* | starship/* | mise/* | git/* | tealdeer/* | *.sh) shell=true ;;
   # examples/ is repo-meta: bootstrap links NOTHING from it (see examples/README.md), so a
   # change there gates nothing — it would otherwise hit the fail-closed arm and force a full
   # run with an "unrecognised path" line, which reads like a bug rather than a showcase edit.

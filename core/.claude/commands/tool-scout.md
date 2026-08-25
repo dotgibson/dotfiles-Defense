@@ -25,6 +25,16 @@ something already in use:
 - `mise/config.toml` — pinned language runtimes.
 - `zsh/45-plugins.zsh`, `nvim/lazy-lock.json` — pinned plugins.
 
+Those five describe what Core **has**. One more describes what it has already **turned down**:
+
+- `.claude/tool-decisions.md` — tools considered and declined, with the reasoning and the issue.
+
+**Read it before ranking anything, and state per candidate whether a prior decision exists.**
+A tool on that list is not automatically dead, but it may only be re-proposed *against* the
+recorded reasoning, naming what changed — and "it is good" is not what changed. Without this the
+five baseline files make a declined tool indistinguishable from one never evaluated, which is how
+`hexyl` came back ranked "adopt" six days after #395 closed it (#634).
+
 ## What to research
 
 1. **Direct upgrades.** For each tool in the stack (eza, bat, fd, ripgrep, zoxide,
@@ -152,11 +162,18 @@ so in one line: silence reads the same as forgetting.
 
 Then a ranked shortlist, each with:
 
+- **Prior decision** — the row in `.claude/tool-decisions.md` if there is one, and what has
+  changed since it was written. Say "none" explicitly when there is none: an omitted line reads
+  the same as an unchecked one, and the whole point of the ledger is that it was consulted.
 - **What it is** and what it replaces or adds.
 - **Why it fits** this system's philosophy (or why it does not).
 - **Adoption cost** — packaging per distro, config churn, whether it touches the
   load order or the manifest.
 - **Recommendation** — adopt / watch / skip, with a one-line rationale.
+
+If a candidate is **declined** on this run, say so in the report and add the row to
+`.claude/tool-decisions.md` in the same pass — a decision recorded only in a closed issue is one
+the next scan cannot see, which is the failure this file exists to stop.
 
 Propose changes only; do not edit config unless I ask. If I adopt one, the change
 is Core (`PORTING-MATRIX.md`, `zsh/`, maybe `mise/`), so keep `core.manifest` in

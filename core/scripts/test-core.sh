@@ -535,6 +535,68 @@ for _, f in ipairs(vim.fn.readdir(pdir) or {}) do
     end
   end
 end
+-- #652 REGRESSION NET — nvim-lint must DECLARE mason.nvim as a dependency.
+-- plugins/nvim-lint.lua loads on `User FilePost` and replays the triggering buffer at the end of
+-- its config(), spawning Mason-installed linters (rubocop, markdownlint-cli2, eslint_d, ...). Those
+-- resolve only once mason.setup() has prepended <data>/mason/bin to vim.env.PATH. nvim-lspconfig
+-- loads on the SAME event and pulls mason in, but lazy.nvim orders a plugin against its DECLARED
+-- dependencies only -- never against another plugin on the same event -- so without this edge the
+-- replay raced mason's PATH prepend and lost about half the time: rubocop linted on open 4/6 on
+-- macOS (dotgibson/dotfiles-MacBook#191) and 3/6 on Windows, while shellcheck, which lives on the
+-- inherited PATH, was 6/6. vim.uv.spawn got ENOENT -- silently on Windows, where it read as "this
+-- file is clean" rather than as an error.
+-- ASSERTED AT SPEC LEVEL, deliberately: the ordering this guards is a lazy.nvim guarantee, so
+-- re-deriving it at runtime would test lazy rather than this config -- and it cannot be tested
+-- hermetically anyway (it needs lazy.nvim, nvim-lint AND mason really installed, i.e. the network).
+-- Dropping the dependency is luacheck-clean, load-clean and regresses only intermittently on a real
+-- machine, which is exactly the profile that needs a static gate.
+-- #703 EXTENDS THE SAME NET TO conform.nvim, which had the identical undeclared dependency
+-- with a WORSE failure shape. plugins/conform.lua loads on `BufWritePre` and spawns Mason-installed
+-- formatters (prettierd, gofumpt, clang-format, php-cs-fixer, sql-formatter, ktlint,
+-- google-java-format, taplo, ...); it declared no dependencies at all, and mason arrived only
+-- incidentally via nvim-lspconfig / mason-tool-installer. Unlike #652 that is NOT a race: `-c`
+-- commands run BEFORE VimEnter, so in the one-shot/scripted shape neither VeryLazy nor the
+-- vim.schedule'd `User FilePost` emit has fired and mason has NEVER loaded by BufWritePre.
+-- MEASURED on macOS with a `{"a":1,   "b":[1,2,3]}` fixture and prettierd (Mason-only; stylua and
+-- shfmt also live on the base PATH and MASK this):
+--   one-shot `nvim --headless f.json -c write -c qa!` -> 0/4 formatted (mason loaded=false,
+--     executable("prettierd")=0 at BufWritePre); the same write deferred past startup (the
+--     interactive shape) -> 4/4 (mason loaded=true, =1).
+-- And it fails SILENTLY -- conform auto-skips a formatter that is not on PATH, so there is no
+-- error and no notification, the file is just written unformatted.
+-- ONE table-driven check rather than two copies: the assertion is identical, the per-entry `why`
+-- keeps the failure message specific, and the next Mason-spawning spec is one more line.
+for _, case in ipairs({
+  {
+    mod = "gerrrt.plugins.nvim-lint",
+    file = "plugins/nvim-lint.lua",
+    why = "its on-open replay will race mason's PATH prepend again (#652)",
+  },
+  {
+    mod = "gerrrt.plugins.conform",
+    file = "plugins/conform.lua",
+    why = "format-on-save will silently skip every Mason-installed formatter in the "
+      .. "one-shot/scripted shape again (#703)",
+  },
+}) do
+  local ok, spec = pcall(require, case.mod)
+  if not ok or type(spec) ~= "table" then
+    errs[#errs + 1] = "mason dep: " .. case.file .. " did not load as a spec table"
+  else
+    local found = false
+    for _, d in ipairs(spec.dependencies or {}) do
+      -- lazy accepts a bare "owner/name" or a { "owner/name", opts = ... } fragment
+      local dep = type(d) == "table" and d[1] or d
+      if dep == "mason-org/mason.nvim" then
+        found = true
+      end
+    end
+    if not found then
+      errs[#errs + 1] = "mason dep: " .. case.file .. " no longer declares "
+        .. "mason-org/mason.nvim in `dependencies` -- " .. case.why
+    end
+  end
+end
 -- LSP layer: servers/init.lua wires 19 server configs + the on_attach/diagnostics
 -- helpers, but ALL of it runs inside a deferred plugin callback (plugins/nvim-lspconfig)
 -- — so the loop above never touches it, and luacheck (static) was its only gate. A bad
@@ -1784,6 +1846,91 @@ if [[ -z "$(_core_conflict_marker_hits "$HERE/scripts/test-core.sh")" ]]; then
   pass "conflict-marker scan: this test file does not report itself"
 else fail "conflict-marker scan: test-core.sh reports itself — a fixture was typed literally instead of built with printf"; fi
 
+# ── routine reference scanner (scripts/lib/common.sh :: _core_claude_ref_hits) ─
+# WHY THIS IS TESTED. audit-core.sh §1b is the backstop for a defect that shipped and was
+# then reported wrong twice: #661 wired /tool-scout to read .claude/tool-decisions.md and
+# never tracked the file, because .gitignore's `.claude/*` negations are per-DIRECTORY. The
+# gate's value is entirely in what it EXTRACTS — §1b decides existence and trackedness from
+# git, which no fixture can stand in for, so the scanner is the half that can be pinned
+# here. Driven on fixtures for the same reason the digest below is: making the real gate
+# fail means un-tracking a file mid-audit, and CI cannot repeat that.
+#
+# The line numbers are load-bearing, not decoration: §1b prints `<src>:<line> names <path>`
+# and that citation is the whole repair instruction. So these assert exact output.
+hdr "routine reference scanner (_core_claude_ref_hits)"
+_crd="$SANDBOX/clauderef"
+mkdir -p "$_crd"
+_cr_bt="$(printf '\140')"
+_cr_write() { printf '%s\n' "$2" >"$_crd/$1"; } # _cr_write <name> <body>
+_cr_is() {                                      # _cr_is <label> <file> <expected>
+  local got
+  got="$(_core_claude_ref_hits "$_crd/$2")"
+  if [[ "$got" == "$3" ]]; then
+    pass "routine reference scan: $1"
+  else
+    fail "routine reference scan: $1 (got '${got//$'\n'/, }', want '${3//$'\n'/, }')"
+  fi
+}
+
+# ── what it must catch ──
+# The real shape, verbatim from .claude/commands/tool-scout.md — a code span in a bullet.
+_cr_write bullet.md "Those five describe what Core has. One more describes what it turned down:
+
+- ${_cr_bt}.claude/tool-decisions.md${_cr_bt} — tools considered and declined."
+_cr_is "a backticked path in a bullet is reported with its line" bullet.md "3:.claude/tool-decisions.md"
+
+_cr_write two.md "read ${_cr_bt}.claude/tool-decisions.md${_cr_bt} first
+then ${_cr_bt}.claude/agents/tool-scout.md${_cr_bt} too"
+_cr_is "every reference reports, one per line" two.md "1:.claude/tool-decisions.md
+2:.claude/agents/tool-scout.md"
+
+# Two on ONE line. grep -o emits both with the same line number, which is what the operator
+# needs — the citation points at the line, and a line can make two claims.
+_cr_write same.md "both ${_cr_bt}.claude/a.md${_cr_bt} and ${_cr_bt}.claude/b.md${_cr_bt} are read"
+_cr_is "two references on one line both report" same.md "1:.claude/a.md
+1:.claude/b.md"
+
+# A citation carries a line number; the FILE is still the claim being made.
+_cr_write cite.md "see ${_cr_bt}.claude/commands/tool-scout.md:164${_cr_bt} for the wording"
+_cr_is "a trailing :NN is stripped — a citation names a file, not a line" cite.md "1:.claude/commands/tool-scout.md"
+
+# ── what it must NOT catch ──
+# A pattern describes a SET. Resolving it would mean inventing a semantics the prose does
+# not have, and the first false positive is what gets a gate switched off (the §5f argument).
+_cr_write glob.md "the routines live in ${_cr_bt}.claude/commands/*.md${_cr_bt}"
+_cr_is "a glob is NOT a file claim" glob.md ""
+
+_cr_write dir.md "everything under ${_cr_bt}.claude/agents/${_cr_bt} is shared"
+_cr_is "a directory is NOT a file claim" dir.md ""
+
+# Prose that merely says the word is not asserting a path exists. Requiring the code span
+# is what keeps this gate keyed on "this exact file" rather than on any mention of .claude.
+_cr_write prose.md "The .claude/tool-decisions.md ledger is worth reading."
+_cr_is "an unbackticked mention is NOT a finding" prose.md ""
+
+_cr_write other.md "read ${_cr_bt}PORTING-MATRIX.md${_cr_bt} and ${_cr_bt}zsh/00-tools.zsh${_cr_bt}"
+_cr_is "paths outside .claude/ are out of scope" other.md ""
+
+_cr_is "a missing file is silent, not an error" nosuchfile.md ""
+
+# NO SELF-REFERENCE GUARD HERE, unlike the conflict-marker matcher above, and the
+# difference is real rather than an omission. That scanner reads EVERY tracked file, so
+# common.sh is inside its own scan set and a literally-typed pattern would redden the audit
+# permanently. This one only ever opens .claude/{commands,agents}/*.md — common.sh is not in
+# the set, and the backticked `.claude/…` examples in its own comments are documentation of
+# the contract, not claims about files. Asserting silence here would forbid the scanner from
+# being explained in prose, which is a worse trade than it looks.
+#
+# What IS worth pinning is the scanner against the real routine docs rather than fixtures.
+# Every assertion above is synthetic; this one fails if the house form ever moves away from
+# a code span (an autolink, a markdown link, a bare path), which would leave §1b silently
+# scanning for a shape nobody writes any more — a gate that passes because it found nothing
+# to check, which is the exact failure #700 was.
+_cr_live="$(_core_claude_ref_hits "$HERE/.claude/commands/tool-scout.md")"
+if [[ "$_cr_live" == *":.claude/tool-decisions.md" ]]; then
+  pass "routine reference scan: the live routine doc still parses (tool-scout.md names the ledger)"
+else fail "routine reference scan: .claude/commands/tool-scout.md yielded '${_cr_live//$'\n'/, }' — the routines stopped writing paths as code spans, so §1b is scanning for a shape that no longer exists"; fi
+
 # ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
 # WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
 # whole reason for existing is that an INTERMITTENT failure is unreproducible by the time the
@@ -1967,7 +2114,17 @@ if have git; then
   # that would carry it onto main — which is precisely the untracked-but-not-ignored window
   # `_audit_ls` covers and bare `git ls-files` does not. Its pathspec is `*` rather than a
   # glob list because the defect that motivated it (#650) was in markdown, not in shell.
-  _als_expect="audit-core.sh:10:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
+  #
+  # DIRECT 3→5: §1b (routine reference integrity) takes bare `git ls-files` twice, and this
+  # is the one gate where the choice is not a preference. It asks whether a file the
+  # routines claim to read is SHIPPED — a pure "what does git record?" question — and the
+  # defect it exists for (#700) was a file present on the author's disk and ignored by git.
+  # `_audit_ls` includes untracked-but-not-ignored files, so using it here would wave that
+  # exact file through while every clone stayed broken: the gate would be green precisely
+  # on the machine where the bug is invisible. Both call sites are the same question — one
+  # builds the tracked set to test membership against, the other picks the routine docs to
+  # scan — so both take the git-state side.
+  _als_expect="audit-core.sh:10:5 check-modern.sh:2:0 nvim-reachability.sh:2:0"
   _als_bad=""
   for _als_spec in $_als_expect; do
     _als_f="${_als_spec%%:*}"
@@ -2014,6 +2171,9 @@ _classify_is "examples/ change → no gate (repo-meta, nothing links it)" 'examp
 # module that can break it.
 _classify_is "zsh/00-tools.zsh change → shell AND atuin (guard's own module)" 'zsh/00-tools.zsh' true false true
 _classify_is "atuin/ config change → shell AND atuin" 'atuin/config.toml' true false true
+# tealdeer is a plain tools-group config: shell gate only. NOT the atuin axis — that one
+# gates the premise detector's hermetic self-test and is kept narrow on purpose.
+_classify_is "tealdeer/ config change → shell gate only" 'tealdeer/config.toml' true false false
 _classify_is "a plain zsh/ change does NOT pay the atuin gate" 'zsh/45-plugins.zsh' true false false
 _classify_is "mixed atuin+nvim set → union across all three axes" $'atuin/config.toml\nnvim/init.lua' true true true
 
@@ -3709,7 +3869,7 @@ if have git; then
   # both a race and a violation of the read-only assumption the whole suite is built on.
   # Copying per top-level directory keeps .git out without needing a non-portable tar flag.
   mkdir -p "$LR/dotfiles/core"
-  for _lr_d in zsh nvim tmux vim git starship lazygit mise jujutsu atuin sesh ssh bin lib; do
+  for _lr_d in zsh nvim tmux vim git starship lazygit mise jujutsu atuin tealdeer sesh ssh bin lib; do
     [[ -e "$HERE/$_lr_d" ]] && cp -R "$HERE/$_lr_d" "$LR/dotfiles/core/$_lr_d"
   done
   mkdir -p "$LR/config/tmux/plugins/tpm"   # pre-seed: skips the tpm clone (offline)
@@ -3762,6 +3922,7 @@ if have git; then
   _lr_is_link_to "$LR/config/starship.toml" "$LR/dotfiles/core/starship/starship.toml" || _lr_bad="$_lr_bad starship.toml"
   _lr_is_link_to "$LR/config/lazygit/config.yml" "$LR/dotfiles/core/lazygit/config.yml" || _lr_bad="$_lr_bad lazygit"
   _lr_is_link_to "$LR/config/jj/config.toml" "$LR/dotfiles/core/jujutsu/config.toml" || _lr_bad="$_lr_bad jj"
+  _lr_is_link_to "$LR/config/tealdeer/config.toml" "$LR/dotfiles/core/tealdeer/config.toml" || _lr_bad="$_lr_bad tealdeer"
   _lr_is_link_to "$LR/home/.gitconfig" "$LR/dotfiles/core/git/gitconfig" || _lr_bad="$_lr_bad .gitconfig"
   _lr_is_link_to "$LR/home/.vimrc" "$LR/dotfiles/core/vim/vimrc" || _lr_bad="$_lr_bad .vimrc"
   # Resolve the target, don't just prove it is *a* symlink — a dangling link, or one
@@ -3769,7 +3930,7 @@ if have git; then
   _lr_is_link_to "$LR/config/tmux/scripts" "$LR/dotfiles/core/tmux/scripts" || _lr_bad="$_lr_bad tmux/scripts"
   [[ -d "$LR/config/tmux/scripts" ]] || _lr_bad="$_lr_bad tmux/scripts(dangling)"
   if [[ -z "$_lr_bad" ]]; then
-    pass "link run: tmux, starship, lazygit, jj, gitconfig and vimrc land where bootstrap promises"
+    pass "link run: tmux, starship, lazygit, jj, tealdeer, gitconfig and vimrc land where bootstrap promises"
   else
     fail "link run: wrong or missing links —$_lr_bad"
   fi
@@ -6963,6 +7124,72 @@ $(printf '%s\n' "$_sj_out" | grep -v '^{' | head -5)"
   unset _sj_out _sj_lines _sj_result _sj_plain
 fi
 
+# ── C9. os.capabilities schema validator (scripts/check-capabilities.sh) ─────
+# The strict half of #663. The reader (band 02) is asserted in section A4, which is
+# zsh-gated; this is NOT, and deliberately sits ABOVE that gate so it runs on every box
+# — a bare container, a docs-scoped CI leg — where the reader itself cannot be exercised.
+#
+# It was written below the gate first, and never ran here at all: `have zsh` guards an
+# early `exit 0`, so a bash assertion placed after it is silently absent rather than
+# skipped. That is the green-because-absent result, and it is worth a comment because the
+# file gives no other hint that its second half is conditional.
+hdr "os.capabilities schema validator"
+CAPCHK="$HERE/scripts/check-capabilities.sh"
+CAPEX="$HERE/examples/os.capabilities.example"
+if [[ ! -x "$CAPCHK" || ! -r "$CAPEX" ]]; then
+  fail "check-capabilities.sh or the example declaration is missing"
+else
+  CAPV="$SANDBOX/capval"
+  mkdir -p "$CAPV"
+  # _cap_rejects <label> <sed-or-append expression applied to the example>
+  _cap_rejects() { # <label> <file>
+    if "$CAPCHK" "$2" >/dev/null 2>&1; then
+      fail "validator: accepted $1 (it must not)"
+    else
+      pass "validator: rejects $1"
+    fi
+  }
+  if "$CAPCHK" "$CAPEX" >/dev/null 2>&1; then
+    pass "validator: the shipped example passes its own schema"
+  else
+    fail "validator: examples/os.capabilities.example does NOT satisfy the schema it documents"
+  fi
+  # An unknown key is the case that matters most: the reader ignores it in silence, so the
+  # validator is the ONLY thing standing between a typo and a capability nothing dispatches.
+  { cat "$CAPEX"; printf 'CLIPBOARD=wl-copy\n'; } >"$CAPV/unknown"
+  _cap_rejects "an unknown key" "$CAPV/unknown"
+  grep -v '^PKG_OWNS=' "$CAPEX" >"$CAPV/missing"
+  _cap_rejects "a missing required key" "$CAPV/missing"
+  sed 's/^PKG_SEARCH=.*/PKG_SEARCH=/' "$CAPEX" >"$CAPV/blank"
+  _cap_rejects "a required key declared empty" "$CAPV/blank"
+  sed 's/^SCHEDULER=.*/SCHEDULER=cron/' "$CAPEX" >"$CAPV/sched"
+  _cap_rejects "a SCHEDULER outside the enum" "$CAPV/sched"
+  { cat "$CAPEX"; printf 'PKG_SEARCH=dnf search\n'; } >"$CAPV/dupe"
+  _cap_rejects "a duplicate key" "$CAPV/dupe"
+  { cat "$CAPEX"; printf 'this is not an assignment\n'; } >"$CAPV/junk"
+  _cap_rejects "a line that is not KEY=value" "$CAPV/junk"
+  # Trailing whitespace: the reader TRIMS it, so a value carrying it would validate one way
+  # and behave another. Rejecting it keeps the two halves of #663 telling the same story.
+  { grep -v '^PKG_REMOVE=' "$CAPEX"; printf 'PKG_REMOVE=sudo dnf remove -y \n'; } >"$CAPV/ws"
+  _cap_rejects "a value with trailing whitespace" "$CAPV/ws"
+  _cap_rejects "an unreadable file" "$CAPV/nope-does-not-exist"
+  # `none` is a REAL scheduler answer (a container, a box with neither init), not a
+  # placeholder — asserting it keeps someone from "tightening" the enum to systemd|launchd.
+  sed 's/^SCHEDULER=.*/SCHEDULER=none/' "$CAPEX" >"$CAPV/sched-none"
+  if "$CAPCHK" "$CAPV/sched-none" >/dev/null 2>&1; then
+    pass "validator: SCHEDULER=none is accepted (containers, boxes with neither init)"
+  else
+    fail "validator: SCHEDULER=none was rejected — it is a real answer, not a placeholder"
+  fi
+  # TOOLS_OPTIN is OPTIONAL: absent means "Core's built-in default applies".
+  grep -v '^TOOLS_OPTIN=' "$CAPEX" >"$CAPV/no-optin"
+  if "$CAPCHK" "$CAPV/no-optin" >/dev/null 2>&1; then
+    pass "validator: TOOLS_OPTIN is optional (absent ⇒ Core's default)"
+  else
+    fail "validator: TOOLS_OPTIN was treated as required — it is not"
+  fi
+fi
+
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
 # Everything below needs a real zsh. On a bare box we SKIP it (not fail) and fall
 # through to the shared summary, so a Section-C failure still surfaces as exit 1.
@@ -7624,28 +7851,31 @@ hdr "profile filtering (CORE_PROFILE ceilings + resolution)"
 PROF="$SANDBOX/prof"
 mkdir -p "$PROF"
 ln -s "$HERE/zsh/loader.zsh" "$PROF/loader.zsh"
-for nn in 00 05 10 15 20 25 30 35 40 45 50 55 60 80 85 99; do
+for nn in 00 02 05 10 15 20 25 30 35 40 45 50 55 60 80 85 99; do
   printf 'print -r -- "F%s"\n' "$nn" >"$PROF/$nn-stub.zsh"
 done
 # _prof_load <pre-source snippet> → space-joined NN list actually loaded. The snippet runs
 # before `source loader.zsh`, so it can set CORE_PROFILE in the env or leave it unset.
 _prof_load() { zsh -f -c "ZSH_CFG='$PROF'; $1; source '$PROF/loader.zsh'" 2>/dev/null | tr '\n' ' ' | sed 's/F//g; s/ *$//'; }
 _prof_is() { if [[ "$2" == "$3" ]]; then pass "profile: $1"; else fail "profile: $1 — got [$2] want [$3]"; fi; }
-_ALL="00 05 10 15 20 25 30 35 40 45 50 55 60 80 85 99"
+# 02 is in every expectation below, not just _ALL: zsh/02-capabilities.zsh reads the OS
+# layer's capability declaration, and a profile that dropped it would leave $_CORE_CAP
+# empty — the dispatch table silently absent on exactly the lean boxes (#663).
+_ALL="00 02 05 10 15 20 25 30 35 40 45 50 55 60 80 85 99"
 _prof_is "full loads every band"          "$(_prof_load 'CORE_PROFILE=full')"     "$_ALL"
-_prof_is "minimal = 00-30 + outer (>=70)" "$(_prof_load 'CORE_PROFILE=minimal')"  "00 05 10 15 20 25 30 80 85 99"
-_prof_is "standard = 00-50 + outer (>=70)" "$(_prof_load 'CORE_PROFILE=standard')" "00 05 10 15 20 25 30 35 40 45 50 80 85 99"
+_prof_is "minimal = 00-30 + outer (>=70)" "$(_prof_load 'CORE_PROFILE=minimal')"  "00 02 05 10 15 20 25 30 80 85 99"
+_prof_is "standard = 00-50 + outer (>=70)" "$(_prof_load 'CORE_PROFILE=standard')" "00 02 05 10 15 20 25 30 35 40 45 50 80 85 99"
 _prof_is "unknown value falls back to full" "$(_prof_load 'CORE_PROFILE=bogus')"   "$_ALL"
 _prof_is "unset defaults to full"         "$(_prof_load 'true')"                  "$_ALL"
 printf 'minimal\n' >"$PROF/profile"                       # persistent one-liner
-_prof_is "\$ZSH_CFG/profile one-liner selects minimal" "$(_prof_load 'true')" "00 05 10 15 20 25 30 80 85 99"
-_prof_is "env CORE_PROFILE wins over the file"         "$(_prof_load 'CORE_PROFILE=standard')" "00 05 10 15 20 25 30 35 40 45 50 80 85 99"
+_prof_is "\$ZSH_CFG/profile one-liner selects minimal" "$(_prof_load 'true')" "00 02 05 10 15 20 25 30 80 85 99"
+_prof_is "env CORE_PROFILE wins over the file"         "$(_prof_load 'CORE_PROFILE=standard')" "00 02 05 10 15 20 25 30 35 40 45 50 80 85 99"
 # v4.0.1: a slightly-malformed $ZSH_CFG/profile one-liner must still resolve by its FIRST
 # FIELD. Before the fix, a trailing space / extra token / surrounding whitespace landed in
 # CORE_PROFILE verbatim, so the `case` matched no arm and silently fell through to `full`.
 # `read -r CORE_PROFILE _` now takes just the first word (and trims surrounding whitespace).
-_MIN="00 05 10 15 20 25 30 80 85 99"
-_STD="00 05 10 15 20 25 30 35 40 45 50 80 85 99"
+_MIN="00 02 05 10 15 20 25 30 80 85 99"
+_STD="00 02 05 10 15 20 25 30 35 40 45 50 80 85 99"
 printf 'minimal \n' >"$PROF/profile" # trailing space
 _prof_is "profile w/ trailing space still selects minimal" "$(_prof_load 'true')" "$_MIN"
 printf 'standard extra tokens\n' >"$PROF/profile" # stray extra tokens after the profile word
@@ -7664,6 +7894,121 @@ printf 'print -r -- r10\n' >"$PROF/85-r10.zsh"
 _tie="$(zsh -f -c "ZSH_CFG='$PROF'; setopt numericglobsort; source '$PROF/loader.zsh'" 2>/dev/null | grep -E '^r(2|10)$' | tr '\n' ' ' | sed 's/ *$//')"
 if [[ "$_tie" == "r10 r2" ]]; then pass "profile: same-NN tie breaks lexically (r10 before r2), even under NUMERIC_GLOB_SORT"; else fail "profile: same-NN tiebreak wrong — got [$_tie] want [r10 r2]"; fi
 rm -f "$PROF/85-r2.zsh" "$PROF/85-r10.zsh"
+
+# ── A4. os.capabilities reader (zsh/02-capabilities.zsh) ─────────────────────
+# The reader is deliberately the PERMISSIVE half of #663: it skips anything it does not
+# understand rather than breaking a login shell over a typo, and strictness lives in
+# scripts/check-capabilities.sh (exercised further down, in bash, so it is covered even
+# on a box with no zsh). What must be asserted here is that "permissive" does not mean
+# "vague" — a value survives byte-for-byte, junk never lands in the table, and a box with
+# NO declaration still gets a working shell.
+#
+# Every probe runs under `zsh -f`, which is the point: EXTENDED_GLOB is 10-options.zsh's,
+# eight bands after this fragment, so the reader must parse with plain globbing. An earlier
+# draft trimmed trailing space with ${v%%[[:space:]]##} and would have matched NOTHING here
+# — silently, which is the failure mode this section exists to catch.
+hdr "os.capabilities reader (band 02)"
+if ! have zsh; then
+  skip "os.capabilities reader (no zsh)"
+else
+  CAPD="$SANDBOX/caps"
+  mkdir -p "$CAPD"
+  # _cap_probe <capabilities-file-or-empty> <zsh snippet> → stdout of the snippet, run with
+  # the fragment sourced exactly as the loader would source it (at top level, not in a
+  # function — which is why the fragment cannot use `local`).
+  _cap_probe() {
+    local _f="$1" _snip="$2"
+    zsh -f -c "CORE_CAPABILITIES_FILE='$_f'; CORE_CAP_QUIET=1; source '$HERE/zsh/02-capabilities.zsh'; $_snip" 2>/dev/null
+  }
+  _cap_is() { if [[ "$2" == "$3" ]]; then pass "capabilities: $1"; else fail "capabilities: $1 — got [$2] want [$3]"; fi; }
+
+  # A well-formed declaration, plus every shape the reader must IGNORE.
+  cat >"$CAPD/good" <<'CAPS'
+# a comment
+   # an indented comment
+
+PKG_INSTALL=sudo dnf install -y
+PKG_SEARCH=dnf search
+lowercase_key=ignored
+Mixed_Case=ignored
+not an assignment at all
+PKG_EMPTY=
+SCHEDULER=systemd
+CAPS
+  printf 'PKG_TRAILING=dnf provides   \n' >>"$CAPD/good"
+  printf 'PKG_SEARCH=dnf whatprovides\n' >>"$CAPD/good"   # duplicate: LAST wins
+
+  # A multi-word value is the whole reason this is not blib_read_pkgs (which strips ALL
+  # whitespace); interior spacing must survive verbatim.
+  _cap_is "multi-word value survives verbatim" \
+    "$(_cap_probe "$CAPD/good" 'print -r -- "[$_CORE_CAP[PKG_INSTALL]]"')" "[sudo dnf install -y]"
+  _cap_is "trailing whitespace is trimmed" \
+    "$(_cap_probe "$CAPD/good" 'print -r -- "[$_CORE_CAP[PKG_TRAILING]]"')" "[dnf provides]"
+  _cap_is "duplicate key: the last one wins" \
+    "$(_cap_probe "$CAPD/good" 'print -r -- "[$_CORE_CAP[PKG_SEARCH]]"')" "[dnf whatprovides]"
+  # Junk must not merely be tolerated — it must be ABSENT. A lowercase or mixed-case key
+  # half-parsed into the table would be a capability nothing ever reads and nothing reports.
+  #
+  # zsh emits the keys UNSORTED, one per line, and bash sorts them. The obvious spelling —
+  # `print -r -- "${(ko)_CORE_CAP}"` — silently does NOT sort: inside double quotes the
+  # expansion is joined into a single word before the `o` flag applies, so `o` has one word
+  # to order and returns hash order. It read as sorted and was not, which is precisely the
+  # kind of assertion that passes for the wrong reason later. Sorting outside zsh depends on
+  # no expansion-flag subtlety at all; LC_ALL=C pins collation across the four CI legs.
+  _cap_keys="$(_cap_probe "$CAPD/good" 'print -rl -- ${(k)_CORE_CAP}' | LC_ALL=C sort | tr '\n' ' ')"
+  _cap_is "only well-formed KEYS land in the table" "${_cap_keys% }" \
+    "PKG_EMPTY PKG_INSTALL PKG_SEARCH PKG_TRAILING SCHEDULER"
+  # The parser's scratch variables must not leak into the interactive shell. They cannot be
+  # `local` (the fragment is sourced at top level), so the explicit unset is load-bearing.
+  _cap_is "parser scratch vars do not leak" \
+    "$(_cap_probe "$CAPD/good" 'print -r -- "[${_cap_line-unset}${_cap_k-unset}${_cap_v-unset}]"')" \
+    "[unsetunsetunset]"
+
+  # _core_cap is THE accessor, and its contract is that "declared empty" and "never
+  # declared" behave identically — otherwise every consumer needs both checks.
+  _cap_is "_core_cap returns a declared value" \
+    "$(_cap_probe "$CAPD/good" '_core_cap PKG_SEARCH')" "dnf whatprovides"
+  _cap_is "_core_cap falls back for an ABSENT key" \
+    "$(_cap_probe "$CAPD/good" '_core_cap PKG_NOPE "the fallback"')" "the fallback"
+  _cap_is "_core_cap falls back for a DECLARED-EMPTY key" \
+    "$(_cap_probe "$CAPD/good" '_core_cap PKG_EMPTY "the fallback"')" "the fallback"
+  _cap_is "_core_cap with no fallback is the empty string" \
+    "$(_cap_probe "$CAPD/good" 'print -r -- "[$(_core_cap PKG_NOPE)]"')" "[]"
+
+  # THE ABSENCE CONTRACT, which is the one this issue argued about: a box with no
+  # declaration must get a WORKING shell and a warning, never a hard failure. The whole
+  # point is that you can still fix the box you are SSH'd into.
+  _cap_is "missing file still yields a usable shell" \
+    "$(_cap_probe "$CAPD/does-not-exist" 'print -r -- "[${#_CORE_CAP}][$(_core_cap PKG_INSTALL fallback)]"')" \
+    "[0][fallback]"
+  _cap_absent_rc="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; source '$HERE/zsh/02-capabilities.zsh'" 2>/dev/null; printf '%s' "$?")"
+  _cap_is "missing file exits 0 (a warning, not a failure)" "$_cap_absent_rc" "0"
+  # ...and the warning goes to STDERR, so it never pollutes a $(...) capture from a login
+  # shell — the way a warning on stdout silently corrupts every script that captures one.
+  _cap_warn_out="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; source '$HERE/zsh/02-capabilities.zsh'" 2>/dev/null)"
+  _cap_is "the missing-file warning is NOT on stdout" "[$_cap_warn_out]" "[]"
+  _cap_warn_err="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; source '$HERE/zsh/02-capabilities.zsh'" 2>&1 >/dev/null | head -n1)"
+  case "$_cap_warn_err" in
+    *"no OS capability declaration"*) pass "capabilities: the missing-file warning is on stderr" ;;
+    *) fail "capabilities: expected a stderr warning for a missing declaration — got [$_cap_warn_err]" ;;
+  esac
+  # CORE_CAP_QUIET is what bootstrap and this suite set: they KNOW the file is absent and
+  # do not want the warning on every shell they spawn.
+  _cap_quiet_err="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; CORE_CAP_QUIET=1; source '$HERE/zsh/02-capabilities.zsh'" 2>&1 >/dev/null)"
+  _cap_is "CORE_CAP_QUIET suppresses the warning" "[$_cap_quiet_err]" "[]"
+
+  # A file with no trailing newline: the `|| [[ -n "$line" ]]` arm. Without it the last
+  # assignment in a hand-edited declaration is dropped, silently.
+  printf 'PKG_INSTALL=apk add' >"$CAPD/no-newline"
+  _cap_is "a final line with no trailing newline is still read" \
+    "$(_cap_probe "$CAPD/no-newline" 'print -r -- "[$_CORE_CAP[PKG_INSTALL]]"')" "[apk add]"
+
+  # An EMPTY declaration is well-formed input, not an error: the audit is what says a
+  # required key is missing.
+  : >"$CAPD/empty"
+  _cap_is "an empty declaration yields an empty table, not an error" \
+    "$(_cap_probe "$CAPD/empty" 'print -r -- "[${#_CORE_CAP}]"')" "[0]"
+fi
 
 # ── B. function unit tests ────────────────────────────────────────────────────
 hdr "function unit tests (functions.zsh)"
@@ -7844,7 +8189,7 @@ check "core-doctor --help returns 0 (not mis-read)" \
 # describing state that can change under a LIVE shell, so a consumer polling it needs both
 # booleans to keep meaning what they say.
 check "core-doctor --json emits parseable JSON with tools/wired/atuin_daemon/resolved" \
-  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"expected\",\"wired\",\"detection\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"]); assert set(d[\"detection\"]) == set([\"ran\",\"missed\"]); assert isinstance(d[\"detection\"][\"ran\"], bool) and isinstance(d[\"detection\"][\"missed\"], list)"'
+  'out=$(core-doctor --json); print -r -- "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert set([\"version\",\"tools\",\"expected\",\"wired\",\"detection\",\"atuin_daemon\",\"resolved\"]) <= set(d); assert set(d[\"atuin_daemon\"]) == set([\"degraded\",\"was_up\"]); assert set(d[\"detection\"]) == set([\"ran\",\"missed\",\"stale\"]); assert isinstance(d[\"detection\"][\"ran\"], bool) and isinstance(d[\"detection\"][\"missed\"], list) and isinstance(d[\"detection\"][\"stale\"], list)"'
 # The human report and --json now BOTH derive from _CORE_DOCTOR_GROUPS, so they agree by
 # construction and this assertion should be tautological. It is kept precisely for that
 # reason: it is the guard that stays red if someone reintroduces a second literal — which is
@@ -7994,6 +8339,78 @@ import json, os, re
 # Same two trims as the parity test this mirrors: line 1 is the legend (it contains the
 # glyphs), and everything from the opt-in recap on re-lists names. The not-wired block sits
 # AFTER opt-in precisely so this second trim covers it structurally.
+body = os.environ[\"_CD_R\"].split(chr(10), 1)[1]
+body = body.split(chr(10) + \"opt-in\")[0]
+shown = set(re.findall(r\"[✓✗·] ([A-Za-z0-9_.-]+)\", body))
+keys  = set(json.loads(os.environ[\"_CD_J\"])[\"tools\"])
+assert shown, \"parsed no tools out of the rendered report\"
+assert shown == keys, \"render-only: %s | json-only: %s\" % (sorted(shown - keys), sorted(keys - shown))
+"'
+
+# ── #631: the MIRROR of #545 — a flag set at band 00 for a binary that is now GONE ───────
+# #545's case is present-but-unprobed. This is probed-but-absent: HAVE_* is still set, so
+# 20-aliases.zsh's guard passed and defined an alias against a binary that no longer resolves.
+# Deliberately NO fifth glyph — the row keeps its honest ✗ and the remedy lives in a `stale`
+# block, so the legend and the render⇄json parity regex are both untouched.
+check "core-doctor reports a stale flag in a 'stale' block, with no new glyph" \
+  '_core_have() { return 1 }
+   typeset -gA _CORE_PROBED=(procs 1)
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out == *"stale"* ]]  || { print -r -- "no stale block for a probed-then-absent tool"; exit 1 }
+   [[ $out == *"procs"* ]]  || { print -r -- "stale block does not name the tool"; exit 1 }
+   [[ $out == *"✗ procs"* ]] || { print -r -- "the row should still render an honest ✗"; exit 1 }'
+# The point of the block is the ALIAS, not the tool: `ps` is the command that breaks, `procs`
+# is trivia the user never typed. Read from the live `aliases` table, so it cannot drift from
+# 20-aliases.zsh.
+check "core-doctor names the ALIAS a stale flag left pointing at nothing" \
+  '_core_have() { return 1 }
+   typeset -gA _CORE_PROBED=(procs 1)
+   alias ps=procs
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out == *"ps → procs"* ]] || { print -r -- "did not name the broken alias; got: ${out##*stale}"; exit 1 }'
+# Both ledger gates apply here exactly as they do to the unwired axis — a doctor that claims
+# staleness with no ledger would flag every absent tool on a bare box, which is most of them.
+check "core-doctor makes no staleness claim when detection never ran" \
+  '_core_have() { return 1 }
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out != *"stale"* ]] || { print -r -- "stale block rendered with no ledger"; exit 1 }'
+# With _core_have stubbed FALSE every row is absent, so the second gate here is not "no block
+# at all" (as it is for #545's ⚠, which fires on the present branch) but "only ledger rows
+# appear in it". Asserted on the NAMES line alone — the prose underneath contains "open a new
+# shell", and a substring match for a tool called `op` finds the "op" in "open".
+check "core-doctor's stale block lists only rows Core actually probes" \
+  '_core_have() { return 1 }
+   typeset -gA _CORE_PROBED=(eza 1)
+   names=$(NO_COLOR=1 core-doctor 2>&1 | awk "/^stale\$/{getline; print; exit}")
+   [[ ${names// /} == eza ]] \
+     || { print -r -- "stale names line should be exactly \"eza\", got: [$names]"; exit 1 }'
+# …and the false-positive mirror: a tool the ledger says was ABSENT at band 00 and is still
+# absent is simply missing, not stale. Nothing was wired, so no alias can be dangling.
+check "core-doctor does not call a never-detected tool stale" \
+  '_core_have() { return 1 }
+   typeset -gA _CORE_PROBED=(procs 0)
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out != *"stale"* ]] || { print -r -- "an absent-at-band-00 tool was reported stale"; exit 1 }'
+check_dep "core-doctor --json exposes detection.stale, disjoint from detection.missed" python3 \
+  '_core_have() { return 1 }
+   typeset -gA _CORE_PROBED=(procs 1 jnv 0)
+   core-doctor --json | python3 -c "
+import json, sys
+d = json.load(sys.stdin)[\"detection\"]
+assert d[\"ran\"] is True, d
+assert \"procs\" in d[\"stale\"], d
+assert \"jnv\" not in d[\"stale\"], d
+assert set(d[\"stale\"]) & set(d[\"missed\"]) == set(), d
+"'
+# The parity test stubs _core_have FALSE, which is exactly the branch this axis fires on — so
+# unlike #545's ⚠ it CAN perturb that comparison. Re-run it with the stale axis active to show
+# the `stale` block is invisible to it (it sits past the opt-in trim, like `not wired`).
+check_dep "the render⇄json tool sets still match with the stale axis firing" python3 \
+  '_core_have() { return 1 }
+   typeset -gA _CORE_PROBED=(procs 1 btop 1)
+   alias ps=procs
+   _CD_R="$(NO_COLOR=1 core-doctor 2>&1)" _CD_J="$(core-doctor --json)" python3 -c "
+import json, os, re
 body = os.environ[\"_CD_R\"].split(chr(10), 1)[1]
 body = body.split(chr(10) + \"opt-in\")[0]
 shown = set(re.findall(r\"[✓✗·] ([A-Za-z0-9_.-]+)\", body))
@@ -10947,6 +11364,103 @@ ucheck "serve: a failed default route does not reprint the tunnel addr as (lan)"
 # core.manifest lists nvim/ as a DIRECTORY, so the audit's manifest⇄fs check auto-lists
 # every path under it and cannot see an orphan. §4b of the audit is the backstop; this
 # proves the backstop actually catches what it claims to, rather than merely existing —
+# ── routine allowed-tools ⇄ workflow --allowedTools mirror (#633) ─────────────
+# .github/workflows/claude-routines.yml states the invariant: "each job's --allowedTools MIRRORS
+# the routine's own allowed-tools frontmatter (.claude/commands/<routine>.md) and is never
+# broader." Nothing enforced it. The two live ~200 lines apart in different files, in different
+# spellings (", " vs ","), and a routine that drifts BROADER hands a scheduled, token-bearing,
+# Opus-driven job a capability its own definition never granted — while one that drifts NARROWER
+# fails at runtime, weekly, in a job nobody watches unless it files an issue.
+#
+# Driven off the WORKFLOW side: every --allowedTools in the two rails must match the frontmatter
+# of the routine its `claude -p "/<name>"` names. A command with no mirror is simply not
+# scheduled (release-notes is dispatch-only, several are unscheduled) and is not a finding; a
+# mirror naming a command that does not exist is.
+if have python3; then
+  hdr "routine allowed-tools mirror the workflow --allowedTools (#633)"
+  _atm_out="$(
+    HERE="$HERE" python3 - <<'PY'
+import os, re, sys, glob
+
+here = os.environ["HERE"]
+rails = [".github/workflows/claude-routines.yml", ".github/workflows/claude-routines-call.yml"]
+
+def norm(tools):
+    # the two files spell the same list differently; compare as SETS of trimmed entries so
+    # ordering and whitespace are not findings, but a missing or extra capability is.
+    return frozenset(t.strip() for t in tools.split(",") if t.strip())
+
+def frontmatter_tools(cmd):
+    p = os.path.join(here, ".claude/commands/%s.md" % cmd)
+    if not os.path.exists(p):
+        return None
+    with open(p, encoding="utf-8") as fh:
+        text = fh.read()
+    m = re.match(r"---\n(.*?)\n---\n", text, re.S)
+    if not m:
+        return None
+    m2 = re.search(r"^allowed-tools:[ \t]*(.+)$", m.group(1), re.M)
+    return norm(m2.group(1)) if m2 else None
+
+problems, checked = [], 0
+for rail in rails:
+    path = os.path.join(here, rail)
+    if not os.path.exists(path):
+        continue
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    # pair each --allowedTools with the nearest PRECEDING `claude -p "/<routine>"`
+    for m in re.finditer(r'--allowedTools\s+"([^"]*)"', text):
+        before = text[: m.start()]
+        names = re.findall(r'claude -p "/([A-Za-z0-9_-]+)[^"]*"', before)
+        if not names:
+            problems.append("a --allowedTools with no `claude -p \"/<routine>\"` above it in %s" % rail)
+            continue
+        cmd = names[-1]
+        checked += 1
+        want = frontmatter_tools(cmd)
+        if want is None:
+            problems.append("%s: mirrors /%s, which has no .claude/commands/%s.md with allowed-tools"
+                            % (rail, cmd, cmd))
+            continue
+        got = norm(m.group(1))
+        if got != want:
+            extra = sorted(got - want)
+            missing = sorted(want - got)
+            bits = []
+            if extra:
+                bits.append("BROADER than the frontmatter by: %s" % ", ".join(extra))
+            if missing:
+                bits.append("NARROWER than the frontmatter, missing: %s" % ", ".join(missing))
+            problems.append("/%s in %s is %s" % (cmd, rail, "; and ".join(bits)))
+
+if checked == 0:
+    print("NONE")
+elif problems:
+    print("BAD %d" % checked)
+    for p in problems:
+        print("  " + p)
+else:
+    print("OK %d" % checked)
+PY
+  )"
+  case "$_atm_out" in
+  "OK "*)
+    pass "allowed-tools mirror: every scheduled routine matches its workflow --allowedTools (${_atm_out#OK } mirror(s))"
+    ;;
+  NONE)
+    fail "allowed-tools mirror: found no --allowedTools to check — the scan is broken, not the tree"
+    ;;
+  *)
+    fail "allowed-tools mirror: a routine's frontmatter and its workflow --allowedTools disagree"
+    fail_detail "$_atm_out"
+    ;;
+  esac
+  unset _atm_out
+else
+  skip "allowed-tools mirror (python3 not installed)"
+fi
+
 # the same lesson the atuin-guard verification exists to enforce. Hermetic: a synthetic
 # git repo with a miniature gerrrt tree, so it asserts the LOGIC, never this repo's tree.
 #
