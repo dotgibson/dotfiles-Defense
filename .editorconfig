@@ -1,0 +1,45 @@
+# .editorconfig — house style for dotfiles-Defense.
+# https://editorconfig.org — honored natively by Neovim (this repo's editor),
+# VS Code, and most others.
+#
+# EDIT-TIME ONLY. Nothing in CI enforces formatting here: the gates are shellcheck +
+# `bash -n` / `zsh -n` (real bugs), markdownlint (docs structure), and the Sigma
+# structural lint. shfmt is deliberately advisory in the fleet lint workflow because it
+# would expand the compact one-liner style bootstrap.sh's arg loop uses on purpose. So
+# this file's job is narrow — keep new edits consistent, not to retroactively reformat.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Shell — 2-space, matching bootstrap.sh, tests/ and detections/.
+[*.{sh,zsh}]
+indent_size = 2
+
+# Sigma rules are YAML and the fleet's YAML is 2-space. Called out separately from the
+# group below because these are the repo's PRODUCT, not its configuration: a reflow
+# here is a diff across every detection.
+[detections/sigma/**.yml]
+indent_size = 2
+
+[*.{yml,yaml,json,jsonc,toml}]
+indent_size = 2
+
+# Markdown — trailing double-space is a hard line break, so trimming it silently
+# changes rendering. markdownlint governs structure; leave whitespace alone.
+[*.md]
+trim_trailing_whitespace = false
+
+# GENERATED, and byte-compared by a drift gate (gen-coverage.sh --check,
+# gen-navigator.sh --check). An editor that trims or re-indents these turns a green
+# gate red for a reason nobody will find by reading the diff.
+[detections/navigator/{COVERAGE.md,coverage-layer.json}]
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

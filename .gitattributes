@@ -1,0 +1,66 @@
+# .gitattributes — line-ending policy for dotfiles-Defense.
+# ──────────────────────────────────────────────────────────────────────────────
+# .editorconfig sets `end_of_line = lf`, but that only guides EDITORS — it does not
+# govern what git writes on checkout/commit. This repo is routinely reachable from
+# Windows (\\wsl$\, or a clone made with Git for Windows), where git can introduce
+# CRLF. A `.sh` with CRLF gets a shebang of `…/env bash\r` and dies with "bad
+# interpreter: No such file or directory" — text that looks perfectly valid, and that
+# shellcheck and `bash -n` both accept. dotfiles-Arch/CLAUDE.md documents the same
+# class of phantom mode/CRLF damage from a UNC-share edit.
+#
+# `text=auto eol=lf`: git auto-detects text vs binary, normalizes text to LF in the
+# repo, and checks it out as LF on every OS. The explicit blocks pin the load-bearing
+# classes so detection is never in play for them.
+
+# Default: normalize all detected-text files to LF in the index and on checkout.
+* text=auto eol=lf
+
+# ── Executable + sourced shell — MUST stay LF or the shebang/sourcing breaks ───
+*.sh        text eol=lf
+*.zsh       text eol=lf
+*.py        text eol=lf
+
+# ── Detection content ─────────────────────────────────────────────────────────
+# Sigma rules, Zeek scripts and Suricata rules are PARSED by tools that are not
+# uniformly CRLF-tolerant — a Suricata rule with a trailing \r fails to load, and the
+# structural Sigma lint reads these byte-wise. They are also this repo's product, so
+# a whole-tree line-ending flip would be a diff across every detection at once.
+*.rules     text eol=lf
+*.zeek      text eol=lf
+*.lst       text eol=lf
+*.pin       text eol=lf
+
+# ── Config / data ─────────────────────────────────────────────────────────────
+*.toml      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+*.jsonc     text eol=lf
+*.conf      text eol=lf
+*.gitconfig text eol=lf
+*.md        text eol=lf
+*.txt       text eol=lf
+*.env       text eol=lf
+Makefile    text eol=lf
+
+# Extensionless, so there is no auto-detection to rely on.
+LICENSE           text eol=lf
+core.lock         text eol=lf
+.github/CODEOWNERS text eol=lf
+
+# ── Binaries (defensive): never normalize, never diff as text ─────────────────
+# .pcap matters here specifically: docker/validation/ ships packet-capture fixtures,
+# and check-fixture-provenance.sh hashes them. Normalizing one would break that gate
+# in a way whose diff is unreadable.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.gz        binary
+*.zip       binary
+*.tar       binary
+*.pcap      binary
+*.pcapng    binary
+*.evtx      binary
