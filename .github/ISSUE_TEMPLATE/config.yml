@@ -1,0 +1,14 @@
+# Force a template choice. A blank issue on this repo usually belongs somewhere else:
+# in dotfiles-core (anything under core/), in htpx (the red↔blue corpus this repo's
+# detections pair against), or in the upstream project of the tool itself.
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/dotgibson/dotfiles-Defense/security/advisories/new
+    about: "Do not file security issues publicly — use private vulnerability reporting (see SECURITY.md)."
+  - name: Core layer (zsh / tmux / nvim / git / starship)
+    url: https://github.com/dotgibson/dotfiles-core/issues
+    about: "Anything under core/ is vendored and overwritten on the next sync — report it upstream."
+  - name: Red/blue paired corpus
+    url: https://github.com/dotgibson/htpx/issues
+    about: "The attack side of a detection pair, or a pair that is missing, lives in htpx."
