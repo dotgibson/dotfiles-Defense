@@ -78,6 +78,7 @@ description: |
 references:
   - https://attack.mitre.org/techniques/T1135/
   - https://attack.mitre.org/techniques/T1049/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/smb-enum-5145.md
 correlation:
   type: value_count
   rules:

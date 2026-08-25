@@ -1,0 +1,33 @@
+# htpx.pin — the dotgibson/htpx commit the pairing gates read the corpus from.
+#
+# WHY THIS FILE EXISTS. detections/README.md has always promised that each rule names the
+# exact Offense fold and htpx pair that reproduces it, and ~10 rules cite an htpx blue
+# entry by URL in their references:. Nothing verified any of it — an entry renamed or
+# retired upstream left a rule pointing at a 404, and the only way to find out was for a
+# human to click the link. dotgibson/dotfiles-Defense#196.
+#
+# A check against htpx main would not be a gate, for the same reason attack-data.pin
+# exists: its answer would move on its own. An upstream rename would turn this repo red on
+# an unrelated Tuesday, on a change nobody here made. Pinning a COMMIT makes the verdict a
+# function of this repo's tree, so an htpx release becomes a deliberate bump — "here is
+# what upstream renamed, here is the reference it breaks" — reviewed in a PR.
+#
+# NO sha256 FIELD, and that is not an omission. The ATT&CK pin needs one because it names
+# a loose file over HTTPS; this names a git commit, and git's own object hashing already
+# binds the sha to the exact tree. Verifying the checkout's HEAD against the pin IS the
+# digest check, and detections/htpx-corpus.sh does it on every run.
+#
+# TO BUMP: change sha (and version/tag, which are human provenance only — the tooling
+# compares sha and nothing else), then re-run detections/check-htpx-pairing.sh and
+# detections/navigator/gen-htpx-coverage.sh. The gate fails until the references this repo
+# writes agree with the corpus at the new sha.
+#
+# Fields mirror dotfiles-Offense's companion.lock, which vendors the same upstream as a
+# git subtree. This repo deliberately does NOT vendor it: nothing here builds from the
+# corpus, two gates read it, and a ~200-file subtree plus a second sync obligation is a
+# steep price for that. #196 chose the pin.
+repo	dotgibson/htpx
+branch	main
+sha	b80741fdc07406ac652866c903530caf0f778acf
+version	2.10.1
+tag	v2.10.1-6-gb80741f

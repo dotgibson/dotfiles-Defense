@@ -24,6 +24,65 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **The Defense↔htpx link is checked, not just asserted — `check-htpx-pairing.sh` plus a
+  drift-gated `HTPX-COVERAGE.md`.** `detections/README.md` opens by promising that each
+  rule names the exact Offense fold and **htpx pair** that reproduces it, "so the purple
+  loop is closed in the file itself". Rules kept that promise in three places — ~84
+  `references:` URLs, an `htpx pair <id>` in each validation note, and 82 cells of the
+  `Validate with (Offense fold · htpx pair)` tables — and **nothing verified any of it**.
+  htpx is a separate repo on its own release cycle, so an entry renamed there left a rule
+  here pointing at a 404, and the only way to find out was for someone to click the link.
+
+  The split is the design decision #196 asked for, and it is deliberate:
+
+  - **Claims are a hard gate.** Naming an entry is a factual assertion about another
+    repo — it is true or it is false. `check-htpx-pairing.sh` resolves every named entry
+    against the pinned corpus and checks the blue ones still pair back to a red entry
+    that points at them.
+  - **Gaps are a report.** `HTPX-COVERAGE.md` renders which blue entries this repo
+    claims, which it does not, which techniques here the corpus has no attack for, and
+    which entries htpx declares unpaired. It never fails on a gap and it is drift-gated,
+    so a change in the shape of the boundary arrives as a reviewable diff. htpx spans
+    Okta, Workspace, GitHub Actions, GitLab, Jenkins, Harbor, Vault, Terraform Cloud,
+    Snowflake, Cloudflare, npm and PyPI; a bidirectional foreign key would be red forever
+    and silenced within a week. The issue predicted exactly that.
+
+  **Declared holes are excluded by field, not by an allowlist.** htpx now requires
+  `pair_note:` on any entry carrying `pair: null`
+  ([htpx#98](https://github.com/dotgibson/htpx/pull/98)), so the report reads the upstream
+  reason verbatim instead of keeping a local copy of someone else's decision — which is
+  the thing that goes stale.
+
+  **The corpus comes from a pinned commit** (`detections/htpx.pin`), fetched by
+  `htpx-corpus.sh`. Same argument as `attack-data.pin`: a check whose answer depends on
+  what upstream did this morning is not a gate. No `sha256` field, because the pin names a
+  git commit and git's own object hashing already binds it — verifying HEAD against the
+  pin *is* the digest check. This repo deliberately does not vendor htpx as a subtree the
+  way Offense does; two gates read it, and a ~200-file subtree plus a second sync
+  obligation is a steep price for that.
+
+  **Adopted after fixing what it found, in the same PR** — the standard
+  `check-rule-coverage` and the Splunk precedence gate were held to. Eight dead names:
+
+  - `bloodhound-sharphound` / `bloodhound-sharphound-4662` were renamed
+    `bloodhound-collect` upstream — a dead `references:` URL, a dead validation note, and
+    a dead table cell.
+  - `archive-staging-rar`, `local-data-collection` and `rogue-account` named entries htpx
+    has **never had** — the corpus's Collection and Exfiltration entries are all SaaS-side
+    and it has no account-creation entry at all. Those rules now say so in prose rather
+    than naming a phantom, which reads as a working cross-reference.
+
+  Half of those were in the README table, which is why the gate reads that column too and
+  not just the rules.
+
+- **`host_enum_srvsvc_wkssvc_5145` now cites its htpx blue entry.** The rule's validation
+  note has named the red side (`smb-enum-nxc`) since it was written, but the corpus had no
+  detection to put beside it —
+  [htpx#97](https://github.com/dotgibson/htpx/issues/97) tracked that hole for exactly this
+  rule. `entries/blue/smb-enum-5145.md` is now upstream, ported from this rule, and the
+  rule references it. It is the first edge the new gate was built to verify, so the gate
+  ships with a live cross-boundary link rather than an empty set.
+
 - **The repo hygiene surface: `Makefile`, `CONTRIBUTING.md`, `.editorconfig`,
   `.gitattributes`, and the PR/issue templates.** This repo and `dotfiles-Offense` are
   deliberate mirrors — equal CI weight at 14 workflows each, and Defense carries *more*

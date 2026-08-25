@@ -26,6 +26,11 @@ on:
       - "detections/navigator/**"
       - "detections/sigma-validation-config.yml"
       - "detections/check-methodology.sh"
+      - "detections/check-htpx-pairing.sh"
+      - "detections/gen-htpx-coverage.sh"
+      - "detections/htpx-corpus.sh"
+      - "detections/htpx.pin"
+      - "detections/HTPX-COVERAGE.md"
       - "DEFENSE-METHODOLOGY.md"
       - ".github/workflows/sigma.yml"
   pull_request:
@@ -35,6 +40,11 @@ on:
       - "detections/navigator/**"
       - "detections/sigma-validation-config.yml"
       - "detections/check-methodology.sh"
+      - "detections/check-htpx-pairing.sh"
+      - "detections/gen-htpx-coverage.sh"
+      - "detections/htpx-corpus.sh"
+      - "detections/htpx.pin"
+      - "detections/HTPX-COVERAGE.md"
       - "DEFENSE-METHODOLOGY.md"
       - ".github/workflows/sigma.yml"
 
@@ -181,3 +191,36 @@ jobs:
         # it hard-gate status: an ATT&CK release now fails the build when someone bumps the
         # pin, in a PR that gets read, instead of silently on an unrelated Tuesday.
         run: ./detections/check-attack-tags.sh
+
+      - name: Cache the pinned htpx corpus
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/dotfiles-Defense/htpx
+          key: htpx-corpus-${{ hashFiles('detections/htpx.pin') }}
+
+      - name: htpx claim gate (hard gate — pinned htpx commit)
+        # Grouped with the ATT&CK gate above rather than with the hermetic checks because
+        # it shares their one property: it reads something from outside this repo. Same
+        # answer to the same problem, too — detections/htpx.pin names a COMMIT, so an entry
+        # renamed upstream fails the build when someone bumps the pin, in a PR that gets
+        # read, instead of silently on an unrelated Tuesday.
+        #
+        # What it gates is CLAIMS, not coverage. ~80 rules cite an htpx blue entry by URL
+        # and name an `htpx pair <id>` in their validation note, and nothing verified either
+        # — detections/README.md's opening promise is that those names close the purple loop
+        # inside the file, and a name that resolves to a 404 quietly stops doing that.
+        #
+        # Adopted after fixing what it found, in the same PR, the way check-rule-coverage
+        # and the Splunk precedence gate were: bloodhound-sharphound was renamed
+        # bloodhound-collect upstream (two dead references), and archive-staging-rar /
+        # local-data-collection named entries htpx has never had. See #196.
+        run: ./detections/check-htpx-pairing.sh
+
+      - name: htpx coverage report drift gate (hard gate)
+        # HTPX-COVERAGE.md is the report half of the same boundary, GENERATED from the rules
+        # plus the pinned corpus. It never fails on a gap — htpx spans SaaS and CI/CD
+        # platforms this repo has no rules for by design, and a gate that failed on those
+        # would be red forever and silenced within a week. It fails when the committed
+        # report stops matching what the rules and the corpus say, so a change in the shape
+        # of the boundary arrives as a reviewable diff rather than a discovery months later.
+        run: ./detections/gen-htpx-coverage.sh --check

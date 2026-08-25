@@ -167,9 +167,14 @@ for k, cmd in sorted(block_keys.items()):
             "it should be a gate and isn't.".format(k))
 
 # ── 3. COUNTS ─────────────────────────────────────────────────────────────────
+# Spelled-out counts only — the README writes "Thirteen hard checks", not "13". The table
+# has to reach past the current gate count or a real count mismatch and an unknown word
+# report the same failure; it ran out at twelve when #196 added the two htpx gates.
 WORDS = {"no":0,"zero":0,
          "one":1,"two":2,"three":3,"four":4,"five":5,"six":6,"seven":7,"eight":8,
-         "nine":9,"ten":10,"eleven":11,"twelve":12}
+         "nine":9,"ten":10,"eleven":11,"twelve":12,"thirteen":13,"fourteen":14,
+         "fifteen":15,"sixteen":16,"seventeen":17,"eighteen":18,"nineteen":19,
+         "twenty":20}
 m = re.search(r'\b([A-Za-z]+) hard checks?, (\w+) advisory\b', doc)
 if not m:
     failures.append("could not find the 'N hard checks, one advisory' sentence in "
@@ -178,7 +183,12 @@ if not m:
 else:
     stated = WORDS.get(m.group(1).lower())
     stated_adv = WORDS.get(m.group(2).lower())
-    if stated != len(hard):
+    if stated is None:
+        failures.append(
+            "detections/README.md says '{} hard checks' and this checker's number-word "
+            "table does not have '{}'. Add it to WORDS — otherwise an unspellable count "
+            "is indistinguishable from a wrong one.".format(m.group(1), m.group(1).lower()))
+    elif stated != len(hard):
         failures.append(
             "detections/README.md says '{} hard checks' but sigma.yml runs {}: {}."
             .format(m.group(1), len(hard), ", ".join(key_of(s["run"]) for s in hard)))
