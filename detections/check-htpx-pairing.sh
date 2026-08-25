@@ -55,25 +55,43 @@
 # this gate's verdict is a function of this repo's tree, not of whatever htpx main did today.
 # Same reasoning as attack-data.pin; read that file's header for the long version.
 #
-#   check-htpx-pairing.sh       # exit non-zero, naming the file and the dead id
+#   check-htpx-pairing.sh                # exit non-zero, naming the file and the dead id
+#   check-htpx-pairing.sh --list-claims  # print every entry this repo names, one per line
 #
-# Exit: 0 = every claim resolves;  1 = a claim is dead, or the corpus is unavailable;
-#       2 = bad invocation
+# --list-claims is a DATA QUERY, not a check: it prints `<colour>\t<stem>` for every entry
+# named anywhere above and exits 0 even when a claim is dead. htpx-drift.yml uses it to ask
+# "did upstream delete something we point at", and the point of routing that through this
+# script is that there is then only ONE implementation of what counts as a claim. There are
+# already two readers of that definition (this and gen-htpx-coverage.sh, which documents
+# that it matches); a third, hand-rolled inside a workflow, is how they start disagreeing.
+#
+# Exit: 0 = every claim resolves (or --list-claims);  1 = a claim is dead, or the corpus is
+#       unavailable;  2 = bad invocation
 # ──────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
-if [[ $# -gt 0 ]]; then
-  echo "check-htpx-pairing: unexpected argument '$1'" >&2
-  echo "usage: check-htpx-pairing.sh" >&2
+LIST=0
+if [[ $# -gt 1 ]]; then
+  echo "check-htpx-pairing: too many arguments" >&2
+  echo "usage: check-htpx-pairing.sh [--list-claims]" >&2
   exit 2
 fi
+case "${1:-}" in
+"") LIST=0 ;;
+--list-claims) LIST=1 ;;
+*)
+  echo "check-htpx-pairing: unknown argument '$1'" >&2
+  echo "usage: check-htpx-pairing.sh [--list-claims]" >&2
+  exit 2
+  ;;
+esac
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd)"
 REPO_ROOT="$(cd -- "$HERE/.." && pwd)"
 
 CORPUS="$("$HERE/htpx-corpus.sh")" || exit 1
 
-REPO_ROOT="$REPO_ROOT" CORPUS="$CORPUS" python3 - <<'PY'
+REPO_ROOT="$REPO_ROOT" CORPUS="$CORPUS" LIST="$LIST" python3 - <<'PY'
 import os, re, sys, glob
 
 repo = os.environ["REPO_ROOT"]
@@ -133,6 +151,10 @@ URL = re.compile(
     r'https://github\.com/dotgibson/htpx/blob/[^/\s]+/entries/(red|blue)/([a-z0-9][a-z0-9-]*)\.md')
 
 named_blue = set()
+# Every entry named, both colours. named_blue drives the back-reference check; this drives
+# --list-claims, which has to report a deleted RED entry too — prose names those.
+named = set()
+listing = os.environ.get("LIST") == "1"
 for path in targets:
     rel = os.path.relpath(path, repo)
     try:
@@ -153,6 +175,7 @@ for path in targets:
                 "{}: references entries/{}/{}.md, but that file's own id: is '{}'. The path "
                 "survived a rename the frontmatter did not — cite '{}'.".format(
                     rel, colour, stem, got, got))
+        named.add((colour, stem))
         if colour == "blue":
             named_blue.add(stem)
 
@@ -196,8 +219,10 @@ for path in targets:
                     "Either it was renamed upstream, or this rule promises a pair that has "
                     "never existed — say so in the validation note rather than naming a "
                     "phantom.".format(rel, tok))
-            elif by_id[tok][0] == "blue":
-                named_blue.add(by_id[tok][1])
+            else:
+                named.add(by_id[tok][:2])
+                if by_id[tok][0] == "blue":
+                    named_blue.add(by_id[tok][1])
             if closes:
                 break
 
@@ -233,8 +258,17 @@ if os.path.isfile(readme):
                 "which is not an entry in the pinned corpus. If the rule has no htpx "
                 "counterpart, say so in prose — a phantom id reads as a working "
                 "cross-reference.".format(lineno, tok))
-        elif by_id[tok][0] == "blue":
-            named_blue.add(by_id[tok][1])
+        else:
+            named.add(by_id[tok][:2])
+            if by_id[tok][0] == "blue":
+                named_blue.add(by_id[tok][1])
+
+# ── --list-claims: print and stop ─────────────────────────────────────────────
+# Before the back-reference pass, which asserts rather than collects.
+if listing:
+    for colour, stem in sorted(named):
+        print("{}\t{}".format(colour, stem))
+    sys.exit(0)
 
 # ── 4. back-references ────────────────────────────────────────────────────────
 for stem in sorted(named_blue):

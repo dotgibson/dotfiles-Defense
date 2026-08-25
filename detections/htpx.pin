@@ -18,9 +18,18 @@
 # digest check, and detections/htpx-corpus.sh does it on every run.
 #
 # TO BUMP: change sha (and version/tag, which are human provenance only — the tooling
-# compares sha and nothing else), then re-run detections/check-htpx-pairing.sh and
-# detections/navigator/gen-htpx-coverage.sh. The gate fails until the references this repo
-# writes agree with the corpus at the new sha.
+# compares sha and nothing else), then `make htpx-report` to regenerate HTPX-COVERAGE.md and
+# `make htpx` to gate it. The claim gate fails until the references this repo writes agree
+# with the corpus at the new sha, and the report diff is the point of bumping deliberately:
+# it is the only place a change in the boundary's shape is visible.
+#
+# YOU WILL BE TOLD WHEN A BUMP IS OWED. .github/workflows/htpx-drift.yml asks weekly whether
+# upstream's entries/ has moved, and files one issue when it has. It stays quiet for commits
+# that do not touch entries/ — only two gates read this corpus and both read entries/ alone,
+# so a pin behind by a README edit is behind by nothing. It leads with any entry this repo
+# NAMES that upstream no longer has, because the gate cannot see that: the gate reads the
+# pinned sha, while the references: URLs in the rules point at /blob/main/, so such an entry
+# is a live 404 for a reader while CI is still green.
 #
 # Fields mirror dotfiles-Offense's companion.lock, which vendors the same upstream as a
 # git subtree. This repo deliberately does NOT vendor it: nothing here builds from the
