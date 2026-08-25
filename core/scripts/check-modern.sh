@@ -270,6 +270,37 @@ if [ -n "$(_yaml_list banned_run_interpolation_contexts)" ]; then
   unset _ctx_list
 fi
 
+# ── 8) every runner job declares timeout-minutes ─────────────────────────────
+# Left unset, GitHub's default is 360 minutes — six hours of a held runner and a live
+# GITHUB_TOKEN for a job that hung on a prompt, a network stall, or a step that was
+# tampered with. Core owns all six *-call.yml@v4 reusable workflows the fleet consumes,
+# so the jobs the OS repos actually execute are defined HERE; a floor rule locks in a
+# property currently held only by convention.
+#
+# KEYED ON `runs-on:`, NOT on "every job". A job that calls a reusable workflow (`uses:`
+# at job level) cannot legally carry timeout-minutes, so requiring it there would be a
+# guaranteed false fire. Scoped to WORKFLOWS, not FILES: a composite action has no jobs.
+#
+# Structurally the same job-block walk as rule 6's checkout walk, awk-only and bash-3.2
+# safe. `jobs:` opens the section; any column-0 key closes it; a 2-space key opens a job.
+if _yaml_bool require_job_timeout && [ "${#WORKFLOWS[@]}" -gt 0 ]; then
+  for wf in "${WORKFLOWS[@]}"; do
+    while IFS= read -r hit; do
+      [ -n "$hit" ] && note "job without timeout-minutes (GitHub's default is 360m): $hit"
+    done < <(awk '
+      /^jobs:[[:space:]]*$/ { injobs = 1; next }
+      /^[A-Za-z_]/          { injobs = 0 }
+      injobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ {
+        if (job != "" && runner && !t) printf "%s:%d: %s\n", FILENAME, ln, job
+        job = $1; sub(/:$/, "", job); ln = NR; runner = 0; t = 0; next
+      }
+      injobs && /^    runs-on:/         { runner = 1 }
+      injobs && /^    timeout-minutes:/ { t = 1 }
+      END { if (job != "" && runner && !t) printf "%s:%d: %s\n", FILENAME, ln, job }
+    ' "$wf" 2>/dev/null || true)
+  done
+fi
+
 if [ "$violations" -eq 0 ]; then
   echo "check-modern: CI meets the modern baseline (${#FILES[@]} workflow/action files)"
   exit 0

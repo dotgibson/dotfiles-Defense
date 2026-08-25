@@ -122,3 +122,21 @@ banned_run_interpolation_contexts:
   - github.head_ref
   - github.actor
   - github.triggering_actor
+
+# 8) Every job that runs on a runner must declare `timeout-minutes:`. Left unset, GitHub's
+#    default is 360 minutes — six hours of a held runner and a live GITHUB_TOKEN for a job
+#    that hung on a prompt, a network stall, or a step that was tampered with. All 47 runner
+#    jobs here already set one; this keeps that true as the *-call.yml@v4 reusable workflows
+#    fan out to the fleet.
+#
+#    Keyed on `runs-on:`, NOT on "every job": a job that calls a reusable workflow (`uses:`
+#    at job level — there are 10, every one a notify-failure-call/notify-web-call) cannot
+#    legally carry timeout-minutes, so requiring it there would be a guaranteed false fire.
+#
+#    Unlike the rest of this file, this rule is NOT driven by a dated upstream deprecation,
+#    and it is worth saying so plainly rather than dressing it up: it is the standard
+#    supply-chain-hardening recommendation, and the reason to encode it now is structural.
+#    Core owns all six *-call.yml@v4 reusable workflows the fleet consumes, so the jobs the
+#    OS repos actually execute are defined here. Cheap while the fleet is at 47/47; expensive
+#    once someone lands job 48 without it.
+require_job_timeout: true

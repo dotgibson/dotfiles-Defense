@@ -55,8 +55,15 @@ CAP_SCHEDULERS=(systemd launchd none)
 FILE="" PKGFILE="" RC=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --packages) PKGFILE="${2:-}"; shift 2 || true ;;
-    -h|--help)  sed -n '2,30p' "$0"; exit 0 ;;
+    # `shift 2` with fewer than 2 positionals returns non-zero AND LEAVES THEM UNCHANGED
+    # (POSIX; bash follows). The old `shift 2 || true` swallowed the status but not the
+    # non-shift, so a dangling `--packages` left $1 as `--packages` and the loop never
+    # terminated. This is called from nine OS repos' `make lint`, where an infinite loop
+    # is a job that burns to the runner timeout instead of failing in a readable way.
+    --packages)
+      [[ $# -ge 2 ]] || { printf 'check-capabilities: --packages needs a path\n' >&2; exit 2; }
+      PKGFILE="$2"; shift 2 ;;
+    -h|--help)  sed -n '2,28p' "$0"; exit 0 ;;
     -*)         printf 'check-capabilities: unknown option: %s\n' "$1" >&2; exit 2 ;;
     *)          FILE="$1"; shift ;;
   esac
@@ -102,8 +109,13 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   # Comments and blank lines are the only non-assignment content allowed. A leading
   # `#` may be indented; anything else that is not KEY=value is a typo, and reporting
   # it is the whole reason this gate exists (the shell reader would skip it silently).
-  case "$line" in
-    ''|[[:space:]]*'#'*|'#'*) continue ;;
+  # `[[:space:]]*'#'*` looks like "optional indent, then #" and is not: in a glob,
+  # `[[:space:]]` is ONE character and `*` is "anything", so it also matched an INDENTED
+  # ASSIGNMENT CONTAINING A '#' — skipped in silence, then reported as `required key
+  # missing` with the line sitting right there in the file. Strip the indent first and
+  # anchor on the '#', so "optionally indented comment" means exactly that.
+  case "${line#"${line%%[![:space:]]*}"}" in
+    ''|'#'*) continue ;;
   esac
   [[ -z "${line//[[:space:]]/}" ]] && continue
 
@@ -127,6 +139,16 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   # here rather than let the two disagree.
   if [[ "$val" == *[[:space:]] ]]; then
     bad "$LINENO_" "$key has trailing whitespace"
+  fi
+  # THIS FILE IS NOT AN ENV FILE, however much it looks like one — its own header is dense
+  # with `#` comments, so `PKG_OWNS=dnf provides   # which package owns this` is the natural
+  # thing to author and every other rule here waves it through: the comment arm only matches
+  # a line that STARTS with `#`, the trailing-whitespace rule sees a final `s`, and
+  # --packages only inspects the first token. Core's reader stores the whole string, so the
+  # declared verb silently becomes `dnf provides # which package owns this`. Say so here
+  # rather than let a shell run it.
+  if [[ "$val" == *' #'* ]]; then
+    bad "$LINENO_" "$key: '#' does not start a comment inside a value (the reader keeps it)"
   fi
   VALUES="${VALUES}${key}	${val}
 "

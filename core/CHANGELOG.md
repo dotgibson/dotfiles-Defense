@@ -14,7 +14,31 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.19.0] - 2026-08-25
+
 ### Added
+
+- **The CI floor now requires `timeout-minutes:` on every runner job — `require_job_timeout`.**
+  Left unset, GitHub's default is **360 minutes**: six hours of a held runner and a live
+  `GITHUB_TOKEN` for a job that hung on a prompt, a network stall, or a step that was
+  tampered with.
+
+  Unlike the rest of `scripts/modern-baseline.yml` this rule is **not** driven by a dated
+  upstream deprecation, and the baseline comment says so plainly rather than dressing it up.
+  The reason to encode it now is structural: Core owns all six `*-call.yml@v4` reusable
+  workflows the fleet consumes, so the jobs the OS repos actually execute are defined here. A
+  floor rule locks in a property currently held only by convention across 47 jobs — cheap
+  while the fleet is at 47/47, expensive once someone lands job 48 without one.
+
+  **Keyed on `runs-on:`, not on "every job."** A job that calls a reusable workflow (`uses:`
+  at job level — there are 10, every one a `notify-failure-call`/`notify-web-call`) cannot
+  legally carry `timeout-minutes`, so requiring it there would be a guaranteed false fire.
+  Both directions are covered by fixtures in the existing hermetic `check-modern` harness:
+  one job missing a timeout is caught while its declaring sibling is not, and a
+  reusable-workflow call job does not fire.
+
+  **No workflow edits — nothing was below the proposed floor.** Adopted at zero fix-first
+  cost. (#707)
 
 - **`tealdeer/config.toml` — the page cache nothing was refreshing.** `help` is a Core alias
   (`zsh/20-aliases.zsh`, `HAVE_TLDR`-guarded) and tealdeer is packaged across the fleet, but Core
@@ -76,14 +100,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
   **Nothing in Core dispatches through `$_CORE_CAP` yet** — `up`, the maint scheduler and
   `core-doctor`'s opt-in split are separate changes. Landing the schema alone keeps the
-  foundational commit reviewable, and means a box with no declaration is byte-for-byte
-  unaffected.
+  foundational commit reviewable, and means a box with no declaration behaves exactly as
+  before.
 
   Two decisions worth recording, because both went against the original proposal:
 
-  - **A missing declaration warns and falls back; it does not fail.** A hard failure at
-    shell startup leaves an unusable interactive shell on a box you are very likely SSH'd
-    into precisely to fix it. Enforcement belongs in a gate you run, not in the login shell.
+  - **A missing declaration falls back silently; it does not fail, and it does not warn.**
+    A hard failure at shell startup leaves an unusable interactive shell on a box you are
+    very likely SSH'd into precisely to fix it. Enforcement belongs in a gate you run, not
+    in the login shell. Nor does it warn: absence is the normal state until an OS repo
+    authors its declaration, so a default-on warning is two lines of stderr on every shell
+    on every box in the fleet. Set `CORE_CAP_LOUD=1` to opt into it.
   - **The clipboard backend is deliberately _not_ in the schema.** `bin/clip` is re-exec'd
     by nvim and tmux on **every** yank and paste, and its WSL probe was already rewritten to
     avoid forking a `grep` per invocation. Adding a file read and parse to that path would
@@ -348,6 +375,79 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   same failure one level up. (#692)
 
 ### Fixed
+
+- **`CONTRIBUTING.md`'s "adding a new Core file" checklist named a list that no longer exists,
+  and omitted three that do.** Step 6 sent you to give the new directory a home in "the two
+  path lists", one of which was §5c of `scripts/audit-core.sh` — whose scope became
+  **manifest-derived**, as `scripts/audit-core.sh:583` says out loud. So the step sent a
+  careful reader looking for something to edit that is not there, at the one moment they were
+  most likely to be careful.
+
+  The three lists it did **not** name are the ones with no gate behind them:
+  `scripts/test-core.sh`'s `_lr_d` fixture directory list — **the one that fails quietly**,
+  because a missing source makes `blib_link` early-return (`lib/bootstrap-lib.sh:127-131`) and
+  every assertion below it pass vacuously; the grouped `_lr_is_link_to` assertions; and
+  `dotfiles-MacBook/bootstrap.sh`'s `--uninstall` `dests` array, the only hand-maintained one
+  in the fleet. The rewrite also names all **three** prose enumerations in
+  `lib/bootstrap-lib.sh` that `:436` tells you to keep in step, where the checklist mentioned
+  none.
+
+  **Reading the list it now tells you to edit found the gap it predicts:** `mise/config.toml`
+  and `atuin/config.toml` had never been in the `_lr_is_link_to` group, so the link run proved
+  their sources were copied but never that the links land where bootstrap promises. Both are
+  asserted now. (#718)
+
+- **A missing `os/<os>.capabilities` warned on every shell, on every box, with a remedy that
+  could not work.** `zsh/02-capabilities.zsh`'s `else` branch was unconditional and
+  unthrottled, and three facts composed into a fleet-wide stderr leak: no OS repo has authored
+  a declaration yet, `blib_link_os_layer`'s `[[ -f ]]` guard therefore links nothing, and
+  `CORE_CAP_QUIET` was set by exactly one thing in this repo — `scripts/test-core.sh`. Band 02
+  loads under every `CORE_PROFILE`, so every interactive shell, every tmux split and every
+  `zsh -i -c` printed two lines. The hint was the worse half: it named
+  `./bootstrap.sh --links-only`, which re-runs the _same_ guard, so an operator who followed
+  it saw nothing change and the warning persist.
+
+  **Silence is now the default and the warning is opt-in via `CORE_CAP_LOUD=1`.** Absence is
+  the normal state, and nothing dispatches through `$_CORE_CAP` yet — so there is no
+  degradation to warn about. When a consumer lands, the warning belongs at _its_ call site,
+  where it can name what actually fell back. The message now points at authoring the
+  declaration (`examples/os.capabilities.example`) rather than at re-running bootstrap. Two
+  prose claims that this falsified are corrected in the same change: this file's own
+  "byte-for-byte unaffected", and `lib/bootstrap-lib.sh`'s "warns once" — there was no
+  once-per-box state anywhere in the fragment. (#715)
+
+- **`scripts/check-capabilities.sh`: a dangling `--packages` looped forever.** `shift 2` with
+  fewer than two positionals returns non-zero **and leaves the positional parameters
+  unchanged** (POSIX; bash follows). `shift 2 || true` swallowed the status but not the
+  non-shift, so `$1` stayed `--packages` and `while [[ $# -gt 0 ]]` never terminated. This
+  script is called from nine OS repos' `make lint`, where an infinite loop is a job that burns
+  to the runner timeout instead of failing in a readable way. It now checks arity and exits 2.
+  (#715)
+
+- **`scripts/check-capabilities.sh` accepted an inline `#` as part of a verb.** The file looks
+  like an env file and its own header is dense with `#` comments, so
+  `PKG_OWNS=dnf provides   # which package owns this` is the natural thing to author — and
+  every rule waved it through: the comment arm only matched a line _starting_ with `#`, the
+  trailing-whitespace rule saw a final `s`, and `--packages` inspects only the first token.
+  Core's reader stores the whole string, so the declared verb became the command _and the
+  comment_. The same arm had a second edge: spelled `[[:space:]]*'#'*`, it is a glob matching
+  one whitespace character, then anything, then `#` — so an **indented assignment containing a
+  `#`** was skipped in silence and resurfaced as `required key missing` with the line sitting
+  right there in the file. Both arms fixed; both directions covered by tests. (#715)
+
+- **`core-doctor` rendered `✓` off an alias for a tool that had left PATH.** `_core_have` is
+  `command -v` and zsh's `command -v` **resolves aliases**; `zsh/20-aliases.zsh` defines three
+  aliases whose name equals a doctor row (`bat`, `fd`, `rg`). So the presence branch matched
+  the alias, the `else` branch never ran, and `_core_doctor_stale` was never asked — `rg foo`
+  answering `command not found` while `core-doctor` printed `✓ rg`. That is precisely the
+  failure #631 was written to surface, silently excluded for three rows: `rg` on every distro,
+  and `fd`/`bat` everywhere except Debian, where they resolve to `fdfind`/`batcat` and have no
+  alias. The probe is now a PATH lookup with no alias layer, reusing the idiom already in the
+  file. (#715)
+
+- **`scripts/check-capabilities.sh --help` leaked past the end of its header.** `sed -n '2,30p'`
+  against a header block ending at line 28, printing `set -uo pipefail` into the help output.
+  (#715)
 
 - **`zsh/35-fzf.zsh` claimed the shell and tmux share one session picker. They do not.** The
   `Ctrl-G` widget runs its own inline `sesh list | fzf`; `tmux/scripts/tmux-sesh.sh`'s richer

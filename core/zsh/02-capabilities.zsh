@@ -81,16 +81,28 @@ if [[ -r "$CORE_CAPABILITIES_FILE" ]]; then
     _CORE_CAP[$_cap_k]="$_cap_v"
   done <"$CORE_CAPABILITIES_FILE"
   unset _cap_line _cap_k _cap_v
-elif [[ -n "${CORE_CAP_QUIET:-}" ]]; then
-  # The bootstrap and the test suite set this: they know the file is absent and do not
-  # want the warning on every spawned shell.
-  :
-else
+elif [[ -n "${CORE_CAP_LOUD:-}" ]]; then
+  # ABSENT IS THE NORMAL STATE, so silence is the default and this warning is OPT-IN.
+  # It shipped the other way round and could not have been right: no OS repo has authored
+  # os/<os>.capabilities yet, blib_link_os_layer's `[[ -f ]]` guard therefore links nothing,
+  # and this branch is unthrottled — so every interactive shell, every tmux split and every
+  # `zsh -i -c` on every box in the fleet printed two lines of stderr. The remedy it named
+  # was worse than the noise: `bootstrap.sh --links-only` re-runs the SAME guard, so an
+  # operator who followed the advice saw nothing change and the warning persist.
+  #
+  # Nothing dispatches through $_CORE_CAP yet, so a missing declaration costs a box exactly
+  # nothing today — there is no user-visible degradation to warn anyone about. When a
+  # consumer lands, the thing to warn about is that consumer falling back, at ITS call site,
+  # where the message can name what actually degraded. Flip this default back only when the
+  # warning can be both true and actionable.
+  #
   # 05-ui.zsh defines _core_warn/_core_hint — and it loads AFTER this fragment, so those
   # helpers do not exist yet. Write the plain thing rather than call a function that is
   # not there. stderr, so it never pollutes a `$(...)` capture from a login shell.
   print -u2 -- "core: no OS capability declaration at ${CORE_CAPABILITIES_FILE}"
-  print -u2 -- "  -> Core falls back to its built-in defaults; re-run your OS repo's ./bootstrap.sh --links-only"
+  print -u2 -- "  -> Core is using its built-in defaults. To declare this OS's verbs, author"
+  print -u2 -- "     os/<os>.capabilities in your OS repo (see core/examples/os.capabilities.example),"
+  print -u2 -- "     then re-run its ./bootstrap.sh --links-only to link it."
 fi
 
 # _core_cap <key> [fallback] — read one capability, echoing <fallback> when the key is
