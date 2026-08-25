@@ -744,6 +744,159 @@ else
   ((_ha_absent)) && skip "helper adoption: $_ha_absent repo(s) not checked out — out of scope"
 fi
 
+# ── 5g. the secret-scan policy, in the files §5f cannot see ──────────────────
+# §5f reports which repos have not adopted lib/bootstrap-lib.sh's helpers, and it greps
+# bootstrap.sh ONLY. The identical drift class — Core grows a capability, some repos keep a
+# hand-rolled predecessor, nothing notices — lives in the WORKFLOW and MAKEFILE dimension too,
+# and it went red across four repos on the 2026-08-23 sync (#623).
+#
+# WHAT HAPPENED. Core's gitleaks.toml narrows one false-positive class: a credential position
+# holding a VARIABLE REFERENCE rather than a value. Core's reusable lint-call.yml secrets leg
+# states the rule — "ONE POLICY FILE, Core's … no repo can widen its own allowlist" — and
+# passes -c accordingly. Four repos ran their own gitleaks with no config at all, so they used
+# the stock rule set, where `curl-auth-user` matches on credential-shaped POSITION rather than
+# content. The vendored core/CHANGELOG.md documents that very allowlist and quotes the example
+# it was written for, so CORE'S EXPLANATION OF THE RULE READ AS A VIOLATION OF IT, on a sync
+# that carried no credential. Two further repos were green only because each keeps its own root
+# .gitleaks.toml that gitleaks auto-discovers — the same defect failing in the quiet direction,
+# which is worse: a private allowlist can widen over time with nothing comparing it to Core's,
+# and the next person to look sees a passing gate (#624).
+#
+# TWO CHECKS, because they are two different claims and each must be able to be true alone:
+#   (a) every `gitleaks dir|detect|git` invocation carries a config flag at all
+#       (scripts/lib/common.sh :: _core_gitleaks_policy_hits, fixture-tested both directions);
+#   (b) a repo-local .gitleaks.toml must `[extend]` core/gitleaks.toml, so a repo can ADD a
+#       distro-specific rule without silently DROPPING the fleet's.
+# A repo that legitimately needs local rules is not doing anything wrong; replacing Core's
+# policy rather than extending it is.
+#
+# REPORT, DO NOT BLOCK, for the same reason §5f gives: repos are short on arrival, and a gate
+# that is red from its first run is a gate someone turns off. Same "out of scope" skip wording
+# too — --strict counts every OTHER skip as a coverage gap, and CI checks out only this repo.
+hdr "secret-scan policy adoption (advisory)"
+_gp_root="$(cd "$HERE/.." && pwd)"
+if [[ ! -r "$HERE/scripts/os-repos.txt" ]]; then
+  skip "gitleaks policy (scripts/os-repos.txt unreadable — out of scope)"
+else
+  _gp_checked=0
+  _gp_bad=0
+  _gp_absent=0
+  while IFS= read -r _gp_repo; do
+    [ -n "$_gp_repo" ] || continue
+    _gp_dir="$(resolve_repo_dir "$_gp_root" "$_gp_repo")" || _gp_dir="$_gp_root/$_gp_repo"
+    if [[ ! -d "$_gp_dir/.git" ]]; then
+      _gp_absent=$((_gp_absent + 1))
+      continue
+    fi
+    _gp_checked=$((_gp_checked + 1))
+    _gp_gaps=""
+    # (a) invocations with no policy at all
+    for _gp_f in "$_gp_dir"/Makefile "$_gp_dir"/.github/workflows/*.yml "$_gp_dir"/.github/workflows/*.yaml; do
+      [[ -f "$_gp_f" ]] || continue # unmatched glob stays literal (nullglob is off)
+      _gp_h="$(_core_gitleaks_policy_hits "$_gp_f")"
+      [[ -n "$_gp_h" ]] || continue
+      _gp_gaps="$_gp_gaps
+      ${_gp_f#"$_gp_dir"/}: $(printf '%s' "$_gp_h" | sed 's/:no-config//' | tr '\n' ',' | sed 's/,$//') — gitleaks runs with no -c/--config, so the STOCK rule set applies, not Core's"
+    done
+    # (b) a private config that replaces Core's instead of extending it
+    if [[ -f "$_gp_dir/.gitleaks.toml" ]] &&
+      ! grep -qE '^[[:space:]]*path[[:space:]]*=.*core/gitleaks\.toml' "$_gp_dir/.gitleaks.toml"; then
+      _gp_gaps="$_gp_gaps
+      .gitleaks.toml: a private rule set that does not [extend] core/gitleaks.toml — gitleaks auto-discovers it, so EVERY scan here silently runs under it"
+    fi
+    if [[ -n "$_gp_gaps" ]]; then
+      _gp_bad=$((_gp_bad + 1))
+      printf '  %s%s%s %s%s\n' "${c_yel}" "•" "${c_rst}" "$_gp_repo" "$_gp_gaps"
+    fi
+  done < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$HERE/scripts/os-repos.txt")
+
+  if ((_gp_checked == 0)); then
+    skip "gitleaks policy (no sibling OS repo checked out — out of scope)"
+  elif ((_gp_bad)); then
+    pass "gitleaks policy: $_gp_bad of $_gp_checked checked-out repo(s) do not measure by Core's policy (advisory — see the lines above; VENDORING.md has the contract)"
+  else
+    pass "gitleaks policy: every checked-out OS repo scans under Core's policy ($_gp_checked repo(s))"
+  fi
+  ((_gp_absent)) && skip "gitleaks policy: $_gp_absent repo(s) not checked out — out of scope"
+fi
+
+# ── 5h. the gate x repo coverage register ────────────────────────────────────
+# Coverage used to be inferred by reading the `uses:` lines in each repo's workflows, and
+# that inference is WRONG for any repo that satisfies a gate its own way. It has misfired
+# twice, identically, both times in good faith: dotfiles-MacBook#154 (the RETURN-trap gate,
+# ported by hand) and dotfiles-MacBook#178 (the provision-stub job, already gated on the
+# macOS leg via a BOOTSTRAP_BREW seam). Same failure mode two gates apart, because a rollout
+# audit had no way to tell "not covered" from "covered elsewhere" (#607).
+#
+# scripts/fleet-coverage.sh derives the `reusable` cells from each repo's real `uses:` lines
+# and reads .github/core-gates.txt for the ones that cannot be derived. This asserts every
+# cell is filled — so a NEW reusable workflow cannot ship without each repo declaring a
+# position on it, which is the property that makes the register stay true.
+#
+# Advisory and "out of scope"-skipped when siblings are absent, like §5f/§5g.
+hdr "gate x repo coverage register (advisory)"
+if [[ ! -x "$HERE/scripts/fleet-coverage.sh" ]]; then
+  skip "coverage register (scripts/fleet-coverage.sh missing — out of scope)"
+else
+  _fc_out="$("$HERE/scripts/fleet-coverage.sh" --check 2>&1)"
+  _fc_rc=$?
+  if [[ "$_fc_out" == *"no sibling repo checked out"* ]]; then
+    skip "coverage register (no sibling OS repo checked out — out of scope)"
+  elif ((_fc_rc == 0)); then
+    pass "coverage register: $_fc_out"
+  else
+    # pass(), not fail(): see REPORT, DO NOT BLOCK on §5f.
+    printf '%s\n' "$_fc_out" | sed 's/^/  /'
+    pass "coverage register: undeclared gate x repo cell(s) — advisory; each repo declares in .github/core-gates.txt (VENDORING.md has the contract)"
+  fi
+  unset _fc_out _fc_rc
+fi
+
+# ── 5i. leftover conflict markers (tracked files) ────────────────────────────
+# A conflict resolved by hand can leave a marker behind, and bcdd7dd (#650) did exactly
+# that: a literal base marker landed in CHANGELOG.md at the end of [Unreleased]'s Fixed
+# section and sat on main undetected. Under zdiff3 a conflict has FOUR marker lines, not
+# three, and the base one is the half people forget because it only exists in that style.
+#
+# WHY IT BLOCKS RATHER THAN REPORTS, unlike §5f/§5g above: this is not fleet drift that
+# arrives red on seven repos. The tree is clean today (measured: zero hits across every
+# tracked file), so the gate is green on arrival and every future hit is a genuine
+# regression introduced by the commit under test. That is the condition §5f names for
+# turning an advisory check into a failing one.
+#
+# WHY IT IS WORTH A GATE. git refuses to parse a conflict region containing a stray
+# marker — rebasing onto the affected main produced `error: could not parse conflict
+# hunks in CHANGELOG.md` — and CONTRIBUTING.md requires every user-visible change to
+# touch [Unreleased], so one marker there taxes every future branch. Nothing else sees
+# it: `bash -n`/`zsh -n` never read markdown, markdownlint reads the line as ordinary
+# paragraph text, and gitleaks is looking for credentials.
+#
+# NO ALLOWLIST, ON PURPOSE. The obvious design is to exempt the files that legitimately
+# CONTAIN markers — this script, the matcher, the test fixtures. None of them need it:
+# scripts/lib/common.sh assembles its patterns from fragments (the discipline §5d/§5e
+# already follow), and test-core.sh writes its fixtures into $SANDBOX at run time, so
+# they are never tracked and never scanned. An allowlist would be a hole in the one gate
+# whose value is that it has none. A doc that genuinely must SHOW a marker indents it by
+# one space — column 0 is what git keys on, and what this gate keys on.
+#
+# Scope is every tracked text file, not just shell: the defect that motivated this was in
+# markdown. Binaries are skipped by the matcher's `grep -I` (assets/ carries images).
+hdr "leftover conflict markers"
+cm_fail=0
+while IFS= read -r cm_f; do
+  [ -n "$cm_f" ] || continue
+  while IFS= read -r cm_line; do
+    [ -n "$cm_line" ] || continue
+    fail "conflict marker: $cm_f:$cm_line — a resolution left a VCS marker behind; git cannot parse a conflict region containing one. Delete it (under zdiff3 a conflict has FOUR marker lines, and the base one is the half that gets missed)"
+    cm_fail=1
+  done <<EOF
+$(_core_conflict_marker_hits "$cm_f")
+EOF
+done <<EOF
+$(_audit_ls '*')
+EOF
+((cm_fail)) || pass "conflict markers (no tracked file carries a leftover marker)"
+
 # ── 6. config files (toml / yaml parse) ──────────────────────────────────────
 # A malformed starship.toml / mise config.toml / ci.yml is still valid *text* —
 # so zsh -n and shellcheck never look at it — yet it breaks every one of the 9

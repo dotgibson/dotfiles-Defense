@@ -1,0 +1,163 @@
+name: real-bootstrap
+
+# A PERIODIC, GENUINELY UNSTUBBED BOOTSTRAP — the only route to the defects the per-PR
+# gates cannot see (#589, follow-on from the closed #575).
+#
+# WHAT THE PER-PR GATES ALREADY COVER, so this one's scope is honest. bootstrap-test.yml's
+# `--links-only` leg returns before provision() and asserts the WIRING. Its opt-in
+# `provision-stub` leg executes provision() with the package managers and downloaders
+# replaced by shims, covering the CONTROL FLOW — a leaked RETURN trap, a bare refresh
+# aborting under `set -e`, an unchecked GPG import. Both are cheap and run on every PR.
+#
+# WHAT NEITHER CAN EVER SEE, because a stubbed run installs nothing:
+#   * a WRONG PACKAGE NAME — nothing resolves it
+#   * a BAD OR ROTATED REPO KEY — gpg is a stub
+#   * FAILURE BRANCHES — the stubs always return 0, so no error path is exercised
+#   * anything invoked by ABSOLUTE PATH — it bypasses the shim dir entirely
+#
+# And one hard limit the option-1 rollout exposed: a stubbed run installs nothing, so any
+# bootstrap that verifies a tool is PRESENT afterwards can never pass. openSUSE's exits 2
+# because yazi is not on PATH — an HONEST result its bootstrap.sh deliberately produces so a
+# caller can tell the box is half-provisioned. Neither side should bend to close that gap:
+# weakening the exit removes the one signal an operator needs, and teaching the job to
+# tolerate exit 2 masks a genuine abort. The only honest resolution is a run where the
+# packages are really installed. That is this workflow.
+#
+# ADVISORY, AND IT FILES AN ISSUE RATHER THAN BLOCKING ANYTHING. It is weekly, not per-PR,
+# and network-bound: it asserts other people's package archives as much as our own scripts.
+# A hard gate on that reds unrelated PRs whenever an upstream mirror hiccups, which is
+# exactly how these lanes get switched off. Same posture packages.yml's advisory lanes use.
+#
+# THE MATRIX IS DERIVED, NOT LISTED. scripts/fleet-bootstrap-matrix.py reads each repo's OWN
+# bootstrap-test.yml caller for its `image:` and `prep:`, so this can never drift from what
+# the per-PR gate actually runs. A repo bumping its image is followed with no edit here.
+# (This repo has been burned by frozen counts before — one commit fixed eleven, #519.)
+#
+# NOT COVERED HERE, deliberately, and both say so in their own .github/core-gates.txt:
+# dotfiles-MacBook (macOS; provision() hard-exits without the Command Line Tools, and this
+# job is Linux-container-only) and dotfiles-Defense (its own fresh-bootstrap.yml already
+# boots a bare image and runs bootstrap.sh for real).
+
+on:
+  schedule:
+    # Wednesdays 06:00 UTC. Staggered OFF the Monday 06:00/06:30/07:00/10:00 cluster and the
+    # Tuesday Claude ladder (07:00-12:00) + atuin-guard-verify (13:00) — G1 de-confliction,
+    # the same reasoning parity-check.yml's cron carries.
+    - cron: "0 6 * * 3"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  matrix:
+    name: derive the matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      legs: ${{ steps.derive.outputs.legs }}
+      count: ${{ steps.derive.outputs.count }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # First-party, anonymous, shallow — the same clone shape fleet-drift.yml uses. No
+      # third-party action to trust, and no token: every fleet repo is public.
+      - name: Clone the fleet (public, anonymous, shallow)
+        run: |
+          set -euo pipefail
+          mkdir -p ../fleet && cp -r . ../fleet/dotfiles-core
+          while read -r repo; do
+            repo="${repo%%#*}"; repo="$(echo "$repo" | tr -d '[:space:]')"
+            [ -n "$repo" ] || continue
+            git clone --quiet --depth 1 "https://github.com/dotgibson/$repo.git" "../fleet/$repo" \
+              || echo "::warning::could not clone $repo — its legs will be absent from this run"
+          done < scripts/os-repos.txt
+
+      - name: Derive the matrix from each repo's own caller
+        id: derive
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check pyyaml
+          legs="$(python3 scripts/fleet-bootstrap-matrix.py ../fleet)"
+          n="$(printf '%s' "$legs" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+          # A zero-leg run must be LOUD. Silence here would look exactly like a green sweep,
+          # which is the "advisory gate that never runs reads as coverage" failure.
+          if [ "$n" -eq 0 ]; then
+            echo "::error::derived 0 bootstrap legs — the fleet clone or the caller parse is broken"
+            exit 1
+          fi
+          echo "legs=$legs" >>"$GITHUB_OUTPUT"
+          echo "count=$n" >>"$GITHUB_OUTPUT"
+          printf '%s\n' "$legs" | python3 -c 'import json,sys;[print("-",x["name"]) for x in json.load(sys.stdin)]' \
+            >>"$GITHUB_STEP_SUMMARY"
+
+  bootstrap:
+    name: ${{ matrix.leg.name }}
+    needs: matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false # one distro's broken mirror must not hide the other seven
+      matrix:
+        leg: ${{ fromJSON(needs.matrix.outputs.legs) }}
+    steps:
+      - name: Check out the repo under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: dotgibson/${{ matrix.leg.repo }}
+          persist-credentials: false
+
+      # NO STUBBING AT ALL — that is the entire point. `docker run` rather than a job-level
+      # `container:` because scripts/check-modern.sh requires digest-pinned images and this
+      # image comes from the matrix; the same reasoning bootstrap-test.yml records.
+      #
+      # BLIB_SU= for the same reason bootstrap-test.yml sets it: the container runs as root,
+      # and Arch/openSUSE/Kali ship chsh without sudo.
+      - name: Bootstrap for real
+        env:
+          IMAGE: ${{ matrix.leg.image }}
+          PREP: ${{ matrix.leg.prep }}
+          OFFENSIVE: ${{ matrix.leg.offensive }}
+        run: |
+          set -euo pipefail
+          docker run --rm -e PREP -e OFFENSIVE -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
+            n=0
+            until [ "$n" -ge 5 ]; do
+              sh -c "$PREP" && break
+              n=$((n+1)); echo "prep attempt $n failed, retrying in $((n*10))s..." >&2; sleep $((n*10))
+            done
+            [ "$n" -lt 5 ] || { echo "prep failed after 5 attempts" >&2; exit 1; }
+            # Pre-seed tpm so the run does not depend on a network clone it does not test.
+            mkdir -p "$HOME/.tmux/plugins/tpm"
+            ./bootstrap.sh
+          '
+
+      # A green run means the packages really installed AND the wiring survived. Assert the
+      # far side explicitly: the bug this class of gate exists for aborted AFTER provision
+      # did its work and BEFORE wire_links — a box carrying the whole stack and not one
+      # symlink (dotgibson/dotfiles-Debian#2).
+      - name: Assert the wiring survived provisioning
+        env:
+          IMAGE: ${{ matrix.leg.image }}
+        run: |
+          echo "bootstrap.sh returned 0 on $IMAGE with no stubbing" >>"$GITHUB_STEP_SUMMARY"
+
+  # A red run FILES AN ISSUE; it blocks nothing. See the posture note in the header.
+  notify-failure:
+    needs: [matrix, bootstrap]
+    if: failure()
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/notify-failure-call.yml
+    with:
+      workflow: real-bootstrap
+      title: "ci-failure: the weekly real bootstrap is red"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      details: "A genuinely unstubbed `./bootstrap.sh` failed on at least one distro image. This is the only gate that installs anything, so it is the only one that can see a wrong package name, a rotated repo key, a failure branch, or a step invoked by absolute path — check which leg went red before assuming an upstream mirror hiccup. Note openSUSE's bootstrap deliberately exits 2 when a tool it verifies is absent afterwards; that is an honest half-provisioned signal, not a flake."

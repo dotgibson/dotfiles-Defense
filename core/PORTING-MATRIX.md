@@ -15,7 +15,10 @@ _Repo status_ at the bottom).
 3. Replace `install/packages.txt` with that distro's names (table below).
 4. In `bootstrap.sh`: swap the `dnf` block for the distro's installer and the
    `/etc/os-release` guard string.
-5. `git subtree add --prefix=core <dotfiles-core> main --squash`
+5. `git subtree add --prefix=core <dotfiles-core> refs/tags/v4 --squash` — a
+   **released tag, never `main`**; then stamp `core.lock` from a Core checkout with
+   `CORE_BRANCH=refs/tags/v4 ./scripts/sync-core.sh dotfiles-<Distro>`, or
+   `core-integrity` reports the fresh subtree as TAMPERED.
 6. Update the README's "specifics" section to that distro's quirks.
 
 ## Package-manager commands
@@ -935,13 +938,17 @@ go-installed by no `bootstrap.sh` (the Debian/Kali cells use Charm's apt repo, s
 one is for the reader installing by hand.
 
 ³² direnv: per-directory environment loader — **Core wires it but neither installs nor
-detects it.** There is no `HAVE_DIRENV`, no alias and no `core-doctor` row: `_cache_eval`
-already bails on an absent binary, so the hook needs no flag to guard it. Since **v4.14.1**
+detects it.** There is no `HAVE_DIRENV` and no alias: `_cache_eval` already bails on an
+absent binary, so the hook needs no flag to guard it. Since #581 `core-doctor` does carry a
+**wired** row for it (probing `_direnv_hook`), but still no presence row — wiredness and
+presence are different questions, and the latter is what would need detection. Since **v4.14.1**
 the `direnv hook zsh` that makes it work lives in Core, at `zsh/00-tools.zsh` **band 00**,
-where #449 pulled seven byte-drifted `os/*.zsh` copies up into one. Band 00 and not 45 with
-the gh/uv/ty completions, because this registers a hook rather than a compdef and band 00
-loads under every `CORE_PROFILE` while 45 is ceilinged out of `minimal`; filed under 45 it
-would silently stop `.envrc` files loading on minimal hosts. It is sourced **last** of the
+where #449 pulled seven byte-drifted `os/*.zsh` copies up into one. Band 00 and not 45,
+because it registers a hook rather than a compdef and band 00 loads under every
+`CORE_PROFILE` while 45 is ceilinged out of `minimal`; filed under 45 it would silently stop
+`.envrc` files loading on minimal hosts. (Since #579 the gh/uv/ty completions are generated
+at band 00 too, but for a different reason — an `fpath` directory has to be populated before
+`compinit` scans it — and they keep a `compdef` re-assert at band 45.) It is sourced **last** of the
 four inits on purpose: direnv prepends `_direnv_hook` to `precmd_functions` and
 `chpwd_functions`, so sourcing it after mise reproduces the order these hooks had at band 80
 — direnv's per-directory env resolves before mise's, which is what an `.envrc` that pins tool

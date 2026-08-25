@@ -230,35 +230,41 @@ if [[ -n ${HAVE_CARAPACE:-} ]]; then
   [[ -n ${HAVE_CARAPACE:-} ]] && _cache_eval --salt "${CARAPACE_BRIDGES:-}" carapace carapace _carapace zsh
 fi
 
-# ── tool-native zsh completions: gh / uv / ty. AFTER compinit AND after carapace. ──
-# All three emit a DETERMINISTIC completion script for a given binary — a `#compdef` header
-# plus a `compdef` call, static text — so they route through _cache_eval (00-tools.zsh)
-# exactly as carapace above does: generate once, then one cheap `source` per shell instead
-# of a fork per shell per tool. _cache_eval self-guards on ${commands[…]}, so a box without
-# the tool pays literally nothing and needs no HAVE_* flag; that is also why `ty` is here
-# unconditionally despite being on few boxes today.
+# ── tool-native completions: gh / uv / ty — the compdef half. AFTER carapace. ──
+# The completions themselves are GENERATED at band 00 (00-tools.zsh :: _cache_completion)
+# into an fpath directory, and compinit at band 10 autoloads them lazily. That is the whole
+# point of #579: uv's completion is 6,976 lines, and sourcing it into every interactive shell
+# to serve a completion most shells never invoke cost +37 ms per shell. Nothing is sourced
+# here any more.
 #
-# WHY HERE AND NOT AT BAND 00, where direnv's hook lives: these call `compdef`, which does
-# not exist until 10-options.zsh has run compinit. direnv touches no completion machinery,
-# so it can — and must — stay at band 00, because band 45 is profile-gated (loader.zsh ceils
-# `minimal` at 30, `standard` at 50) and a lost completion is a missing convenience while a
-# lost direnv hook is a broken feature.
+# SO WHY IS THERE STILL A LINE AT BAND 45? Because fpath autoloading registers these at
+# compinit — band 10 — which is BEFORE carapace runs at band 45. carapace BRIDGES completions
+# for hundreds of commands, gh among them, and whichever `compdef` runs LAST owns the command.
+# Without this re-assert, moving generation earlier would silently hand gh back to the bridged
+# completion: no error, no missing feature, just a quietly worse completion. So the tool's own
+# function is re-asserted here, after the carapace block, exactly as the sourced version used
+# to be. `compdef` only rebinds a name — it does NOT source the 6,976 lines — so the per-shell
+# cost of this is nil, which is what makes the split worth having.
 #
-# WHY AFTER THE CARAPACE BLOCK, not before it: carapace BRIDGES completions for hundreds of
-# commands, gh among them. Whichever `compdef` runs LAST owns the command, so registering
-# the tool's OWN completion after carapace is what keeps the hand-written one in front of
-# the bridged one. That is the order these three ran in for years while they lived in
-# os/*.zsh at band 80 — so this preserves behaviour rather than changing it, and moving
-# these lines above the carapace block silently hands gh back to the bridge, with no error.
-# scripts/test-core.sh asserts the relative line order outright.
+# scripts/test-core.sh asserts this ordering outright, in both halves: that generation is at
+# band 00 (it must precede compinit) and that this re-assert is after carapace.
 #
-# Unguarded (no `(( $+functions[_cache_eval] ))` wrapper), matching the carapace call above:
-# the os-layer copies carried one because band 80 can be sourced without Core, and band 00
-# always loads whenever band 45 does. These were duplicated across seven os/*.zsh until
-# #449, in three variants — Alpine and Gentoo carried only direnv+gh, so they gain uv/ty here.
-_cache_eval gh gh completion -s zsh
-_cache_eval uv uv generate-shell-completion zsh
-_cache_eval ty ty generate-shell-completion zsh
+# `ty` is included unconditionally despite being on few boxes today, for the same reason as
+# before: _cache_completion self-guards on ${commands[…]}, so a box without the tool writes
+# nothing, registers nothing, and needs no HAVE_* flag. These were duplicated across seven
+# os/*.zsh until #449, in three variants — Alpine and Gentoo carried only direnv+gh.
+() {
+  local t cf="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/completions"
+  # An anonymous function purely so `local` is genuinely local: this file is SOURCED at the
+  # caller's top level, where zsh — which has only function scope — turns a bare `local` into
+  # a global leaked into every interactive shell. Same wrap, same reason, as 10-options.zsh.
+  for t in gh uv ty; do
+    # Guarded on the generated file existing, so we never register a function that fpath
+    # cannot supply. When it is absent (tool not installed, or its generator failed) the
+    # command simply keeps whatever carapace bridged for it, which is the honest fallback.
+    [[ -s "$cf/_$t" ]] && compdef "_$t" "$t" 2>/dev/null
+  done
+}
 
 # fzf-tab (load after compinit + carapace, before other completion wrappers)
 _zplugin_load Aloxaf fzf-tab

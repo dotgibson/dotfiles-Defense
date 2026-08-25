@@ -6,9 +6,9 @@ set -euo pipefail
 # (zsh/20-aliases.zsh resolves this file relative to itself, so the function survives
 # the core/ subtree vendoring — same trick 55-maint.zsh uses).
 #
-# The subtree boundary is `core/` ⇄ dotfiles-core root@main: OS repos vendor ALL
-# of Core under core/ via `git subtree add/pull --prefix=core <remote> main`
-# (see scripts/sync-core.sh, scripts/new-os-repo.sh). So the only prefix that can
+# The subtree boundary is `core/` ⇄ dotfiles-core root: OS repos vendor ALL of Core
+# under core/ (see scripts/sync-core.sh, scripts/new-os-repo.sh — they vendor FROM a
+# released tag, while contributions go back TO main). So the only prefix that can
 # round-trip back to dotfiles-core main is `core` — pushing a subdirectory like
 # nvim/ would split a history with no common ancestor to main and be rejected.
 

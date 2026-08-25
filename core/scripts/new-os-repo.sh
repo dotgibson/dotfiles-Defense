@@ -27,7 +27,11 @@ source "${BASH_SOURCE[0]%/*}/lib/common.sh"
 # v4: the load order is the numbered fragments' NN prefix, globbed by the vendored
 # loader — a scaffolded .zshrc no longer lists module names, it just sources the loader.
 CORE_REMOTE="${CORE_REMOTE:-$(git -C "$HERE" remote get-url origin 2>/dev/null || echo '')}"
-CORE_BRANCH="${CORE_BRANCH:-main}"
+# Default to the RELEASED major alias, never `main`: the fan-out pins every repo to the
+# exact commit a release tag points at, so a tree vendored from whatever `main` happened
+# to be is not a commit any core.lock would record — and core-integrity reports the fresh
+# subtree as TAMPERED before the repo has done anything wrong (#588).
+CORE_BRANCH="${CORE_BRANCH:-refs/tags/v4}"
 
 usage() {
   cat <<'EOF'
@@ -41,7 +45,9 @@ Scaffold a new OS repo that vendors Core: subtree-add core/, then write a correc
   --dry-run, -n  print every planned action; create nothing
   --no-vendor    scaffold the files but skip the `git subtree add` (do it yourself later)
 
-Env: CORE_REMOTE (default: this repo's origin), CORE_BRANCH (default: main)
+Env: CORE_REMOTE (default: this repo's origin)
+     CORE_BRANCH (default: refs/tags/v4 — a RELEASED tag, never main; pin a specific
+                  vX.Y.Z to freeze the tree at a known version)
 EOF
 }
 
@@ -254,8 +260,19 @@ and adds the $OS-native layer (\`os/$os_lc.zsh\`, package manager, paths).
 
 ## Update Core
 
+Core is fanned out **from Core**, not pulled from here. A raw \`git subtree pull\` moves
+\`core/\` but not \`core.lock\`, and \`core-integrity\` then reports this tree as TAMPERED.
+
+Normally a sync arrives as a PR from Core's fan-out and you just merge it. To run one
+by hand, from a \`dotfiles-core\` checkout:
+
 \`\`\`bash
-git subtree pull --prefix=core $CORE_REMOTE $CORE_BRANCH --squash
+./scripts/sync-core.sh dotfiles-$OS   # materializes core/ AND stamps core.lock
+\`\`\`
+
+Then, in this repo:
+
+\`\`\`bash
 ./bootstrap.sh          # re-link any new/changed Core files
 \`\`\`
 EOF

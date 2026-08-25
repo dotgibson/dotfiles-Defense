@@ -14,6 +14,469 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v4.18.0] - 2026-08-24
+
+### Added
+
+- **A weekly, genuinely unstubbed bootstrap — `real-bootstrap.yml`.** The per-PR gates cover
+  two thirds of the problem and cannot cover the third. `bootstrap-test.yml`'s `--links-only`
+  leg returns before `provision()` and asserts the wiring; its opt-in `provision-stub` leg
+  executes `provision()` with the package managers and downloaders shimmed, covering the
+  control flow. Neither installs anything, so a **wrong package name**, a **bad or rotated
+  repo key**, any **failure branch** (the stubs always return 0), and anything invoked by
+  **absolute path** are invisible to both.
+
+  Enabling the stubbed run across the fleet also proved a hard limit: a run that installs
+  nothing can never satisfy a bootstrap that verifies a tool is PRESENT afterwards. openSUSE's
+  exits 2 for exactly that reason — an honest "this box is half-provisioned" signal. Neither
+  side should bend: weakening the exit removes the one signal an operator needs, and teaching
+  the job to tolerate exit 2 masks a genuine abort. The only honest resolution is a run where
+  the packages really install.
+
+  **The matrix is derived, not listed.** `scripts/fleet-bootstrap-matrix.py` reads each repo's
+  own `bootstrap-test.yml` caller for its `image:` and `prep:`, so the weekly run can never
+  drift from what the per-PR gate actually uses — a repo bumping its image is followed with no
+  edit in Core. Eight legs today, across seven repos.
+
+  **Advisory: it files an issue, it blocks nothing.** Weekly and network-bound, it asserts
+  other people's package archives as much as our own scripts, and a hard gate on that reds
+  unrelated PRs whenever a mirror hiccups — which is how these lanes get switched off. It
+  reuses `notify-failure-call.yml`, the same posture the other sweeps already take. A run that
+  derives zero legs fails loudly rather than passing green, because an advisory gate that
+  silently never runs reads as coverage.
+
+  MacBook and Defense are deliberately outside it, and both say so in their own
+  `.github/core-gates.txt`: MacBook's `provision()` hard-exits without the Command Line Tools
+  and this job is Linux-container-only, and Defense's `fresh-bootstrap.yml` already boots a
+  bare image and runs `bootstrap.sh` for real. (#589)
+
+- **The adoption audit now covers the files it could not see: workflows and Makefiles.**
+  `audit-core.sh` §5f reports which OS repos have not adopted `lib/bootstrap-lib.sh`'s
+  helpers, and it greps `bootstrap.sh` **only**. The identical drift class — Core grows a
+  capability, some repos keep a hand-rolled predecessor, nothing notices — lives in the
+  workflow and Makefile dimension too, and it went red across four repos on the 2026-08-23
+  sync.
+
+  Core's reusable `lint-call.yml` secrets leg states the rule (_one policy file, Core's, so
+  no repo can widen its own allowlist_) and passes `-c`. Repos running their own gitleaks with
+  no config used the **stock** rule set instead, where `curl-auth-user` matches on
+  credential-shaped position rather than content — so the vendored `core/CHANGELOG.md`, which
+  documents that very allowlist, was flagged. Core's explanation of the rule read as a
+  violation of it, on a sync that carried no credential.
+
+  New §5g makes two claims, kept separate so each can be true alone: every
+  `gitleaks dir|detect|git` invocation carries a config flag, and a repo-local
+  `.gitleaks.toml` must `[extend]` `core/gitleaks.toml` rather than replace it. A repo that
+  needs a distro-specific rule is not doing anything wrong; dropping the fleet's policy to get
+  it is. Advisory and skipped when siblings are absent, exactly like §5f.
+
+  The matcher lives in `scripts/lib/common.sh :: _core_gitleaks_policy_hits` and is
+  fixture-tested in both directions, because of a trap worth naming: a naive `-c|--config`
+  match also fires on the `-c` inside `--exit-code`, which two of the repos in scope actually
+  pass. The flag is matched as a whole word, and the test pins it.
+
+- **A gate × repo coverage register — `scripts/fleet-coverage.sh` and `make fleet-coverage`.**
+  There was no single place recording which repo satisfies which gate, and how. Coverage was
+  inferred by reading the `uses:` lines in each repo's workflows — and that inference is wrong
+  for any repo that satisfies a gate its own way.
+
+  It has misfired twice, identically, both times in good faith: dotgibson/dotfiles-MacBook#154
+  (the RETURN-trap gate, which had in fact been ported by hand) and #178 (the `provision-stub`
+  job, where `provision()` was already gated on the macOS leg via a `BOOTSTRAP_BREW` seam).
+  Same failure mode two gates apart, because a rollout audit had no way to distinguish
+  _not covered_ from _covered elsewhere_.
+
+  **Derived, not hand-maintained** — the load-bearing decision. The `reusable` cells are read
+  from each repo's real `uses:` lines at run time, and the gate list is read from Core's own
+  tree, so a new reusable workflow joins the register the moment it exists. Only the cells
+  that _cannot_ be derived are declared, in each repo's `.github/core-gates.txt`. This repo
+  has been burned by frozen counts before — one commit fixed eleven of them (#519) — and
+  `RELEASE-RUNBOOK.md` already set the precedent: _count them rather than trusting a number
+  frozen into this doc_.
+
+  `audit-core.sh` §5h asserts every gate × repo cell is filled, so a new gate cannot ship
+  without each repo declaring a position on it. Advisory and skipped when siblings are absent,
+  like §5f/§5g. Five cells needed a declaration and now have one: MacBook's `lint-call` and
+  `bootstrap-test`, Defense's `bootstrap-test` and `claude-routines-call`, and Offense's
+  `claude-routines-call`. (#607)
+
+- **core-doctor reports the four integrations Core wires itself: direnv, gh, uv and ty.**
+  `_CORE_DOCTOR_WIRED` listed five tools and none of these, so the doctor was silent about
+  integrations Core drives directly — it hooks direnv in `zsh/00-tools.zsh` and registers the
+  gh/uv/ty completions in `zsh/45-plugins.zsh`. Before those moved into Core they were the OS
+  layer's at band 80, and arguably not Core's to report on; they are Core's now.
+
+  All four satisfy the list's own membership rule — a tool belongs there iff its activation
+  defines something observable in _this_ shell that `_core_wired` can probe:
+
+  | tool | probe |
+  | --- | --- |
+  | `direnv` | `_direnv_hook` — the function, or its `precmd_functions` entry |
+  | `gh` / `uv` / `ty` | the tool's `$_comps` entry |
+
+  The completion three needed a **different probe shape**, and it is the same scar the
+  starship/carapace arms already carry. Their wiring fact is the `compdef` registration in
+  `$_comps`, not a defined function: the completion function is autoloaded lazily, so
+  `$+functions[_gh]` would report a permanent `○ (idle)` for a correctly registered
+  completion. The arms test `$_comps` for non-emptiness rather than for a specific value, so
+  the row stays honest when carapace legitimately owns the command.
+
+  **No `HAVE_DIRENV`/`HAVE_GH`/`HAVE_TY` flags, and no presence rows** — decided rather than
+  overlooked. `_cache_eval` self-guards on `${commands[…]}`, so nothing would consume such a
+  flag; and a `_CORE_DOCTOR_GROUPS` row for gh or ty would render a permanent ✗, because no
+  Linux repo's `packages.txt` installs either. Muting that correctly means adding them to
+  `_CORE_DOCTOR_OPTIN`, which is derived from `PORTING-MATRIX.md`'s footnote ²¹ and asserted
+  against it — a matrix change, not a list edit, and a separate piece of work. (#581)
+
+- **`audit-core.sh` §5i fails when a tracked file carries a leftover conflict marker.**
+  `bcdd7dd` (#650) committed a literal base marker into `CHANGELOG.md`, at the end of
+  `[Unreleased]`'s Fixed section, and it sat on `main` undetected until #656 tripped over it.
+  Under `zdiff3` a conflict has **four** marker lines, not three, and the base one is the half
+  that gets missed precisely because it only exists in that style.
+
+  It was not cosmetic. git refuses to parse a conflict region containing a stray marker, so
+  rebasing onto the affected `main` produced `error: could not parse conflict hunks in
+  CHANGELOG.md`. `CONTRIBUTING.md` requires every user-visible change to touch `[Unreleased]`,
+  so one marker there taxed every future branch in the repo.
+
+  Nothing else could see it: `bash -n` / `zsh -n` never read markdown, markdownlint reads the
+  line as ordinary paragraph text, and gitleaks is looking for credentials. The marker is
+  valid text everywhere — the same reason §5d (pipefail) and §5e (RETURN trap) exist as
+  textual scans. The rule lives beside them in `scripts/lib/common.sh ::
+  _core_conflict_marker_hits`.
+
+  **It blocks rather than reports**, unlike §5f/§5g. Those arrive red across seven repos, so
+  they advise; this tree is clean today (zero hits across every tracked file), so the gate is
+  green on arrival and every future hit is a regression introduced by the commit under test —
+  the exact condition §5f names for promoting an advisory check to a failing one.
+
+  **No allowlist, deliberately.** The obvious design exempts the files that legitimately
+  contain markers — the matcher, the gate, the fixtures. None need it: `common.sh` assembles
+  its patterns from fragments (the discipline §5d/§5e already follow) and `test-core.sh`
+  writes its fixtures into `$SANDBOX` at run time, so they are never tracked and never
+  scanned. A doc that must _show_ a marker indents it by one space; column 0 is what git keys
+  on and what the gate keys on.
+
+  **The separator is treated differently.** A bare row of seven `=` is also a setext H1
+  underline, which `.markdownlint.jsonc` permits (MD003 defaults to `consistent`, not `atx`),
+  so it counts only when the file also carries a marker that names a ref — the same
+  file-level precondition idiom `_core_pipefail_hits` uses. The knowing trade-off: a
+  resolution that deleted every marker _except_ the separator is not caught. Every marker
+  naming a ref always is, and #650 was one of those.
+
+  Fixture-tested in both directions, and that mattered: the first version of the matcher
+  **failed open**. `|` is ERE's alternation operator, so a literal row of seven pipes read as
+  eight empty alternatives and the scanner reported nothing, on any input — a green gate
+  checking nothing. A firing-only test would have passed the broken version too, since it was
+  silent on clean fixtures as well. Two of the nine assertions pin the self-reference property
+  outright, so the matcher can never start reporting its own source.
+
+### Changed
+
+- **The reusable lint workflow's markdown leg is now BLOCKING.** It shipped advisory in
+  v4.16 for one release cycle, for the reason any new leg has to: callers pin the moving
+  `@v4` tag, so every repo sees a new gate the moment auto-tag moves — before a maintainer
+  can act on anything it reports.
+
+  The backlog was measured, not assumed. Eight of the nine fleet repos carried findings —
+  **162 in total**, roughly 130 of them MD060 (table pipe alignment). All nine were cleared
+  first, and the flip landed only once `markdownlint-cli2` was green on every one, so no
+  repo is red on arrival.
+
+  The `if/else` that swallowed the exit is gone. Two things are deliberately unchanged: the
+  `command -v markdownlint-cli2 || exit 1` guard, which matters _more_ now rather than less
+  — exiting 127 because the linter is absent and exiting 1 because it found issues are
+  different facts, and only the second is the caller's to fix — and `working-directory:
+  caller`, without which markdownlint would walk up and silently apply **Core's**
+  `.markdownlint.jsonc` to the caller's files instead of the caller's own. (#592)
+
+- **`uv`'s 6,976-line completion is no longer sourced on every shell — it autoloads from
+  `fpath`.** `_cache_eval` turns a generator into a cached file and then `source`s that file
+  on every interactive shell. That is the right shape for `direnv` (14 lines) and `gh` (212).
+  It is the wrong shape for `uv`, whose cached completion is 6,976 lines read into every shell
+  to serve a completion most shells never invoke.
+
+  Measured here with `hyperfine`, against a compinit-ready baseline of 4.7 ms:
+
+  | | mean |
+  | --- | --- |
+  | baseline (compinit only) | 4.7 ms ± 0.3 |
+  | shipped: `source` gh+uv+ty every shell | 40.2 ms ± 2.1 |
+  | this change: `fpath` autoload | 5.0 ms ± 0.3 |
+
+  So the per-shell cost of these three drops from **+35.5 ms to +0.3 ms**.
+
+  `clap_complete`'s output is already built for this — it opens with `#compdef <tool>` and
+  closes with the standard autoload shim — so the new `_cache_completion` helper writes it to
+  `$XDG_CACHE_HOME/zsh/completions/_<tool>` instead of sourcing it. It keeps `_cache_eval`'s
+  two load-bearing invariants verbatim: `${commands[…]}` for a fork-free probe that stays
+  silent on a box without the tool (which is why these callers still need no `HAVE_*` flag),
+  and the binary-mtime regeneration key.
+
+  Three things this had to get right, all of them silent if wrong:
+
+  - **`fpath` must be populated before `compinit` scans it.** Generation therefore moves from
+    band 45 to band 00; `compinit` is band 10.
+  - **The cached compdump hides new files.** `compinit -C`, taken whenever the dump is under
+    24 h old, skips the scan for new completion functions entirely — so a freshly written
+    `_uv` would be invisible for up to a day. A regeneration now deletes the dump, which
+    works precisely because band 00 precedes band 10: that shell pays one full `compinit`,
+    every later shell keeps the fast path.
+  - **carapace must not win the command back.** carapace bridges `gh` among hundreds of
+    others, and the last `compdef` owns the command. Autoloading registers at band 10, i.e.
+    _before_ carapace at band 45 — so a three-line `compdef` re-assert stays at band 45,
+    after carapace, exactly where the sourced version used to be. `compdef` only rebinds a
+    name; it does not read the 6,976 lines, so this costs nothing.
+
+  The negative cache for a generator that cannot succeed is a `.<tool>.failed` dotfile rather
+  than `_cache_eval`'s comment-only stub: any file named `_uv` in `fpath` **is** a completion
+  function, so a stub would register an empty completion and shadow the bridged one that
+  would otherwise have served. `compinit` only scans names beginning with `_`, so the dotfile
+  converges without being visible to the completion system.
+
+  A side benefit: band 45 is profile-gated (`minimal` ceils at 30, `standard` at 50), so these
+  completions did not exist at all under those profiles. Generated at band 00 and registered
+  at band 10, they now do.
+
+  The old `$XDG_CACHE_HOME/zsh/{gh,uv,ty}.zsh` caches are left behind, unused and harmless;
+  delete them to reclaim the space. (#579)
+
+- **`bootstrap-test.yml` now tells you how to choose `packages_check`'s probe, because the
+  obvious command is wrong on most distros and both ways it is wrong look healthy.** The
+  header documented the input as `packages_check: apk info` and said nothing else. That is
+  Alpine's correct answer and a trap as a template — wiring the same shape into four OS
+  repos surfaced two distinct failure modes, each of which produces a gate a reviewer would
+  sign off on.
+
+  A name-exact probe raises FALSE ALARMS. `bootstrap.sh` installs these names with the
+  package manager's install verb, which honours Provides, so the probe has to ask the same
+  question. Fedora retired `wget` for `wget2` with `wget2-wget` carrying `Provides: wget`,
+  so `dnf install wget` works while `dnf info wget` fails; on Arch `sh` is a `provides` of
+  bash, not a package; on openSUSE `python3-pip` is satisfied by a versioned
+  `python3XX-pip`. Worse, such a list can pass today and break later: none of Arch's ~45
+  names sat behind a `provides` when this was wired, so the name-exact probe was green and
+  would have gone red on some future PR that had nothing to do with it.
+
+  A probe that never rejects gives FALSE CONFIDENCE. `apk policy` and `zypper info` both
+  exit 0 for a name that exists nowhere — a gate that cannot fail, indistinguishable from
+  real coverage. So a green run is not evidence on its own; the header now prescribes the
+  negative control that is (a scratch list holding one real name, one provides-only name,
+  and one bogus name, which must go red naming only the bogus one).
+
+  The note carries the four probes verified against both rules, and two adjacent traps the
+  same exercise turned up: a path-filtered caller that omits `install/**` gets a
+  package-list gate that cannot fire on a package-list change, and prep must leave the
+  index readable — Alpine's `apk add --no-cache` deliberately leaves none.
+
+  Docs only; no behavioural change to the workflow.
+
+### Fixed
+
+- **`CHANGELOG.md` contained a credential-shaped string that tripped stock secret scanners.**
+  The v4.x entry documenting `gitleaks.toml` quoted, in a code fence, the exact healthcheck
+  line the allowlist was written for. That put a credential-shaped token in a public file
+  vendored into every consumer — so any repo scanning the vendored tree under the stock rule
+  set flagged this paragraph, and four did.
+
+  The example is now described rather than quoted, which loses nothing: the point was always
+  the _shape_, and the prose states it. Verified with the pinned gitleaks 8.30.1 — the
+  vendored tree scanned under stock rules reports **1 leak before, 0 after**. This removes the
+  hazard for every downstream scanner rather than requiring all nine to opt into the policy,
+  and it is independent of the audit work above. (#623)
+
+- **`bootstrap-test.yml`'s header claimed no gate in the fleet runs `provision()` — false in
+  two directions.** The block stated, in capitals, that `--links-only` returns before
+  `provision()` and "NO GATE IN THE FLEET RUNS provision() AT ALL". That was true when it was
+  written and has not been since v4.14.2, which added the opt-in `provision-stub` job to this
+  very file ~200 lines below the claim. It is also false the other way: `dotfiles-MacBook`
+  executes `provision()` on its `macos smoke` leg via `make test-repo` through a
+  `BOOTSTRAP_BREW` seam, gated by `REPO_TESTS_GATE_PROVISION=1` so the leg cannot quietly
+  stop gating.
+
+  This header is the most-read description of what the fleet does and does not cover, and it
+  is vendored into every repo — so a stale absolute keeps generating issues filed in good
+  faith against it (dotgibson/dotfiles-MacBook#178 was filed on exactly this premise). The
+  same sentence was repeated in `lint-call.yml`'s RETURN-trap note, so fixing one file alone
+  would have left it in the fleet; both are corrected.
+
+  The rewrite also states the macOS absence as a **decision rather than a gap**:
+  `bootstrap-test.yml` is Linux-container-only, and a `provision()` that hard-exits without
+  the Command Line Tools can only reach one branch there — so a repo in that position gates
+  it in its own CI instead. And it names the non-obvious part: the two approaches are
+  complementary, not redundant. Core's shims always succeed, so failure branches stay
+  unexercised; MacBook's stub always fails, so it covers exactly those branches. (#606)
+
+- **`make sync` vendored onto whatever the local clone happened to be — no staleness guard.**
+  `sync-core.sh` had a dirty-tree guard ("uncommitted work?") and nothing that asked "current
+  with the remote?". So a sync materialized `core/` onto a stale base, reported
+  `updated 9 / failed 0`, and the operator found out at `git push` — nine repos already
+  committed to, every push rejected as non-fast-forward. Observed on the 2026-08-23 sync with
+  all nine between 1 and 5 commits behind.
+
+  There is now a **pre-flight** check: each target's remote is fetched and its behind-count
+  read before the fan-out loop mutates anything. Ahead is fine (unpushed local work); only
+  behind refuses. A repo with no `@{upstream}` has no counterpart to be behind and is passed
+  over in silence, and an unreachable remote is reported but does not refuse — this guard
+  exists to catch a stale clone, and a network blip is a different failure.
+
+  The refusal names the **correct** recovery, which is the non-obvious part. Rebasing the sync
+  commit is not it: materializing `core/` replays safely because it is fully determined by the
+  Core SHA, but `_sync_pin_workflows` is a `sed` over the target's _own_ existing workflow
+  files, so a replay computed against a tree that no longer exists can apply cleanly and still
+  be wrong. The correct fix is to bring each repo up to date and re-run the sync, which is
+  idempotent by design.
+
+  Applied to `--dry-run` too, and placed before the audit gate, for the same reason as the
+  existing `unknown`-commit refusal: a rehearsal that would refuse should say so, and it should
+  not cost a full audit first. Escape hatch: `SYNC_SKIP_STALE=1`. (#622)
+
+- **The hand-vendoring instructions said `main`; the fan-out deliberately pins the released
+  commit.** Three docs and the scaffolder told a human to
+  `git subtree add --prefix=core <core-remote> main --squash`, while `sync-fanout.yml` states
+  the opposite in as many words: each PR vendors the exact commit the tag points at
+  (`CORE_BRANCH=<sha>`), so `core.lock` records that commit and `git describe` stamps the
+  named tag.
+
+  That contradiction bites. `core-integrity` validates `core/` against the commit `core.lock`
+  records, so a tree vendored from whatever `main` happened to be is not that commit — a
+  freshly hand-vendored repo could fail its own tamper check before it had done anything
+  wrong. `dotfiles-MacBook` hit exactly this and corrected its own copies, two of which were
+  live error paths printed by `bootstrap.sh`; the copies inside the vendored subtree could
+  not be fixed downstream, because the next sync overwrites them.
+
+  `ARCHITECTURE.md`, `PORTING-MATRIX.md` and `VENDORING.md` now point at `refs/tags/v4` and
+  name the `core.lock` step that `subtree add` does not perform. `new-os-repo.sh` defaults
+  `CORE_BRANCH` to `refs/tags/v4`, and the README it generates no longer suggests a raw
+  `git subtree pull` — the stale-lock path `VENDORING.md` warns about, and a model #587
+  abandoned outright.
+
+  `sync-core.sh`'s own `CORE_BRANCH` default stays `main` on purpose: the fan-out always
+  overrides it, and `main` is the right default for a maintainer's ad-hoc `make sync`. It is
+  now documented as such, with the first-time-vendoring case called out. (#588)
+
+- **The `mise` steps in the daily maint runner are no longer unbounded.** `brew`, `nvim` and
+  `rustup` each run under `_to`; the three `mise` calls did not, so a hung one had nothing to
+  cut it short and the whole unattended run stopped there. The new `MAINT_MISE_TIMEOUT`
+  (default `2700`, applied per step like `MAINT_BREW_TIMEOUT`) closes that.
+
+  It is deliberately the largest knob in the file, because a `mise` step is the only one that
+  _compiles_. On musl, mise flips `all_compile` to true by default — every precompiled runtime
+  it would otherwise fetch (nodejs.org's tarballs, python-build-standalone, the `jdx/ruby`
+  prebuilts) is glibc-linked and cannot run there — so on Alpine node/python/ruby are built
+  from source on every version bump, and node alone is tens of minutes. 2700s is sized for
+  that build, not for a download — a cold node 24 build on a 32-core musl box was still in V8
+  past 21 minutes, so a lower ceiling would trip on the healthy path and turn every LTS bump
+  into a logged failure. On a glibc box the same steps unpack a binary and never come near the
+  ceiling, so the value costs those boxes nothing.
+
+  `mise outdated --bump` is now bounded too, and needed the `_pkgcount` treatment to go with
+  it: that probe hits the network, and a registry that accepts the connection and then stalls
+  yields **empty output**. The old bare `[[ -n "$bump" ]]` read that emptiness as the happy
+  path and logged "all runtimes current within their pins" — asserting a fact nothing had
+  measured, the exact failure the `_pkgcount` comment block was written about. The rc is now
+  captured and any non-zero reports as `bump check UNAVAILABLE` instead of masquerading as
+  good news, with the rc included so the log can distinguish the causes after the fact.
+
+  That gate is **stricter than `_pkgcount`'s, deliberately** — the two are not meant to
+  converge. `_pkgcount` can only test _how the probe died_ (124, or `>=128` for a signal,
+  which is how busybox `timeout` reports its own SIGTERM as 143) because the managers it
+  wraps overload exit status to mean things: `dnf check-update` exits 100 when updates exist,
+  `pacman -Qu` exits non-zero when there are none. A general non-zero gate would report
+  "unknown" on their healthy path. `mise outdated` overloads nothing — 0 whether or not bumps
+  exist, non-zero only on a real failure — so a fast hard failure (a 500 from the registry, a
+  mise that died on a broken config) is just as much "we got no answer" as a stall, and is now
+  reported that way rather than falling through as good news. (#641)
+
+- **Three `INSTALL:` lines claimed a mise pin without saying which fleet they meant.** (#642)
+  "mise pins ruby" / "mise pins temurin-21" are all true here — `mise/config.toml` pins
+  `ruby = "3.4"` and `java = "temurin-21"`. These were never stale comments; they were
+  **unqualified** ones, silently assuming a mise-managed Unix box. That is exactly the
+  assumption an `INSTALL:` line exists to make explicit, and `nvim/` is the one Core tree
+  `dotfiles-Windows` vendors — a host with neither pin.
+
+  `ruby_lsp.lua` is where it had teeth. On Windows ruby is winget-owned and ships no MSYS2
+  DevKit, so every C-extension gem fails to build and `ruby-lsp` (with `rubocop`) dies on
+  `prism` with an error naming neither ruby nor the missing toolchain:
+
+  ```text
+  make: *** No rule to make target '/C/Ruby40-x64/include/ruby-4.0.0/ruby.h' ...
+  ```
+
+  A reader following that line went hunting for a mise pin that will never exist there, while
+  the one thing that unblocks them — an elevated `ridk install 1 3` — went unmentioned.
+
+  `jdtls.lua` and `kotlin_language_server.lua` misled without breaking: Windows gets a JDK
+  either way, just scoop-owned **openjdk25** rather than mise's temurin-21 — a different owner
+  _and_ a different major, both of which satisfy the servers. Their qualifiers are one clause
+  each, proportional to the stakes; ruby's earns the longer note.
+
+  All three now name the fleet they describe. `intelephense.lua` already modelled this by
+  stating its negative case outright ("mise does NOT pin"). Comment-only; no behaviour change,
+  and nothing here reads the text. (`nvim/lua/gerrrt/servers/ruby_lsp.lua`,
+  `nvim/lua/gerrrt/servers/jdtls.lua`, `nvim/lua/gerrrt/servers/kotlin_language_server.lua`)
+
+- **rubocop linting and formatting were silent no-ops on Windows — every signal said healthy.**
+  (#646) `nvim-lint` and `conform` both pass `--server` to rubocop, and RuboCop's server mode
+  needs fork/UNIX sockets. A native-Windows ruby prints
+  `RuboCop server is not supported by this Ruby.`, writes **nothing** to stdout, and **exits 0**:
+
+  ```text
+  $ rubocop --format json --force-exclusion --server --stdin main.rb
+  RuboCop server is not supported by this Ruby.
+  $ echo $?
+  0
+  ```
+
+  The zero exit is what made this invisible. nvim-lint parsed an empty payload, found no offenses,
+  and had no non-zero status to complain about — nothing in `:messages`, nothing through
+  `vim.notify`, and `:ConformInfo` still reported rubocop `available` because the binary really is
+  installed. Ruby buffers simply went unlinted and unformatted. `ruby_lsp` masked it further: its
+  own Prism diagnostics still appear, so a Ruby buffer shows _a_ diagnostic, just never a rubocop
+  one.
+
+  Both specs now strip `--server` behind a `vim.fn.has("win32")` guard — the idiom `health.lua`,
+  `nvim-dap.lua` and `blink-cmp.lua` already use. The Unix fleet keeps it, where it is a genuine
+  speedup rather than a no-op. Both overrides **filter** the upstream arg list instead of restating
+  it, so an upstream change cannot silently drift past them; conform's resolves lazily at format
+  time so the builtin module is not required during lazy-spec evaluation.
+
+  Verified on the host that has the problem (Ruby 4.0.6 x64-mingw-ucrt, rubocop 1.89.0 from Mason)
+  by vendoring the patched files into `dotfiles-Windows` and running headless: rubocop diagnostics
+  went 0 → 4, matching the CLI exactly, and conform's format went from leaving the buffer untouched
+  to actually rewriting it. Windows receives this on its next `nvim-sync.ps1`.
+  (`nvim/lua/gerrrt/plugins/nvim-lint.lua`, `nvim/lua/gerrrt/plugins/conform.lua`)
+
+- **`Ctrl+\` (toggle autosuggestions) was dead inside tmux — which is every shell.**
+  `zsh/40-bindings.zsh` binds `^\` to `autosuggest-toggle`, and `tmux/scripts/tmux-cheat.sh`
+  advertises it by name. It never fired. `vim-tmux-navigator` binds **five** keys at the tmux
+  ROOT table, not four: `C-h/j/k/l` plus `C-\` → `select-pane -l`. That fifth binding forwards
+  the key to the pane only when the pane is running vim/fzf; a shell pane is neither, so tmux
+  consumed `C-\` and zsh never saw the byte. Since every OS repo's `zshrc` `exec tmux` on login,
+  the key was dead in essentially every shell on every box in the fleet.
+
+  The zsh half was never the problem, and is unchanged — a PTY driven through the full config
+  shows `main` aliased to `viins`, `"^\\" autosuggest-toggle` bound, the widget present, and
+  `_ZSH_AUTOSUGGEST_DISABLED` flipping `0 → 1 → 0` on two `0x1C` bytes. The 40-bindings comment
+  about binding it unconditionally (the widget is deferred, so a `$+widgets` guard would always
+  be false) remains correct.
+
+  `tmux/tmux.conf` now sets `@vim_navigator_mapping_prev ''`, which disables that one mapping
+  and leaves `C-h/j/k/l` — the reason the plugin is here — untouched. Dropping the plugin's side
+  rather than moving zsh's is what the rest of the tree already assumed:
+  `nvim/lua/gerrrt/plugins/vim-tmux-navigator.lua` maps only `<C-h/j/k/l>` and deliberately never
+  mapped `<C-\>`, so `TmuxNavigatePrevious` was a lazy `cmd` bound to nothing. "Previous pane"
+  was half-wired; the autosuggest toggle is documented.
+
+  An empty value is the plugin's off switch: its `get_tmux_option()` falls back to the default
+  only when `show-options -gq` prints nothing, and a defined-but-empty option prints its own
+  name — so the value resolves to `""` and the `for k in $(echo "")` loop never runs. Verified
+  end-to-end on tmux 3.7c: root `C-\` disappears, `C-h/j/k/l` survive, and a PTY client attached
+  to a server carrying this conf toggles the suggestion on `Ctrl+\`.
+
+  The option **must** stay above the trailing `run '…/tpm'` — tpm sources the plugin's `.tmux`
+  script, which reads it at that moment — so `scripts/test-core.sh` pins the value, the
+  emptiness, and the line order, in the same spirit as the gh/carapace order in `45-plugins.zsh`.
+
 ## [v4.17.0] - 2026-08-24
 
 ### Added
@@ -566,13 +1029,17 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
   brings new detections, and removes nothing. It narrows exactly one false-positive class:
   a credential position holding a **variable reference** rather than a value. Several
   default rules match on position rather than content — `curl-auth-user` fires on anything
-  after `curl -u` — and infra config in this fleet routinely puts a variable there, which
-  is the _secure_ shape. The fleet's only finding was dotfiles-Defense's OpenSearch
-  healthcheck:
+  in the credential slot of curl's basic-auth flag — and infra config in this fleet routinely
+  puts a variable there, which is the _secure_ shape. The fleet's only finding was
+  dotfiles-Defense's OpenSearch healthcheck: a Compose `CMD-SHELL` test that passes the user
+  `admin`, and a `$$`-escaped reference to `OPENSEARCH_INITIAL_ADMIN_PASSWORD` as the
+  password, into that flag.
 
-  ```yaml
-  test: ["CMD-SHELL", "curl -sk -u admin:$$OPENSEARCH_INITIAL_ADMIN_PASSWORD ..."]
-  ```
+  (Described rather than quoted, deliberately. Reproducing the literal line here put a
+  credential-SHAPED token in this file, which is a public repo vendored into every consumer —
+  so any repo scanning the vendored tree under the stock rule set flagged this paragraph, and
+  four of them did on the 2026-08-23 sync. Core's explanation of the allowlist read as a
+  violation of it. Please do not restore the code fence. See #623.)
 
   The `$$` is deliberate — it stops Compose interpolating at render time, keeping the
   password out of `docker compose config` and `docker inspect`. Reporting that as a leak

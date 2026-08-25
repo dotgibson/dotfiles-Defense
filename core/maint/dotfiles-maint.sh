@@ -14,6 +14,7 @@
 #   ZPLUGINDIR=~/.local/share/zsh/plugins
 #   MAINT_NVIM_TIMEOUT=600    MAINT_BREW_TIMEOUT=900    MAINT_TS_TIMEOUT=300
 #   MAINT_RUSTUP_TIMEOUT=600 # seconds `rustup update` may block
+#   MAINT_MISE_TIMEOUT=2700  # seconds EACH mise step may block (source builds — see below)
 #   MAINT_ENABLED=1          # 0 = no-op (e.g. drop a guard on a Kali engagement box)
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,15 @@ export PATH="$HOME/.local/bin:${CARGO_HOME:-$HOME/.cargo}/bin${PATH:+:$PATH}:/us
 : "${MAINT_NVIM_TIMEOUT:=600}"
 : "${MAINT_TS_TIMEOUT:=300}" # seconds the headless TS parser update may block (see below)
 : "${MAINT_BREW_TIMEOUT:=900}"
+# Deliberately the largest knob here, because a mise step is the one that COMPILES.
+# On musl (Alpine) mise defaults `all_compile` to true — every precompiled runtime it
+# would otherwise fetch is glibc-linked — so node/python/ruby are built from source on
+# every version bump, and node alone is tens of minutes. 2700s is sized for that build, not
+# for a download: a cold node 24 build on a 32-core musl box was still in V8 past 21 minutes,
+# so 1800 left too little headroom on a slower or busier machine — and a ceiling that trips
+# on the healthy path would turn every LTS bump into a logged failure. Applies PER STEP,
+# matching MAINT_BREW_TIMEOUT's shape.
+: "${MAINT_MISE_TIMEOUT:=2700}"
 # The upgradable-count probe below refreshes package metadata over the network. It is a
 # nudge, not a transaction — a slow mirror must cost us an accurate number, never the run.
 : "${MAINT_PKGCOUNT_TIMEOUT:=180}"
@@ -166,8 +176,8 @@ fi
 
 # ── mise (runtime/tool versions per your config) ──────────────────────────────
 if have mise; then
-  step "mise plugins update" mise plugins update
-  step "mise upgrade" mise upgrade --yes
+  step "mise plugins update" _to "$MAINT_MISE_TIMEOUT" mise plugins update
+  step "mise upgrade" _to "$MAINT_MISE_TIMEOUT" mise upgrade --yes
   # `mise upgrade` keeps each tool current WITHIN its configured constraint
   # (python="3.12" tracks 3.12.x) but never crosses a pin — moving 3.12→3.13 is a
   # deliberate call (breakage risk for pinned tooling), so it stays manual. Surface
@@ -175,8 +185,30 @@ if have mise; then
   # compares against the latest version BEYOND the pin (plain `outdated` only shows
   # within-constraint staleness, which the upgrade just cleared). Report-only, like
   # the `up` nudge for system packages below — apply with `mise up --bump <tool>`.
-  bump="$(mise outdated --bump --no-header 2>/dev/null)"
-  if [[ -n "$bump" ]]; then
+  #
+  # Bounded and rc-gated for the reason _pkgcount documents at length: this probe hits the
+  # network to resolve "latest beyond the pin", and a registry that accepts the connection
+  # and then stalls yields EMPTY output. A bare `[[ -n "$bump" ]]` reads that emptiness as
+  # the happy path and logs "all runtimes current" — asserting a fact nothing measured.
+  #
+  # The GATE HERE IS STRICTER THAN _pkgcount's, and deliberately so — do not "fix" the
+  # inconsistency. _pkgcount cannot test `rc != 0` because the managers it wraps OVERLOAD
+  # exit status to mean things: `dnf check-update` exits 100 when updates EXIST, `pacman -Qu`
+  # exits non-zero when there are NONE, so a general non-zero gate would report "unknown" on
+  # their healthy path. That forced it down to testing only how the probe DIED (124 = GNU or
+  # gtimeout expiry; >=128 = killed by a signal, which is how busybox timeout reports its own
+  # SIGTERM as 143), leaving a fast hard failure to fall through as "0 upgradable".
+  #
+  # `mise outdated` overloads nothing: 0 whether or not bumps exist, non-zero only on a real
+  # failure. So ANY non-zero is honestly "we did not get an answer" — a stall, a 500 from the
+  # registry, a mise that died on a broken config — and all of them belong in the same third
+  # state rather than masquerading as good news. rc is logged so the daily log can tell them
+  # apart after the fact (124/143 = the timeout fired; anything else = mise itself failed).
+  bump="$(_to "$MAINT_MISE_TIMEOUT" mise outdated --bump --no-header 2>/dev/null)"
+  bump_rc=$?
+  if ((bump_rc != 0)); then
+    log "mise: bump check UNAVAILABLE (rc=${bump_rc} — mise failed, or the probe exceeded ${MAINT_MISE_TIMEOUT}s) — nudge stays silent"
+  elif [[ -n "$bump" ]]; then
     log "mise: bumps available beyond your pins (apply manually: mise up --bump <tool>):"
     printf '%s\n' "$bump" | tee -a "$LOG"
   else

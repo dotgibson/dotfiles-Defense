@@ -118,6 +118,23 @@ core() {
 # prompt/completion (measured on starship 1.24.2 → prompt_starship_precmd, and
 # carapace-bin 1.5.7 → _carapace_completer; neither emits the old name at all). Keep
 # the old names so boxes pinned to older releases keep reporting wired.
+#
+# THE COMPLETION THREE NEED A DIFFERENT PROBE SHAPE, and getting it wrong is the same scar
+# as above. gh/uv/ty are wired by a `compdef` registration, so their wiring fact lives in
+# $_comps — NOT in $+functions. The two are not the same claim: $+functions[_gh] says a
+# FUNCTION by that name exists, $_comps[gh] says the COMMAND is registered to one, and only
+# the second is what makes `gh <TAB>` work. A function can exist without being registered —
+# left behind by a sourced script, or marked autoloadable by compinit — so the function probe
+# can report wired when nothing is. (Measured, since it is the obvious thing to reach for and
+# it is misleading in the other direction too: an fpath-autoloaded `_uv` reports
+# $+functions[_uv] == 1 while its body is still the `builtin autoload -XU` stub. So the
+# function probe is not merely weaker here, it answers a different question.) Tested for
+# NON-EMPTY rather than `== _gh` on purpose — when carapace legitimately owns the command the
+# row is still honestly wired, just not by the tool's own script.
+#
+# direnv probes the hook it installs. Both spellings, for the same reason as the pairs above:
+# `direnv hook zsh` defines _direnv_hook AND prepends it to precmd_functions/chpwd_functions,
+# and a future release could plausibly keep one without the other.
 _core_wired() {
   case "$1" in
   starship) (( $+functions[starship_precmd] )) || (( $+functions[prompt_starship_precmd] )) ;;
@@ -125,6 +142,10 @@ _core_wired() {
   mise)     (( $+functions[_mise_hook] )) || (( $+functions[__mise_hook] )) ;;
   zoxide)   (( $+functions[__zoxide_hook] )) || (( $+functions[__zoxide_z] )) ;;
   carapace) (( $+functions[_carapace] )) || (( $+functions[_carapace_completer] )) ;;
+  direnv)   (( $+functions[_direnv_hook] )) || (( ${precmd_functions[(I)_direnv_hook]} )) ;;
+  gh)       [[ -n ${_comps[gh]:-} ]] ;;
+  uv)       [[ -n ${_comps[uv]:-} ]] ;;
+  ty)       [[ -n ${_comps[ty]:-} ]] ;;
   *) return 2 ;;  # no arm for this name — see the three-state note above
   esac
 }
@@ -242,7 +263,18 @@ _core_doctor_unwired() {
 # observable in THIS shell — a function, a widget, a precmd hook — that _core_wired can
 # probe. If you cannot name the thing to probe, it is not wirable; add it to a group above
 # and stop there. Adding a name here without an arm in _core_wired fails the suite.
-typeset -ga _CORE_DOCTOR_WIRED=(starship atuin mise zoxide carapace)
+# direnv/gh/uv/ty joined in #581: Core hooks direnv in zsh/00-tools.zsh and registers the
+# three completions in zsh/45-plugins.zsh, so these are four integrations Core itself drives
+# and the doctor said nothing about. Each names its probe easily, which is the membership
+# rule above: direnv → _direnv_hook, and gh/uv/ty → their $_comps entry.
+#
+# PRESENCE ROWS ARE DELIBERATELY NOT ADDED HERE. Wiredness and presence are different
+# questions about different sets (see the note above), and a _CORE_DOCTOR_GROUPS row for
+# gh/ty would render a permanent ✗: no Linux repo's packages.txt installs either, so they
+# belong in _CORE_DOCTOR_OPTIN — which is DERIVED from PORTING-MATRIX.md's footnote ²¹ and
+# asserted against it, so muting them is a matrix change, not a list edit. Adding the rows
+# without that would manufacture exactly the alarm fatigue the opt-in state exists to stop.
+typeset -ga _CORE_DOCTOR_WIRED=(starship atuin mise zoxide carapace direnv gh uv ty)
 
 # _core_doctor_bin <tool> → REPLY = the binary that actually BACKS that row.
 # The rows above are canonical names, but two of them are not the binary on every distro:

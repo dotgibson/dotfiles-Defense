@@ -1624,10 +1624,16 @@ fi
 # audit-core.sh section calling the scanner: Core's own tree matches every pattern, which is
 # the point. A gate that forces nine repos to delete a block Core has quietly lost is worse
 # than no gate — the niceties simply go silent everywhere at once, with every repo green.
+# Keyed on the RULE IDS, not on a list of files: #579 moved the three completion generators
+# from 45-plugins.zsh to 00-tools.zsh, and a per-file assertion reported that as Core having
+# LOST a block it still carries. What matters is that every rule the fleet is gated on is
+# provided somewhere in Core, so ask exactly that.
 _ob_core_ok=1
-for _obf in zsh/00-tools.zsh zsh/45-plugins.zsh; do
-  [[ -n "$(_core_owned_block_hits "$HERE/$_obf")" ]] || _ob_core_ok=0
+_ob_hits="$(for _obf in "$HERE"/zsh/*.zsh; do _core_owned_block_hits "$_obf"; done | sed 's/^[0-9]*://' | sort -u)"
+for _obr in direnv-hook gh-completion uv-completion ty-completion wsl-detect; do
+  grep -qx "$_obr" <<<"$_ob_hits" || { _ob_core_ok=0; printf '    missing Core-side block: %s\n' "$_obr" >&2; }
 done
+unset _ob_hits _obr
 if (( _ob_core_ok )); then
   pass "owned-block scan: Core still carries the blocks it makes the fleet drop"
 else
@@ -1675,6 +1681,108 @@ else
 fi
 unset _ob_wf
 
+
+# ── leftover conflict markers (scripts/lib/common.sh :: _core_conflict_marker_hits) ──
+# Drives audit-core.sh §5h. Two properties have to hold at once and they pull against each
+# other, which is why both directions are pinned rather than just the firing one:
+#   • it FIRES on every marker that names a ref, including a lone base marker with no
+#     partners — the exact shape bcdd7dd (#650) committed and that nothing noticed
+#   • it stays SILENT on a bare row of seven `=`, which is also a setext H1 underline that
+#     .markdownlint.jsonc permits (MD003 defaults to `consistent`, not `atx`)
+#
+# THE FIRST VERSION OF THIS MATCHER FAILED OPEN and these fixtures are what caught it. `|` is
+# ERE's alternation operator, so a literal row of seven pipes in the pattern read as eight
+# EMPTY alternatives and the scanner reported NOTHING, on any input — a green gate that
+# checked nothing. A firing-only test would have gone green on the broken version too,
+# because the broken version was silent on the clean fixtures as well.
+#
+# Fixtures are BUILT, never typed: every marker below is assembled with printf, so this file
+# does not itself contain the thing it tests. It is tracked, §5h scans every tracked file, and
+# a literal fixture here would make the gate report its own test suite. They are written into
+# $SANDBOX, which is untracked, so the scanner never sees them at all — that is also why §5h
+# needs no allowlist.
+hdr "conflict-marker scanner (_core_conflict_marker_hits)"
+_cmd_="$SANDBOX/conflictmarker"
+mkdir -p "$_cmd_"
+_cm_open="$(printf '<%.0s' 1 2 3 4 5 6 7)"
+_cm_base="$(printf '|%.0s' 1 2 3 4 5 6 7)"
+_cm_close="$(printf '>%.0s' 1 2 3 4 5 6 7)"
+_cm_sep="$(printf '=%.0s' 1 2 3 4 5 6 7)"
+_cm_write() { printf '%s\n' "$2" >"$_cmd_/$1"; }   # _cm_write <name> <body>
+# _cm_is <label> <file> <expected> — the scanner's full output must equal <expected> exactly.
+# Exact, not "contains": the line numbers ARE the report an operator acts on.
+_cm_is() { # _cm_is <label> <file> <expected>
+  local got
+  got="$(_core_conflict_marker_hits "$_cmd_/$2")"
+  if [[ "$got" == "$3" ]]; then
+    pass "conflict-marker scan: $1"
+  else
+    fail "conflict-marker scan: $1 (got '${got//$'\n'/, }', want '${3//$'\n'/, }')"
+  fi
+}
+
+# ── what it must catch ──
+_cm_write lonebase.md "## [Unreleased]
+$_cm_base parent of fcb0308 (feat(audit): extend the adoption audit (#623))"
+_cm_is "a lone base marker is a finding (the #650 shape)" lonebase.md "2"
+
+_cm_write open.txt "a
+$_cm_open HEAD"
+_cm_is "an open marker is a finding" open.txt "2"
+
+_cm_write close.txt "a
+$_cm_close 6fe44bd (some commit subject)"
+_cm_is "a close marker is a finding" close.txt "2"
+
+# The separator counts ONLY alongside an unambiguous marker — here it has one, so all four
+# lines report. This is the whole conflict as git would leave it under zdiff3.
+_cm_write full.txt "a
+$_cm_open HEAD
+ours
+$_cm_base parent of abc1234 (subject)
+base
+$_cm_sep
+theirs
+$_cm_close abc1234 (subject)"
+_cm_is "a whole zdiff3 conflict reports all four marker lines" full.txt "2
+4
+6
+8"
+
+# ── what it must NOT catch ──
+# A setext H1 underline of exactly seven `=`. MD003 defaults to `consistent`, so a document
+# that uses setext throughout is valid house style — reddening it would be a false alarm on
+# correct markdown, and the gate would get switched off.
+_cm_write setext.md "Some Heading
+$_cm_sep
+
+body text"
+_cm_is "a bare separator alone is NOT a finding (setext underline)" setext.md ""
+
+_cm_write clean.md "## [Unreleased]
+
+### Fixed
+
+- something"
+_cm_is "a clean file is silent" clean.md ""
+
+# Column 0 is what git keys on, so it is what the scanner keys on — and indenting is the
+# documented escape for a doc that must SHOW a marker.
+_cm_write indented.md "Example of a conflict:
+
+    $_cm_open HEAD"
+_cm_is "an indented marker is NOT a finding (the documented escape)" indented.md ""
+
+# The self-reference guard, asserted rather than assumed: the matcher lives in a tracked file
+# that §5h scans, so if it ever stops assembling its patterns from fragments it reports itself
+# and the audit goes permanently red. Same class as the obfuscated `/proc/versio[n]` in
+# _core_owned_block_hits, and cheaper to assert than to rediscover.
+if [[ -z "$(_core_conflict_marker_hits "$HERE/scripts/lib/common.sh")" ]]; then
+  pass "conflict-marker scan: the matcher does not report itself"
+else fail "conflict-marker scan: common.sh reports itself — the patterns stopped being assembled from fragments"; fi
+if [[ -z "$(_core_conflict_marker_hits "$HERE/scripts/test-core.sh")" ]]; then
+  pass "conflict-marker scan: this test file does not report itself"
+else fail "conflict-marker scan: test-core.sh reports itself — a fixture was typed literally instead of built with printf"; fi
 
 # ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
 # WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
@@ -1853,7 +1961,13 @@ if have git; then
   # script is in scope: a brand-new helper arming a leaked trap must be caught BEFORE it is
   # `git add`ed, not one round-trip later. That is the side of the rule this tripwire made
   # explicit, which is what it is for.
-  _als_expect="audit-core.sh:9:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
+  #
+  # 9→10: §5h (leftover conflict markers), same side and for the same reason. A marker is a
+  # property of a file's TEXT, and the moment it most needs catching is before the commit
+  # that would carry it onto main — which is precisely the untracked-but-not-ignored window
+  # `_audit_ls` covers and bare `git ls-files` does not. Its pathspec is `*` rather than a
+  # glob list because the defect that motivated it (#650) was in markdown, not in shell.
+  _als_expect="audit-core.sh:10:3 check-modern.sh:2:0 nvim-reachability.sh:2:0"
   _als_bad=""
   for _als_spec in $_als_expect; do
     _als_f="${_als_spec%%:*}"
@@ -3483,6 +3597,93 @@ if ((_sc_subtree)); then
     fail "core_lock_classify: an absent sha was misclassified"
   fi
   unset _sc_rec
+
+  # ── the staleness guard: a target BEHIND its remote must refuse pre-flight (#622) ──
+  # The dirty-tree guard asks "uncommitted work?" and nothing asked "current with the
+  # remote?", so a sync landed on a stale base in all nine repos and reported
+  # `updated 9 / failed 0`; every push was then rejected as non-fast-forward. The property
+  # that matters is not the message, it is that the refusal happens BEFORE anything is
+  # written — the whole cost of the bug was nine repos already committed to.
+  #
+  # A dedicated fixture, because the fleet above deliberately has no upstream: a repo with
+  # no @{upstream} has no remote counterpart to be behind, which is a case this guard must
+  # stay quiet about and which the other assertions rely on.
+  _sc_st="$SCF/stale"
+  mkdir -p "$_sc_st"
+  git init -q --bare "$_sc_st/origin.git" >/dev/null 2>&1 || true
+  # Point the bare HEAD at main BEFORE anything clones it. Without this the clone below
+  # inherits the host's init.defaultBranch (often master), lands on an unborn branch that
+  # the origin does not have, and a later commit there becomes a ROOT commit rather than a
+  # descendant — so the "advance the remote" step produces a divergence, not a fast-forward,
+  # and the target is never actually BEHIND. Silent, and it makes the guard look broken.
+  git -C "$_sc_st/origin.git" symbolic-ref HEAD refs/heads/main >/dev/null 2>&1 || true
+  if git clone -q "$_sc_st/origin.git" "$SCF/repos/dotfiles-Stale" >/dev/null 2>&1; then
+    _sc_ident "$SCF/repos/dotfiles-Stale"
+    mkdir -p "$SCF/repos/dotfiles-Stale/core"
+    printf 'seed\n' >"$SCF/repos/dotfiles-Stale/core/payload.txt"
+    _scg "$SCF/repos/dotfiles-Stale" add -A
+    _scg "$SCF/repos/dotfiles-Stale" commit -q -m "seed"
+    _scg "$SCF/repos/dotfiles-Stale" push -q -u origin HEAD:main >/dev/null 2>&1
+    # Advance the shared origin from a second clone, then fetch — leaving the target
+    # exactly one commit behind its upstream, with a clean tree.
+    if git clone -q "$_sc_st/origin.git" "$_sc_st/other" >/dev/null 2>&1; then
+      _sc_ident "$_sc_st/other"
+      printf 'upstream moved\n' >"$_sc_st/other/n.txt"
+      _scg "$_sc_st/other" add -A
+      _scg "$_sc_st/other" commit -q -m "remote advance"
+      _scg "$_sc_st/other" push -q origin HEAD:main >/dev/null 2>&1
+    fi
+    _scg "$SCF/repos/dotfiles-Stale" fetch -q origin >/dev/null 2>&1
+    _sc_st_head="$(_scg "$SCF/repos/dotfiles-Stale" rev-parse HEAD)"
+    _sc_st_run() { # the fixture sync, aimed at the stale repo only
+      env -u DOTFILES_ALLOW_CORE_EDIT -u CORE_JSON CORE_COLOR=never \
+        REPOS_ROOT="$SCF/repos" CORE_REMOTE="$SCF/coreremote" CORE_BRANCH=main \
+        SYNC_JOBS=1 "$@" bash "$_SCS" dotfiles-Stale 2>&1
+    }
+    _sc_out="$(_sc_st_run SYNC_SKIP_AUDIT=1)"; _sc_rc=$?
+    if ((_sc_rc != 0)) && grep -qi 'behind their remote' <<<"$_sc_out"; then
+      pass "sync-core: a target BEHIND its remote refuses the fan-out (rc=$_sc_rc)"
+    else
+      fail "sync-core: a stale target did NOT stop the fan-out (rc=$_sc_rc)"
+    fi
+    # The refusal must be pre-flight. HEAD alone is too weak — a regression that wrote
+    # core.lock before returning would leave HEAD unchanged and still pass.
+    if [[ "$(_scg "$SCF/repos/dotfiles-Stale" rev-parse HEAD)" == "$_sc_st_head" ]] &&
+      [[ -z "$(_scg "$SCF/repos/dotfiles-Stale" status --porcelain)" ]] &&
+      [[ ! -f "$SCF/repos/dotfiles-Stale/core.lock" ]]; then
+      pass "sync-core: the staleness refusal happens before any repo is mutated"
+    else
+      fail "sync-core: a repo was written to despite the staleness refusal"
+    fi
+    # It names the correct recovery. Rebasing the sync commit is NOT it: the workflow pin
+    # rewrite is a sed over the target's own files, so it can replay cleanly and be wrong.
+    if grep -q 'RE-RUN this sync' <<<"$_sc_out" && grep -qi 'do NOT rebase' <<<"$_sc_out"; then
+      pass "sync-core: the staleness refusal names re-running, not rebasing, as the fix"
+    else
+      fail "sync-core: the staleness refusal does not point at the correct recovery"
+    fi
+    # The documented escape hatch must actually bypass it.
+    _sc_out="$(_sc_st_run SYNC_SKIP_AUDIT=1 SYNC_SKIP_STALE=1)"
+    if ! grep -qi 'behind their remote' <<<"$_sc_out"; then
+      pass "sync-core: SYNC_SKIP_STALE=1 bypasses the staleness guard"
+    else
+      fail "sync-core: SYNC_SKIP_STALE=1 did not bypass the staleness guard"
+    fi
+    # ...and a repo with NO upstream is silently fine, which is what keeps every other
+    # assertion in this section working.
+    _sc_out="$(_sc_run SYNC_SKIP_AUDIT=1)"
+    if ! grep -qi 'behind their remote' <<<"$_sc_out"; then
+      pass "sync-core: a target with no @{upstream} is not reported stale"
+    else
+      fail "sync-core: a target with no upstream was wrongly reported stale"
+    fi
+    rm -rf "$SCF/repos/dotfiles-Stale"
+    unset -f _sc_st_run
+    unset _sc_st_head
+  else
+    skip "sync-core staleness guard (could not build the clone fixture — out of scope)"
+  fi
+  unset _sc_st
 else
   skip "sync-core.sh fan-out guards (git subtree unavailable — it is a contrib command)"
 fi
@@ -6864,21 +7065,29 @@ for f in "${core_frags[@]}"; do ln -s "$f" "$INTEG/$(basename "$f")"; done
 _seed_plugin_dirs "$SANDBOX/integ-data/zsh/plugins"
 # 80-os.zsh: realistic OS-layer fragment. Exercises the Core helpers an OS repo depends
 # on; any reference to an undefined helper prints to stderr (the failure signal below).
-# Stub generators for the four tools Core now hooks itself (#449). Each "generated init"
-# is a single sentinel print, so a sentinel reaching stdout proves the whole
-# generate→cache→source path ran for that tool, under the REAL loader, in the real band
-# order — direnv from 00-tools at band 00, the three completions from 45-plugins at band 45.
-# A real box has some subset of these installed; the sandbox has none, so without stubs
-# _cache_eval bails on ${commands[…]} and all four lines are silent no-ops that could rot
-# unnoticed. (Side effect worth naming so nobody chases it: the `uv` stub sets HAVE_UV, so
-# 20-aliases.zsh defines uvr/uvs. Harmless here.)
+# Stub generators for the four tools Core now hooks itself (#449). A real box has some
+# subset of these installed; the sandbox has none, so without stubs the helpers bail on
+# ${commands[…]} and all four lines are silent no-ops that could rot unnoticed. (Side effect
+# worth naming so nobody chases it: the `uv` stub sets HAVE_UV, so 20-aliases.zsh defines
+# uvr/uvs. Harmless here.)
+#
+# TWO SHAPES, because the two mechanisms have different observable end states (#579):
+#   direnv is still SOURCED, so its generated init is a sentinel print and the sentinel
+#   reaching stdout proves generate→cache→source ran, at band 00, under the real loader.
+#   gh/uv/ty are no longer sourced at all — they are written into an fpath dir and autoloaded
+#   — so a sentinel print would prove nothing and never appear. Their stubs emit a REAL
+#   clap_complete-shaped script (`#compdef` header + the autoload shim), and the assertion
+#   below reads $_comps instead. That is the stronger claim anyway: it checks the completion
+#   is REGISTERED for the command in a live shell, which is the user-facing fact, and it
+#   survives a future change of mechanism without needing to be rewritten again.
 INTEGBIN="$SANDBOX/integ-bin"
 mkdir -p "$INTEGBIN"
-for _it in direnv gh uv ty; do
-  printf '#!/bin/sh\nprintf "%%s\\n" "print -r -- CORE_INIT_%s"\n' \
-    "$(printf '%s' "$_it" | tr '[:lower:]' '[:upper:]')" >"$INTEGBIN/$_it"
-  chmod +x "$INTEGBIN/$_it"
+printf '#!/bin/sh\nprintf "%%s\\n" "print -r -- CORE_INIT_DIRENV"\n' >"$INTEGBIN/direnv"
+for _it in gh uv ty; do
+  printf '#!/bin/sh\ncat <<STUB\n#compdef %s\n_%s() { _message CORE_INIT_%s }\nif [ "\$funcstack[1]" = "_%s" ]; then\n  _%s "\$@"\nelse\n  compdef _%s %s\nfi\nSTUB\n' \
+    "$_it" "$_it" "$(printf '%s' "$_it" | tr '[:lower:]' '[:upper:]')" "$_it" "$_it" "$_it" "$_it" >"$INTEGBIN/$_it"
 done
+for _it in direnv gh uv ty; do chmod +x "$INTEGBIN/$_it"; done
 unset _it
 cat >"$INTEG/80-os.zsh" <<'OSZSH'
 # stub 80-os.zsh — must be able to use the API Core promises the OS layer.
@@ -6904,6 +7113,8 @@ LOCALZSH
   printf 'ZSH_CFG=%q\n' "$INTEG"
   printf 'CORE_PROFILE=full\n'
   printf 'source "$ZSH_CFG/loader.zsh"\n'
+  # Report the COMPLETION REGISTRATION for the three that are no longer sourced (#579).
+  printf 'for _t in gh uv ty; do print -r -- "CORE_COMP_${(U)_t}=${_comps[$_t]:-NONE}"; done\n'
   printf 'print -r -- "INTEG_OK"\n'
 } >"$INTEG/.zshrc"
 integ_out="$(
@@ -6931,14 +7142,28 @@ fi
 # rather than as a set: when this breaks it is nearly always ONE tool (a renamed generator
 # subcommand, a line moved across a band boundary), and a combined check would only say
 # "something".
-for _it in DIRENV GH UV TY; do
-  if grep -q "^CORE_INIT_$_it\$" <<<"$integ_out"; then
-    pass "consumer load: Core sourced the $_it init (was the OS layer's job until #449)"
+#
+# direnv is SOURCED, so the sentinel its stub prints must reach stdout.
+if grep -q '^CORE_INIT_DIRENV$' <<<"$integ_out"; then
+  pass "consumer load: Core sourced the DIRENV init (was the OS layer's job until #449)"
+else
+  fail "consumer load: Core never sourced the DIRENV init — the block is not reaching a real shell"
+fi
+# gh/uv/ty are NOT sourced (#579) — they are generated into an fpath dir at band 00 and
+# autoloaded by compinit at band 10. So assert the end state that actually matters: the
+# command is REGISTERED to the tool's own completion function, in a real shell, under the
+# real loader and the real band order. This also pins the carapace-precedence half — the
+# band-45 re-assert runs after carapace in this load, so a regression that let the bridge
+# win would show up here as the wrong function name, not merely as an absent one.
+for _it in GH UV TY; do
+  _it_lc="$(printf '%s' "$_it" | tr '[:upper:]' '[:lower:]')"
+  if grep -q "^CORE_COMP_$_it=_$_it_lc\$" <<<"$integ_out"; then
+    pass "consumer load: the $_it completion is registered from fpath (_comps[$_it_lc] = _$_it_lc)"
   else
-    fail "consumer load: Core never sourced the $_it init — the block is not reaching a real shell"
+    fail "consumer load: the $_it completion never registered — got '$(grep -o "^CORE_COMP_$_it=.*" <<<"$integ_out")'"
   fi
 done
-unset _it
+unset _it _it_lc
 
 # ── A2b. _cache_eval convergence (#580) ──────────────────────────────────────
 # _cache_eval decides "is this cache usable?" on `-s` alone, and it writes the generator's
@@ -7051,6 +7276,122 @@ else
   printf '%s\n' "$_ce_out" | sed 's/^/    /' >&2
 fi
 unset _ce_out
+
+# ── _cache_completion: fpath autoload, not a source (#579) ────────────────────
+# _cache_eval ends in `source`, which for uv means 6,976 lines read into EVERY interactive
+# shell to serve a completion most shells never invoke — measured here at +35 ms per shell.
+# _cache_completion writes the same generated text into an fpath directory instead. Same
+# fixtures, same technique as the block above: extract the REAL function out of 00-tools.zsh
+# and drive it across separate shells, so the code under test is the shipped code.
+hdr "_cache_completion (fpath autoload)"
+CCM="$SANDBOX/cachecomp"
+rm -rf "$CCM"
+mkdir -p "$CCM/bin"
+# a healthy clap_complete-shaped generator: #compdef header + the autoload shim footer
+printf '#!/bin/sh\nprintf %%s "#compdef cc-good\\n_cc-good() { _message ok }\\n"\n' >"$CCM/bin/cc-good"
+# exits 0, prints nothing — the #580 shape, which must converge here too
+printf '#!/bin/sh\nexit 0\n' >"$CCM/bin/cc-empty"
+chmod +x "$CCM/bin"/cc-*
+
+_cc_run() { # _cc_run <tool> → drives the real _cache_completion in a fresh shell
+  XDG_CACHE_HOME="$CCM/cache" PATH="$CCM/bin:$PATH" HOME="$SANDBOX" \
+    zsh -fc '
+      setopt NO_CLOBBER   # 10-options.zsh sets this; the >| redirections depend on it
+      eval "$(sed -n "/^_cache_completion() {/,/^}/p" "'"$HERE"'/zsh/00-tools.zsh")"
+      _cache_completion '"$1"' '"$1"'
+    ' 2>/dev/null
+}
+
+# 1. THE POINT OF THE CHANGE: it writes a file and sources NOTHING. A regression back to
+#    `source` would still leave a working completion, so the only observable difference is
+#    that the generator's output does not enter the calling shell.
+rm -rf "$CCM/cache"
+_cc_out="$(XDG_CACHE_HOME="$CCM/cache" PATH="$CCM/bin:$PATH" HOME="$SANDBOX" \
+  zsh -fc '
+    setopt NO_CLOBBER
+    eval "$(sed -n "/^_cache_completion() {/,/^}/p" "'"$HERE"'/zsh/00-tools.zsh")"
+    _cache_completion cc-good cc-good
+    print -r -- "defined=${+functions[_cc-good]}"
+  ' 2>/dev/null)"
+if [[ -s "$CCM/cache/zsh/completions/_cc-good" ]] && [[ "$_cc_out" == "defined=0" ]]; then
+  pass "_cache_completion: writes _<tool> into the fpath dir and sources nothing into the shell"
+else
+  fail "_cache_completion: did not write the fpath file, or leaked the completion into the shell ($_cc_out)"
+fi
+
+# 2. It lands in the CACHE dir, never in zsh/completions/ — that directory is Core's authored
+#    set, listed per-file in core.manifest so an added file is a manifest failure.
+if [[ ! -e "$HERE/zsh/completions/_cc-good" ]]; then
+  pass "_cache_completion: generated files stay out of Core's authored zsh/completions/"
+else
+  fail "_cache_completion: wrote a generated completion into the manifest-checked authored dir"
+fi
+
+# 3. The compdump is invalidated on a regeneration. Without this the new file is INVISIBLE
+#    for up to 24h: 10-options.zsh takes `compinit -C` when the dump is under a day old, and
+#    -C skips the scan for new completion functions entirely.
+rm -rf "$CCM/cache"
+mkdir -p "$CCM/cache/zsh"
+: >"$CCM/cache/zsh/zcompdump"
+: >"$CCM/cache/zsh/zcompdump.zwc"
+_cc_run cc-good
+if [[ ! -e "$CCM/cache/zsh/zcompdump" && ! -e "$CCM/cache/zsh/zcompdump.zwc" ]]; then
+  pass "_cache_completion: a regeneration invalidates the compdump (else compinit -C never sees the new file)"
+else
+  fail "_cache_completion: the stale compdump survived a regeneration — the completion would be invisible for 24h"
+fi
+
+# 4. …and a run that regenerates NOTHING must leave the dump alone, or every shell pays a
+#    full compinit and the fast path is gone.
+: >"$CCM/cache/zsh/zcompdump"
+_cc_run cc-good
+if [[ -e "$CCM/cache/zsh/zcompdump" ]]; then
+  pass "_cache_completion: a no-op run leaves the compdump intact (the compinit -C fast path survives)"
+else
+  fail "_cache_completion: deleted the compdump when nothing was regenerated"
+fi
+
+# 5. An absent binary writes nothing and says nothing — the invariant that lets these callers
+#    ship with no HAVE_* flag.
+rm -rf "$CCM/cache"
+_cc_out="$(_cc_run cc-absent-tool)"
+if [[ -z "$_cc_out" && ! -d "$CCM/cache/zsh/completions" ]]; then
+  pass "_cache_completion: an absent binary writes nothing and prints nothing (no HAVE_* flag needed)"
+else
+  fail "_cache_completion: an absent binary produced output or a cache dir ($_cc_out)"
+fi
+
+# 6. A generator that cannot succeed must CONVERGE, or every shell re-forks it forever
+#    (#580). The marker is deliberately NOT an `_<tool>` stub: any file named _cc-empty in
+#    fpath IS a completion function, so a stub would register an empty completion and shadow
+#    whatever carapace would otherwise have bridged. Assert both halves.
+rm -rf "$CCM/cache"
+_cc_run cc-empty
+_cc_run cc-empty
+if [[ -e "$CCM/cache/zsh/completions/.cc-empty.failed" ]] &&
+  [[ ! -e "$CCM/cache/zsh/completions/_cc-empty" ]]; then
+  pass "_cache_completion: a failing generator converges on a dotfile marker, NOT an _<tool> stub that would shadow the bridged completion"
+else
+  fail "_cache_completion: failing generator did not converge, or wrote a stub into fpath"
+fi
+
+# 7. An upgrade re-opens the question: the binary's mtime is the only invalidation key.
+rm -rf "$CCM/cache"
+_cc_run cc-good
+_cc_sz0="$(wc -c <"$CCM/cache/zsh/completions/_cc-good" | tr -d ' ')"
+printf '#!/bin/sh\nprintf %%s "#compdef cc-good\\n_cc-good() { _message v2 }\\n# grown\\n"\n' >"$CCM/bin/cc-good"
+chmod +x "$CCM/bin/cc-good"
+touch "$CCM/bin/cc-good"
+_cc_run cc-good
+_cc_sz1="$(wc -c <"$CCM/cache/zsh/completions/_cc-good" | tr -d ' ')"
+if [[ "$_cc_sz1" != "$_cc_sz0" ]]; then
+  pass "_cache_completion: a newer binary regenerates the completion (mtime is the invalidation key)"
+else
+  fail "_cache_completion: an upgraded binary did not regenerate ($_cc_sz0 -> $_cc_sz1)"
+fi
+unset _cc_out _cc_sz0 _cc_sz1 CCM
+unset -f _cc_run
+
 # ── CI modernization floor: rules 2 and 7 (#521) ─────────────────────────────
 # check-modern.sh had no behavioural coverage — every rule was "green on this tree",
 # which cannot distinguish a rule that PASSES from a rule that never MATCHES. Rule 2 was
@@ -8847,25 +9188,32 @@ _z_carapace="$(_zln "$PLUGINS_FILE" '_cache_eval[[:space:]]+--salt.*carapace')"
 _zsay "direnv's hook is in 00-tools.zsh, not 45-plugins.zsh — band 45 is profile-gated (minimal ceils at 30), so .envrc loading would silently die on minimal hosts" \
   "$([[ -n "$_z_direnv_t" && -z "$_z_direnv_p" ]] && echo ok)"
 
-# (2) …and the three completions stay at band 45, because they call compdef.
+# (2) …and the three completions are GENERATED at band 00 (#579). Inverted from what this
+# asserted before: they used to be sourced at band 45 because they called compdef. They are
+# now written into an fpath directory instead, and fpath must be populated BEFORE compinit
+# scans it — compinit is band 10, so band 00 is the only band that can guarantee it. Filed at
+# band 45 the file would be written a whole shell too late to be seen.
 _z_ok=1
 for _zt in gh uv ty; do
-  [[ -n "$(_zln "$PLUGINS_FILE" "^_cache_eval[[:space:]]+${_zt}[[:space:]]")" ]] || _z_ok=""
+  [[ -n "$(_zln "$TOOLS_FILE" "^_cache_completion[[:space:]]+${_zt}[[:space:]]")" ]] || _z_ok=""
+  [[ -z "$(_zln "$PLUGINS_FILE" "^_cache_completion[[:space:]]+${_zt}[[:space:]]")" ]] || _z_ok=""
+  # …and nothing SOURCES them any more. _cache_eval ends in `source`, which is the entire
+  # 35 ms this change removes; a caller that slid back to it would be silent otherwise.
   [[ -z "$(_zln "$TOOLS_FILE" "^_cache_eval[[:space:]]+${_zt}[[:space:]]")" ]] || _z_ok=""
+  [[ -z "$(_zln "$PLUGINS_FILE" "^_cache_eval[[:space:]]+${_zt}[[:space:]]")" ]] || _z_ok=""
 done
 unset _zt
-_zsay "gh/uv/ty are in 45-plugins.zsh, not 00-tools.zsh — they call compdef, which does not exist until 10-options.zsh has run compinit" "$_z_ok"
+_zsay "gh/uv/ty are GENERATED by _cache_completion in 00-tools.zsh and sourced by nothing — fpath must be populated before compinit (band 10) scans it, and _cache_eval would source 6,976 lines per shell" "$_z_ok"
 
-# (3) …and AFTER carapace. carapace bridges a gh completion; the last compdef owns the
-# command, so this ordering is the only thing keeping gh's own completion in front of the
-# bridged one. It is the order they ran in at band 80, so it preserves behaviour.
-_z_ok=1
-for _zt in gh uv ty; do
-  _zl="$(_zln "$PLUGINS_FILE" "^_cache_eval[[:space:]]+${_zt}[[:space:]]")"
-  [[ -n "$_z_carapace" && -n "$_zl" ]] && (( _zl > _z_carapace )) || _z_ok=""
-done
-unset _zt _zl
-_zsay "gh/uv/ty are registered AFTER the carapace block — whichever compdef runs last owns the command, so moving them above it hands gh back to the bridged completion, silently" "$_z_ok"
+# (3) …and the compdef re-assert is still AFTER carapace. This is the half that survives the
+# move, and it is the whole reason a band-45 line still exists: fpath autoloading registers
+# these at COMPINIT — band 10, i.e. BEFORE carapace at band 45 — so without re-asserting here
+# the move would silently hand gh back to the bridged completion. Whichever compdef runs last
+# owns the command.
+_z_compdef="$(_zln "$PLUGINS_FILE" 'compdef "_\$t" "\$t"')"
+_zsay "the gh/uv/ty compdef re-assert is AFTER the carapace block — fpath autoload registers at band 10, before carapace, so without this the bridged completion silently wins" \
+  "$([[ -n "$_z_carapace" && -n "$_z_compdef" ]] && (( _z_compdef > _z_carapace )) && echo ok)"
+unset _z_compdef
 
 # (4) direnv after mise. Both PREPEND their hooks, so the one sourced last runs FIRST.
 _zsay "direnv is initialised AFTER mise — both PREPEND their hooks, so the one sourced last runs first; inverting this changes per-directory env resolution with no visible symptom" \
@@ -10372,6 +10720,38 @@ fi
 # silently (a status helper that errors blanks the whole bar). Drive the two data-driven
 # ones hermetically against a stubbed PATH (same technique as the clip ladder): a fake
 # `pmset`/`ip` pins the environment so the output is deterministic on every box.
+# ── vim-tmux-navigator must not keep C-\ (#652-adjacent; see tmux/tmux.conf) ──
+# The plugin binds FIVE keys at the tmux ROOT table, and the fifth (C-\ → select-pane -l)
+# collides head-on with zsh's `Ctrl+\ → autosuggest-toggle` (zsh/40-bindings.zsh), which
+# tmux/scripts/tmux-cheat.sh advertises by name. tmux wins that race in every shell pane,
+# so the documented key was dead fleet-wide. tmux.conf disables just that mapping with an
+# EMPTY @vim_navigator_mapping_prev.
+#
+# Two halves, and BOTH are load-bearing:
+#   • the option is set, and set to EMPTY — any non-empty value re-binds a key
+#   • it is set ABOVE the `run '…/tpm'` line — tpm sources the plugin's .tmux script, which
+#     reads the option at that instant, so setting it afterwards is a silent no-op
+# Neither half is visible to `tmux -f … source-file` in CI (no plugin checkout, no server),
+# which is exactly why it is pinned here as text, like the gh/carapace order in 45-plugins.
+hdr "tmux: vim-tmux-navigator's C-\\ mapping stays disabled (Ctrl+\\ belongs to zsh)"
+TMUXCONF="$HERE/tmux/tmux.conf"
+_vtn_line="$(grep -n "^[[:space:]]*set -g @vim_navigator_mapping_prev" "$TMUXCONF" | head -1)"
+_tpm_line="$(grep -n "^[[:space:]]*run .*tpm/tpm" "$TMUXCONF" | head -1)"
+if [[ -n "$_vtn_line" ]]; then
+  pass "tmux.conf sets @vim_navigator_mapping_prev"
+else fail "tmux.conf no longer sets @vim_navigator_mapping_prev — C-\\ is back on select-pane -l"; fi
+if [[ "${_vtn_line#*:}" == *"''"* || "${_vtn_line#*:}" == *'""'* ]]; then
+  pass "@vim_navigator_mapping_prev is EMPTY (the plugin's off switch)"
+else fail "@vim_navigator_mapping_prev is non-empty — that binds a key: ${_vtn_line#*:}"; fi
+if [[ -n "$_vtn_line" && -n "$_tpm_line" ]] && ((${_vtn_line%%:*} < ${_tpm_line%%:*})); then
+  pass "@vim_navigator_mapping_prev is set BEFORE tpm runs (or it is a no-op)"
+else fail "@vim_navigator_mapping_prev must precede the tpm run line (${_vtn_line%%:*} vs ${_tpm_line%%:*})"; fi
+# The keys the plugin exists FOR must still be declared — this guard must never become a
+# licence to drop the plugin's navigation along with its fifth key.
+if grep -q "christoomey/vim-tmux-navigator" "$TMUXCONF"; then
+  pass "vim-tmux-navigator is still loaded (C-h/j/k/l navigation intact)"
+else fail "vim-tmux-navigator is gone — C-h/j/k/l no longer cross into nvim"; fi
+
 hdr "tmux status/popup scripts (battery / netinfo, hermetic)"
 TMUXBIN="$SANDBOX/tmuxbin"
 BATTERY="$HERE/tmux/scripts/tmux-battery.sh"
@@ -11428,6 +11808,78 @@ if _diffutils_hits "$HERE/scripts"/*.sh "$HERE/scripts/lib"/*.sh | grep -q .; th
 else
   pass "no script calls cmp (diffutils stays optional)"
 fi
+
+# ── _core_gitleaks_policy_hits: the secret-scan policy matcher (#623) ────────
+# The gate audit-core.sh §5g rests on. Fixture-driven in BOTH directions before it is
+# trusted on the real fleet, for the reason the diffutils gate above states outright: a gate
+# whose exemption is untested is how the last one shipped broken.
+#
+# THE TRAP THIS PINS, and it cost real time while surveying for the issue: a naive
+# `-c|--config` match also fires on the `-c` inside `--exit-code`, which two of the repos in
+# scope actually pass. An invocation carrying `--exit-code` and NO config must still be a
+# finding — that is case 2 below, and it is the whole reason the flag is matched as a word.
+#
+# The offending strings are ASSEMBLED with printf rather than spelled out, the same technique
+# _core_owned_block_hits uses for its own self-reference problem: this repo scans itself, and
+# a literal config-less invocation written here would be a finding in Core's own tree.
+hdr "_core_gitleaks_policy_hits (secret-scan policy)"
+_gph="$(mktemp -d "$SANDBOX/gpolicy.XXXXXX")"
+_gp_w() { printf '%s\n' "$2" >"$_gph/$1"; } # _gp_w <file> <line>
+_gp_is() {                                  # _gp_is <label> <file> <expected>
+  local got
+  got="$(_core_gitleaks_policy_hits "$_gph/$2")"
+  if [[ "$got" == "$3" ]]; then
+    pass "gitleaks policy: $1"
+  else
+    fail "gitleaks policy: $1 (want '$3', got '$got')"
+  fi
+}
+
+_gp_scan="$(printf 'gitleaks %s' dir)"       # assembled: this file is scanned too
+_gp_det="$(printf 'gitleaks %s' detect)"
+_gp_hist="$(printf 'gitleaks %s' git)"
+
+# FINDINGS — a scan running under whatever rule set gitleaks happens to pick up.
+_gp_w a.mk "$_gp_scan . --no-banner --redact"
+_gp_is "a config-less 'dir' scan is a finding" a.mk "1:no-config"
+_gp_w b.mk "$_gp_hist --redact"
+_gp_is "a config-less history scan is a finding" b.mk "1:no-config"
+# THE --exit-code TRAP: contains the substring '-c', carries no policy, must still fire.
+_gp_w c.mk "$_gp_det --no-git --redact --verbose --exit-code 1"
+_gp_is "--exit-code does NOT read as -c (the false-positive trap this rule is built around)" c.mk "1:no-config"
+
+# NOT FINDINGS — a policy is passed, in any of the spellings the fleet actually uses.
+_gp_w d.mk "$_gp_scan . -c core/gitleaks.toml --no-banner --redact"
+_gp_is "-c with Core's policy is clean" d.mk ""
+_gp_w e.mk "$_gp_det --config core/gitleaks.toml --redact --exit-code 1"
+_gp_is "--config alongside --exit-code is clean (both directions of the trap)" e.mk ""
+_gp_w f.mk "$_gp_scan . --config=.gitleaks.toml --redact"
+_gp_is "the --config=VALUE spelling is clean" f.mk ""
+_gp_w g.mk "$_gp_scan . -c \"\$GITLEAKS_CONFIG\" --no-banner --redact -v"
+_gp_is "a config passed through a variable is clean" g.mk ""
+
+# NOT INVOCATIONS AT ALL — the discipline that keeps the gate switched on.
+_gp_w h.mk "# $_gp_scan . --no-banner   (a comment describing the call)"
+_gp_is "a commented-out invocation is not a finding" h.mk ""
+_gp_w i.mk 'command -v gitleaks >/dev/null 2>&1 || { echo "gitleaks not installed"; exit 0; }'
+_gp_is "a presence check that merely names gitleaks is not a finding" i.mk ""
+_gp_w j.mk 'gitleaks version'
+_gp_is "a non-scanning subcommand is not a finding" j.mk ""
+
+# Core's OWN consumers must be clean, or §5g would be asking the fleet for something Core
+# does not do itself — the same inverse property the owned-block scan asserts.
+_gp_core_ok=1
+for _gpf in "$HERE/audit-core.sh" "$HERE/scripts/audit-core.sh" "$HERE/Makefile"; do
+  [[ -f "$_gpf" ]] || continue
+  [[ -z "$(_core_gitleaks_policy_hits "$_gpf")" ]] || _gp_core_ok=0
+done
+if (( _gp_core_ok )); then
+  pass "gitleaks policy: Core's own gitleaks calls all pass a config (Core meets the rule it sets)"
+else
+  fail "gitleaks policy: Core itself runs gitleaks with no config — the rule §5g applies to the fleet"
+fi
+unset _gp_scan _gp_det _gp_hist _gp_core_ok _gpf _gph
+unset -f _gp_w _gp_is
 
 # ── summary ───────────────────────────────────────────────────────────────────
 summary

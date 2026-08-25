@@ -48,6 +48,17 @@ unsetopt FLOW_CONTROL   # free up Ctrl-S / Ctrl-Q
 # core/zsh/), and prepend to fpath BEFORE compinit scans it. No bootstrap symlink
 # needed — fpath points straight at the vendored core/zsh/completions.
 typeset -g _CORE_COMPDIR="${${(%):-%x}:A:h}/completions"
+
+# ── ...and the GENERATED ones (gh/uv/ty), written at band 00 by _cache_completion ──
+# A separate directory under the cache, deliberately: zsh/completions/ above is Core's
+# AUTHORED set and is listed per-file in core.manifest so an added or removed one is caught,
+# which a generated file would break. Populated at band 00, i.e. before this line runs, so
+# compinit below sees it on the first shell after a regeneration (#579).
+typeset -g _CORE_GEN_COMPDIR="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/completions"
+
+# Prepended in this order so the AUTHORED directory ends up FIRST: Core's own completions
+# win a name collision with a generated one, not the other way round.
+[[ -d "$_CORE_GEN_COMPDIR" ]] && fpath=("$_CORE_GEN_COMPDIR" $fpath)
 [[ -d "$_CORE_COMPDIR" ]] && fpath=("$_CORE_COMPDIR" $fpath)
 
 # ── Completion system (cached: rebuild .zcompdump at most once per 24h) ────────
