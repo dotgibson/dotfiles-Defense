@@ -60,6 +60,11 @@ docker/**/.env
 # Editor / OS noise
 *.swp
 .DS_Store
+# Crash dumps. `core.[0-9]*` and NOT `core.*`: this repo tracks core.lock, and Core itself
+# tracks core.manifest and core.version — a blanket rule would hide the next such file the
+# moment someone added one, silently. Bare `core` is deliberately not matched either: that
+# is the vendored Core DIRECTORY. Matches the kernel/glibc `core.<pid>` spelling.
+core.[0-9]*
 
 # Python bytecode (sigma_eval.py)
 __pycache__/
