@@ -24,6 +24,39 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **`htpx-drift.yml` — a weekly question about the pinned corpus, and a correction to what
+  #202 claimed.** Pinning htpx (`detections/htpx.pin`) is what makes `check-htpx-pairing.sh`
+  reproducible, and it opens one specific hole: **the gate reads the pinned sha, but the
+  `references:` URLs the rules write point at `/blob/main/`.** So if upstream removes or
+  renames an entry this repo names, the link is a live 404 for anyone who clicks it while CI
+  stays green. Nothing watched for that. This does, weekly, and the report leads with exactly
+  those entries.
+
+  **The correction.** #202's commit message and PR said `bloodhound-sharphound` "was renamed
+  `bloodhound-collect` upstream". That is wrong, and the distinction matters. Checked against
+  htpx's full history: `bloodhound-sharphound`, `bloodhound-sharphound-4662`,
+  `archive-staging-rar`, `local-data-collection` and `rogue-account` have **never existed** in
+  that repo — not as a file, not as an `id:`, in any commit. All eight dead references were
+  ids written *here* that were never right, not upstream drift. The fix was the same either
+  way, and `check-htpx-pairing.sh` catches that class permanently at author time. But the
+  rename story would have made this workflow look like a response to something that had
+  already happened, when the hole it covers has not bitten yet. It is a cheap weekly question,
+  not a reaction.
+
+  **It reports on corpus changes, not commits.** A pin behind by a README edit or a
+  `.gitignore` commit is behind by nothing — only two gates read this corpus and both read
+  `entries/` alone. Verified against real history: two consecutive upstream commits that
+  touched no entry produce no issue. Filing for those is the nagging `core-drift.yml`'s header
+  says it refuses to do, and a weekly nag becomes a weekly ignored issue.
+
+  Report-only, like `core-drift.yml`: one deduplicated issue via the existing
+  `file-routine-issue.sh`, nothing changed. Bumping the pin stays deliberate, because a bump
+  moves `HTPX-COVERAGE.md` and that diff is the point.
+
+  `check-htpx-pairing.sh` gained `--list-claims`, a data query printing every entry this repo
+  names. The workflow uses it rather than re-implementing "what counts as a claim" in YAML —
+  that definition already has two readers, and a third would be how they start disagreeing.
+
 - **The Defense↔htpx link is checked, not just asserted — `check-htpx-pairing.sh` plus a
   drift-gated `HTPX-COVERAGE.md`.** `detections/README.md` opens by promising that each
   rule names the exact Offense fold and **htpx pair** that reproduces it, "so the purple

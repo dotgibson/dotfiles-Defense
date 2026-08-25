@@ -131,6 +131,16 @@ repo's `lint.yml` only covers shell). Thirteen hard checks, no advisory:
    committed report stops matching, so a change in the shape of the boundary arrives as a
    diff someone reads. #196.
 
+Two of those gates read the **pinned** htpx corpus, which is what makes their verdict
+reproducible — and also means they cannot see upstream moving. `.github/workflows/htpx-drift.yml`
+covers that gap on a weekly schedule: it asks whether htpx's `entries/` has changed and files
+one issue when it has, leading with any entry this repo *names* that upstream no longer
+carries. That case is the reason it exists rather than a nicety — the gate reads the pinned
+sha while the `references:` URLs point at `/blob/main/`, so a removal upstream is a live 404
+for a reader while CI is still green. It stays quiet for upstream commits that do not touch
+`entries/`, since nothing here reads anything else. Not in the list above because it is
+scheduled, not part of the per-change gate.
+
 Run it locally (any pySigma backend):
 
 ```sh

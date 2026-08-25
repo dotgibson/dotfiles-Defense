@@ -1,0 +1,258 @@
+name: htpx-drift
+
+# Has the pinned htpx corpus moved, and does anything this repo NAMES no longer exist?
+#
+# WHY, AND WHY IT IS NOT JUST "THE PIN IS OLD". detections/htpx.pin deliberately freezes a
+# commit so check-htpx-pairing.sh has a reproducible verdict — a gate whose answer moves on
+# its own is not a gate (see attack-data.pin). But freezing the gate's input opens a
+# specific hole, and this job exists for that hole rather than for tidiness:
+#
+#   The gate validates against the PINNED sha. The URLs the rules actually write point at
+#   /blob/main/. So between an upstream rename and a pin bump, the gate is GREEN while the
+#   links in the corpus are already 404 for anyone who clicks them.
+#
+# Be precise about what has and has not happened, because #202's commit message got this
+# wrong and the distinction changes what this job is for. The eight dead references #202
+# fixed were NOT upstream renames: bloodhound-sharphound, archive-staging-rar,
+# local-data-collection and rogue-account never existed in htpx in any commit — they were
+# ids written here that were never right. check-htpx-pairing.sh catches that class at
+# author time, permanently, and needs no help from a scheduled job.
+#
+# The hole THIS job covers is the other direction, and it is still open: upstream removing
+# or renaming an entry this repo already names correctly. The gate would stay green (it
+# reads the pinned sha) while the /blob/main/ URL went 404 for every reader. It has not bitten
+# yet. That is the argument for a cheap weekly question rather than for alarm — and the
+# reason the report leads with which named entries disappeared, not with the sha delta.
+#
+# IT REPORTS ON CORPUS CHANGES, NOT COMMITS. A pin that is behind by a README edit or a
+# .gitignore commit is behind by nothing that matters — only two gates read this corpus and
+# both read entries/ alone. Filing an issue for those would be the nagging core-drift.yml's
+# header says it refuses to do, and a weekly nag is a weekly ignored issue.
+#
+# Report-only, like core-drift.yml: it opens or appends to one issue and changes nothing.
+# Bumping the pin stays a deliberate act, because a bump can change HTPX-COVERAGE.md and
+# must be reviewed with that diff in hand.
+
+on:
+  schedule:
+    - cron: "43 6 * * 1" # Mondays, 06:43 UTC — off the hour, and clear of core-drift's :17
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: htpx-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: pinned htpx corpus vs upstream
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Cache the pinned htpx corpus
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/dotfiles-Defense/htpx
+          key: htpx-corpus-${{ hashFiles('detections/htpx.pin') }}
+
+      - name: Compare the pinned corpus against upstream
+        id: compare
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          pin=detections/htpx.pin
+          [ -f "$pin" ] || { echo "::error::$pin is missing — cannot determine the pinned corpus"; exit 1; }
+
+          field() { awk -F'\t' -v k="$1" '!/^[[:space:]]*#/ && $1==k {print $2; exit}' "$pin"; }
+          slug="$(field repo)"
+          branch="$(field branch)"
+          local_sha="$(field sha)"
+          # All three are written together by hand when the pin is bumped, so a missing one
+          # means a malformed pin. Fail loudly rather than filing a report with a blank
+          # commit — same reasoning core-drift.yml gives for core.lock.
+          [ -n "$slug" ]      || { echo "::error::$pin has no repo field";   exit 1; }
+          [ -n "$branch" ]    || { echo "::error::$pin has no branch field"; exit 1; }
+          [ -n "$local_sha" ] || { echo "::error::$pin has no sha field";    exit 1; }
+
+          upstream_sha="$(gh api "repos/$slug/commits/$branch" --jq .sha)"
+          [ -n "$upstream_sha" ] || { echo "::error::could not resolve $slug@$branch"; exit 1; }
+
+          echo "pinned=$local_sha"
+          echo "upstream=$upstream_sha"
+          {
+            echo "slug=$slug"
+            echo "branch=$branch"
+            echo "local_sha=$local_sha"
+            echo "upstream_sha=$upstream_sha"
+          } >>"$GITHUB_OUTPUT"
+
+          if [ "$local_sha" = "$upstream_sha" ]; then
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+            echo "pinned corpus is current ($local_sha)"
+            exit 0
+          fi
+
+          # entries/ at each sha. A TRUNCATED tree response would look like a mass deletion
+          # and produce a terrifying, wrong report, so it is a hard failure rather than
+          # something to paper over.
+          entries_at() {
+            local sha="$1" out="$2"
+            gh api "repos/$slug/git/trees/$sha?recursive=1" >"$RUNNER_TEMP/tree.json"
+            if [ "$(jq -r '.truncated' <"$RUNNER_TEMP/tree.json")" = "true" ]; then
+              echo "::error::the git tree for $sha came back truncated — refusing to diff a partial corpus"
+              exit 1
+            fi
+            jq -r '.tree[] | select(.type == "blob") | .path
+                   | select(startswith("entries/")) | select(endswith(".md"))' \
+              <"$RUNNER_TEMP/tree.json" | sort >"$out"
+          }
+          entries_at "$local_sha"    "$RUNNER_TEMP/pinned.txt"
+          entries_at "$upstream_sha" "$RUNNER_TEMP/upstream.txt"
+
+          comm -23 "$RUNNER_TEMP/pinned.txt" "$RUNNER_TEMP/upstream.txt" >"$RUNNER_TEMP/removed.txt"
+          comm -13 "$RUNNER_TEMP/pinned.txt" "$RUNNER_TEMP/upstream.txt" >"$RUNNER_TEMP/added.txt"
+          n_removed="$(wc -l <"$RUNNER_TEMP/removed.txt" | tr -d ' ')"
+          n_added="$(wc -l <"$RUNNER_TEMP/added.txt" | tr -d ' ')"
+
+          if [ "$n_removed" -eq 0 ] && [ "$n_added" -eq 0 ]; then
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+            echo "upstream moved, but entries/ is identical — nothing this repo reads has changed"
+            exit 0
+          fi
+          echo "changed=true" >>"$GITHUB_OUTPUT"
+          {
+            echo "n_removed=$n_removed"
+            echo "n_added=$n_added"
+          } >>"$GITHUB_OUTPUT"
+          echo "::notice::htpx entries/ changed upstream — $n_added added, $n_removed removed"
+
+      - name: Which removed entries does this repo name?
+        id: broken
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          # --list-claims routes through the gate rather than re-implementing "what counts as
+          # a claim" here. That definition already has two readers; a third living in YAML is
+          # how they drift apart. It prints `<colour><TAB><stem>` for every named entry.
+          ./detections/check-htpx-pairing.sh --list-claims \
+            | awk -F'\t' '{print "entries/" $1 "/" $2 ".md"}' | sort >"$RUNNER_TEMP/claimed.txt"
+
+          comm -12 "$RUNNER_TEMP/claimed.txt" "$RUNNER_TEMP/removed.txt" >"$RUNNER_TEMP/broken.txt"
+          n_broken="$(wc -l <"$RUNNER_TEMP/broken.txt" | tr -d ' ')"
+          echo "n_broken=$n_broken" >>"$GITHUB_OUTPUT"
+          echo "$n_broken named entr(ies) no longer exist upstream"
+
+      - name: Write the drift report
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          SLUG: ${{ steps.compare.outputs.slug }}
+          BRANCH: ${{ steps.compare.outputs.branch }}
+          LOCAL_SHA: ${{ steps.compare.outputs.local_sha }}
+          UPSTREAM_SHA: ${{ steps.compare.outputs.upstream_sha }}
+          N_ADDED: ${{ steps.compare.outputs.n_added }}
+          N_REMOVED: ${{ steps.compare.outputs.n_removed }}
+          N_BROKEN: ${{ steps.broken.outputs.n_broken }}
+        run: |
+          set -euo pipefail
+
+          # One markdown bullet per line, each path in a code span. Deliberately NOT a sed
+          # program: every natural spelling of it puts a $ or a backtick inside single
+          # quotes, and SC2016 reads both as expansions that will not expand — which
+          # actionlint gates on. A read loop with the backticks escaped inside double
+          # quotes says the same thing with nothing to suppress.
+          # (A comment line here must not START with the word shellcheck, or it is parsed
+          # as a directive rather than prose — that is what SC1072 looks like.)
+          bullets() {
+            while IFS= read -r path; do
+              [ -n "$path" ] || continue
+              printf -- "- \`%s\`\n" "$path"
+            done <"$1"
+          }
+
+          # "1 entries added" is the kind of seam that makes a generated report read like
+          # nobody looks at it, and this one is asking someone to act.
+          plural() { [ "$1" -eq 1 ] && printf '%s %s' "$1" "$2" || printf '%s %s' "$1" "$3"; }
+          added_str="$(plural "${N_ADDED:-0}" entry entries)"
+
+          # One grouped redirect rather than a run of >> appends (SC2129), which also keeps
+          # the report readable top-to-bottom in source order.
+          {
+            # Unquoted heredoc so $VARS interpolate while escaped \` keeps markdown code
+            # spans literal — the trick core-drift.yml documents.
+            cat <<EOF
+          The pinned htpx corpus is **behind upstream**, and \`entries/\` has changed.
+
+          | | commit |
+          | --- | --- |
+          | pinned here (\`detections/htpx.pin\`) | \`$LOCAL_SHA\` |
+          | \`$SLUG@$BRANCH\` | \`$UPSTREAM_SHA\` |
+
+          **$added_str added · $N_REMOVED removed · $N_BROKEN of the removed named by this repo.**
+          EOF
+
+            if [ "${N_BROKEN:-0}" -gt 0 ]; then
+              cat <<'EOF'
+
+          ## Act on this now — these are already broken links
+
+          `check-htpx-pairing.sh` validates against the **pinned** commit, but the
+          `references:` URLs in the rules point at `/blob/main/`. So these are **live 404s
+          for anyone who clicks them right now**, while CI stays green — the gate cannot see
+          this, which is why the check is scheduled rather than in `sigma.yml`.
+
+          EOF
+              bullets "$RUNNER_TEMP/broken.txt"
+              cat <<'EOF'
+
+          Find where each is named:
+
+          ```bash
+          grep -rn '<id>' detections/ DEFENSE-METHODOLOGY.md README.md
+          ```
+          EOF
+            fi
+
+            if [ "${N_REMOVED:-0}" -gt 0 ]; then
+              printf '\n## Removed upstream\n\n'
+              bullets "$RUNNER_TEMP/removed.txt"
+            fi
+
+            if [ "${N_ADDED:-0}" -gt 0 ]; then
+              printf '\n## Added upstream\n\n'
+              printf 'Candidates for coverage — a gap is not a defect, but it is worth a look.\n\n'
+              bullets "$RUNNER_TEMP/added.txt"
+            fi
+
+            cat <<EOF
+
+          ## To bump
+
+          \`\`\`bash
+          # set sha to $UPSTREAM_SHA in detections/htpx.pin, then:
+          make htpx-report   # regenerate HTPX-COVERAGE.md
+          make htpx          # claim gate + report drift gate
+          \`\`\`
+
+          Review the \`HTPX-COVERAGE.md\` diff with the bump — that diff is the point of
+          pinning, and it is the only place a change in the boundary's shape shows up.
+
+          Compare: https://github.com/$SLUG/compare/$LOCAL_SHA...$UPSTREAM_SHA
+          EOF
+          } >drift-report.md
+
+          cat drift-report.md
+
+      - name: File or update the drift issue
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Version-free title, for the reason core-drift.yml gives: a title carrying the sha
+        # would open a NEW issue on every upstream commit instead of updating the standing
+        # one, which is how a weekly job becomes noise.
+        run: bash .github/workflows/file-routine-issue.sh "htpx.pin is behind upstream" drift-report.md
