@@ -173,8 +173,9 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      issues: write
+      issues: write # files the report; also reads the Renovate Dependency Dashboard (#633)
       pull-requests: read # read the open bump PRs it triages
+      actions: read # `gh run list --workflow=freshness.yml` — is the bot alive? (#633)
     env:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       GH_TOKEN: ${{ github.token }}
@@ -193,7 +194,7 @@ jobs:
           claude -p "/freshness-triage" \
             --model opus \
             --permission-mode default \
-            --allowedTools "Task,Read,Grep,Glob,WebSearch,WebFetch,Bash(./scripts/update-plugins.sh --check),Bash(git log:*),Bash(git diff:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*)" \
+            --allowedTools "Task,Read,Grep,Glob,WebSearch,WebFetch,Bash(./scripts/update-plugins.sh --check),Bash(git log:*),Bash(git diff:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh issue list:*),Bash(gh run list:*)" \
             --output-format text | tee "$RUNNER_TEMP/freshness-triage.md"
       - name: File the report as an issue
         run: bash .github/workflows/file-routine-issue.sh "$ISSUE_TITLE" "$RUNNER_TEMP/freshness-triage.md"

@@ -202,9 +202,20 @@ typeset -ga _CORE_DOCTOR_GROUPS=(
 # in the Gentoo and Kali CELLS — Arch, openSUSE and Alpine package and install them. A
 # Core-side list cannot express "opt-in over there, expected here", and muting them globally
 # would hide a genuine ✗ on the repos that do install them. So they stay expected, and are
-# ✗ on the two repos where they are not. Fixing that properly needs a per-repo manifest
-# (an `install/expected-tools.txt` each bootstrap ships); this list is the fallback default
-# that keeps every repo rendering sensibly until one exists.
+# ✗ on the two repos where they are not.
+#
+# THE PER-REPO ANSWER IS NAMED AND LANDING: `TOOLS_OPTIN` in the OS layer's os.capabilities
+# declaration (#663), read into $_CORE_CAP by zsh/02-capabilities.zsh. This comment used to
+# specify a different artifact — "an `install/expected-tools.txt` each bootstrap ships" — and
+# v5 deliberately decided against it: one declaration per OS repo carrying the package verbs,
+# the scheduler AND the tool split beats a second per-repo file with its own path, its own
+# reader and its own way to go stale. Recorded rather than silently reworded, because a Core
+# comment specifying a file the system decided not to build is exactly the drift #662 exists
+# to stop.
+#
+# So the array below is NOT a placeholder awaiting that file. It is the DEFAULT a box falls
+# back to when its OS repo declares no TOOLS_OPTIN — which, until #666 wires the doctor
+# through $_CORE_CAP, is still every box.
 typeset -ga _CORE_DOCTOR_OPTIN=(
   lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
 )
@@ -234,14 +245,34 @@ _core_doctor_optin() {
 # Checked in the render and in --json as well, so the two renderers cannot disagree about
 # whether the axis applies.
 #
-# THE MIRROR CASE IS NOT HANDLED HERE, deliberately: a flag set for a binary that is now GONE
-# leaves a live alias pointing at nothing. That failure is LOUD (`command not found: procs`)
-# where this one is silent, so it wants its own glyph and its own remedy rather than being
-# folded in — tracked in #631, and ~5 lines here if it is taken.
+# The MIRROR case lives in _core_doctor_stale below (#631) — same two gates, comparison
+# flipped, asked from the other branch of the render loop.
 _core_doctor_unwired() {
   (( ${+_CORE_PROBED} ))     || return 1   # detection never ran here
   (( ${+_CORE_PROBED[$1]} )) || return 1   # Core does not probe this row
   [[ ${_CORE_PROBED[$1]} == 1 ]] && return 1
+  return 0
+}
+
+# _core_doctor_stale <tool> → 0 iff Core's band-00 detection FOUND this tool and it is now GONE.
+#
+# The exact mirror of _core_doctor_unwired: the same two ledger gates, the comparison flipped,
+# and asked from the ABSENT branch of the render loop rather than the present one. So a 0 here
+# means "Core saw it at band 00, set HAVE_*, and let 20-aliases.zsh define an alias against it —
+# and the binary is not on PATH any more". PATH shrinking mid-session is not exotic here: mise's
+# chpwd hook rewrites PATH on every `cd` (00-tools.zsh), so a toolchain two directories away can
+# take a binary with it.
+#
+# WHY THIS IS WORTH REPORTING AT ALL, given the row already renders ✗ and the failure is loud:
+# it is only loud for tools that shadow nothing. Six aliases shadow CLASSIC commands — `ps`,
+# `top`/`htop`, `watch`, `df`, `ping`, `help` — and there a stale flag does not fail to give you
+# `procs`, it BREAKS `ps`, with a message naming a binary the user never typed. core-doctor is
+# what you reach for then, and ✗ procs does not connect to "your ps is broken". The block that
+# consumes this makes the connection by naming the ALIASES, not the tools (#631).
+_core_doctor_stale() {
+  (( ${+_CORE_PROBED} ))     || return 1   # detection never ran here
+  (( ${+_CORE_PROBED[$1]} )) || return 1   # Core does not probe this row
+  [[ ${_CORE_PROBED[$1]} == 1 ]] || return 1
   return 0
 }
 
@@ -389,7 +420,7 @@ _core_doctor_json() {
   # `missed` joins the declarations here for the same reason REPLY does — it is appended to
   # inside the loop, and a `local` there would re-declare a set parameter.
   local t first=1 REPLY
-  local -a missed=()
+  local -a missed=() gone=()
   print -rn -- "{\"version\":\"${ver}\",\"tools\":{"
   for t in $alltools; do
     ((first)) || print -rn -- ","; first=0
@@ -401,7 +432,12 @@ _core_doctor_json() {
       # Collected on the present branch of the loop that is already running, rather than in
       # a second pass: the question only applies to a tool that IS here now (#545).
       _core_doctor_unwired "$t" && missed+=("$t")
-    else print -rn -- "\"$t\":false"; fi
+    else
+      print -rn -- "\"$t\":false"
+      # The mirror, on the ABSENT branch of the same loop and for the same reason: the
+      # question only applies to a tool that is NOT here now (#631).
+      _core_doctor_stale "$t" && gone+=("$t")
+    fi
   done
   # "expected" is what makes this object assertable (#513). "tools" alone can only answer
   # "is every tool present", which is false on every correctly-provisioned box — footnote ²¹
@@ -448,6 +484,17 @@ _core_doctor_json() {
   print -rn -- ",\"missed\":["
   first=1
   for t in $missed; do
+    ((first)) || print -rn -- ","; first=0
+    print -rn -- "\"$t\""
+  done
+  # "stale" is the mirror of "missed" and gets its OWN key rather than widening either
+  # (#631) — same reason "expected" is not folded into "tools": both are published shapes
+  # with consumers, and a reader asking "did Core miss anything" must not have to filter a
+  # merged list. The two are disjoint by construction: a tool is present-and-unprobed or
+  # absent-and-probed, never both. `jq -e '.detection.stale == []'` is the gate.
+  print -rn -- "],\"stale\":["
+  first=1
+  for t in $gone; do
     ((first)) || print -rn -- ","; first=0
     print -rn -- "\"$t\""
   done
@@ -531,7 +578,7 @@ _core_doctor_render() {
   # `mark` joins _v/bin/REPLY up here for the reason spelled out just above: a `local` that
   # re-declares an already-set parameter INSIDE the loop makes zsh print `name=value` into
   # the report. That shipped once already, as literal `_v=0.26.1` lines.
-  local -a missing=() optin=() unwired=() latedirs=()
+  local -a missing=() optin=() unwired=() latedirs=() stale=()
   for ((gi = 1; gi <= ${#groups}; gi += 2)); do
     print -r -- "${c}${groups[gi]}${r}"
     line=""
@@ -563,7 +610,13 @@ _core_doctor_render() {
         # there ○ means "installed but IDLE", and one glyph carrying two meanings on one
         # screen is precisely the legibility problem this change is about.
         line+="  ${d}· ${tool}${r}"; optin+=("$tool")
-      else line+="  ${d}✗ ${tool}${r}"; missing+=("$tool"); fi
+        # An opt-in tool can go stale too — the hazard is the HAVE_* flag and the alias it
+        # gated, and neither cares that absence is "correct" for this row (#631).
+        _core_doctor_stale "$tool" && stale+=("$tool")
+      else
+        line+="  ${d}✗ ${tool}${r}"; missing+=("$tool")
+        _core_doctor_stale "$tool" && stale+=("$tool")
+      fi
     done
     print -r -- " $line"
   done
@@ -629,6 +682,47 @@ _core_doctor_render() {
       print -r -- "  ${d}move the prepend into 00-tools.zsh's bindir list to fix it for good${r}"
     else
       print -r -- "  ${d}installed after this shell started — open a new shell${r}"
+    fi
+  fi
+
+  # Set at band 00, GONE now (#631) — the mirror of `not wired` above, and placed here for the
+  # same structural reason: everything past "\nopt-in" is discarded by the render⇄json parity
+  # test, so this block cannot perturb it.
+  #
+  # NO NEW GLYPH, deliberately. The row already renders ✗, which is honest about presence — a
+  # fourth mark would spend the alarm-fatigue budget #620 was careful with, and would have to be
+  # threaded through the legend and the parity regex. What ✗ cannot say is the part that matters:
+  # the HAVE_* flag from band 00 is STILL SET, so 20-aliases.zsh's guard passed and an alias was
+  # defined against a binary that no longer resolves.
+  #
+  # So the block names the ALIASES rather than the tools. `ps` is the failure the user meets;
+  # `procs` is trivia they never typed. The pairs are read from the LIVE `aliases` table rather
+  # than from a table kept here — it is the definitive answer for this shell, it costs no fork,
+  # and it cannot go stale against 20-aliases.zsh. In the unit harness (ui+functions alone, no
+  # aliases) the loop simply finds none and the tool list still prints.
+  if ((${#stale})); then
+    print -r -- "${c}stale${r}"
+    print -r -- "  ${d}${stale[*]}${r}"
+    print -r -- "  ${d}detected at startup, gone now — HAVE_* is still set, so the aliases stand${r}"
+    local _s _sb _ak _af
+    local -a broken=() _aw=()
+    for _s in $stale; do
+      _core_doctor_bin "$_s"; _sb=$REPLY
+      for _ak in ${(k)aliases}; do
+        # Split into a real array first. `${${(z)x}[1]}` subscripts the STRING, not the words —
+        # it yields "p" for `alias ps=procs`, which silently matched nothing.
+        _aw=( ${(z)aliases[$_ak]} )
+        # first word, basename'd: `alias fd="$FD_BIN"` stores an absolute path.
+        _af=${_aw[1]:t}
+        [[ $_af == "$_sb" || $_af == "$_s" ]] || continue
+        broken+=("$_ak → $_af")
+      done
+    done
+    if ((${#broken})); then
+      print -r -- "  ${d}these aliases now point at nothing: ${broken[*]}${r}"
+      print -r -- "  ${d}reinstall the tool, or unalias to get the classic command back${r}"
+    else
+      print -r -- "  ${d}no alias points at them in this shell — reinstall or open a new shell${r}"
     fi
   fi
 

@@ -1,0 +1,43 @@
+# os.capabilities — the OS-native layer's capability declaration (Core v5, #663).
+#
+# COPY THIS to your OS repo as os/<os>.capabilities (beside os/<os>.zsh,
+# os/<os>.conf and os/<os>.gitconfig) and fill in the archive's real verbs.
+# bootstrap.sh links it to $ZDOTDIR/os.capabilities via blib_link_os_layer; Core's
+# zsh/02-capabilities.zsh READS it (it is never sourced) into $_CORE_CAP, and
+# maint/dotfiles-maint.sh — which is bash, not zsh — reads the same file with sed.
+#
+# The values below are Fedora's, transcribed from PORTING-MATRIX.md §"Package-manager
+# commands". They are an EXAMPLE, not a default: nothing in Core falls back to them.
+#
+# Validate a real one with:  core/scripts/check-capabilities.sh os/<os>.capabilities
+# That script is where the schema is defined, and it is what rejects an unknown key.
+#
+# FORMAT. One KEY=value per line. Values are command PREFIXES and may contain spaces;
+# they are not quoted, not expanded and never eval'd as arbitrary strings. Everything
+# after the first `=` is the value, verbatim, minus trailing whitespace. Lines that are
+# blank or start with `#` are ignored. Keys are [A-Z][A-Z0-9_]*.
+
+# ── package-manager verbs (all required) ──────────────────────────────────────
+PKG_REFRESH=sudo dnf check-update
+PKG_UPGRADE=sudo dnf upgrade -y
+PKG_INSTALL=sudo dnf install -y
+PKG_REMOVE=sudo dnf remove -y
+PKG_SEARCH=dnf search
+PKG_OWNS=dnf provides
+# What `up`'s once-a-day "N updates available" nudge counts. Kept separate from
+# PKG_REFRESH because it is the single most divergent verb across the seven archives —
+# and the one Core hardcoded worst (`grep -qi tumbleweed /etc/os-release` to choose
+# between `zypper dup` and `zypper up` lived in zsh/60-update.zsh).
+PKG_COUNT_PENDING=dnf -q check-update
+
+# ── scheduler (required) ──────────────────────────────────────────────────────
+# systemd | launchd | none. `none` is a real answer — a container, or a box with
+# neither — and tells the maint layer to offer the manual verb rather than claim a
+# timer it cannot install.
+SCHEDULER=systemd
+
+# ── optional ──────────────────────────────────────────────────────────────────
+# Space-separated tools core-doctor reports as OPT-IN rather than MISSING on this OS:
+# things the archive has but this repo deliberately does not install. Omit the key
+# entirely to accept Core's built-in default (_CORE_DOCTOR_OPTIN, zsh/30-functions.zsh).
+TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping

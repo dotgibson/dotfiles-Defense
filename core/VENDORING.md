@@ -196,17 +196,32 @@ machine-specific at 95–99.
 
 ## Adding your OS layer
 
-`bootstrap.sh` calls `blib_link_os_layer`, which wires three files if they exist:
+`bootstrap.sh` calls `blib_link_os_layer`, which wires four files if they exist:
 
 | Your file | Becomes |
 | --- | --- |
 | `os/<os>.zsh` | `$ZDOTDIR/80-os.zsh` |
 | `os/<os>.conf` | `$XDG_CONFIG_HOME/tmux/os.conf` |
 | `os/<os>.gitconfig` | `$XDG_CONFIG_HOME/git/os.gitconfig` |
+| `os/<os>.capabilities` | `$ZDOTDIR/os.capabilities` |
 
 This is where an OS-absolute path is **correct**: your package manager, your clipboard
 backend, your Homebrew prefix, your credential helper. Core is forbidden from naming any
 of them — see `PORTABILITY.md`.
+
+`os/<os>.capabilities` is the newest of the four and the odd one out: it is **data, not
+config**. Flat `KEY=value`, declaring your package-manager verbs, your scheduler and your
+opt-in tool list, so Core can dispatch through them instead of branching on your distro.
+Core **reads** it and never sources it, and it is deliberately un-numbered — the other
+three are ordered against something, a declaration is read on demand. Copy
+`core/examples/os.capabilities.example` and validate with:
+
+```bash
+core/scripts/check-capabilities.sh os/<os>.capabilities --packages install/packages.txt
+```
+
+Absence is not fatal: Core warns once and falls back to its built-in ladders, so a repo
+adopts this by adding a file, not by re-bootstrapping in lockstep.
 
 ### What Core already does — do not re-add it
 
@@ -300,8 +315,16 @@ upstream defaults, and that inheritance carries through. Verified with the pinne
 8.30.1 — the variable-reference form Core allowlists passes, and a real literal credential in
 the same position is still caught.
 
-`audit-core.sh` §5g reports repos that do neither — **advisory, not blocking**, and skipped
-entirely when the siblings are not checked out, exactly like §5f above.
+`audit-core.sh` §5g **fails** on a repo that does neither. It shipped advisory, on the
+principle that a gate red from its first run is a gate someone turns off; once the fleet was
+clean (#624 — `dotfiles-Alpine` and `dotfiles-Gentoo` each carried a private config that
+replaced Core's rather than extending it) that reason expired, and the posture flipped. Still
+skipped entirely when the siblings are not checked out, exactly like §5f above — so it is inert
+in CI, which clones only Core, and bites locally and in any sweep that clones the fleet.
+
+The reason it is worth blocking on: this failure is **quiet**. A repo running its own rule set
+is green, and stays green as that rule set drifts, because nothing compares it to Core's. The
+next person to look sees a passing gate — which is worse than a red one, not better.
 
 ### Declaring how you satisfy a gate you do not call
 

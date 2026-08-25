@@ -308,8 +308,8 @@ blib_read_pkgs_into() {
 #   tmux   — tmux.conf/reset/scripts + tpm, os/<os>.conf, <role>/<role>.conf
 #   git    — core gitconfig, os/<os>.gitconfig, the once-seeded local identity
 #   prompt — starship.toml
-#   tools  — lazygit, mise, jujutsu, atuin, bin/clip*, core/ssh/config (+ ssh/os.conf),
-#            the seeded sesh config
+#   tools  — lazygit, mise, jujutsu, atuin, tealdeer, bin/clip*, core/ssh/config
+#            (+ ssh/os.conf), the seeded sesh config
 # Default (neither BLIB_ONLY nor BLIB_SKIP set) wires EVERYTHING, so every existing
 # caller is byte-for-byte unaffected. A bootstrap's arg loop routes its --only/--skip
 # to blib_select; the helpers consult blib_want. bash 3.2-safe (no arrays needed).
@@ -430,7 +430,7 @@ blib_migrate_v4() {
 # ── symlink the vendored Core surface ─────────────────────────────────────────
 # blib_link_core <dotfiles> <config> — link everything Core ships, identically on
 # every OS: the zsh modules, tmux base + reset + popup scripts, starship, nvim (+ the
-# core/vim/vimrc fallback), lazygit, mise, jujutsu, atuin, git config (+ a once-seeded
+# core/vim/vimrc fallback), lazygit, mise, jujutsu, atuin, tealdeer, git config (+ a once-seeded
 # local identity), the cross-OS bin/clip* helpers, the ssh client config, a once-seeded
 # sesh config, and a one-time tpm clone. Keep this in step with the group list at the
 # top of this file — that is the canonical enumeration. OS-specific overlays
@@ -507,8 +507,8 @@ blib_link_core() {
       "FILL IN your name & email"
   fi
 
-  # ── tools — lazygit, mise, jujutsu, atuin, the cross-OS bin/clip* helpers, ssh,
-  #    the seeded sesh config ───────────────────────────────────────────────────
+  # ── tools — lazygit, mise, jujutsu, atuin, tealdeer, the cross-OS bin/clip*
+  #    helpers, ssh, the seeded sesh config ──────────────────────────────────────
   if blib_want tools; then
     # lazygit tokyonight theme — DEFAULT path (reached via the `lg` alias + the
     # `prefix + g` tmux popup). In core.manifest, so it wires like starship above.
@@ -527,6 +527,11 @@ blib_link_core() {
     # the config file as a source AFTER the environment, so the file wins). See that file's
     # header for the ten it sets; varying one of those means deleting it, not exporting.
     [[ -f "$dotfiles/core/atuin/config.toml" ]] && blib_link "$dotfiles/core/atuin/config.toml" "$config/atuin/config.toml"
+    # tealdeer — the `tldr` binary's config, DEFAULT path. Linked unconditionally like the
+    # three above and inert without the binary. It exists to turn ON auto_update, which
+    # upstream ships OFF: `help` is a Core alias but nothing refreshes the page cache, so a
+    # fresh box's `help` fails until someone runs `tldr --update` by hand.
+    [[ -f "$dotfiles/core/tealdeer/config.toml" ]] && blib_link "$dotfiles/core/tealdeer/config.toml" "$config/tealdeer/config.toml"
     # portable sesh config, seeded ONCE (edited locally, never tracked back).
     blib_seed "$dotfiles/core/sesh/sesh.toml.example" "$config/sesh/sesh.toml" \
       "edit freely; not tracked from here"
@@ -574,9 +579,10 @@ blib_link_core() {
 }
 
 # ── symlink the OS-native overlays ────────────────────────────────────────────
-# blib_link_os_layer <dotfiles> <config> <os> — link the four OS overlay files when
+# blib_link_os_layer <dotfiles> <config> <os> — link the five OS overlay files when
 # present: os/<os>.conf → tmux/os.conf, os/<os>.zsh → zsh/80-os.zsh (the loader's OS
-# band), os/<os>.gitconfig → git/os.gitconfig (included by Core's gitconfig), and
+# band), os/<os>.gitconfig → git/os.gitconfig (included by Core's gitconfig),
+# os/<os>.capabilities → zsh/os.capabilities (read by Core's 02-capabilities.zsh), and
 # ssh/os.conf → ~/.ssh/config.d/50-os.conf (Included by Core's ssh/config).
 #
 # The ssh overlay is the ESCAPE HATCH for #450, and it is deliberately the only one
@@ -600,6 +606,25 @@ blib_link_os_layer() {
     # v4: the OS layer is the numbered fragment 80-os.zsh (band 70-84). The loader globs
     # it by NN prefix; it always loads (>=70), independent of CORE_PROFILE.
     blib_link "$dotfiles/os/$os.zsh" "$config/zsh/80-os.zsh"
+  fi
+  # v5: the capability DECLARATION (#663) — the OS layer's package-manager verbs,
+  # scheduler and opt-in tool list as KEY=value data, read (never sourced) by Core's
+  # zsh/02-capabilities.zsh and by maint/dotfiles-maint.sh, which is bash.
+  #
+  # It rides with the zsh group and lands in $ZSH_CFG beside the fragments because that
+  # is the one directory both readers already know how to find. It is NOT itself a
+  # fragment: the loader globs [0-9][0-9]-*.zsh, so an un-numbered, un-.zsh file is
+  # never sourced into your shell — which is the entire point of shipping it as data.
+  #
+  # UNNUMBERED DESTINATION, deliberately. os/<os>.zsh lands at 80- because it is ORDERED
+  # against the rest of the chain; a declaration is read on demand by whoever wants it,
+  # so a band number would only imply a load position it does not have.
+  #
+  # The [[ -f ]] guard is the migration path: until an OS repo authors its declaration
+  # (#667) nothing is linked, Core's 02-capabilities.zsh warns once, and every existing
+  # hardcoded ladder keeps working. Absence is enforced by the audit, not by bootstrap.
+  if blib_want zsh && [[ -f "$dotfiles/os/$os.capabilities" ]]; then
+    blib_link "$dotfiles/os/$os.capabilities" "$config/zsh/os.capabilities"
   fi
   # ssh overlay → a config.d drop-in. Numbered 50- so a host-local file can sort either
   # side of it deliberately; Core's Include globs *.conf in lexical order, and ssh's
@@ -629,15 +654,27 @@ blib_link_os_layer() {
 # <config>/kali/templates — named for the distro, which is exactly the naming the rename
 # retired. Adopting this helper there relocated them to <config>/offensive/templates and
 # updated the two shipped docs that quoted the old path by hand (offensive/hacktheplanet's
-# pseudo-shell.py line, and offensive/ippsec). BOTH role repos now call this helper, so
-# there is nothing left to migrate — kept as the reason the destination is named for the
-# ROLE and not the distro. Deliberately NOT solved with a compat symlink (it would
+# pseudo-shell.py line, and offensive/ippsec). Kept as the reason the destination is named
+# for the ROLE and not the distro. Deliberately NOT solved with a compat symlink (it would
 # preserve a ~/.config/kali/ on a repo no longer called Kali) or a namespace parameter
 # (an argument whose only job is to keep a retired name alive).
 #
-# This exists because BOTH role repos hand-rolled the same three links and had already
-# drifted: Defense honoured BLIB_DRY when dropping the stale pre-v4 link and Offense did
-# not, so a --dry-run in one repo mutated the box and in the other did not.
+# ONE ROLE REPO CALLS THIS, NOT BOTH. Offense does (its bootstrap.sh calls
+# blib_link_role_layer); Defense still hand-rolls the band in its own wire_defense_stage,
+# and adopting the helper there is what remains. core.manifest and PORTING-MATRIX.md both
+# record the same split — this comment used to claim the migration was finished, which was
+# the only one of the three that said so.
+#
+# Defense hand-rolls TWO of the three links (85-defense.zsh and templates); there is no
+# tmux/role.conf link because dotfiles-Defense/defense/ ships no defense.conf, whereas
+# Offense does ship offensive.conf. So the migration is low-risk: the tmux branch below is
+# [[ -f ]]-guarded and would simply no-op there.
+#
+# This exists because both role repos hand-rolled the same links and had already drifted:
+# Defense honours BLIB_DRY directly rather than the library's _blib_dry() when dropping the
+# stale pre-v4 link, and Offense did not — so a --dry-run in one repo mutated the box and in
+# the other did not. Present tense on Defense's half, deliberately: that fork is still live
+# and is the thing adopting the helper would retire.
 #
 # ONE ROLE PER BOX. Both roles land on band 85, so a machine that wired Offense and
 # then Defense would have 85-offensive.zsh and 85-defense.zsh loading in glob order and

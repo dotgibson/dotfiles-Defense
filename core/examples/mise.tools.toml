@@ -1,0 +1,85 @@
+# ════════════════════════════════════════════════════════════════════════════
+# examples/mise.tools.toml  —  a GLOBAL-tools overlay, not a project file
+#
+# Its sibling examples/mise.project.toml drops into a project root as
+# `mise.toml`. This one is the other axis: the tools your GLOBAL config
+# (core/mise/config.toml) does NOT declare, and which therefore nothing ever
+# upgrades.
+#
+# The gap it closes, stated plainly. maint/dotfiles-maint.sh runs
+# `mise upgrade --yes` and `rustup update`, and has NO cargo/go re-install
+# step. So every tool installed by `cargo install` / `go install` / a release
+# URL is installed once and then rots — silently, on up to eight machines.
+# PORTING-MATRIX.md records this twice: footnote 25 ("no cargo install-update
+# step") and footnote 27 ("nothing upgrades carapace afterwards").
+#
+# Declaring a tool here routes it through the step that ALREADY runs.
+#
+# Try it:   cp examples/mise.tools.toml ~/.config/mise/conf.d/tools.toml
+#           mise install
+#
+# ── Read this before copying ────────────────────────────────────────────────
+# This is a MENU, not a diff. Which backend a given box needs is an OS
+# question, so the real declarations belong in each OS repo, not in Core —
+# Core ships the example and the reasoning. Take the rows your box actually
+# installs by hand today, and leave the ones its package manager owns: a tool
+# declared here AND packaged is now installed twice, with mise's copy winning
+# on PATH.
+# ════════════════════════════════════════════════════════════════════════════
+
+[tools]
+
+# ── Rust CLIs — `cargo:` builds from source ─────────────────────────────────
+# THE ALPINE RULE: on musl, these must be `cargo:`, never `ubi:` or `aqua:`.
+# Those backends fetch prebuilts that are glibc-linked and simply will not run.
+# This is the same trap core/mise/config.toml already documents for `foundry`,
+# and it is why this block does not reach for the faster backends.
+"cargo:viddy" = "latest"      # watch(1) with scrollback + diffs
+"cargo:dust" = "latest"       # du, sorted by size
+"cargo:tealdeer" = "latest"   # installs the `tldr` BINARY — guard on tldr, not tealdeer
+"cargo:jnv" = "latest"        # interactive jq-filter editor
+"cargo:ast-grep" = "latest"   # NB: also installs `sg`, which shadows newgrp's sg(1)
+"cargo:watchexec-cli" = "latest"
+
+# ── Go CLIs — static binaries, so `go:` is musl-safe everywhere ─────────────
+"go:github.com/joshmedeski/sesh/v2" = "latest" # note the v2 module path
+"go:github.com/mr-karan/doggo/cmd/doggo" = "latest"
+"go:github.com/tomnomnom/gron" = "latest"
+"go:mvdan.cc/sh/v3/cmd/shfmt" = "latest"
+"go:github.com/charmbracelet/glow" = "latest"
+"go:github.com/mikefarah/yq/v4" = "latest"
+"go:github.com/muesli/duf" = "latest"
+
+# ── Release-asset tools — `ubi:` (GLIBC ONLY; use cargo/go on Alpine) ───────
+# carapace is the load-bearing one: footnote 27 establishes that `go install`
+# CANNOT work for it on any platform, so the release URL is the only route,
+# and nothing upgrades it afterwards. ubi: turns that into a managed install.
+"ubi:carapace-sh/carapace-bin" = "latest"
+"ubi:starship/starship" = "latest"
+"ubi:atuinsh/atuin" = "latest"
+"ubi:jj-vcs/jj" = "latest"
+"ubi:sxyazi/yazi" = "latest"
+
+# ── ouch — the one row that needs its features spelled out ──────────────────
+# Its DEFAULT feature set pulls bzip3, whose build script runs bindgen, which
+# dlopens libclang — and Rust's musl toolchain links statically, so the default
+# set cannot build on Alpine at all (installing clang does not help). See
+# PORTING-MATRIX footnote 14, which prescribes --no-default-features there.
+# Spelled as a sub-table because it carries options beyond a version string;
+# it must come AFTER the plain keys above (TOML closes [tools] on a sub-table).
+[tools."cargo:ouch"]
+version = "latest"
+features = "flate2,tar,zip,zstd" # deliberately omits bzip3 — see above
+
+[settings]
+# The point of the whole file. Everything above floats on "latest" so the
+# declarations stay readable, which means two boxes provisioned a month apart
+# land on different builds. lockfile=true makes mise record the exact resolved
+# versions AND their checksums, so `mise install` reproduces the same set
+# everywhere. That is also a strictly better supply-chain story than the
+# unsigned release-URL trust anchor footnote 27 warns about.
+lockfile = true
+
+# Supply-chain delay: refuse a version published less than a week ago, so a
+# compromised release has time to be caught before it reaches eight machines.
+# minimum_release_age = "7d"

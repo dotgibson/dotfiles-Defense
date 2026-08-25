@@ -141,8 +141,8 @@ A **three-layer, multi-repo model with Core vendored by `git subtree`**:
 
 Each OS repo therefore carries **only** vendored Core plus its own thin OS layer
 — not the other eight OSes' files. The zsh **load order is the contract**
-(`tools → ui → options → history → aliases → git → functions → fzf → bindings →
-plugins → op → maint → update → os → local`); OS and Role repos extend it by
+(`tools → capabilities → ui → options → history → aliases → git → functions → fzf →
+bindings → plugins → op → maint → update → os → local`); OS and Role repos extend it by
 appending stages (`… os offensive local` on Offense, `… os defense local` on
 Defense), never by editing Core.
 

@@ -35,8 +35,9 @@ face, **not** a config layer). The canonical Core-vendoring fleet is
   (docs, `.github/`, `.claude/`, `scripts/`) live in the audit's allowlist instead.
 - **Never edit vendored `core/` in an OS repo.** That tree is a copy of this repo
   and is overwritten on the next sync. Fix it **here**, then fan out.
-- **Load order is load-bearing.** `tools → ui → options → history → aliases → git
-  → functions → fzf → bindings → plugins → op → maint → update → os → role → local`
+- **Load order is load-bearing.** `tools → capabilities → ui → options → history →
+  aliases → git → functions → fzf → bindings → plugins → op → maint → update → os →
+  role → local`
   (bands: Core 00-69, OS-native 70-84, Role 85-94 on Offense/Defense, host-local 95-99)
   (the canonical order in `core.manifest`). Don't reorder casually.
 - **Exec bits are asserted.** `bin/`, `scripts/`, `tmux/scripts/`, `maint/` runners

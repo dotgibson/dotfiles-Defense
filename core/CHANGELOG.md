@@ -14,6 +14,544 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **`tealdeer/config.toml` — the page cache nothing was refreshing.** `help` is a Core alias
+  (`zsh/20-aliases.zsh`, `HAVE_TLDR`-guarded) and tealdeer is packaged across the fleet, but Core
+  shipped no config for it and `maint/dotfiles-maint.sh` has no `tldr --update` step. Upstream's
+  `auto_update` defaults to **false**, so the two facts compose into a gap nobody owned: on a
+  fresh box `help ls` fails with _"page not found"_ until someone runs `tldr --update` by hand,
+  and on an old box the pages rot silently. Three lines of `[updates]` fix both without touching
+  the maintenance runner. `auto_update_interval_hours` is set to 168 rather than upstream's 720
+  so the refresh tracks the weekly maintenance cadence instead of lagging a month behind it.
+
+  **The file is deliberately conservative, and the reason is not the obvious one.** tealdeer
+  1.9.0 (2026-08-24) made config parsing **error on unknown keys** (upstream #516); before that
+  an unknown key was silently ignored. So the risk does not run the direction it first appears:
+  a newer key is not what breaks an old build — an old build ignores it — but any key this file
+  gets wrong is now a hard failure on every 1.9.0+ box, surfacing on **every** `tldr` invocation,
+  which on this fleet means `help` stops working outright. Core is vendored to nine repos running
+  whatever tealdeer their distro ships (`PORTING-MATRIX.md` ¹: Tumbleweed 1.8.0; Leap 16.x has no
+  package at all), so nothing here is newer than 1.8.0 — and `updates.warn_cache_age`, which is
+  1.9.0-only, is left out on purpose rather than by omission.
+
+  Symlinked, not seeded: Core owns the file and it is identical everywhere, so `blib_link` is
+  right and `blib_seed` (`sesh.toml`, `local.gitconfig` — files the user edits locally) is not.
+  Wired into the existing `tools` group, so no new `BLIB_MODULES` entry. (#702)
+
+- **The OS layer can now DECLARE its package-manager verbs instead of Core hardcoding
+  them.** Core's own test (`CONTRIBUTING.md`) is _"if it changes when the OS changes, it is
+  not Core"_ — and Core broke it **154 times**: 88 package-manager references in
+  `zsh/60-update.zsh`, 49 in `maint/dotfiles-maint.sh`, 17 in `zsh/30-functions.zsh`,
+  including a `grep -qi tumbleweed /etc/os-release` to choose `zypper dup` over `zypper up`.
+
+  `ARCHITECTURE.md` defended that as _"one verb with N backends"_, and the defence of the
+  **verb** is right — `up` belongs in Core so every machine has the same muscle memory. What
+  expired is the defence of the **implementation**: one verb with N backends is what a
+  dispatch table is for. The verb stays; the backends move to the layer that changes with
+  the OS.
+
+  An OS repo now authors `os/<os>.capabilities` — flat `KEY=value`, **read and never
+  sourced**, so a per-repo file is not a code-execution surface in your login shell (the
+  precedent and the reasoning are `scripts/tool-versions.env` and `scripts/setup.sh:23-26`).
+  Values are multi-word command prefixes, which is why `blib_read_pkgs` could not be reused:
+  it strips _all_ whitespace.
+
+  - `zsh/02-capabilities.zsh` — a new Core fragment at **band 02** that reads the
+    declaration into `$_CORE_CAP`, with `_core_cap <key> [fallback]` as the accessor.
+    Inside the Core band, so **every** `CORE_PROFILE` loads it: `minimal`'s ceiling is 30,
+    and a lean profile must not silently lose the dispatch table.
+  - `blib_link_os_layer` links it as a **fifth** OS overlay, beside the `.zsh`/`.conf`/
+    `.gitconfig` it already links. Every OS repo's `bootstrap.sh` calls that helper today,
+    so no repo edits a bootstrap to adopt this — it authors a file.
+  - `scripts/check-capabilities.sh` is the schema, and the gate: unknown key, missing or
+    empty required verb, duplicate key, `SCHEDULER` outside `systemd|launchd|none`, and
+    trailing whitespace are all failures. It takes a **path**, so the same validator runs
+    from Core's `make audit` (on the shipped example) and from each OS repo's own lint as
+    `core/scripts/check-capabilities.sh os/<os>.capabilities` — nine repos gated by one
+    definition instead of nine greps that drift. `--packages install/packages.txt` adds an
+    opt-in cross-check that each verb's binary is one the repo installs.
+  - `examples/os.capabilities.example` — the Fedora declaration to copy from, held to that
+    same gate so the fleet's template cannot drift from the fleet's schema.
+
+  **Nothing in Core dispatches through `$_CORE_CAP` yet** — `up`, the maint scheduler and
+  `core-doctor`'s opt-in split are separate changes. Landing the schema alone keeps the
+  foundational commit reviewable, and means a box with no declaration is byte-for-byte
+  unaffected.
+
+  Two decisions worth recording, because both went against the original proposal:
+
+  - **A missing declaration warns and falls back; it does not fail.** A hard failure at
+    shell startup leaves an unusable interactive shell on a box you are very likely SSH'd
+    into precisely to fix it. Enforcement belongs in a gate you run, not in the login shell.
+  - **The clipboard backend is deliberately _not_ in the schema.** `bin/clip` is re-exec'd
+    by nvim and tmux on **every** yank and paste, and its WSL probe was already rewritten to
+    avoid forking a `grep` per invocation. Adding a file read and parse to that path would
+    spend exactly what that optimisation bought, for a value that changes once per machine.
+
+- **A recorded jq security floor of ≥ 1.8.2 — `PORTING-MATRIX.md` footnote ³⁴.** jq 1.8.2
+  (2026-06-20) fixes **16 CVEs** — heap and stack overflows, out-of-bounds reads, an integer
+  overflow, a use-after-free and a hash-collision DoS — every one reachable **through parsing
+  input**, which is the tool's entire job. That is load-bearing here because jq is pointed at
+  output produced by machines other than yours: Core sets `HAVE_JQ` and this repo prescribes
+  `jq -e '.detection.missed == []'` as the provisioning gate a role layer runs against
+  `core-doctor --json`. Below the floor today: Alpine 3.22–3.24 and Fedora 43/44 (1.8.1),
+  Debian 13 / Ubuntu 24.04 (1.7.1), Leap 15.x (1.6).
+
+  **It is recorded, and deliberately not enforced.** Debian backports security fixes without
+  bumping the version, so on the whole Debian/Kali/Ubuntu lane a `1.7.1-x` build may carry all,
+  some or none of these and `jq --version` is not evidence either way — a version gate would
+  false-positive across the lane. The footnote states this as a third shape alongside the two
+  version-sensitive rows already in the file, because they point opposite ways and the
+  distinction is the whole content: `⁵` (tree-sitter) **mandates** a version check, since apk is
+  honestly old; `²²` (`sd`) **forbids** one and mandates capability probing, since `--version`
+  lies. jq's version is neither honest nor probeable — nothing in the CLI surface reveals which
+  patches a build carries — so there is nothing to detect from the shell. Core itself is
+  unaffected: `HAVE_JQ` is detect-only with no alias, and nothing in Core shells out to jq. (#702)
+
+- **`examples/mise.tools.toml` — the tools nothing upgrades, routed through the step that already
+  runs.** `maint/dotfiles-maint.sh` runs `mise upgrade --yes` and `rustup update` and has **no**
+  cargo/go re-install step, so roughly fifteen tools — `viddy`, `yazi`, `ouch`, `jj`, `ast-grep`,
+  `jnv`, `watchexec`, `tealdeer`, `dust`, `sesh`, `doggo`, `gron`, `shfmt`, `glow`, `yq`, `duf`,
+  plus `carapace`/`starship`/`atuin` — are installed once and then rot silently on up to eight
+  machines. `PORTING-MATRIX.md` already recorded the gap twice (footnote ²⁵'s "no
+  `cargo install-update` step", footnote ²⁷'s "nothing upgrades carapace afterwards"); footnote
+  ²⁵ now carries the path out instead of only the complaint.
+
+  Declaring a tool under `[tools]` with a `cargo:` / `go:` / `ubi:` backend makes the existing
+  maintenance step do the work, and `lockfile = true` records exact resolved versions **and
+  checksums** — a strictly better trust anchor than the unsigned release-URL route ²⁷ warns
+  about. Two caveats are written into the file rather than assumed: **Alpine must take `cargo:`,
+  never `ubi:`/`aqua:`** (those prebuilts are glibc-linked — the same trap `mise/config.toml`
+  documents for `foundry`), and **`ouch` must force a build without default features** there,
+  since bzip3's build script runs bindgen, which `dlopen`s libclang, which a static musl link
+  defeats (footnote ¹⁴).
+
+  **Core's share is the example and the paragraph, by design.** Which backend a given box needs
+  is an OS question, so the real `[tools]` declarations belong in each OS repo — Core cannot
+  answer it for eight of them at once. Like everything in `examples/`, it is wired into no
+  bootstrap. (#702)
+
+- **`/freshness-triage` can see the two bump classes it was blind to, and a guard that keeps the
+  routine rails honest.** Both gaps were _structural_ — they recurred on every run, not just the
+  one that reported them.
+
+  **The Renovate dashboard.** Renovate parks bumps on a per-repo Dependency Dashboard issue
+  without opening a PR — rate-limited, awaiting approval, or grouped-and-pending. Reading it
+  needs `gh issue list`, which was outside the command's `allowed-tools`, so the routine derived
+  its Renovate verdict from PR absence alone. PR absence is equally consistent with _nothing to
+  bump_ and _several bumps parked on the dashboard_. The report said "not assessed" — honest, and
+  it said it every week.
+
+  **Bot liveness.** Zero open PRs is likewise consistent with the bot never having run. A healthy
+  `freshness.yml` with nothing to do and one that has not fired in a month produced the
+  **identical** report. That is the failure a freshness routine most needs to catch, since a
+  silently dead bot degrades exactly like a current tree. `gh run list --workflow=freshness.yml`
+  is now allowed, and a run that has not _completed successfully_ within **10 days** — one missed
+  weekly run plus slack — is a finding in its own right, reported above the per-PR verdicts,
+  because a dead updater invalidates the "nothing to triage" reading underneath it.
+
+  Neither is covered by the #636 dashboard, which counts open Renovate _PRs_ and _links_ the
+  dashboard issue without reading it, and has no liveness signal at all. `release-readiness`
+  already carries both capabilities, so this is no new security posture; the nvim build-hook
+  restriction is untouched.
+
+  **The guard.** `claude-routines.yml` states the invariant — each job's `--allowedTools` mirrors
+  the routine's own frontmatter and is never broader — and nothing enforced it. The two live
+  ~200 lines apart, in different files, in different spellings. `test-core.sh` now checks every
+  mirror in both rails against the frontmatter of the routine its `claude -p "/<name>"` names,
+  comparing as sets so ordering and whitespace are not findings. Drift **broader** hands a
+  scheduled, token-bearing job a capability its definition never granted; drift **narrower**
+  fails at runtime, weekly, in a job nobody watches. Verified in both directions; 9 mirrors
+  currently match.
+
+- **`core-doctor` reports the mirror of #545: a `HAVE_*` flag set for a binary that is now
+  gone.** #545 shipped the silent half — present at report time, never wired. This is the other
+  state: detected at band 00, flag set, `20-aliases.zsh`'s guard passed and defined the alias —
+  and the binary is no longer on `PATH`.
+
+  #631 filed this as low-priority and argued against taking it, on the grounds that the failure
+  is loud and self-explanatory and would need a fifth glyph. **Both halves turn out not to
+  hold, and that is why this landed.**
+
+  It is loud only for tools that shadow nothing. Six aliases shadow **classic commands** — `ps`,
+  `top`/`htop`, `watch`, `df`, `ping`, `help` — and there a stale flag does not fail to give you
+  `procs`, it **breaks `ps`**, with a message naming a binary the user never typed. `core-doctor`
+  is what you reach for at that point, and `✗ procs` does not connect to "your `ps` is broken".
+  So the block names the dangling **aliases**, not the tools, read from the live `aliases` table
+  so it cannot drift from `20-aliases.zsh`.
+
+  And it needs **no fifth glyph**. The row keeps its honest `✗` — which is already correct about
+  presence — and the remedy lives in a `stale` block, exactly as `not wired` does. The legend
+  keeps its three states, the alarm-fatigue budget #620 was careful with is not spent, and the
+  render⇄json parity regex is untouched (the block sits past the `opt-in` trim, structurally
+  invisible to it). That comparison is re-run with this axis actively firing, since unlike
+  #545's `⚠` it fires on the branch the parity test stubs.
+
+  PATH shrinking mid-session is not exotic here: `mise activate zsh` registers a `chpwd` hook
+  that rewrites `PATH` on every `cd`, so a toolchain two directories away can take a binary with
+  it. `--json` gains `detection.stale` beside `missed` — its own key, not a widened one, and
+  disjoint from `missed` by construction. Both ledger gates from `_core_doctor_unwired` apply
+  unchanged; only the comparison flips.
+
+- **A decided-and-rejected ledger for `/tool-scout` — `.claude/tool-decisions.md`.** The
+  routine's baseline is five files (`PORTING-MATRIX.md`, `zsh/00-tools.zsh`,
+  `zsh/20-aliases.zsh`, `mise/config.toml`, `zsh/45-plugins.zsh` + `nvim/lazy-lock.json`) that
+  all describe what Core **has**. Nothing recorded what Core **considered and declined**, so a
+  rejected tool was indistinguishable from one never evaluated.
+
+  `hexyl` came back ranked #3 "adopt" on 2026-08-18, six days after #395 closed it
+  `NOT_PLANNED` and refiled it as `dotfiles-Kali#182`. #395's own body anticipated it —
+  _"filed so the decision is recorded rather than silently re-proposed by next week's scan"_ —
+  and recording it was not enough, because nothing in the routine read it.
+
+  The cost is not a wasted ranking slot. A re-proposal arrives with a fresh case-for and **no
+  counter-argument attached**, so the decision gets re-made on half the evidence; `hexyl` would
+  have been adopted on that pass if the report had been actioned without someone happening to
+  remember. `fastgron` is the near-miss in the same report — correctly skipped, with reasoning
+  the report itself noted should be written down, caught by luck rather than by process.
+
+  Seeded with both. The load-bearing half is that **the routine is made to read it**: the
+  instruction lands in `.claude/commands/tool-scout.md` _and_ `.claude/agents/tool-scout.md`,
+  since the subagent does the actual ranking and would otherwise get it second-hand. A listed
+  tool may be re-proposed only against the recorded reasoning, naming what changed, and the
+  report states the prior decision per candidate — explicitly "none" when there is none, since
+  an omitted line reads the same as an unchecked one.
+
+  `/os-package-availability` and `/modernize` share the shape but are deliberately left alone:
+  both already carry a working in-band equivalent (the "intentionally excluded" comments in
+  `packages.txt`, and the machine-readable floor in `scripts/modern-baseline.yml`). That
+  reasoning is recorded in the ledger itself so it is not re-proposed either.
+
+- **`V5-PROPOSAL.md` — the design record for the next major.** Core is at `4.18.0`
+  with the whole fleet synced to it and an empty backlog; nothing in the repo
+  proposed a v5, and the only `v5` strings anywhere were `RELEASE-RUNBOOK.md` using
+  `v4`→`v5` as the worked example for the moving-alias procedure. So the machinery
+  for cutting a major was documented and rehearsed while the _content_ of one was
+  not written down anywhere.
+
+  The proposal follows `V4-PROPOSAL.md`'s structure and states one thesis: **the OS
+  layer becomes a contract instead of a convention.** v4 made the _load order_
+  declarative — modules stopped being a hand-listed array and became `NN-` fragments
+  the loader globs — and v5 does the same to capability, payload and surface. Four
+  bundled changes, chosen because they touch the same three contracts (the
+  `bootstrap.sh` symlink set, the load chain, and what a vendored `core/` contains),
+  so the fleet re-bootstraps once rather than four times:
+
+  1. **`os.capabilities`** — each OS repo declares its package-manager verbs,
+     clipboard backend, scheduler and opt-in tool split, and Core dispatches through
+     the declaration. Core currently carries **154 package-manager references** —
+     88 in `zsh/60-update.zsh`, 49 in `maint/dotfiles-maint.sh`, 17 in
+     `zsh/30-functions.zsh` — in the layer whose own test is "if it changes when the
+     OS changes, it's not Core". `CHANGELOG.md:927-931` already recorded that fixing
+     `core-doctor`'s opt-in classification "needs a per-repo manifest"; this is it.
+  2. **Vendor only what is Core** — the `core.manifest` payload is 1.4 MB and a
+     vendored `core/` is 5.9 MB, so **76% of what ships to every machine is not
+     Core**. The largest single item is `assets/demo.gif` at 1.8 MB, larger than the
+     entire Core payload, replicated into nine trees where no README displays it.
+  3. **Retire what nothing uses, declare what things do** — delete `CORE_PROFILE`
+     (nothing writes the `$ZSH_CFG/profile` it reads, no OS repo mentions it, and
+     `bootstrap-test.yml` asserts `~/.zshrc` must not set it), which also closes the
+     unenforceable band-squatting footgun `VENDORING.md:185-192` documents; and turn
+     `HAVE_*` from 43 accidental exports into a stated API, since five are consumed
+     downstream and none are declared anywhere.
+  4. **`clip` learns what a secret is** — `optoken` pipes a live TOTP through `clip`,
+     which on a headless box reaches OSC 52 and, under the `set-clipboard on` that
+     `tmux/tmux.conf:45` itself sets, leaves the code in a `tmux show-buffer`-readable
+     paste buffer.
+
+  §11 records the non-goals with their reasons — renumbering the bands (~470
+  references across 62 files, and `V4-PROPOSAL.md` §9 already resolved against it),
+  retiring the bare verb names, consolidating `bootstrap.sh`, and an nvim overhaul —
+  plus four open questions the implementation must answer rather than assume. It is
+  **report-first**: nothing here is implemented, and an issue the proposal rejects
+  should be closed `not_planned` with a reason rather than left open.
+
+  `V5-PROPOSAL.md` joins the `META_ALLOWLIST` in `scripts/audit-core.sh` beside
+  `V4-PROPOSAL.md`, so §1's manifest-drift check accounts for it.
+
+### Changed
+
+- **nvim plugin pins move forward for three plugins.** `alpha-nvim`, `nvim-lspconfig` and
+  `schemastore.nvim` advance to the commits a sandboxed headless `Lazy! sync` resolved:
+  `6c6a89d` → `4ba26e4`, `221c438` → `af9adce`, and `73e89eb` → `5f2a3b5`.
+
+  Every new SHA was verified to exist upstream and to be a strict fast-forward of the one it
+  replaces (`status=ahead`, `behind_by=0` in all three — no rewrite or force-push), and each
+  range was read before promotion:
+
+  - **`alpha-nvim`** one commit: _clear stale button keymaps on redraw_. Core does define its
+    own dashboard buttons (`plugins/alpha-nvim.lua` sets `startify.section.top_buttons.val`),
+    so this is a fix that lands on configuration Core actually ships, not a no-op.
+  - **`nvim-lspconfig`** six commits: two new server configs (`ms_terraform_lsp`,
+    `rust_glancer`), one fix making `rust_analyzer` show a non-error message when `rustc` or
+    `cargo` is missing, and three generated `configs.md` updates. Core registers neither new
+    server and does not configure `rust_analyzer` — its Terraform server is `terraformls`,
+    untouched here.
+  - **`schemastore.nvim`** one commit: a catalog refresh.
+
+  Nothing renames or removes an API Core calls.
+
+  **Recorded after the fact.** The roll landed in #675 as a lockfile-only commit, so it
+  reached `main` with no `[Unreleased]` entry — `CONTRIBUTING.md` requires one and nothing in
+  `audit-core.sh` can enforce it (§9 checks that `core.version` has a matching dated heading,
+  not that a change brought an entry). Pins are what stop plugins floating silently into
+  eight repos, so every roll is a change those repos receive on their next sync, and there is
+  no carve-out for automation. Same finding, same argument, as the sweep recorded earlier in
+  this file. (`nvim/lazy-lock.json`, #675)
+
+- **The secret-scan policy gate (`audit-core.sh` §5g) now BLOCKS.** It shipped advisory in
+  #623, on the principle §5f states: repos are short on arrival, and a gate that is red from
+  its first run is a gate someone turns off. That reason has expired — the fleet is clean.
+
+  `dotfiles-Alpine` and `dotfiles-Gentoo` each carried a root `.gitleaks.toml`. gitleaks
+  auto-discovers a config at the scan root, so those files silently governed **every** local
+  scan in their repos, including invocations that pass no `-c` and look, from the command line,
+  like stock scans. Both rule sets were simultaneously _narrower_ than Core's (gitleaks' stock
+  defaults, with Core's variable-reference allowlist dropped) and _wider_ (whole-path
+  exemptions for `core/`, and in Gentoo's case `README.md`). Being green under them was not
+  evidence of being clean; it was evidence of being measured differently.
+
+  CI was never affected: the reusable `lint-call.yml` secrets leg passes `-c` explicitly and an
+  explicit config beats auto-discovery. The entire divergence lived in the author-time path —
+  which is where it is least likely to be noticed, and where a hook greener than CI does the
+  most damage.
+
+  Both are now deleted (`dotfiles-Alpine#133`, `dotfiles-Gentoo#125`), and both repos verified
+  clean under `core/gitleaks.toml` — working tree, plus all 271 commits of Gentoo's history,
+  which is what proved its `README.md` exemption stale. No Core sync was needed: Core's
+  variable-reference allowlist already covers the `core/CHANGELOG.md` line the stock
+  `curl-auth-user` rule flags. All nine OS repos now measure by the same policy.
+
+  Blocking is the right posture here specifically because this failure is **quiet**. A repo
+  running its own rule set is green, and stays green as that rule set drifts, because nothing
+  compares it to Core's — so the next person to look sees a passing gate, which is worse than a
+  red one. Advisory suits a finding people can see; not one whose whole hazard is that it looks
+  fine. Still skipped when siblings are not checked out, exactly like §5f, so it is inert in CI
+  (which clones only Core) and bites locally and in fleet sweeps.
+
+- **`V5-PROPOSAL.md` §11 records the bare-verb-name decision instead of deferring it.**
+  The section listed retiring `up` / `serve` / `gsync` / `maint-*` as an open question
+  tracked in #692, ending _"it must be decided before the tag, not left open for a whole
+  major cycle."_ #692 is now closed `not_planned` — the names stay — so the paragraph
+  asserted an open decision that had already been made.
+
+  It now records the outcome and the grounds for revisiting: the additive dispatcher in
+  #684 already buys the coherence, while deletion buys namespace purity at the cost of
+  daily friction on the most-typed verbs plus churn across 28 completions, `core-help`'s
+  rows, `_core_suggest`, `aliases.md` and `PARITY.md` (a two-repo change). Reopening needs
+  evidence of a real collision — `up` and `serve` are genuinely collision-prone and a
+  shadowing `up` fails silently — not a fresh aesthetic objection.
+
+  The point of #692 was that an unrecorded decision gets silently re-proposed, so leaving
+  the RFC saying "must be decided" while the answer sat only in a closed issue was the
+  same failure one level up. (#692)
+
+### Fixed
+
+- **`zsh/35-fzf.zsh` claimed the shell and tmux share one session picker. They do not.** The
+  `Ctrl-G` widget runs its own inline `sesh list | fzf`; `tmux/scripts/tmux-sesh.sh`'s richer
+  picker — `--height 100%`, a border label, and the `ctrl-a`/`ctrl-t`/`ctrl-g`/`ctrl-d`
+  mode-switch reloads — is reached **only when sesh is absent**, on the fallback path. So the two
+  have been drifting in the one direction the comment promised they could not, and a reader
+  fixing the tmux picker had no reason to look at the shell one. The comment now says which path
+  is which and points at the row that records the option of collapsing them.
+
+  **That row is the other half.** `/tool-scout` (#702) ranked adopting sesh's built-in
+  `sesh picker` as _adopt, low priority_, on the grounds that **both** recorded blockers were
+  spent. Only one is. #518 held it on _"no preview"_ — genuinely spent, since sesh 2.28.0
+  (2026-07-27) added an opt-in preview pane, custom icons and index jumping. #376 held it on
+  **loss of fzf theming**, and that one still stands: verified against the binary rather than the
+  docs, the complete `[tui]` key set is `prompt`, `placeholder`, `show_icons`, `show_windows`,
+  `preview`, `preview_width`, `preview_min_width`, `preview_border`, the three `alias_*` keys and
+  `separator_aware` — **no colour key of any kind, and no `SESH_*` environment override**
+  (`preview_border` picks a divider glyph, not a colour).
+
+  Core's tokyonight-storm palette lives **once**, in `FZF_DEFAULT_OPTS`, and every picker
+  inherits it deliberately. Adopting would swap the two most-used pickers on the box for
+  unthemeable ones across eight machines, to gain a preview pane the fzf path already has via
+  `--preview 'sesh preview {}'`. Declined and recorded in `.claude/tool-decisions.md` under
+  Watching, with the condition that would reverse it: a colour schema under `[tui]` — not a new
+  release, and not the preview pane, which is already here. (#702)
+
+- **A scripted `nvim -c 'write'` never formatted anything — conform.nvim spawns Mason formatters
+  without declaring mason as a dependency.** The same undeclared edge as the nvim-lint fix below
+  (#652), in `plugins/conform.lua`, with a worse shape. conform loads on `BufWritePre` and spawns
+  Mason-installed formatters (`prettierd`, `gofumpt`, `clang-format`, `php-cs-fixer`,
+  `sql-formatter`, `ktlint`, `google-java-format`, `taplo`, …), which resolve only once
+  `mason.setup()` has prepended `<data>/mason/bin` to `vim.env.PATH`; conform declared **no
+  `dependencies` at all**, and mason arrived incidentally via `nvim-lspconfig` (`User FilePost`)
+  and `mason-tool-installer` (`VeryLazy`) — neither of which lazy.nvim orders against it.
+
+  Unlike #652 this is **not a race**: `-c` commands run _before_ `VimEnter`, so `VeryLazy` has not
+  fired and the `vim.schedule`'d `User FilePost` emit in `config/autocmds.lua` has not either.
+  mason has therefore _never_ loaded by `BufWritePre`, deterministically. Measured on macOS with a
+  `{"a":1,   "b":[1,2,3]}` fixture and `prettierd` (Mason-**only** here — `stylua` and `shfmt` also
+  sit on the base `PATH` and mask this): `nvim --headless f.json -c 'write' -c 'qa!'` formatted
+  **0/4**, with mason unloaded and `executable("prettierd")` = 0 at `BufWritePre`; the same write
+  deferred past startup — the interactive shape — formatted **4/4**.
+
+  It failed **silently**, which is why it survived: conform auto-skips a formatter that is not on
+  `PATH` (the same self-gating that makes the optional formatters in the map safe on a box without
+  them), so there was no error, no `vim.notify`, nothing in `:messages` — the file was just written
+  unformatted, and a later `:ConformInfo` showed the formatter as available. Invisible
+  interactively, and every time for `nvim -c` writes in a Makefile, git hook, or CI check.
+  Declaring `dependencies = { { "mason-org/mason.nvim", opts = {} } }` fixes it at **4/4** and costs
+  nothing (startup over five runs: 92.3 ms before, 89.9 ms after — noise). `scripts/test-core.sh`
+  §D's #652 assertion is now table-driven and covers both specs. (#703)
+
+- **Two `PORTING-MATRIX.md` claims about atuin that upstream had not yet earned.** Footnote ²⁰
+  asserted the daemon socket default _"moved in atuin **18.20.0**"_. It has moved in **no
+  release, stable or beta**: PR #3910 merged 2026-08-12, _after_ `v18.20.0-beta.3` (2026-08-07),
+  and the newest stable is 18.19.0 (2026-08-03), which still resolves the old path. The change is
+  now dated by its **merge** rather than by a version — naming an unshipped version is how a
+  reader concludes their box is already on the new path. #518's pre-emptive handling stands
+  unchanged: probing the new default and both legacy paths is ahead of upstream, which is the
+  right direction, and only the prose was wrong.
+
+  The same footnote also gains a watch note on **`atuinsh/atuin#3957`** (opened 2026-08-20, open,
+  unreviewed), which would make the _daemon_ unlink a stale socket on bind failure. Footnote ²⁰'s
+  finding that "the healing lives in the **client**" is the measured basis of `--premise
+  autostart` and of `CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST`; if #3957 merges, that premise stops
+  holding. Recorded, not acted on — and the note says explicitly not to touch the anchor, which
+  is a claim the premise was **re-measured**, not a version bump. (#702)
+
+- **The decided-and-rejected ledger held two rows while ten scans' worth of decisions sat only in
+  closed issues.** `.claude/tool-decisions.md` shipped seeded with `hexyl` and `fastgron` — the
+  two the CHANGELOG named — but #327, #376 and #518 had between them declined a further fifteen
+  tools with real recorded reasoning that the file did not carry. A ledger the routine is
+  _required_ to read is only as good as its coverage, and the gap was invisible from inside it.
+  Backfilled from the issues themselves rather than from memory.
+
+  It also grows a **Watching** section, which it lacked entirely — a held-not-declined tool had
+  nowhere to live, so it read as either adopted or rejected. Every watch row now names the
+  **event** that would end the hold, because two of the three had their original reason expire
+  without anyone noticing. `xan` is the worked example and gets the long form: it was held on
+  packaging (#376) and on frequency (#327), and **both have expired** — 0.60.0 is in Arch
+  official, Gentoo GURU, Homebrew and nixpkgs, and Core's bar for an opt-in `HAVE_*`-gated tool
+  is visibly lower already (`jnv` is in no `packages.txt` anywhere and was adopted regardless).
+  The reason it stays held is a new and more durable one: 0.60.0's notes _lead_ with breaking
+  command-line argument changes, and Core has been bitten by exactly that in exactly this family
+  — `sd` 1.1.0, where the failure was silent and `--version` could not tell you which behaviour
+  you had (footnote ²²). The condition is now stated: two consecutive minors with no breaking
+  argument changes. A stale hold is the failure mode this file exists to stop, in the same way a
+  forgotten decline is. (#702)
+
+- **Seven prose claims that the fleet had already falsified.** The 2026-08-25 `/doc-audit`
+  sweep (#701) read ~326 matrix cells, ~150 aliases and all 69 manifest entries and found the
+  code right and the prose behind it in seven places. Corrected here; two of the seven were
+  wider than the report said.
+
+  - **`lib/bootstrap-lib.sh` retired a migration that is still open.** It said _"BOTH role
+    repos now call this helper, so there is nothing left to migrate."_ `Offense` does;
+    `Defense` still hand-rolls the band in its own `wire_defense_stage` and never names
+    `blib_link_role_layer`. `core.manifest` and `PORTING-MATRIX.md` both record the split
+    correctly — this comment was the only one of the three that claimed it was finished. Its
+    companion paragraph is also moved back to the present tense: Defense's `BLIB_DRY` fork is
+    live, not historical, and is precisely what adopting the helper would retire.
+  - **Four Kali cells in `PORTING-MATRIX.md` are `asset²⁸`, not package names** —
+    `git-delta`, `difftastic`, `mise` and `uv`. #701 named the first three; `uv` carries the
+    identical defect and reads _more_ plausible, because kali-rolling genuinely does ship
+    `uv` 0.9.17 — but `dotfiles-Debian` fetches the pinned `UV_VERSION` asset on every
+    target, so the cell was recording what the archive **contains** rather than what the repo
+    **installs**. That is exactly the failure the `²¹ᵃ` inherited-not-verified caveat warns
+    about, and it is now stated there as the test to apply to the cells still unmarked.
+    `difftastic` is the sharpest: `dotfiles-Debian`'s `packages.txt` carries a five-line
+    postmortem about this specific mistake, and the matrix still carried the error it
+    describes. Footnote ²⁸ widens past its Debian-only framing (the two columns reach the
+    same cell for opposite reasons) and ³⁰ drops the claim that Kali's bootstrap uses
+    `mise.run` — it has not since the lane moved.
+  - **"Eight machines + `Defense` = the nine" counted `Offense` as a machine.** Arithmetic
+    right, taxonomy a release out of date: `Offense` shed `os/` when the Kali lane moved to
+    `dotfiles-Debian`, so it qualifies for the exemption that sentence grants `Defense`. Now
+    seven machines + `Offense` + `Defense`. This was a passage, not a line — the surrounding
+    atuin-daemon block counted eight in three more places and still listed `Kali` as a
+    machine of its own, an identity no repo has owned since the move. Kali folds into the
+    `Debian/Ubuntu` row, which is wired, so the wired count is three of seven.
+  - **`README.md` listed the verbs that live only in `core help` and missed two.** `up` and
+    `update-check` are both real (`zsh/60-update.zsh`) and absent from `aliases.md`. Walking
+    `core-help`'s full `rows` array against the cheat sheet says those are the only two
+    function verbs missing — so the list is completed rather than softened to "e.g.", and
+    the keybindings group (in neither document) is now named too.
+
+  The sweep's remaining findings were already correct and are recorded as clean: every
+  manifest entry traced both directions, all three alias sets resolving, and the
+  release-pinned `dotfiles-web` mirror correctly lagging `main` by exactly one unreleased
+  paragraph rather than drifting. (#701)
+
+- **`.claude/tool-decisions.md` was written, referenced from four places, and never tracked.**
+  #661 taught `/tool-scout` to consult the decided-and-rejected ledger and shipped the three
+  files that point at it. It did not ship the ledger: `.gitignore`'s `.claude/*` carries
+  **per-directory** negations, so `commands/` and `agents/` vendored out while the file they
+  read stayed ignored. It existed only on the machine that authored it.
+
+  That is worse than a plain missing file, because the routine's own instruction is to say
+  _"none"_ when a candidate has no prior decision. With no ledger **every** candidate resolves
+  to "none" — in the exact voice that means _checked_ — so the report asserts the ledger was
+  consulted while consulting nothing. #634 was filed because a rejected tool was
+  indistinguishable from one never evaluated; it still was, now with a line claiming otherwise.
+  `hexyl` came back ranked #3 "adopt" six days after #395 closed it, which is the recurrence
+  the ledger exists to stop.
+
+  The fix is one `.gitignore` line, and the reason it took three reports to find is that
+  everything else pointed the other way — `.claude/` is repo-meta, correctly allowlisted
+  wholesale by `audit-core.sh`, so no manifest question was ever wrong.
+
+  **`audit-core.sh` §1b makes the class detectable.** §1 asks whether every _tracked_ file is
+  accounted for, in both directions, and its reverse walk is fed by `git ls-files` — so it
+  catches a tracked file that is unaccounted for and structurally cannot see an accounted-for
+  file that was never tracked. §1b asks the mirror question: every `` `.claude/…` `` path the
+  routines say they read must **resolve on disk and be tracked**. Absent and
+  present-but-untracked report as different failures, since they have different repairs — and
+  this one was the second, which all three reports of it called the first. It blocks rather
+  than advises on the §5i grounds: the tree is green on arrival, so every future hit is a
+  regression in the commit under test. (`_core_claude_ref_hits` in `scripts/lib/common.sh`,
+  with its unit in `scripts/test-core.sh`.)
+
+  It rhymes with `core.manifest` naming a `verify-core` backstop that never existed (#454) —
+  an assertion pointing at a file nobody created. The sharper version here: #634 shipped a
+  mechanism to stop decisions being recorded where nothing reads them, and the mechanism
+  itself was recorded where nothing can read it. (#700)
+
+- **Opening a file linted it only about half the time — nvim-lint's on-open replay raced
+  mason.nvim's `PATH` prepend.** `plugins/nvim-lint.lua` loads on `User FilePost` and replays
+  the triggering buffer at the end of its `config()`, because that buffer's real `BufReadPost`
+  has already fired by then. The replay spawns Mason-installed linters, which resolve only once
+  `mason.setup()` has prepended `<data>/mason/bin` to `vim.env.PATH` — and nvim-lint declared no
+  dependencies at all. `nvim-lspconfig` loads on the **same event** and pulls mason in as its
+  own dependency, but lazy.nvim orders a plugin against its **declared dependencies only**,
+  never against another plugin on the same event. Which of the two ran first was therefore
+  undefined, and losing the race meant `vim.uv.spawn` got `ENOENT` on a bare `rubocop`.
+
+  Measured over six opens each: ruby/rubocop linted **4/6** on macOS and **3/6** on native
+  Windows, markdown/markdownlint-cli2 **2/6**. The controls are what pin it — `sh`/shellcheck,
+  which lives on the PATH nvim inherits rather than under Mason, was **6/6** and never failed,
+  and rubocop itself went **6/6** when Mason's bin directory was pre-seeded onto `PATH` before
+  nvim started. Nothing about the linters, the filetypes or the config gates was involved.
+
+  It read as flakiness for two issues rather than as a missing binary because `:w` always
+  worked: by the first save mason has long since fixed `PATH`. On Windows the failure was also
+  **fully silent** — no error, no notification, no `:messages` entry — so an unlinted file was
+  indistinguishable from a clean one (macOS at least printed `Error running rubocop: ENOENT`).
+  Both rows in the original Windows report were Mason binaries, so it had no base-PATH linter
+  acting as a control, which is why the scope sat at "Windows-only" until it was measured
+  elsewhere.
+
+  The fix is one declaration: nvim-lint now names `mason-org/mason.nvim` in its `dependencies`,
+  so lazy loads mason — `setup()` and all — before the replay runs. It costs no startup time,
+  because mason was already being loaded at that event; the edge simply was not written down.
+  Verified on macOS by A/B on one box: **3/6 before, 6/6 after**, with every `ENOENT` gone.
+
+  `scripts/test-core.sh` §D gains a spec-level assertion as the regression net. The ordering
+  being guarded is a lazy.nvim guarantee, so re-deriving it at runtime would test lazy rather
+  than this config, and the race cannot be reproduced hermetically anyway (it needs lazy,
+  nvim-lint and mason really installed) — whereas _dropping_ the dependency is luacheck-clean,
+  load-clean and regresses only intermittently on a real machine, which is exactly the profile
+  that needs a static gate. Two comments that had gone stale against the replay are corrected
+  in the same change: `config/autocmds.lua`'s "nvim-lint is driven by BufWritePost/InsertLeave
+  only — nothing to replay", and `nvim-lint.lua`'s own header. (#652,
+  dotgibson/dotfiles-MacBook#191)
+
 ## [v4.18.0] - 2026-08-24
 
 ### Added

@@ -1,0 +1,39 @@
+# core/tealdeer/config.toml  → symlinked to ~/.config/tealdeer/config.toml
+# ──────────────────────────────────────────────────────────────────────────────
+# tealdeer (the `tldr` binary) config. Core wires `help <cmd>` to it in
+# zsh/20-aliases.zsh, guarded by HAVE_TLDR.
+#
+# WHY THIS FILE EXISTS: tealdeer's page cache is not self-refreshing.
+# `auto_update` defaults to FALSE, and maint/dotfiles-maint.sh has no
+# `tldr --update` step — so on a fresh box `help ls` fails with "page not
+# found, run tldr --update" until you run it by hand, and on an old box the
+# pages silently rot. Three lines here fix both without touching the
+# maintenance runner.
+#
+# KEEP THIS FILE CONSERVATIVE — ONLY LONG-STANDING KEYS.
+# tealdeer 1.9.0 (2026-08-24) made config parsing ERROR on unknown keys
+# ("[changed] Error on unknown config keys", upstream #516). Before 1.9.0 an
+# unknown key was silently ignored. That asymmetry is the trap: a key added in
+# a NEW release is a hard failure on the OLD builds only if the old build is
+# the strict one — it is not — but a key this file gets WRONG is now a hard
+# failure on every 1.9.0+ box, and it surfaces on EVERY tldr invocation, which
+# on this fleet means `help` stops working entirely.
+#
+# Core is vendored to nine repos running whatever tealdeer their distro has
+# (PORTING-MATRIX.md footnote 1: Tumbleweed 1.8.0; Leap 16.x has no package at
+# all and cargo-installs it). So: nothing here may be newer than 1.8.0.
+# In particular do NOT add `updates.warn_cache_age` — it is 1.9.0-only
+# (upstream #492) and buys nothing this file needs.
+# ──────────────────────────────────────────────────────────────────────────────
+
+[updates]
+# The whole point of the file. Default is false, so without this nothing on any
+# box ever refreshes the tldr pages.
+auto_update = true
+
+# Hours since the last cache update before a refresh is attempted. Upstream's
+# default is 720 (30 days); 168 (7 days) matches the cadence of the weekly
+# maintenance job rather than lagging a month behind it. The refresh is a small
+# tarball fetch and only fires on an invocation that finds the cache stale, so
+# it costs one slow `help` a week, not one per call.
+auto_update_interval_hours = 168
