@@ -126,14 +126,40 @@ same commit.
 5. Wire the symlink into each OS repo's `bootstrap.sh` if it needs one — for a
    symlinked **config** (not a `zsh/` module) that means the matching group in
    `blib_link_core` (`lib/bootstrap-lib.sh`), which every bootstrap sources.
-6. Give the new file's top-level directory a home in the two path lists that fan
-   out from it: the Core⇄OS boundary scan in `scripts/audit-core.sh` (§5c — a
-   vendored config gets no OS-absolute paths either) and a bucket in
-   `scripts/ci-classify.sh` (an unrecognised path fails closed to a full CI run),
-   with a matching `_classify_is` line in `scripts/test-core.sh`. The classifier
-   emits three axes — `shell`, `nvim` and `atuin` — and `atuin` is narrow on
-   purpose: it gates the premise detector's hermetic self-test, the single most
-   expensive thing the suite does, so only `scripts/`, `zsh/00-tools.zsh` and
-   `atuin/` reach it. Widening it is a real cost on every push in the fleet.
-7. `./scripts/audit-core.sh` — green before you push.
-8. `./scripts/sync-core.sh` to vendor it into every OS repo.
+6. Give the new file's top-level directory a bucket in `scripts/ci-classify.sh`
+   (an unrecognised path fails closed to a full CI run), with a matching
+   `_classify_is` line in `scripts/test-core.sh`. The classifier emits three axes —
+   `shell`, `nvim` and `atuin` — and `atuin` is narrow on purpose: it gates the
+   premise detector's hermetic self-test, the single most expensive thing the suite
+   does, so only `scripts/`, `zsh/00-tools.zsh` and `atuin/` reach it. Widening it
+   is a real cost on every push in the fleet.
+
+   **§5c of `scripts/audit-core.sh` is deliberately NOT on this list.** Its scope is
+   derived from `core.manifest` — the file says so at `scripts/audit-core.sh:583` —
+   so a path added to the manifest in step 4 is scanned automatically. This step used
+   to send you there to edit a hand-kept list; that list is gone, and looking for it
+   wastes the one moment you were most likely to be careful.
+7. For a **symlinked config**, update the three lists that step 5's link does not
+   reach on its own. Nothing gates these, which is why they are enumerated here:
+   - `scripts/test-core.sh` — the `_lr_d` fixture directory list for the link run.
+     **This is the one that fails quietly.** Miss it and the source never lands in
+     the sandbox, `blib_link` early-returns on a missing src
+     (`lib/bootstrap-lib.sh:127-131`), and any assertion you add below passes
+     vacuously. Nothing goes red.
+   - `scripts/test-core.sh` — the grouped `_lr_is_link_to` assertions, plus the pass
+     message that names them. Assert the destination bootstrap actually promises.
+   - `dotfiles-MacBook/bootstrap.sh` — the `--uninstall` `dests` array, the only
+     hand-maintained one in the fleet. Miss it and `--uninstall` removes one fewer
+     thing than install creates, leaving a dangling symlink.
+8. Keep the prose enumerations in `lib/bootstrap-lib.sh` in step with the link you
+   added in step 5 — `:436` tells you to, and there are **three**, not one: the group
+   list at `:310-311`, `blib_link_core`'s header at `:431-435`, and the `tools`
+   section banner at `:510-511`.
+9. `./scripts/audit-core.sh` — green before you push.
+10. `./scripts/sync-core.sh` to vendor it into every OS repo.
+
+Steps 6–8 are a checklist rather than a gate on purpose, and it is worth knowing why:
+the audit enforces `core.manifest` in both directions, but nothing can enforce "and
+you also told the classifier, the fixture and the uninstall path about it". That makes
+the accuracy of _this list_ load-bearing — a checklist that names a retired list and
+omits a silently-failing one inverts its own value.

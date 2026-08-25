@@ -245,6 +245,36 @@ _core_doctor_optin() {
 # Checked in the render and in --json as well, so the two renderers cannot disagree about
 # whether the axis applies.
 #
+# _core_doctor_present <bin> → 0 iff <bin> is a REAL executable, with NO alias layer.
+#
+# NOT `_core_have` (#715). That is `command -v` (zsh/05-ui.zsh) and zsh's `command -v`
+# RESOLVES ALIASES — and 20-aliases.zsh defines three aliases whose name equals a row in
+# this very report: `bat` (:34), `fd` (:40) and `rg` (:43). So a tool that had LEFT $PATH
+# still answered the presence probe off its own alias: the row rendered ✓, the else-branch
+# never ran, `_core_doctor_stale` was never asked, and `rg foo` said `command not found`
+# while core-doctor printed `✓ rg`. That is precisely the failure #631 was written to
+# surface, silently excluded for three rows — `rg` on every distro, and `fd`/`bat`
+# everywhere except the Debian family, where they resolve to fdfind/batcat and have no
+# alias of their own. The same accident is documented at the top of this section, where it
+# was the reason `fd` rendered ✓ on Debian for the opposite reason.
+#
+# A SEPARATE FUNCTION rather than tightening `_core_have`, for the reason recorded there and
+# again at #447: `_core_have` is a general primitive that 05-ui.zsh calls on every
+# confirm/spin/gum probe, and this is the doctor's question, not everyone's. Named like its
+# siblings (_core_doctor_bin/_optin/_stale/_unwired) so the suite stubs THIS to drive
+# presence, rather than reaching through a shared primitive to do it.
+#
+# `${+commands[…]}` is a hash lookup against $PATH with no alias layer. The `*/*` arm keeps
+# an ABSOLUTE FD_BIN/BAT_BIN (or a git-* exec-path hit) working, and `-x` there matches what
+# `command -v` promised for a path: an executable file passes, a non-executable one does not.
+_core_doctor_present() {
+  if [[ "$1" == */* ]]; then
+    [[ -x "$1" ]]
+  else
+    (( ${+commands[$1]} ))
+  fi
+}
+
 # The MIRROR case lives in _core_doctor_stale below (#631) — same two gates, comparison
 # flipped, asked from the other branch of the render loop.
 _core_doctor_unwired() {
@@ -585,7 +615,7 @@ _core_doctor_render() {
     for tool in ${=groups[gi + 1]}; do
       # `tool` is what we PRINT (the canonical name); `bin` is what we PROBE and fork.
       _core_doctor_bin "$tool"; bin=$REPLY
-      if _core_have "$bin"; then
+      if _core_doctor_present "$bin"; then
         # ⚠ is a MODIFIER on ✓, not a fourth presence state: the tool genuinely IS present,
         # so ✓ is not wrong — what is wrong is reading it as "Core wired this". Rendering it
         # as an annotation (the same shape the atuin-daemon note below uses) keeps the

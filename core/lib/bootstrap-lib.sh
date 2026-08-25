@@ -621,8 +621,13 @@ blib_link_os_layer() {
   # so a band number would only imply a load position it does not have.
   #
   # The [[ -f ]] guard is the migration path: until an OS repo authors its declaration
-  # (#667) nothing is linked, Core's 02-capabilities.zsh warns once, and every existing
+  # (#667) nothing is linked, Core's 02-capabilities.zsh stays SILENT, and every existing
   # hardcoded ladder keeps working. Absence is enforced by the audit, not by bootstrap.
+  #
+  # "warns once" is what this comment used to claim, and it was false twice over (#715):
+  # there is no once-per-box state anywhere in that fragment, and the warning fired on
+  # every shell. Silence is now the default there and the warning is opt-in via
+  # CORE_CAP_LOUD — precisely because this guard makes absence the normal state.
   if blib_want zsh && [[ -f "$dotfiles/os/$os.capabilities" ]]; then
     blib_link "$dotfiles/os/$os.capabilities" "$config/zsh/os.capabilities"
   fi
