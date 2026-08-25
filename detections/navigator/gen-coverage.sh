@@ -156,8 +156,12 @@ L.append("| --------- | ------- | ----: |")
 for d in sorted(dir_rules):
     prods = ", ".join("`{}`".format(p) for p in sorted(dir_prod.get(d, set()))) or "—"
     L.append("| `{}` | {} | {} |".format(d, prods, len(dir_rules[d])))
-L.append("")
-print("\n".join(L))
+# No trailing blank element: print() already terminates the last line, so a final
+# L.append("") produced a file ending "|\n\n" — a trailing blank line that markdownlint
+# flags as MD012. That is a GENERATED file, so fixing the artifact alone would be undone by
+# the next regeneration; the generator is the only durable place for it. (Same reasoning as
+# the DO-NOT-EDIT heading's trailing period, fixed here earlier.)
+print("\n".join(L).rstrip("\n"))
 PY
 }
 

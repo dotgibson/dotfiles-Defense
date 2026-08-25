@@ -123,4 +123,3 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `snowflake` | `snowflake` | 3 |
 | `terraform` | `terraform` | 3 |
 | `vault` | `vault` | 3 |
-
