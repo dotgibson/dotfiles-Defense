@@ -20,7 +20,8 @@
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
 .PHONY := help lint shellcheck markdown test sigma sigma-lint sigma-compile drift \
-          methodology validation-gates attack-tags bootstrap-dry lab-smoke core-check hooks
+          methodology validation-gates attack-tags htpx htpx-report bootstrap-dry \
+          lab-smoke core-check hooks
 .PHONY: $(.PHONY)
 
 # Pinned tool versions come from the vendored Core, so local runs match CI exactly.
@@ -95,8 +96,23 @@ validation-gates: ## Every rule has validation coverage, and every fixture has p
 
 attack-tags: ## Are all ATT&CK technique IDs real? (downloads the pinned ATT&CK bundle)
 	@# Split out of `sigma` deliberately: this one fetches the pinned ATT&CK release, so it
-	@# is the only detection gate that needs the network. CI caches the bundle; you will not.
+	@# is one of the two detection gates that need the network (`htpx` is the other). CI
+	@# caches the bundle; you will not.
 	@./detections/check-attack-tags.sh
+
+htpx: ## Do the htpx entries this repo names still exist? (fetches the pinned htpx commit)
+	@# Out of `sigma` and out of `drift` for the same reason attack-tags is: it reads a
+	@# corpus from outside this repo, so it needs the network. Grouping it with the offline
+	@# gates would make `make sigma` fail on a train, which is how a useful gate gets
+	@# commented out. Both halves of the boundary run here — the claim gate and the report's
+	@# drift check — because they share the one fetch (detections/htpx-corpus.sh caches it).
+	@./detections/check-htpx-pairing.sh
+	@./detections/gen-htpx-coverage.sh --check
+
+htpx-report: ## Rewrite HTPX-COVERAGE.md from the rules + the pinned corpus
+	@# The bare generator, for after you add a rule or bump detections/htpx.pin. `make htpx`
+	@# is the gate; this is the fix-up its failure tells you to run.
+	@./detections/gen-htpx-coverage.sh
 
 ## ── behaviour ────────────────────────────────────────────────────────────────
 

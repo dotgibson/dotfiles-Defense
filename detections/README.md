@@ -22,7 +22,7 @@ validation note. Real IOC values from cases stay in `~/cases/*/iocs`, never here
 ## CI gate — the rules are validated as code
 
 The Sigma rules are gated on every change by `.github/workflows/sigma.yml` (the
-repo's `lint.yml` only covers shell). Eleven hard checks, no advisory:
+repo's `lint.yml` only covers shell). Thirteen hard checks, no advisory:
 
 1. **Structural lint** (hermetic) —
    `sigma check --fail-on-issues -c detections/sigma-validation-config.yml`.
@@ -108,6 +108,28 @@ repo's `lint.yml` only covers shell). Eleven hard checks, no advisory:
    `set_url()`. Reproducible, therefore a gate: an ATT&CK release fails the build when
    someone bumps the pin, in a PR that gets read, rather than silently on an unrelated
    Tuesday.
+12. **htpx claim validity** — `detections/check-htpx-pairing.sh`. The promise at the top
+   of this file is that each rule names the exact Offense fold and **htpx pair** that
+   reproduces it, so the purple loop is closed in the file itself. Rules keep it two ways:
+   ~80 `references:` URLs pointing at `entries/blue/<id>.md`, and an `htpx pair <id>` in
+   the validation note. Nothing verified either — htpx is a separate repo on its own
+   release cycle, so an entry renamed there left a rule here pointing at a 404, and the
+   only way to find out was for someone to click the link. This resolves every named
+   entry against the corpus at the commit in `detections/htpx.pin`, and checks the blue
+   entries it names still pair back to a red entry that points at them. Adopting it found
+   four dead names: `bloodhound-sharphound` was renamed `bloodhound-collect` upstream, and
+   `archive-staging-rar` / `local-data-collection` named entries htpx has never had. It
+   gates **claims, not coverage** — a name that resolves to nothing is simply wrong, where
+   a *gap* is a scope judgement and belongs in the report below.
+13. **htpx coverage report drift** — `detections/gen-htpx-coverage.sh --check`.
+   `HTPX-COVERAGE.md` is *generated* from the rules plus the pinned corpus: which htpx blue
+   entries this repo claims, which it does not, which techniques here the corpus has no
+   attack for, and which entries htpx declares unpaired (read from its `pair_note:`, so the
+   reason lives upstream rather than in an allowlist here). It never fails on a gap — htpx
+   spans SaaS and CI/CD platforms this repo has no rules for by design, and a gate that
+   failed on those would be red forever and silenced within a week. It fails when the
+   committed report stops matching, so a change in the shape of the boundary arrives as a
+   diff someone reads. #196.
 
 Run it locally (any pySigma backend):
 
@@ -126,6 +148,8 @@ docker/validation/check-fixture-provenance.sh                                   
 detections/check-readme-gates.sh                                                            # this gate list still matches sigma.yml
 detections/siem/check-splunk-precedence.sh                                                  # no Splunk search leans on OR/NOT precedence
 detections/check-attack-tags.sh                                                             # every ATT&CK tag valid against the pinned release
+detections/check-htpx-pairing.sh                                                            # every htpx entry this repo names still exists upstream
+detections/gen-htpx-coverage.sh --check                                                     # htpx pairing report (HTPX-COVERAGE.md) drift
 ```
 
 `convert.sh` is the reproducible "Sigma → backend" *compile check*: it compiles each
@@ -184,7 +208,7 @@ purple-validatable out of the box.
 
 | Rule                               | Event / source                                                                                      | ATT&CK                                                                    | Validate with                                                                     |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `sharphound_ldap_sweep_4662`       | 4662 dir-access (value_count correlation)                                                           | T1087.002 / T1069.002                                                     | AD enumeration · bloodhound-sharphound                                            |
+| `sharphound_ldap_sweep_4662`       | 4662 dir-access (value_count correlation)                                                           | T1087.002 / T1069.002                                                     | AD enumeration · bloodhound-collect                                               |
 | `ldap_recon_explicit_creds_4648`   | 4648 explicit-cred fan-out (value_count correlation)                                                | T1087.002 / T1046                                                         | recon · PURPLE-TEAM 4648 row                                                      |
 | `host_recon_command_burst`         | proc create, distinct discovery commands per host (value_count correlation)                         | T1033 / T1082 / T1018 / T1016 / T1049 / T1057 / T1007 / T1087.001 / T1135 | Situational awareness · `whoami`/`net`/`nltest` sweep                             |
 | `local_group_enum_sweep_4798_4799` | 4798/4799 local group membership enumerated, distinct hosts per principal (value_count correlation) | T1069.001 / T1087.001                                                     | AD enumeration · SharpHound LocalGroup / `net localgroup \\host`                  |
@@ -207,7 +231,7 @@ on `Path` at alert time.
 | ------------------------------------- | ------------------------------------ | --------------------- | ------------------------------- |
 | `scheduled_task_suspicious_4698`      | 4698 task created                    | T1053.005             | Persistence · schtask-persist   |
 | `wmi_event_subscription_consumer`     | Sysmon 20                            | T1546.003             | Persistence · wmi-subscription  |
-| `rogue_account_creation_4720`         | 4720 account created                 | T1136.002 / T1136.001 | Persistence · rogue-account     |
+| `rogue_account_creation_4720`         | 4720 account created                 | T1136.002 / T1136.001 | Persistence · `net user /add`   |
 | `machine_account_creation_burst_4741` | 4741 burst (value_count correlation) | T1136.002             | AD attack paths · rbcd-impacket |
 
 **`defense_impairment/`**
@@ -262,8 +286,8 @@ Two techniques carry a deliberate set of rules, covering different halves:
 
 | Rule                      | Event / source                                                                                                              | ATT&CK                | Validate with                            |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------- |
-| `mass_file_read_4663`     | 4663 read handles (`AccessList` `%%4416`, or `AccessMask` `0x1`), distinct files per host+process (value_count correlation) | T1005                 | collection/exfil · local-data-collection |
-| `archive_staging_utility` | proc create (rar/7z/tar/makecab under a password or into a staging path)                                                    | T1560.001 / T1074.001 | collection/exfil · archive-staging-rar   |
+| `mass_file_read_4663`     | 4663 read handles (`AccessList` `%%4416`, or `AccessMask` `0x1`), distinct files per host+process (value_count correlation) | T1005                 | collection/exfil · a copy sweep          |
+| `archive_staging_utility` | proc create (rar/7z/tar/makecab under a password or into a staging path)                                                    | T1560.001 / T1074.001 | collection/exfil · rar/7z staging        |
 
 The two are the halves of one step, and they chain: `mass_file_read_4663` catches the
 **sweep** that fills a staging directory, `archive_staging_utility` catches the

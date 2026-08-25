@@ -14,7 +14,7 @@ description: |
 references:
   - https://attack.mitre.org/techniques/T1087/002/
   - https://attack.mitre.org/techniques/T1069/002/
-  - https://github.com/dotgibson/htpx/blob/main/entries/blue/bloodhound-sharphound-4662.md
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/bloodhound-collect-4662.md
 author: dotfiles-Defense
 date: 2026-07-08
 name: dir_object_access_4662
@@ -48,7 +48,7 @@ description: |
   on one object. Tune the threshold to your directory size and audit SACL scope;
   a small directory or a broad SACL both shift the normal baseline.
   Validate (purple): run SharpHound / bloodhound-python from dotfiles-Offense
-  (hacktheplanet "Active Directory enumeration" fold; htpx pair bloodhound-sharphound).
+  (hacktheplanet "Active Directory enumeration" fold; htpx pair bloodhound-collect).
 references:
   - https://attack.mitre.org/techniques/T1087/002/
   - https://attack.mitre.org/techniques/T1069/002/

@@ -116,7 +116,8 @@ description: |
   staging directory, that catches the archive it gets packed into. Both on one host
   inside a window is collection in progress; if egress follows, so is exfiltration.
   Validate (purple): sweep a SACL'd share with a copy/collection script from
-  dotfiles-Offense (hacktheplanet collection/exfil fold; htpx pair local-data-collection).
+  dotfiles-Offense (hacktheplanet collection/exfil fold). The htpx corpus has no entry
+  for this one - its Collection and Exfiltration entries are all SaaS-side.
 references:
   - https://attack.mitre.org/techniques/T1005/
 correlation:

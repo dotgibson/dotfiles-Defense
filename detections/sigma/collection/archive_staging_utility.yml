@@ -27,7 +27,8 @@ description: |
   Generic `category: process_creation` so it matches both Security-4688 and Sysmon-1
   (it names only Image and CommandLine, which both channels carry).
   Validate (purple): stage and archive a directory under a password from
-  dotfiles-Offense (hacktheplanet collection/exfil fold; htpx pair archive-staging-rar).
+  dotfiles-Offense (hacktheplanet collection/exfil fold). The htpx corpus has no entry
+  for this one - its Collection and Exfiltration entries are all SaaS-side.
   Requires the Process Creation audit subcategory (4688) or Sysmon EventID 1.
 references:
   - https://attack.mitre.org/techniques/T1560/001/
