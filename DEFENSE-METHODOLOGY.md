@@ -26,6 +26,7 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Offens
 
 | ATT&CK tactic            | Primary data sources                                              | Where detections live | Validate with (Offense)                                             |
 | ------------------------ | ----------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------- |
+| Initial Access           | npm / PyPI publish audit logs                                     | sigma                 | htpx pairs `npm-malicious-publish` / `pypi-malicious-publish`       |
 | Recon / Discovery        | Zeek, 4688/4769, 4798/4799, 5145                                  | network, sigma        | recon / Kerberoast folds                                            |
 | Credential Access        | Sysmon 10, 4625/4771                                              | sysmon, sigma         | Responder / cracking folds                                          |
 | Lateral Movement         | 4624 type 3, Zeek SMB                                             | sigma, network        | lateral-movement fold                                               |
@@ -37,6 +38,21 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Offens
 
 The right-hand column is the point: every row has a Offense fold that proves the
 detection works.
+
+**Initial Access is the newest row, and it exists because the tag was wrong, not because
+the detection was missing.** Its two rules — `detections/sigma/npm/npm_malicious_package_publish.yml`
+and `detections/sigma/pypi/pypi_token_release_upload.yml` — have covered T1195.002
+(Compromise Software Supply Chain) since they were written, but tagged `attack.execution`.
+T1195.002 is Initial-Access-only in ATT&CK, so the tactic column read zero in
+`detections/navigator/COVERAGE.md` while Execution over-counted it, and this table had no row at
+all. The weekly `/coverage-gap` routine caught it in #209.
+
+The row is narrow on purpose: it is the *registry* plane, not the endpoint. Both rules
+fire on a publish event in an npm or PyPI audit log — a package shipped by an actor that
+is not the sanctioned CI identity, or a release uploaded with a long-lived token rather
+than OIDC trusted publishing. The downstream execution their descriptions mention (the
+trojanized version that every `npm install` then runs) is the *consequence*, which is why
+it is prose and not a second tactic tag.
 
 **Collection** is the newest row and the weakest one, which is worth knowing before you
 lean on it. Its detections — the T1005 read sweep and the T1560.001 archive step under

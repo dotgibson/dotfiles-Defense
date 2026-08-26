@@ -2,13 +2,14 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**102 rules · 120 detection documents · 77 techniques · 11 tactics · 24 logsources.**
+**102 rules · 120 detection documents · 77 techniques · 12 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
 | Tactic | ID | Techniques | Rules |
 | ------ | -- | ---------: | ----: |
-| Execution | TA0002 | 8 | 10 |
+| Initial Access | TA0001 | 1 | 2 |
+| Execution | TA0002 | 7 | 8 |
 | Persistence | TA0003 | 16 | 37 |
 | Privilege Escalation | TA0004 | 9 | 11 |
 | Stealth | TA0005 | 1 | 1 |

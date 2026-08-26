@@ -784,12 +784,20 @@ point and prefer your own threat intel via `--url`.
   activity is read-only, low-signal, and lands in GCP Data Access logs that are off by
   default). The marker makes this ledger self-policing: ship a Sigma rule tagged with any
   of them and CI fails until the prose is updated.
-- **External Reconnaissance (TA0043), Initial Access (TA0001), and Resource
-  Development (TA0042)** have no detection here and are not meant to: the first is
-  pre-compromise and only nominally in `DEFENSE-METHODOLOGY.md`'s "Recon / Discovery"
-  row (which is really *internal* Discovery — covered), and the other two are not named
-  in the methodology at all. A Zeek portscan detector under `network/` is the one
-  defensible addition to TA0043 if the scope ever widens.
+- **External Reconnaissance (TA0043) and Resource Development (TA0042)** have no
+  detection here and are not meant to: the first is pre-compromise and only nominally in
+  `DEFENSE-METHODOLOGY.md`'s "Recon / Discovery" row (which is really *internal*
+  Discovery — covered), and the second is attacker-side infrastructure building, invisible
+  to defender telemetry. Neither is a methodology row. A Zeek portscan detector under
+  `network/` is the one defensible addition to TA0043 if the scope ever widens.
+- **Initial Access (TA0001) was in that list until #209**, and only because the two
+  supply-chain rules that cover it were mistagged. `npm_malicious_package_publish` and
+  `pypi_token_release_upload` carry T1195.002 — an Initial-Access-only technique — but
+  tagged `attack.execution`, so the whole tactic column read zero while Execution
+  quietly over-counted. The capability was always there; the label was wrong. The tactic
+  now has a row in `DEFENSE-METHODOLOGY.md` and in `COVERAGE.md`, and
+  `check-attack-tags.sh` gained a tactic↔technique pairing assertion so a tag can no
+  longer claim a tactic ATT&CK does not place the technique in.
 - **`COVERAGE.md` counts Sigma only**, so it understates the corpus by a whole tactic:
   `network/` (Zeek + Suricata) covers Command and Control (TA0011) end to end and
   `siem/` covers the absence/join Kerberos and relay detections, and neither is in the

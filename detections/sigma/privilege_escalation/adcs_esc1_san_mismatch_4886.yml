@@ -23,7 +23,11 @@ references:
 author: dotfiles-Defense
 date: 2026-06-30
 tags:
-  - attack.privilege-escalation
+  # ESC1 is a privilege-escalation path: the requester puts a SAN for a higher-privileged
+  # principal on a certificate the template lets them enroll. ATT&CK files T1649 under
+  # Credential Access alone (the certificate is the stolen credential), so the
+  # privilege-escalation tag is a deliberate addition naming what the abuse achieves.
+  - attack.privilege-escalation  # attack-tactic-deliberate
   - attack.t1649
 logsource:
   product: windows

@@ -22,9 +22,11 @@ Focus for this run: **$ARGUMENTS** (empty = the whole matrix).
   (the *present* set).
 - `detections/navigator/coverage-layer.json` — the machine-readable ATT&CK layer
   (`score` = rules per technique).
-- `detections/navigator/gen-coverage.sh` — its `TACTICS` table enumerates **all 14**
+- `detections/navigator/gen-coverage.sh` — its `TACTICS` table enumerates **all 15**
   ATT&CK tactics (including the ones with zero rules), so the absent columns are
-  computable directly.
+  computable directly. It is 15, not 14, because ATT&CK v19 split Defense Evasion into
+  **Stealth (TA0005)** and **Defense Impairment (TA0112)** — both carry rules here. Read
+  the table, don't trust this count if the two ever disagree.
 - `DEFENSE-METHODOLOGY.md` — the ATT&CK → data-source → detection map this repo
   *intends* to cover. **Holes are measured against this intended set, not against all
   of ATT&CK.**

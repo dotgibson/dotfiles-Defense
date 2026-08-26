@@ -29,14 +29,33 @@
 # stale link does not announce itself, it quietly shows the wrong technique to whoever is
 # working the alert.
 #
-#   1. TAGS   — pySigma's own validator over detections/sigma/, against the pinned bundle.
-#   2. CITED  — every ATT&CK id written anywhere else under detections/ or in
-#               DEFENSE-METHODOLOGY.md: prose ids, and the technique/tactic pages that
-#               references: entries link to.
+#   1. TAGS    — pySigma's own validator over detections/sigma/, against the pinned bundle.
+#   2. CITED   — every ATT&CK id written anywhere else under detections/ or in
+#                DEFENSE-METHODOLOGY.md: prose ids, and the technique/tactic pages that
+#                references: entries link to.
+#   3. PAIRING — every attack.<tactic> tag on a rule is one that ATT&CK actually places at
+#                least one of that rule's attack.tNNNN techniques in.
 #
-# A deliberate mention of a revoked id — "T1562.001 was revoked by T1685" in a migration
-# note — is escaped by putting `attack-id-historical` on the same line. If that ever needs
-# structure, an allowlist file alongside splunk-precedence-allowlist.tsv is the upgrade.
+# PAIRING exists because 1 and 2 both pass on a tag that is real but MISFILED, and that is
+# not a hypothetical: #209 found npm_malicious_package_publish and pypi_token_release_upload
+# tagging attack.execution beside attack.t1195.002. T1195.002 is Initial-Access-only, so
+# COVERAGE.md's TA0001 column read zero while Execution over-counted — a whole tactic
+# missing from the roll-up, with every existing gate green. Validating that an id EXISTS
+# says nothing about whether it belongs where it was written.
+#
+# Direction matters: this asserts that each TACTIC tag is earned, NOT that every tactic of
+# every technique is tagged. The reverse would fight unconstrained_delegation_4624.yml,
+# which deliberately tags a subset of three techniques' tactics and says why inline.
+#
+# TWO escapes, both same-line so they name what they excuse:
+#   - `attack-id-historical`       a deliberate mention of a revoked id (assertions 1-2)
+#   - `attack-tactic-deliberate`   a tactic tag that is real tradecraft but not an ATT&CK
+#                                  placement — PsExec service creation IS lateral movement
+#                                  though ATT&CK files T1569.002 under Execution alone.
+#                                  Put it on the tag's own line, with the reason in a
+#                                  comment above. If these ever outgrow inline comments, an
+#                                  allowlist beside splunk-precedence-allowlist.tsv is the
+#                                  upgrade.
 #
 #   check-attack-tags.sh              # gate the corpus
 #   ATTACK_DATA_DIR=... check-...     # override where the bundle is cached
@@ -224,6 +243,76 @@ if bad:
 else:
     print("attack ids: %d file(s) scanned, every cited id and reference URL current"
           % len(sorted(set(files()))))
+
+# ── 3. tactic <-> technique PAIRING ───────────────────────────────────────────────────
+# Read kill_chain_phases straight out of the pinned bundle rather than through pySigma:
+# the digest is already verified above, the mapping is plain STIX, and it keeps this
+# assertion independent of which lookup tables a pySigma version happens to expose.
+import glob, json
+
+phases_of = {}
+with open(bundle, encoding="utf-8") as fh:
+    for obj in json.load(fh)["objects"]:
+        if obj.get("type") != "attack-pattern":
+            continue
+        if obj.get("revoked") or obj.get("x_mitre_deprecated"):
+            continue
+        tid = next((r.get("external_id") for r in obj.get("external_references", [])
+                    if r.get("source_name") == "mitre-attack"), None)
+        if tid:
+            phases_of[tid] = {k["phase_name"] for k in obj.get("kill_chain_phases", [])
+                              if k.get("kill_chain_name") == "mitre-attack"}
+
+ALL_TACTICS = set().union(*phases_of.values()) if phases_of else set()
+TAG_RE = re.compile(r"-\s+attack\.(\S+)")
+TECH_TAG_RE = re.compile(r"t\d{4}(?:\.\d{3})?\Z")
+
+def tags_block(text):
+    """Yield (tag, line_no, line) for each attack.* entry in the rule's tags: block."""
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if line.rstrip() != "tags:":
+            continue
+        for j in range(i + 1, len(lines)):
+            nxt = lines[j]
+            if not nxt.strip():
+                continue
+            if not nxt[:1].isspace():          # dedent ends the block
+                return
+            m = TAG_RE.search(nxt)
+            if m:
+                yield m.group(1), j + 1, nxt
+        return
+
+mispaired = []
+for path in sorted(glob.glob(os.path.join(repo, "detections", "sigma", "*", "*.yml"))):
+    text = open(path, encoding="utf-8").read()
+    entries = list(tags_block(text))
+    techs = ["T" + tag[1:].upper() for tag, _, _ in entries if TECH_TAG_RE.fullmatch(tag)]
+    earned = set().union(*(phases_of.get(t, set()) for t in techs)) if techs else set()
+    for tag, lineno, line in entries:
+        if tag not in ALL_TACTICS:             # technique tags and typos: not our job
+            continue
+        if tag in earned or "attack-tactic-deliberate" in line:
+            continue
+        mispaired.append((os.path.relpath(path, repo), lineno, tag, techs, sorted(earned)))
+
+if mispaired:
+    print("::error::%d tactic tag(s) that ATT&CK v%s does not place the rule's technique(s) in:"
+          % (len(mispaired), got))
+    for rel, lineno, tag, techs, earned in mispaired:
+        print("  %s:%s  attack.%s" % (rel, lineno, tag))
+        print("      techniques tagged here: %s" % (", ".join(techs) or "(none)"))
+        print("      ATT&CK puts those in:   %s" % (", ".join(earned) or "(nothing)"))
+    print("  Either the tactic tag is wrong, or the rule is missing the technique that")
+    print("  would earn it. If the tag is deliberate tradecraft ATT&CK does not model —")
+    print("  PsExec service creation IS lateral movement though T1569.002 is filed under")
+    print("  Execution alone — put `attack-tactic-deliberate` on that tag's line and the")
+    print("  reason in a comment above it.")
+    code = code or 1
+else:
+    print("attack pairing: %d rule(s), every tactic tag earned by a technique tagged beside it"
+          % len(glob.glob(os.path.join(repo, "detections", "sigma", "*", "*.yml"))))
 
 sys.exit(code)
 PY
