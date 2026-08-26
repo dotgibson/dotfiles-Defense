@@ -243,6 +243,12 @@
       "comment": "1 rule(s): dcshadow_rogue_dc_4742"
     },
     {
+      "techniqueID": "T1482",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): sharphound_ldap_sweep_4662"
+    },
+    {
       "techniqueID": "T1484.002",
       "score": 1,
       "enabled": true,

@@ -19,8 +19,11 @@ references:
 author: dotfiles-Defense
 date: 2026-06-30
 tags:
+  # This rule keys on WmiPrvSE spawning a child on the TARGET, which is the remote
+  # half of wmiexec — lateral movement by construction. ATT&CK files T1047 under
+  # Execution alone, so the lateral-movement tag is a deliberate addition.
   - attack.execution
-  - attack.lateral-movement
+  - attack.lateral-movement  # attack-tactic-deliberate
   - attack.t1047
 logsource:
   category: process_creation

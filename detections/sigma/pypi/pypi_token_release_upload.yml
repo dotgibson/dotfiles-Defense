@@ -17,7 +17,7 @@ references:
 author: dotfiles-Defense
 date: 2026-07-03
 tags:
-  - attack.execution
+  - attack.initial-access
   - attack.t1195.002
 logsource:
   product: pypi

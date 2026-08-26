@@ -1,0 +1,66 @@
+id: c1f6a82d-90b3-4e57-8a04-6d2b7fc35e19
+name: Entra AiTM session-token replay (auth and token use disagree on location)
+description: |
+  Deploy form (Microsoft Sentinel scheduled analytics rule) of the AiTM phishing
+  detection. The stolen artefact is a session cookie, so the invariant is REPLAY: the
+  interactive authentication happens through the phishing proxy at one network
+  location, and the attacker then uses the issued token from theirs. In Entra that is
+  a successful interactive sign-in from one ASN followed, inside the token's life, by
+  NON-interactive sign-ins for the same principal from a different ASN — the auth and
+  the token use disagreeing about where the user is.
+  Why the join and not a simpler rule: a single anomalous-location sign-in is weak
+  (travel, VPN, mobile carrier), which is why this does not alert on one. The
+  AiTM-specific tell is the SPLIT, because a real user's token is used from where they
+  authenticated. That is a field-to-field comparison across two tables, which is why it
+  lives here as KQL and not in detections/sigma/ — the same reason the Golden/Silver
+  Ticket and NTLM-relay detections do.
+  Tuning: ASN, not IP, is the unit — a legitimate session legitimately changes IP
+  within one carrier. Allowlist the ASN pairs your VPN egress and corporate proxy
+  produce before trusting the volume.
+  htpx pair: aitm-phish / aitm-phish-signin (companion-only in htpx; this is its first
+  deployable form here).
+severity: High
+status: Available
+requiredDataConnectors:
+  - connectorId: AzureActiveDirectory
+    dataTypes:
+      - SigninLogs
+      - AADNonInteractiveUserSignInLogs
+queryFrequency: 1h
+queryPeriod: 3h
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - InitialAccess
+relevantTechniques:
+  - T1566.002
+query: |
+  let window = 2h;
+  SigninLogs
+  | where ResultType == 0 and IsInteractive == true
+  | project authTime = TimeGenerated, UserPrincipalName, authIP = IPAddress,
+      authASN = tostring(AutonomousSystemNumber), AppDisplayName
+  | join kind=inner (
+      AADNonInteractiveUserSignInLogs
+      | where ResultType == 0
+      | project tokenTime = TimeGenerated, UserPrincipalName, tokenIP = IPAddress,
+          tokenASN = tostring(AutonomousSystemNumber)
+    ) on UserPrincipalName
+  | where tokenTime between (authTime .. (authTime + window))
+      and isnotempty(authASN) and isnotempty(tokenASN)
+      and authASN != tokenASN
+  | summarize replays = count(), firstReplay = min(tokenTime), tokenIPs = make_set(tokenIP, 10)
+      by UserPrincipalName, authTime, authIP, authASN, tokenASN, AppDisplayName
+  | project TimeGenerated = authTime, UserPrincipalName, AppDisplayName,
+      authIP, authASN, tokenASN, tokenIPs, replays, firstReplay
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: FullName
+        columnName: UserPrincipalName
+  - entityType: IP
+    fieldMappings:
+      - identifier: Address
+        columnName: authIP
+version: 1.0.0
+kind: Scheduled

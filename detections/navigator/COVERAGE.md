@@ -2,19 +2,20 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**102 rules · 120 detection documents · 77 techniques · 11 tactics · 24 logsources.**
+**102 rules · 120 detection documents · 78 techniques · 12 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
 | Tactic | ID | Techniques | Rules |
 | ------ | -- | ---------: | ----: |
-| Execution | TA0002 | 8 | 10 |
+| Initial Access | TA0001 | 1 | 2 |
+| Execution | TA0002 | 7 | 8 |
 | Persistence | TA0003 | 16 | 37 |
 | Privilege Escalation | TA0004 | 9 | 11 |
 | Stealth | TA0005 | 1 | 1 |
 | Defense Impairment | TA0112 | 6 | 10 |
 | Credential Access | TA0006 | 17 | 19 |
-| Discovery | TA0007 | 13 | 6 |
+| Discovery | TA0007 | 14 | 6 |
 | Lateral Movement | TA0008 | 9 | 7 |
 | Collection | TA0009 | 5 | 4 |
 | Exfiltration | TA0010 | 2 | 2 |
@@ -63,6 +64,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1187 | 2 | `coercion_named_pipes_5145`, `unconstrained_delegation_4624` |
 | T1195.002 | 2 | `npm_malicious_package_publish`, `pypi_token_release_upload` |
 | T1207 | 1 | `dcshadow_rogue_dc_4742` |
+| T1482 | 1 | `sharphound_ldap_sweep_4662` |
 | T1484.002 | 1 | `okta_idp_created` |
 | T1485 | 2 | `aws_data_destruction`, `data_destruction_wipe` |
 | T1486 | 3 | `bitlocker_abuse_encryption`, `mass_file_encryption_4663`, `mass_file_encryption_sysmon_11` |
