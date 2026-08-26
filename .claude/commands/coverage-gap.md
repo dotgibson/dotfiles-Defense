@@ -61,8 +61,23 @@ Focus for this run: **$ARGUMENTS** (empty = the whole matrix).
    Rank on the tactic ATT&CK actually assigns, or the ranking rationale is wrong even
    when the gap is real.
 4. **Red↔blue holes** — if a `../dotfiles-Offense` sibling is present, attacks in its
-   `PURPLE-TEAM.md` / `offensive/companion` red entries with no detection here. (Skip
-   with a note if the sibling isn't checked out.)
+   red corpus with no detection here. (Skip with a note if the sibling isn't checked
+   out.)
+
+   **Walk `offensive/companion/entries/red/*.md`, not `PURPLE-TEAM.md` alone.** Each red
+   entry's frontmatter carries `attack.techniques` and the `pair:` naming its blue
+   counterpart, which is the machine-readable set. `PURPLE-TEAM.md` is a *projection* of
+   that corpus — the Windows-event-ID subset, ~24 of ~102 entries by its own admission —
+   so a check that reads only it can only ever return "no holes", because every technique
+   it names is on-prem AD the corpus already covers. #209 reported exactly that
+   non-result. The real frontier is in the entries that do not project.
+
+   Compare against **all three** Defense planes, not just Sigma: `detections/sigma/`
+   `attack.tNNNN` tags, plus the native ATT&CK IDs in `detections/network/` (Suricata
+   `metadata:`, Zeek comments) and `detections/siem/` (Sentinel `relevantTechniques:`,
+   Splunk stanza names). A technique covered on the wire or by a correlation rule is
+   covered; only `COVERAGE.md` cannot see it. Then subtract the `known-absent` marker
+   before reporting anything.
 
 ## How to report
 
@@ -70,7 +85,7 @@ A ranked table, most-central-to-the-threat-model first:
 
 - **tactic / technique (verified ATT&CK ID)** · current coverage (0 / thin) · why it
   matters for *this repo's* threat model · the logsource a detection would use.
-- End with the honest headline: "N of 14 tactics covered; the highest-value hole is
+- End with the honest headline: "N of 15 tactics covered; the highest-value hole is
   X." "Coverage matches the methodology — no material gaps this cycle" is a valid,
   useful result.
 
