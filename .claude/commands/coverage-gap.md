@@ -47,9 +47,10 @@ Focus for this run: **$ARGUMENTS** (empty = the whole matrix).
 
 ## What to compute
 
-1. **Zero-coverage tactics** — of the 14 ATT&CK tactics, which have no rule at all?
-   (From `gen-coverage.sh`'s table vs `COVERAGE.md`'s present set.) Note which are
-   *intended* (named in the methodology) vs legitimately out of scope.
+1. **Zero-coverage tactics** — of the 15 ATT&CK tactics `gen-coverage.sh`'s `TACTICS`
+   table enumerates, which have no rule at all? (Compare it against `COVERAGE.md`'s
+   present set.) Note which are *intended* (named in the methodology) vs legitimately
+   out of scope.
 2. **Thin tactics** — a tactic carried by a single fragile rule, or with far fewer
    techniques than the methodology implies.
 3. **Uncovered intended techniques** — techniques named in `DEFENSE-METHODOLOGY.md`
