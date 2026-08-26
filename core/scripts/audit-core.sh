@@ -56,6 +56,9 @@ cd "$HERE" || exit 1
 QUIET=0
 JSON=0           # --json: machine-readable summary on stdout (implies quiet); for CI/editors
 STRICT=0         # --strict: treat any SKIP as a failure (a gate that didn't actually run)
+REQUIRE_SIBLINGS=0 # --require-siblings: fail if a fleet-wide gate had no sibling OS repo
+                   # to read. Opt-in: absent siblings are normal on a dev box, and the
+                   # default must not red for where you happened to invoke from.
 CHANGED=0        # --changed: derive the scope from the local git diff (fast dev loop)
 SCOPE_EXPLICIT=0 # an explicit --scope always wins over --changed
 # Scope gates the SLOW, area-specific sections so a per-area push (driven by
@@ -100,6 +103,7 @@ while (($#)); do
   -q | --quiet) QUIET=1 ;;
   --json) JSON=1 QUIET=1 CORE_JSON=1 && export CORE_JSON ;; # only JSON on stdout (incl. nested skips)
   --strict) STRICT=1 ;;
+  --require-siblings) REQUIRE_SIBLINGS=1 ;;
   --scope)
     # Require an explicit value: without this, `--scope --quiet` would swallow the
     # next flag as the scope list and silently drop it.
@@ -133,20 +137,28 @@ while (($#)); do
     ;;
   -h | --help)
     cat <<'EOF'
-usage: audit-core.sh [-q|--quiet] [--strict] [--scope LIST] [--changed] [--color WHEN] [--json] [-h|--help]
+usage: audit-core.sh [-q|--quiet] [--strict] [--require-siblings] [--scope LIST] [--changed]
+                     [--color WHEN] [--json] [-h|--help]
 
 THE audit button — manifest/exec-bit/syntax/lint/config/markdown/workflow/
 version/behavioral checks. CI and pre-commit run this exact script.
 
   -q, --quiet     only print SKIP/FAIL lines and the final summary
   --json          emit a machine-readable summary object on stdout (implies --quiet):
-                  {pass,skip,fail,seconds,strict,tool_skips,skipped[],result}. For CI
+                  {pass,skip,fail,seconds,strict,tool_skips,env_skips,partial,
+                  skipped[],result}. `partial` is true whenever anything skipped. For CI
                   steps / editor integrations that want to parse, not scrape, the result.
   --strict        fail if any gate SKIPPED because its TOOL is absent — that gate did
                   not actually run, so a "green" with such skips is only PARTIAL. An
                   out-of-scope skip (a narrowed --scope/--changed run) is intentional and
                   does NOT trip --strict, so this is safe on a fully-provisioned CI leg
                   where every IN-SCOPE tool is installed. The summary names every skip.
+  --require-siblings
+                  fail if a FLEET-WIDE gate (helper adoption, the gitleaks-policy sweep,
+                  the coverage register) had no sibling OS repo checked out to read.
+                  Those gates skip silently-by-default on a lone clone — including in CI,
+                  which checks out only this repo — so they have never actually run there.
+                  This is the flag that says "I expect full fleet coverage from this run".
   --scope LIST    limit the slow area-specific sections to a comma list:
                   shell, nvim, atuin, all (default), none. Cheap structural/config/
                   markdown/workflow/version checks always run. CI sets this from
@@ -405,6 +417,49 @@ EOF
   unset cref_fail cref_tracked cref_src cref_hit cref_line cref_path
 fi
 
+# ── 1c. unreferenced .claude/ files (the half §1b structurally cannot reach) ──
+# §1b asks whether every .claude/ path a routine NAMES is shipped. That only fires because
+# something pointed at the file. This asks the question with no reference to lean on: is any
+# file under .claude/ sitting on this disk and going nowhere?
+#
+# WHY BOTH ARE NEEDED. #700 was caught only because three routine files named the ledger. A
+# .claude/ file nothing references — a new subagent, a convention-named config a hook reads,
+# a second ledger — has no such witness, and `.gitignore`'s blanket `.claude/*` means git
+# prints nothing about it: not in `git status`, not added by `git add -A`, not in any content
+# gate here (they all read the working tree, where it is present and correct). The audit was
+# answering "is this tree consistent" — it was — while nobody asked "will this reach a clone".
+#
+# THE RULE THAT WINS IS THE VERDICT. The scanner asks `git check-ignore -v` which line hid the
+# file. The blanket `.claude/*` means nobody decided anything about it; any more specific rule
+# means somebody wrote a line naming it, which is a decision and stays quiet. So
+# settings.local.json is exempt because .gitignore names it, not because this gate lists it,
+# and the next per-machine file becomes exempt the moment its rule is written.
+#
+# The two verdicts §1b separates do not arise here: a file this gate sees always EXISTS (it
+# was found on disk), so "author it" is never the repair. The repair is always one .gitignore
+# line — a negation if it should ship, a specific rule if it should not.
+#
+# WHY IT BLOCKS ON ARRIVAL, the §5i/§1b argument: the tree is green the moment this lands —
+# settings.local.json is the only untracked file under .claude/, and it carries its own rule —
+# so every future hit is a regression introduced by the commit under test.
+hdr "unreferenced .claude/ files"
+if ! have git || ! git rev-parse --git-dir >/dev/null 2>&1; then
+  skip "unreferenced .claude/ files (not a git checkout)"
+elif [[ ! -d .claude ]]; then
+  skip "unreferenced .claude/ files (no .claude/ directory)"
+else
+  cunt_fail=0
+  while IFS= read -r cunt_path; do
+    [[ -z "$cunt_path" ]] && continue
+    fail "$cunt_path exists here but git will never ship it — it is hidden by the blanket \`.claude/*\` rule, so it reaches no clone, no CI run and none of the nine vendored repos, and nothing else reports it. Negate it in .gitignore if it is shared; give it its own ignore rule if it is per-machine (#700)"
+    cunt_fail=1
+  done <<EOF
+$(_core_claude_untracked_hits "$HERE")
+EOF
+  ((cunt_fail)) || pass "unreferenced .claude/ files (every file under .claude/ either ships or is deliberately ignored)"
+  unset cunt_fail cunt_path
+fi
+
 # ── 2. executable-bit assertions ─────────────────────────────────────────────
 hdr "executable bits"
 if have git && git rev-parse --git-dir >/dev/null 2>&1; then
@@ -457,20 +512,63 @@ fi
 
 # ── 4. lua ───────────────────────────────────────────────────────────────────
 hdr "lua (luacheck)"
+# PROBE BEFORE LINTING, so a broken toolchain is never reported as a defect in nvim/ (#726).
+# `have luacheck` is a weak precondition: luarocks generates a wrapper that `exec`s an ABSOLUTE
+# interpreter path, so the name stays on PATH long after the lua it was built against is gone,
+# and the wrapper still answers `command -v`.
+#
+# EXIT CODE ALONE CANNOT SEPARATE THE TWO, which is why this is a probe and not a status check.
+# luacheck's own vocabulary is 0 clean / 1 warnings / 2 syntax errors / 3 I/O error, and a
+# LOAD failure — luacheck's source failing to parse or a module going missing — also exits 1.
+# That is the documented mise/config.toml case: luacheck 1.2.0 cannot load under Lua 5.5 at
+# all ("attempt to assign to const variable" in its own source), and it would land here as
+# exit 1, indistinguishable from honest lint warnings. A missing interpreter is the easier
+# shape (the shell's 126/127) and would be separable; the 5.5 one is not.
+#
+# `--version` lints nothing and exercises the same module load, so ANY failure from it is a
+# toolchain failure by construction. One extra process on a leg that only runs when nvim/ is
+# in scope.
 if ! ((SCOPE_NVIM)); then
   skip "luacheck (out of scope)"
-elif have luacheck; then
-  # luacheck discovers .luacheckrc by searching UP from the CWD, not the target —
-  # so run it from inside nvim/, where nvim/.luacheckrc lives. From repo root it
-  # would miss the config and emit hundreds of false "undefined vim" warnings.
-  if lua_out="$(cd nvim && luacheck . --no-color 2>&1)"; then
-    pass "luacheck nvim/"
+elif ! have luacheck; then
+  # Name the 5.4 requirement HERE, at the moment the reader learns they need the tool —
+  # mise/config.toml carries the full explanation, but nobody reaching for `luarocks install
+  # luacheck` is reading a runtime pin file (#726).
+  skip "luacheck (not installed — install it against an explicit Lua 5.4; luacheck 1.2.0 cannot load under 5.5, see mise/config.toml)"
+else
+  # The probe lints nothing; only its STATUS matters, and its output is the diagnostic to
+  # show when it fails. luacheck discovers .luacheckrc by searching UP from the CWD, not the
+  # target — so the lint pass runs from inside nvim/, where nvim/.luacheckrc lives. From repo
+  # root it would miss the config and emit hundreds of false "undefined vim" warnings.
+  lua_probe="$(luacheck --version 2>&1)"
+  lua_probe_rc=$?
+  if ((lua_probe_rc == 0)); then
+    lua_out="$(cd nvim && luacheck . --no-color 2>&1)"
+    lua_rc=$?
   else
+    lua_out="$lua_probe"
+    lua_rc=0
+  fi
+  # The three-way call is in common.sh so test-core.sh can drive every branch; this only
+  # renders. Same split §1b uses, and for the same reason.
+  case "$(_core_luacheck_verdict "$lua_probe_rc" "$lua_rc")" in
+  ok)
+    pass "luacheck nvim/"
+    ;;
+  broken)
+    fail "luacheck is on PATH but cannot RUN — a broken toolchain, NOT a lint finding in nvim/. If it was installed with luarocks against mise's lua, that is the trap mise/config.toml describes; the sanctioned installers each pin their own 5.4. Re-running luacheck will only repeat this."
+    fail_detail "$lua_probe"
+    ;;
+  broken-midrun)
+    fail "luacheck stopped being runnable mid-audit (exit $lua_rc) — the toolchain broke after the version probe passed, so this is not a lint finding in nvim/"
+    fail_detail "$lua_out"
+    ;;
+  *)
     fail "luacheck reported issues — run: (cd nvim && luacheck .)"
     fail_detail "$lua_out"
-  fi
-else
-  skip "luacheck (not installed)"
+    ;;
+  esac
+  unset lua_rc lua_probe_rc lua_probe lua_out
 fi
 
 # ── 4b. nvim module reachability (the orphan backstop) ───────────────────────
@@ -756,10 +854,13 @@ fi
 # run, and a gate that is red on arrival is a gate someone turns off. It states the gap and
 # leaves remediation to per-repo work. Turn it into a fail only once the fleet is clean.
 #
-# --STRICT SAFETY: the "sibling not checked out" skip is worded with the literal
-# "out of scope" because --strict counts every OTHER skip as a real coverage gap and reds
-# the run. CI checks out only this repo, so without that wording this section would break
-# --strict everywhere it matters. Same graceful-degradation shape core-integrity.sh uses.
+# --STRICT SAFETY: the "sibling not checked out" skip goes through skip_env, which records
+# it as an ENVIRONMENT skip. --strict counts only TOOL-absent skips, so this section stays
+# inert there — CI checks out only this repo. It used to achieve that by WORDING the skip
+# "out of scope" so the substring classifier would let it through, which made the message
+# text the gate and conflated "you narrowed this" with "this box cannot run it". The class
+# is structural now, so the wording is free to say what is actually true, and
+# --require-siblings can red on precisely this case without touching --strict.
 #
 # Reads scripts/os-repos.txt with the light sed idiom (as freshness-dashboard.sh does) and
 # NOT the three-script pattern with a hardcoded fallback array: os-repos.txt documents that
@@ -768,7 +869,7 @@ fi
 hdr "bootstrap-lib helper adoption (advisory)"
 _ha_root="$(cd "$HERE/.." && pwd)"
 if [[ ! -r "$HERE/scripts/os-repos.txt" ]]; then
-  skip "helper adoption (scripts/os-repos.txt unreadable — out of scope)"
+  skip_env "helper adoption (scripts/os-repos.txt unreadable — cannot enumerate the fleet)"
 else
   # <helper> <what its absence costs>. Kept here rather than in bootstrap-lib.sh so the
   # rationale lives with the check that reports it; VENDORING.md carries the human contract.
@@ -800,12 +901,12 @@ else
     done
     if [[ -n "$_ha_gaps" ]]; then
       _ha_missing=$((_ha_missing + 1))
-      printf '  %s%s%s %s does not call:%s\n' "${c_yel}" "•" "${c_rst}" "$_ha_repo" "$_ha_gaps"
+      ((${CORE_JSON:-0})) || printf '  %s%s%s %s does not call:%s\n' "${c_yel}" "•" "${c_rst}" "$_ha_repo" "$_ha_gaps"
     fi
   done < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$HERE/scripts/os-repos.txt")
 
   if ((_ha_checked == 0)); then
-    skip "helper adoption (no sibling OS repo checked out — out of scope)"
+    skip_env "helper adoption (no sibling OS repo checked out — nothing to read here)"
   elif ((_ha_missing)); then
     # pass(), not fail(): see REPORT, DO NOT BLOCK above. The count is the signal; the
     # per-repo lines printed just above are the detail.
@@ -813,7 +914,7 @@ else
   else
     pass "helper adoption: every checked-out OS repo calls the whole bootstrap-lib contract ($_ha_checked repo(s))"
   fi
-  ((_ha_absent)) && skip "helper adoption: $_ha_absent repo(s) not checked out — out of scope"
+  ((_ha_absent)) && skip_env "helper adoption: $_ha_absent repo(s) not checked out — not covered by this run"
 fi
 
 # ── 5g. the secret-scan policy, in the files §5f cannot see ──────────────────
@@ -856,13 +957,13 @@ fi
 # it to Core's, and the next person to look sees a passing gate. Advisory is the wrong posture
 # for a finding whose whole hazard is that it looks fine.
 #
-# Same "out of scope" skip wording as §5f — --strict counts every OTHER skip as a coverage gap,
-# and CI checks out only this repo, so this is inert there and bites locally and in any sweep
-# that clones the fleet.
+# Same skip_env (ENVIRONMENT) class as §5f — --strict counts only TOOL-absent skips, so this
+# is inert there (CI checks out only this repo) and bites locally and in any sweep that clones
+# the fleet. --require-siblings is what makes an absent sibling red.
 hdr "secret-scan policy adoption"
 _gp_root="$(cd "$HERE/.." && pwd)"
 if [[ ! -r "$HERE/scripts/os-repos.txt" ]]; then
-  skip "gitleaks policy (scripts/os-repos.txt unreadable — out of scope)"
+  skip_env "gitleaks policy (scripts/os-repos.txt unreadable — cannot enumerate the fleet)"
 else
   _gp_checked=0
   _gp_bad=0
@@ -892,18 +993,18 @@ else
     fi
     if [[ -n "$_gp_gaps" ]]; then
       _gp_bad=$((_gp_bad + 1))
-      printf '  %s%s%s %s%s\n' "${c_yel}" "•" "${c_rst}" "$_gp_repo" "$_gp_gaps"
+      ((${CORE_JSON:-0})) || printf '  %s%s%s %s%s\n' "${c_yel}" "•" "${c_rst}" "$_gp_repo" "$_gp_gaps"
     fi
   done < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$HERE/scripts/os-repos.txt")
 
   if ((_gp_checked == 0)); then
-    skip "gitleaks policy (no sibling OS repo checked out — out of scope)"
+    skip_env "gitleaks policy (no sibling OS repo checked out — nothing to read here)"
   elif ((_gp_bad)); then
     fail "gitleaks policy: $_gp_bad of $_gp_checked checked-out repo(s) do not measure by Core's policy (see the lines above; VENDORING.md has the contract)"
   else
     pass "gitleaks policy: every checked-out OS repo scans under Core's policy ($_gp_checked repo(s))"
   fi
-  ((_gp_absent)) && skip "gitleaks policy: $_gp_absent repo(s) not checked out — out of scope"
+  ((_gp_absent)) && skip_env "gitleaks policy: $_gp_absent repo(s) not checked out — not covered by this run"
 fi
 
 # ── 5h. the gate x repo coverage register ────────────────────────────────────
@@ -927,12 +1028,12 @@ else
   _fc_out="$("$HERE/scripts/fleet-coverage.sh" --check 2>&1)"
   _fc_rc=$?
   if [[ "$_fc_out" == *"no sibling repo checked out"* ]]; then
-    skip "coverage register (no sibling OS repo checked out — out of scope)"
+    skip_env "coverage register (no sibling OS repo checked out — nothing to read here)"
   elif ((_fc_rc == 0)); then
     pass "coverage register: $_fc_out"
   else
     # pass(), not fail(): see REPORT, DO NOT BLOCK on §5f.
-    printf '%s\n' "$_fc_out" | sed 's/^/  /'
+    ((${CORE_JSON:-0})) || printf '%s\n' "$_fc_out" | sed 's/^/  /'
     pass "coverage register: undeclared gate x repo cell(s) — advisory; each repo declares in .github/core-gates.txt (VENDORING.md has the contract)"
   fi
   unset _fc_out _fc_rc
@@ -1308,12 +1409,27 @@ else
   fi
 fi
 
-# Count tool-skips (absent tool = real coverage gap) vs out-of-scope skips up front so
-# both the human summary and the --json object can report it. (Done before either render.)
-_tool_skips=0
-for _s in ${_CORE_SKIPS[@]+"${_CORE_SKIPS[@]}"}; do
-  [[ "$_s" == *"out of scope"* ]] || _tool_skips=$((_tool_skips + 1))
-done
+# Partition the skips up front so both the human summary and the --json object can report
+# it. (Done before either render.) Three classes, not two:
+#   tool         absent tool — a real coverage gap; --strict reds
+#   out of scope the caller narrowed the run (--scope/--changed) — intentional
+#   environment  a sibling OS repo isn't checked out — recorded STRUCTURALLY by skip_env,
+#                not by wording, so the message can say what is true without moving a gate
+# Environment skips are subtracted rather than string-matched: they are already counted in
+# the non-"out of scope" tally above, and skip_env is the only thing that declares them.
+# This keeps --strict's meaning EXACTLY as it was (absent tools only) while letting
+# --require-siblings gate the third class on its own.
+# The tool/scope/environment partition is decided by _core_tool_skip_count in
+# scripts/lib/common.sh, NOT here. It was inline until the test meant to guard it turned out to
+# re-implement the same loop in test-core.sh — so both stayed green while the defect they
+# existed to catch was reintroduced in this file. Rendering stays here; the judgement is the
+# helper's, and test-core.sh drives that helper directly. Same split as _core_luacheck_verdict.
+#
+# Assigned ONCE, straight from the helper. Do not post-process it: the original bug was exactly
+# a second statement adjusting this number after the classification was already correct, and a
+# static assertion in test-core.sh now fails if this stops being a single assignment.
+_env_skips=${#_CORE_ENV_SKIPS[@]}
+_tool_skips="$(_core_tool_skip_count)"
 
 # ── machine-readable summary (--json): one object on stdout, then exit with the same
 # status the human path would. Lets a CI step / editor parse the result instead of
@@ -1323,9 +1439,16 @@ if ((JSON)); then
     _result=failed
   elif ((STRICT && _tool_skips > 0)); then
     _result=failed-strict
+  elif ((REQUIRE_SIBLINGS && _env_skips > 0)); then
+    # New verdict, but only reachable via --require-siblings, which nothing passes today —
+    # so it cannot move an existing consumer's result. `ok` deliberately keeps its meaning:
+    # `partial` below is ADDITIVE rather than a new `ok-*` spelling, because the "--json
+    # must not change the VERDICT" invariant compares this string against the plain run.
+    _result=failed-siblings
   else _result=ok; fi
-  printf '{"pass":%d,"skip":%d,"fail":%d,"seconds":%d,"strict":%s,"tool_skips":%d,"skipped":[' \
-    "$PASS" "$SKIP" "$FAIL" "$SECONDS" "$( ((STRICT)) && echo true || echo false)" "$_tool_skips"
+  printf '{"pass":%d,"skip":%d,"fail":%d,"seconds":%d,"strict":%s,"tool_skips":%d,"env_skips":%d,"partial":%s,"skipped":[' \
+    "$PASS" "$SKIP" "$FAIL" "$SECONDS" "$( ((STRICT)) && echo true || echo false)" "$_tool_skips" "$_env_skips" \
+    "$( ((SKIP > 0)) && echo true || echo false)"
   _first=1
   for _s in ${_CORE_SKIPS[@]+"${_CORE_SKIPS[@]}"}; do
     _s="${_s//\\/\\\\}"
@@ -1357,6 +1480,15 @@ if ((SKIP > 0)); then
     printf '    %s–%s %s\n' "$c_yel" "$c_rst" "$_s" >&2
   done
 fi
+# Say what the fleet-wide gates need, and how to get it. These skip on ANY lone clone —
+# including CI, which checks out only this repo — so without this line the reader has no
+# way to learn that three gates have simply never run for them.
+if ((_env_skips > 0)); then
+  printf '  %s%d of those are FLEET-WIDE gates with no sibling repo to read — they did not run.%s\n' \
+    "$c_yel" "$_env_skips" "$c_rst" >&2
+  printf '  %sClone the OS repos beside this one (see scripts/os-repos.txt), or pass --require-siblings to make this red.%s\n' \
+    "$c_yel" "$c_rst" >&2
+fi
 ((FAIL == 0)) || {
   printf '%saudit FAILED%s\n' "$c_red" "$c_rst" >&2
   exit 1
@@ -1365,4 +1497,17 @@ if ((STRICT && _tool_skips > 0)); then
   printf '%saudit FAILED (--strict: %d gate(s) skipped because their tool is absent — must all run)%s\n' "$c_red" "$_tool_skips" "$c_rst" >&2
   exit 1
 fi
-printf '%saudit OK%s\n' "$c_grn" "$c_rst"
+if ((REQUIRE_SIBLINGS && _env_skips > 0)); then
+  printf '%saudit FAILED (--require-siblings: %d fleet-wide gate(s) had no sibling OS repo to read)%s\n' "$c_red" "$_env_skips" "$c_rst" >&2
+  exit 1
+fi
+# THE LAST LINE IS THE ONE PEOPLE READ. A bare "audit OK" after a run that skipped a third
+# of the fleet-wide gates is the false green this whole script exists to prevent — the body
+# said PARTIAL, but the verdict said OK, and the verdict is what gets quoted in a PR. Say it
+# where it cannot be missed. Exit status is unchanged (0): partial is not failure, and
+# --strict / --require-siblings remain the ways to make it one.
+if ((SKIP > 0)); then
+  printf '%saudit OK — PARTIAL (%d check(s) skipped; see above)%s\n' "$c_yel" "$SKIP" "$c_rst"
+else
+  printf '%saudit OK%s\n' "$c_grn" "$c_rst"
+fi
