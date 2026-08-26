@@ -17,11 +17,19 @@ name: real-bootstrap
 #
 # And one hard limit the option-1 rollout exposed: a stubbed run installs nothing, so any
 # bootstrap that verifies a tool is PRESENT afterwards can never pass. openSUSE's exits 2
-# because yazi is not on PATH — an HONEST result its bootstrap.sh deliberately produces so a
-# caller can tell the box is half-provisioned. Neither side should bend to close that gap:
-# weakening the exit removes the one signal an operator needs, and teaching the job to
-# tolerate exit 2 masks a genuine abort. The only honest resolution is a run where the
-# packages are really installed. That is this workflow.
+# in exactly that case — an HONEST result its bootstrap.sh deliberately produces so a caller
+# can tell the box is half-provisioned. Neither side should bend to close that gap: weakening
+# the exit removes the one signal an operator needs, and teaching the job to tolerate exit 2
+# masks a genuine abort. The only honest resolution is a run where the packages are really
+# installed. That is this workflow.
+#
+# NAMING THE TOOL HERE IS A TRAP — DO NOT. This note used to cite yazi as the worked example.
+# openSUSE later packaged yazi first-class and deleted the broken cargo path, so by the time
+# the sweep first ran the claim was false: the real exit 2 was doggo and sesh, from an
+# unrelated defect (a mise probe that missed its own off-PATH install). Because the `details:`
+# string below is copied VERBATIM into every issue this job files, that dead example shipped
+# as triage guidance and pointed the first investigation at the wrong tool (#742). State the
+# MECHANISM; let the run report which tool.
 #
 # ADVISORY, AND IT FILES AN ISSUE RATHER THAN BLOCKING ANYTHING. It is weekly, not per-PR,
 # and network-bound: it asserts other people's package archives as much as our own scripts.
@@ -101,7 +109,18 @@ jobs:
     name: ${{ matrix.leg.name }}
     needs: matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # PER-LEG, from each repo's own caller — a single shared ceiling cannot fit this matrix.
+    # Gentoo emerges from SOURCE: its `emerge --sync` alone ran 22 minutes before a package
+    # was touched, and the leg was cancelled mid-install at the old flat 45m while still
+    # making steady forward progress (#742). Raising that flat number instead would hand
+    # every OTHER leg a ceiling far above its real runtime, so a genuine hang on a fast
+    # distro would sit there burning runner time.
+    #
+    # The value rides in via the caller's `with:` block because a job that calls a reusable
+    # workflow CANNOT legally carry timeout-minutes — the same constraint scripts/check-modern.sh
+    # records as the reason its rule 8 keys on `runs-on:` rather than on every job. The matrix
+    # script emits a timeout for every leg (default 45), so this is never empty.
+    timeout-minutes: ${{ matrix.leg.timeout }}
     strategy:
       fail-fast: false # one distro's broken mirror must not hide the other seven
       matrix:
@@ -136,17 +155,38 @@ jobs:
             # Pre-seed tpm so the run does not depend on a network clone it does not test.
             mkdir -p "$HOME/.tmux/plugins/tpm"
             ./bootstrap.sh
+
+            # THE FAR-SIDE ASSERTION, AND IT MUST LIVE IN HERE. bootstrap.sh returning 0 is
+            # necessary but not sufficient: the bug this class of gate exists for aborted
+            # AFTER provision() did its work and BEFORE wire_links, leaving a box carrying
+            # the whole stack and not one symlink (dotgibson/dotfiles-Debian#2).
+            #
+            # It used to sit in a step of its own, one level out — where it could only ever
+            # echo, because `docker run --rm` has already destroyed the filesystem it would
+            # need to look at by the time that step starts. So the sweep carried a step
+            # NAMED for an assertion it did not perform, on the only per-leg check it
+            # claimed: the exact "an advisory gate that never runs reads as coverage"
+            # failure the header of this workflow warns about (#742).
+            #
+            # Same two links bootstrap-test.yml asserts on the far side of its stubbed
+            # provision(); keep the pair in step. NO SINGLE QUOTES in here — the whole block
+            # is inside a single-quoted `sh -euc ...` and one apostrophe closes it.
+            for link in "$HOME/.config/zsh/loader.zsh" "$HOME/.gitconfig"; do
+              if [ ! -L "$link" ]; then
+                echo "MISSING symlink after a full run: $link — provision() may have aborted before wire_links" >&2
+                exit 1
+              fi
+            done
+            echo "wiring survived provisioning"
           '
 
-      # A green run means the packages really installed AND the wiring survived. Assert the
-      # far side explicitly: the bug this class of gate exists for aborted AFTER provision
-      # did its work and BEFORE wire_links — a box carrying the whole stack and not one
-      # symlink (dotgibson/dotfiles-Debian#2).
-      - name: Assert the wiring survived provisioning
+      # Reporting only — the assertion itself ran in the container above, where the
+      # filesystem it checks still exists. This step reaching at all means the leg passed.
+      - name: Record the leg in the run summary
         env:
           IMAGE: ${{ matrix.leg.image }}
         run: |
-          echo "bootstrap.sh returned 0 on $IMAGE with no stubbing" >>"$GITHUB_STEP_SUMMARY"
+          echo "bootstrap.sh returned 0 on $IMAGE with no stubbing, and the wiring survived" >>"$GITHUB_STEP_SUMMARY"
 
   # A red run FILES AN ISSUE; it blocks nothing. See the posture note in the header.
   notify-failure:
@@ -160,4 +200,4 @@ jobs:
       workflow: real-bootstrap
       title: "ci-failure: the weekly real bootstrap is red"
       run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      details: "A genuinely unstubbed `./bootstrap.sh` failed on at least one distro image. This is the only gate that installs anything, so it is the only one that can see a wrong package name, a rotated repo key, a failure branch, or a step invoked by absolute path — check which leg went red before assuming an upstream mirror hiccup. Note openSUSE's bootstrap deliberately exits 2 when a tool it verifies is absent afterwards; that is an honest half-provisioned signal, not a flake."
+      details: "A genuinely unstubbed `./bootstrap.sh` failed on at least one distro image. This is the only gate that installs anything, so it is the only one that can see a wrong package name, a rotated repo key, a failure branch, or a step invoked by absolute path — check which leg went red before assuming an upstream mirror hiccup. Two failure shapes read differently: an exit 2 is a bootstrap that finished and REPORTED its own half-provisioned state, so the ledger it printed names the tools that did not install and is the place to start; a leg cancelled at its timeout is not a hang unless the log actually stalled — Gentoo builds from source and legitimately takes hours. Read the ledger or the last log lines before blaming a mirror."

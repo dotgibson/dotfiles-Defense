@@ -127,9 +127,19 @@ Every repo follows the same shape: clone, optionally dry-run to preview the syml
 
 ### Prerequisites
 
-All you need up front is **Git** and your platform's base toolchain — `bootstrap.sh`
-provisions everything else (zsh, tmux, nvim, starship, and friends). Platform-specific
-setup notes live in each OS repo's README and the [docs site][docs]; the essentials:
+Your platform's base toolchain, plus **`curl`** on the Debian and Fedora families —
+`bootstrap.sh` fetches the pinned upstream assets the package manager cannot supply, so it
+checks for what it needs up front and stops with the full list if anything is missing. Most
+desktop and server installs already have curl; a minimal or container image often does not
+(`sudo apt-get install -y curl` / `sudo dnf install -y curl`). `bootstrap.sh` provisions
+everything else (zsh, tmux, nvim, starship, and friends).
+
+**Git is not a hard requirement.** It is needed only for the one-time `tpm` clone, and its
+absence is a warning rather than a stop — the reverse of what this section claimed until
+the first genuinely unstubbed bootstrap run proved otherwise (#742).
+
+Platform-specific setup notes live in each OS repo's README and the [docs site][docs]; the
+essentials:
 
 * **macOS** — Xcode [Command Line Tools](https://developer.apple.com/documentation/xcode/command-line-tools)
 * **Windows** — PowerShell 7 and Developer Mode

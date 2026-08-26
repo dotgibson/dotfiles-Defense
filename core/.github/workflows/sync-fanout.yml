@@ -259,7 +259,7 @@ jobs:
             #
             # Assert the artefact instead of trusting the producer: re-derive every
             # dotgibson/dotfiles-core 40-hex pin from the files on disk and require it to equal
-            # the target. Offline, cheap, and independent of how the sync reported. `@v4` alias
+            # the target. Offline, cheap, and independent of how the sync reported. `@vN` alias
             # callers match no 40-hex and are correctly invisible here — taking the alias is a
             # deliberate per-repo policy, not drift.
             stale_pins=""

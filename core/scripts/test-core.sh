@@ -2026,6 +2026,123 @@ else
 fi
 unset -f _lv_is
 
+# ── workflow ref-major guard (common.sh :: _core_workflow_ref_hits) ──────────
+# WHY THIS IS TESTED AGAINST REAL HISTORY, not only synthetic fixtures. This guard exists
+# because two real regressions shipped and stayed green (v3->v4 for ten minors, v4->v5
+# until #744). A guard for a historical defect that is never RUN against that defect is
+# the same category error it exists to fix, so the last two cases below rebuild the exact
+# trees from the tags and require the guard to red on them.
+#
+# It drives _core_workflow_ref_hits DIRECTLY — never a reimplementation of its loop. The
+# note on _core_tool_skip_count records what happens otherwise: the test and the shipped
+# logic drift apart, both stay green, and the defect walks back in.
+hdr "workflow ref-major guard (_core_workflow_ref_hits)"
+_wfr_="$SANDBOX/wfref"
+mkdir -p "$_wfr_/.github/workflows"
+# _wfr_reset — every case starts from an EMPTY workflows dir. Without this a fixture from
+# an earlier case leaks its finding into the next one's count, which is exactly what the
+# first draft of these tests did: three "failures" that were stale files, not defects.
+_wfr_reset() { rm -f "$_wfr_"/.github/workflows/*.yml "$_wfr_"/.github/workflows/*.yaml 2>/dev/null || :; }
+# _wfr_write <name> <body> — resets first, so each fixture stands alone.
+_wfr_write() { _wfr_reset; printf '%s\n' "$2" >"$_wfr_/.github/workflows/$1"; }
+# _wfr_count <label> <major> <expected-line-count> — how many findings the guard reports.
+_wfr_count() {
+  local got n
+  got="$(_core_workflow_ref_hits "$_wfr_" "$2")"
+  n=0
+  [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | wc -l | tr -d ' ')"
+  if [[ "$n" == "$3" ]]; then
+    pass "workflow ref-major: $1"
+  else
+    fail "workflow ref-major: $1 (got $n finding(s), want $3)"
+  fi
+}
+
+_wfr_write a.yml '      - uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/dotfiles-core
+          ref: v4'
+_wfr_count "a foreign major on a dotfiles-core checkout is a finding" 5 1
+_wfr_count "the SAME file is clean when core.version agrees" 4 0
+
+# Order within the step must not matter — YAML does not promise key order, and a guard
+# that only works one way round is a coin flip on the next author's formatting.
+_wfr_write b.yml '      - uses: actions/checkout@v5
+        with:
+          ref: v4
+          repository: ${{ github.repository_owner }}/dotfiles-core'
+_wfr_count "ref: before repository: is judged the same" 5 1
+
+# The association is per STEP. A ref belonging to somebody else s checkout is not ours to
+# judge, and attributing it here would make the gate cry wolf on any workflow that pulls a
+# second repository at a tag.
+_wfr_write c.yml '      - uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/dotfiles-core
+          ref: v5
+      - uses: actions/checkout@v5
+        with:
+          repository: someone/other-repo
+          ref: v1'
+_wfr_count "another repository at v1 is NOT attributed to dotfiles-core" 5 0
+
+# A non-vN ref is deliberately out of scope: this gate answers "which major", and a SHA or
+# an expression is a pinning-style question with a different right answer.
+_wfr_write d.yml '      - uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/dotfiles-core
+          ref: 0123456789012345678901234567890123456789'
+_wfr_count "a SHA ref is not judged as a major" 5 0
+
+# A tree with no workflows at all must be silent, not an error — role repos vendoring Core
+# run this same lib.
+_wfr_reset
+_wfr_count "an empty workflows dir is clean" 5 0
+
+# ── the two real regressions ──
+# Rebuild each tag s .github/workflows and require the guard to red on it. If either of
+# these ever goes quiet, the guard has stopped covering the thing it was written for.
+if have git && git -C "$HERE" rev-parse --git-dir >/dev/null 2>&1; then
+  _wfr_hist() { # _wfr_hist <tag> <expected-major> <min-findings>
+    local tag="$1" major="$2" want="$3" dir="$SANDBOX/wfhist-$1" f got n
+    git -C "$HERE" rev-parse -q --verify "$tag^{commit}" >/dev/null 2>&1 || {
+      skip "workflow ref-major: $tag not present in this clone (shallow?)"
+      return 0
+    }
+    mkdir -p "$dir/.github/workflows"
+    while IFS= read -r f; do
+      [[ "$f" == *.yml || "$f" == *.yaml ]] || continue
+      git -C "$HERE" show "$tag:$f" >"$dir/$f" 2>/dev/null || :
+    done < <(git -C "$HERE" ls-tree --name-only "$tag" .github/workflows/ 2>/dev/null)
+    got="$(_core_workflow_ref_hits "$dir" "$major")"
+    n=0
+    [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | wc -l | tr -d ' ')"
+    if [[ "$n" -ge "$want" ]]; then
+      pass "workflow ref-major: catches the real $tag regression ($n site(s))"
+    else
+      fail "workflow ref-major: $tag regression NOT caught (got $n finding(s), want >= $want)"
+    fi
+  }
+  # v4.0.0 shipped four sites still on ref: v3; not corrected until v4.10.0.
+  _wfr_hist v4.0.0 4 4
+  # v5.0.2 shipped six sites still on ref: v4; corrected in #744.
+  _wfr_hist v5.0.2 5 6
+else
+  skip "workflow ref-major: historical regression cases (git/repo unavailable)"
+fi
+
+# And the tree as it stands must be clean against its own core.version — the gate running
+# on itself, which is what CI will do on every push.
+if [[ -r "$HERE/core.version" ]]; then
+  _wfr_now="$(tr -d '[:space:]' <"$HERE/core.version" | cut -d. -f1)"
+  if [[ -z "$(_core_workflow_ref_hits "$HERE" "$_wfr_now")" ]]; then
+    pass "workflow ref-major: this tree pins ref: v$_wfr_now everywhere (matches core.version)"
+  else
+    fail "workflow ref-major: this tree has a workflow on a foreign major"
+  fi
+  unset _wfr_now
+fi
+
 # ── unreferenced .claude/ scanner (common.sh :: _core_claude_untracked_hits) ──
 # WHY THIS IS TESTED ON A REAL REPO. Unlike _core_claude_ref_hits, which is pure text
 # extraction, every verdict here comes from git: is the path tracked, and which .gitignore

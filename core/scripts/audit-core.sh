@@ -1179,6 +1179,34 @@ else
   skip "actionlint (not installed — go install github.com/rhysd/actionlint/cmd/actionlint@latest)"
 fi
 
+# ── 8a. reusable-workflow ref majors ─────────────────────────────────────────
+# actionlint above proves the workflows are VALID. It cannot know that a valid
+# `ref: v4` is the wrong major — that is a fleet-policy question, and it is the one
+# this repo has now got wrong twice (v3→v4, ten minors; v4→v5, until #744). See
+# _core_workflow_ref_hits for the full history and the release ordering this implies.
+#
+# Always-on: no tool to be absent, so this never skips and cannot go green-because-absent
+# — which is the exact failure mode it exists to close.
+hdr "reusable-workflow ref majors"
+if [[ -r core.version ]]; then
+  wfr_major="$(tr -d '[:space:]' <core.version | cut -d. -f1)"
+  if [[ "$wfr_major" =~ ^[0-9]+$ ]]; then
+    wfr_out="$(_core_workflow_ref_hits . "$wfr_major")"
+    if [[ -z "$wfr_out" ]]; then
+      pass "every dotfiles-core checkout in .github/workflows/ pins ref: v$wfr_major (matches core.version)"
+    else
+      fail "a reusable workflow checks dotfiles-core out at a foreign major — the job would run another major's scripts"
+      fail_detail "$wfr_out"
+    fi
+    unset wfr_out
+  else
+    fail "core.version major unreadable ('$wfr_major') — cannot check workflow ref majors"
+  fi
+  unset wfr_major
+else
+  fail "core.version missing — cannot check workflow ref majors"
+fi
+
 # ── 8b. secrets (gitleaks) ────────────────────────────────────────────────────
 # Core ships 1Password helpers (zsh/50-op.zsh), a git-identity template, and history
 # secret-ignore patterns — and fans out to 9 PUBLIC repos, where a committed token

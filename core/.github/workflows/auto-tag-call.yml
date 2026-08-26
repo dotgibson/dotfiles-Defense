@@ -19,7 +19,7 @@ name: auto-tag (reusable)
 #   concurrency: { group: auto-tag-${{ github.ref }}, cancel-in-progress: false }
 #   jobs:
 #     tag:
-#       uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@v4
+#       uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@v5
 #
 # Runs the SAME scripts/auto-tag.sh the audit shellchecks/tests, so there is one
 # definition of the version math. First-party only; tags in CI (no operator round-trip).
@@ -63,15 +63,15 @@ jobs:
           fetch-depth: 0
       # dotfiles-core carries the scripts (auto-tag.sh + gen-release-notes.sh); depth 1 is
       # enough (auto-tag reads the OS repo's history via -C, not Core's). Pin the checkout to
-      # the SAME major line callers pin this workflow to (@v4) so the script version can't
+      # the SAME major line callers pin this workflow to (@v5) so the script version can't
       # drift from the pinned workflow definition — deterministic between releases, advancing
-      # only when v4 moves (the @vN policy; RELEASE-STRATEGY.md).
-      - name: Check out dotfiles-core (reference, pinned to v4)
+      # only when v5 moves (the @vN policy; RELEASE-STRATEGY.md).
+      - name: Check out dotfiles-core (reference, pinned to v5)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           repository: ${{ github.repository_owner }}/dotfiles-core
-          ref: v4
+          ref: v5
           path: dotfiles-core
           fetch-depth: 1
       - name: Cut the next release tag (idempotent)

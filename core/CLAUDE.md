@@ -92,7 +92,7 @@ On-demand routines that automate the judgment-heavy chores `audit-core.sh` can't
 - `/os-package-availability` — audit an OS repo's package list for renamed/dropped/moved
   packages vs upstream + `PORTING-MATRIX.md`. Shipped as the reusable
   `.github/workflows/claude-routines-call.yml`, which each OS repo consumes as a 3–5 line
-  `@v4` caller (the `lint-call.yml` idiom) instead of a per-repo copy.
+  `@v5` caller (the `lint-call.yml` idiom) instead of a per-repo copy.
 
 Each routine **reports first** and only proposes changes; nothing is vendored out
 without a green `make audit`.

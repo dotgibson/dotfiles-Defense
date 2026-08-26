@@ -14,6 +14,176 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.0.3] - 2026-08-26
+
+### Added
+
+- **`audit-core.sh` §8a — a reusable workflow pinned to a foreign major is now a FAILURE.**
+  The `*-call.yml` workflows check dotfiles-core out a second time, at a hardcoded
+  `ref: vN`, to supply the scripts the job actually runs. That ref has to move on every
+  major bump, and it has now failed to twice:
+
+  - **v3 → v4** — four sites left on `ref: v3` (frozen at v3.9.0). Shipped in `v4.0.0`
+    and not corrected until **`v4.10.0`**: ten minor releases running the previous
+    major's scripts.
+  - **v4 → v5** — six sites left on `ref: v4` (frozen at v4.19.0) while every caller
+    moved to `@v5`, so the workflow body was v5 and the scripts it ran were not (#744).
+
+  Both times the repair shipped with a comment telling the next person to keep it in
+  step. `claude-routines-call.yml` still carries the v3 one; `lint-call.yml:90` says
+  _"keep in step on a major bump"_ in as many words. Both were written **after** the
+  first occurrence and neither prevented the second, because **nothing failed**: the ref
+  resolves, the checkout succeeds, the job goes green, and it silently runs older code.
+  Green-because-absent, the same shape as #700 — and the same lesson already recorded on
+  `_core_tool_skip_count`: a comment is not a gate.
+
+  The gate compares each `ref: vN` against the major in `core.version` — the major the
+  tree IS, versus the major it CLAIMS to run. Those cannot legitimately disagree, so
+  there is no list to maintain and no allowlist to drift. It is **always-on**: no tool to
+  be absent, so it can never skip, which is the failure mode it exists to close.
+
+  Judgment lives in `_core_workflow_ref_hits` (`scripts/lib/common.sh`) and `audit-core.sh`
+  only renders it — the render-vs-judge split `_core_tool_skip_count` and §1b already use,
+  so `test-core.sh` drives the shipped function rather than a copy of its loop. The suite
+  **rebuilds the `v4.0.0` and `v5.0.2` trees from their tags and requires the guard to red
+  on both**; a guard for a historical defect that is never run against that defect is the
+  same category error it exists to fix. Proven failing before being trusted: mutating one
+  live `ref:` reds it at the exact file:line, and restoring it greens it.
+
+  **Release ordering this implies, recorded so a red release is not "fixed" by loosening
+  the gate:** `make release VERSION=6.0.0` bumps `core.version`, so §8a goes red until the
+  refs move to `v6` in the same change. That is the intent — the "keep in step" comment made
+  executable. It is safe even though the `v6` alias does not exist until `make publish`,
+  because Core's own CI never exercises these files (they are for OS repos to _call_), and
+  an OS repo still pinned `@v5` reads the v5-**tagged** copy, which still says `v5`.
+
+  **Deliberately not judged:** a `ref:` that is not `v<digits>` (a SHA, a branch, an
+  expression). This gate answers "which major"; a second opinion about pinning style would
+  make it two gates wearing one name. The association is per **step**, so a `ref:` belonging
+  to another repository's checkout is never attributed to Core.
+
+### Fixed
+
+- **`real-bootstrap.yml` carried a step NAMED for an assertion it did not perform.**
+  `Assert the wiring survived provisioning` was a bare `echo` into the step summary. It could
+  never have been anything else where it sat: the previous step is `docker run --rm`, so the
+  filesystem the check needs is destroyed before the step starts. The sweep's only per-leg
+  check was therefore decorative — the exact "an advisory gate that never runs reads as
+  coverage" failure the same file's header warns about, and the reason the class of bug it
+  names (dotgibson/dotfiles-Debian#2: a bootstrap that aborts AFTER `provision()` and BEFORE
+  `wire_links`, leaving a box with the whole stack and not one symlink) would have passed this
+  gate green.
+  The assertion now runs INSIDE the container, on the same two links `bootstrap-test.yml`
+  already checks on the far side of its stubbed `provision()`. The outer step is reduced to
+  the reporting line it always was, and renamed to say so.
+
+- **`bootstrap-test.yml` under-specified `prep:`, and a caller took it at its word.** The
+  input read "install bootstrap's deps (at least bash)" — so dotfiles-Debian shipped two
+  callers installing `bash zsh` while its own preflight had required `curl` since the repo's
+  first commit, and both Debian legs died in preflight on the first unstubbed sweep. Neither
+  per-PR job can catch that: `--links-only` is exempt from the requirement list by design, and
+  the provision-stub job PREPENDS A CURL SHIM, so a missing curl is satisfied by the very
+  thing that makes the leg fake. The description now says a caller must satisfy its own
+  `preflight_cmds` list, names the two real lists, and records why only the weekly sweep can
+  see a shortfall.
+
+- **`README.md` had the prerequisites backwards.** It promised that "all you need up front is
+  **Git**". On the Debian and Fedora families the truth is inverted: `curl` is a hard
+  requirement that exits 1 before provisioning, and `git` is needed only for the one-time
+  `tpm` clone and merely warns. dotfiles-Debian corrected its own README after the sweep;
+  Core's was still fanning the wrong claim out to the fleet.
+
+- **`pr-link-check` could get stuck red with no way to clear it, because it judged a stale
+  copy of the PR body.** The enforce step read `github.event.pull_request.body` — the
+  payload of the event that started the run — so it could only ever see a `No-Issue:` line
+  or a closing keyword that a _fresh_ `pull_request` event had delivered. When such an event
+  was dropped or delayed, the failure message's own advice ("editing the PR body re-runs
+  this check automatically") silently stopped being true, and `gh run rerun` was no escape
+  either: it replays the original payload, stale body and all.
+  Seen live during the 2026-08-26 Actions incident on #743 — the body carried its
+  `No-Issue:` reason from 16:36Z, three separate body edits over ~20 minutes produced no run
+  at all, and the only way to clear the check was pushing an empty commit to force a
+  `synchronize` event. A commit, to satisfy a check about prose.
+  The step now reads the current title and body from the API, alongside the
+  `closingIssuesReferences` probe that was already API-based and therefore already immune.
+  Retried three times and then **fallen back to the payload rather than failed** — a 503 on
+  a convenience read must not become a verdict about the PR, which is the lesson #500
+  recorded. `jq -r '.body // ""'` guards the empty-body case, where a bare `jq -r` would
+  hand the rule the four-letter string `null` to grep.
+  This also partly closes the workflow's other documented gap: a re-run after a
+  Development-sidebar link now judges current state instead of re-deciding stale text. The
+  trigger list is unchanged — `edited` is still the fast path, just no longer the only one
+  that works.
+
+- **The weekly `real-bootstrap` sweep went red on four of eight legs on its first-ever run,
+  and one of them was red because of this workflow rather than the bootstrap it tested.**
+  Gentoo builds from source — `emerge --sync` alone consumed 22 minutes before a package was
+  touched — and the leg was cancelled mid-install at the flat `timeout-minutes: 45` while
+  still making steady forward progress. `dotfiles-Gentoo/bootstrap.sh` says so in its own
+  header ("emerge COMPILES"; "a single `emerge` can run for HOURS"); the sweep did not
+  listen.
+  The ceiling is now **per-leg**, derived from each repo's own caller like `image:` and
+  `prep:` already are, rather than raised for everyone. A flat increase would hand the seven
+  fast legs a ceiling far above their real runtime, so a genuine hang would sit there burning
+  runner time — the opposite of what `check-modern.sh`'s rule 8 exists to prevent.
+  The value travels through `bootstrap-test.yml`'s new optional `bootstrap_timeout` input
+  because **a job that calls a reusable workflow cannot legally carry `timeout-minutes`** —
+  the same constraint rule 8 already records as the reason it keys on `runs-on:`. The input is
+  read STATICALLY by `scripts/fleet-bootstrap-matrix.py`; `bootstrap-test.yml`'s own jobs
+  deliberately do not consume it, and say so, since they are stubbed and fast and widening
+  them would surrender that protection for nothing. Defaults to 45, so a repo that declares
+  nothing is unaffected, and a non-numeric value warns and falls back rather than crashing the
+  matrix job and taking all eight legs down over one typo.
+
+- **`real-bootstrap.yml` shipped a worked example that was false, and filed it as triage
+  guidance.** Its header and the `details:` string both explained openSUSE's exit 2 by naming
+  `yazi` as the tool left absent. openSUSE has since packaged yazi first-class and deleted the
+  broken cargo path, so when the sweep actually ran, the real exit 2 was `doggo` and `sesh`
+  from an unrelated defect. Because `details:` is copied verbatim into every issue this job
+  files, the dead example reached the investigation and pointed it at the wrong tool.
+  Both now state the MECHANISM and let the run report which tool, with a note recording why
+  naming one is a trap. The `details:` text additionally distinguishes the two failure shapes
+  an operator sees — an exit 2 is a bootstrap that finished and printed a ledger naming what
+  did not install, while a leg cancelled at its timeout is not a hang unless the log stalled.
+
+- **The reusable workflows fetched their scripts from `v4` while their callers ran at
+  `@v5`.** Six `ref: v4` checkouts — `auto-tag-call.yml`, `claude-routines-call.yml`, and
+  `lint-call.yml` (×4) — pin a second checkout of dotfiles-core to supply the scripts the
+  job actually executes. The `@v4`→`@v5` caller sweep moved the workflow **bodies**; these
+  did not move with them, so every repo on `@v5` ran v5 workflow logic against v4.19.0
+  scripts. Now `ref: v5`.
+
+  **This is the second time.** `claude-routines-call.yml` already carried a comment
+  recording the identical failure at v3→v4 — _"`v3` is frozen at v3.9.0, so pinning it here
+  silently ran every routine from a prompt two majors of fixes stale"_ — and
+  `lint-call.yml:90` says _"keep in step on a major bump"_ in as many words. Both were
+  written after the first occurrence and neither prevented the second, because **nothing
+  fails when this line points at the wrong major**: the ref resolves, the checkout succeeds,
+  and the job runs older code. It is green-because-absent, the same shape as #700.
+
+  It also quietly voided the guarantee `RELEASE-STRATEGY.md` §"Pinning reusable workflows"
+  sells — _"a caller's behavior can change **only via a Core release** (deterministic between
+  releases)"_. With a moving alias inside the workflow, behavior tracks whatever that alias
+  points at: cutting a v4.19.1 today would change every `@v5` caller's behavior with no v5
+  release involved.
+
+  A guard belongs here — asserting each `ref:` in `*-call.yml` matches the major in
+  `core.version` — and is tracked in #672 rather than landed with the fix, so the repair is
+  reviewable on its own.
+
+- **Stale `@v4` in the callers' own usage examples and two live claims.** The `# uses: …@v4`
+  header examples in all six `*-call.yml` files plus `bootstrap-test.yml` would have taught
+  the next caller to pin the frozen major. `CLAUDE.md` described the routines idiom as a
+  `@v4` caller and `RELEASE-RUNBOOK.md:183` said the fleet pins _"currently `@v4`"_; both now
+  say `@v5`. `sync-fanout.yml`'s illustrative `@v4` became `@vN`, which is version-neutral
+  and needs no bump on the next major.
+
+  Untouched deliberately: `CHANGELOG.md`'s own history, `V5-PROPOSAL.md`, and
+  `RELEASE-RUNBOOK.md`'s worked `@v4`→`@v5` examples, which describe the release just cut and
+  are correct as written. Also untouched: `bootstrap-test.yml`'s four `v4` mentions, which are
+  the **architecture generation** — `dotfiles-managed v4` is a literal marker string written
+  into `~/.zshrc` by `lib/bootstrap-lib.sh:904`, not a tag alias.
+
 ## [v5.0.2] - 2026-08-25
 
 ### Fixed

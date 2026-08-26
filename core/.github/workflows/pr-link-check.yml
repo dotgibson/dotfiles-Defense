@@ -33,6 +33,14 @@ on:
     # and unlinking after a green run leaves the check stale-green. There is no event to
     # subscribe to; the failure message therefore steers authors to a body keyword and
     # says plainly that the sidebar route needs a manual re-run.
+    #
+    # THAT MANUAL RE-RUN NOW WORKS, which it did not before. The enforce step reads the
+    # title and body from the API rather than from this event's payload, so a re-run
+    # judges CURRENT state. Previously `gh run rerun` replayed the original payload and
+    # re-decided stale text, which made the gap above worse than documented: when an
+    # `edited` event was dropped (as during the 2026-08-26 Actions incident, on #743) the
+    # advertised "edit the body" route stopped working with no fallback but an empty
+    # commit. The triggers below are unchanged — they are still the fast path.
     types: [opened, edited, reopened, synchronize, ready_for_review]
 
 permissions:
@@ -112,21 +120,72 @@ jobs:
 
       - name: Enforce the link-or-reason rule
         env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          # THE PAYLOAD COPIES ARE A FALLBACK ONLY — the API read below is the source of
+          # truth. See the "why the API" note in the run block.
+          #
           # Via env, NEVER inlined as ${{ … }} in the run block. A PR title and body
           # are attacker-controlled text; interpolating them straight into the shell
           # is the classic Actions script-injection hole (a title containing
           # backticks or $(…) would execute here). Quoted expansions keep them data.
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
+          # The API-read values are held in shell variables and a file for the same
+          # reason: they are the same attacker-controlled text by another route.
+          PAYLOAD_TITLE: ${{ github.event.pull_request.title }}
+          PAYLOAD_BODY: ${{ github.event.pull_request.body }}
           LINKED: ${{ steps.count.outputs.linked }}
         run: |
           set -uo pipefail
+          # WHY THE API AND NOT github.event.pull_request.body.
+          #
+          # The payload is a SNAPSHOT of the event that started this run, so the check
+          # could only ever see a `No-Issue:` line that a fresh pull_request event had
+          # delivered. When such an event is dropped or delayed there is no way back:
+          # `gh run rerun` REPLAYS the original payload, stale body and all, so the one
+          # documented escape hatch ("editing the PR body re-runs this check") silently
+          # stops working exactly when an author needs it.
+          #
+          # Observed live during the 2026-08-26 Actions incident on #743: the body
+          # carried its `No-Issue:` reason from 16:36Z, three separate body edits over
+          # ~20 minutes produced NO run at all, and the check stayed red against text
+          # that had been correct the whole time. Pushing an empty commit to force a
+          # `synchronize` event was the only way out — a commit to satisfy a check
+          # about prose.
+          #
+          # Reading the CURRENT title and body makes a manual re-run authoritative, and
+          # partly closes this workflow's other documented gap: a Development-sidebar
+          # link re-run now judges current state instead of re-deciding a stale payload.
+          # The trigger list is deliberately unchanged — `edited` is still the fast path.
+          #
+          # Retried, then fallen back rather than failed: this is a convenience read, and
+          # a 503 here must not turn into a verdict about the PR. Same reasoning as the
+          # probe above, which #500 records the cost of getting wrong.
+          title="" ; body_src="payload"
+          for attempt in 1 2 3; do
+            if gh pr view "$NUMBER" --repo "$REPO" --json title,body >/tmp/pr.json 2>/dev/null; then
+              # `// ""` matters: an empty PR body is JSON null, and `jq -r` would
+              # otherwise hand the rule the four-letter string "null" to grep.
+              title="$(jq -r '.title // ""' /tmp/pr.json)"
+              jq -r '.body // ""' /tmp/pr.json >/tmp/body.txt
+              body_src="api"
+              break
+            fi
+            printf 'pr view attempt %s failed; retrying\n' "$attempt" >&2
+            sleep $(((attempt - 1) * 2))
+          done
+          if [[ "$body_src" != api ]]; then
+            printf 'could not read the PR from the API — falling back to the event payload\n' >&2
+            title="$PAYLOAD_TITLE"
+            printf '%s' "$PAYLOAD_BODY" >/tmp/body.txt
+          fi
+          printf 'title/body read from: %s\n' "$body_src"
           # Plain redirects to files, then replay — NOT `> >(tee …)`: a process
           # substitution is not guaranteed to have flushed by the time the next
           # command reads the file, which would race the summary against the verdict.
           rc=0
-          printf '%s' "$PR_BODY" \
-            | ./scripts/ci-pr-link.sh "$PR_TITLE" "$LINKED" >/tmp/verdict 2>/tmp/explain || rc=$?
+          ./scripts/ci-pr-link.sh "$title" "$LINKED" \
+            </tmp/body.txt >/tmp/verdict 2>/tmp/explain || rc=$?
           cat /tmp/verdict
           cat /tmp/explain >&2
           {
