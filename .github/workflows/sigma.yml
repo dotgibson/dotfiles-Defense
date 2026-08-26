@@ -12,9 +12,21 @@ name: sigma
 #   2. COMPILE (hard gate) — every rule must compile to a real backend (Splunk) via
 #      detections/sigma/convert.sh. A rule that can't be converted isn't deployable.
 #
-# ATT&CK-tag validity (is this a real published technique id) is a third, ADVISORY
-# step — it needs to download the MITRE ATT&CK/D3FEND dictionaries, so it must never
-# break the build on a transient download failure.
+#   3. ATT&CK-TAG VALIDITY (hard gate) — every tag and cited id checked against a
+#      PINNED ATT&CK release, plus the tactic<->technique PAIRING assertion. This was
+#      advisory once, precisely because it downloaded a moving dictionary and could
+#      flake; pinning the bundle (detections/attack-data.pin) made the verdict
+#      reproducible, which is what earned it the right to block. See the header of
+#      detections/check-attack-tags.sh for why that mattered (#172).
+#
+# THIS JOB IS A REQUIRED CHECK, so `pull_request` below is deliberately UNFILTERED.
+# A path-filtered required check never reports on a PR that misses its paths, and
+# GitHub then holds that PR forever — the deadlock #213 had to fix for
+# `bootstraps on a bare ubuntu:24.04`. Every gate here is pure CPU on a checkout and
+# the job runs in 2-3 minutes, so it simply runs everywhere rather than gating its
+# 16 steps individually: a bug in that gating logic would make THE detection-content
+# gate silently pass without checking, which is a far worse failure than a spare
+# runner minute. `push` stays filtered; post-merge runs on main gate nothing.
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -33,20 +45,7 @@ on:
       - "detections/HTPX-COVERAGE.md"
       - "DEFENSE-METHODOLOGY.md"
       - ".github/workflows/sigma.yml"
-  pull_request:
-    paths:
-      - "detections/sigma/**"
-      - "detections/siem/**"
-      - "detections/navigator/**"
-      - "detections/sigma-validation-config.yml"
-      - "detections/check-methodology.sh"
-      - "detections/check-htpx-pairing.sh"
-      - "detections/gen-htpx-coverage.sh"
-      - "detections/htpx-corpus.sh"
-      - "detections/htpx.pin"
-      - "detections/HTPX-COVERAGE.md"
-      - "DEFENSE-METHODOLOGY.md"
-      - ".github/workflows/sigma.yml"
+  pull_request: # deliberately unfiltered — this is a required check; see the header
 
 concurrency:
   group: sigma-${{ github.ref }}
