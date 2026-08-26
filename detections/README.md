@@ -704,6 +704,16 @@ point and prefer your own threat intel via `--url`.
   **Microsoft Sentinel KQL** in `siem/sentinel/{golden_ticket_4769,silver_ticket_4624,
   ntlm_relay_4624}.yaml` (and as SPL in Offense's `PURPLE-TEAM.md` via their htpx pairs).
   For Silver Ticket the durable control remains PAC validation.
+- **The Entra sign-in joins are the same shape on a different plane.** **T1078.004**
+  (failure burst then success for one principal) and **T1566.002** (AiTM session-token
+  replay — interactive auth from one ASN, non-interactive token use from another inside
+  the token's life) are field-to-field comparisons across two sign-in tables, so they
+  ship as `siem/sentinel/{entra_valid_accounts_signin,entra_aitm_token_replay}.yaml`
+  rather than as Sigma, and read zero in `COVERAGE.md` for the same reason. Both htpx
+  pairs are companion-only — `PURPLE-TEAM.md` is scoped to on-prem Splunk — so this is
+  their first deployable form. They need the `SigninLogs` connector
+  `entra_device_code_signin.yaml` already assumes, plus
+  `AADNonInteractiveUserSignInLogs` for the AiTM half.
 - **T1486 Data Encrypted for Impact — closed, on both data sources.** The honest invariant
   is mass file modification. This shipped first as `impact/mass_file_encryption_4663`
   (Security 4663 + a SACL, no Sysmon change required), which left the ingestion ticket

@@ -6,7 +6,7 @@ A **gap here is not a defect.** htpx spans SaaS and CI/CD platforms this repo ha
 
 Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `detections/htpx.pin`.
 
-**102 blue entries · 93 claimed here · 20 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
+**102 blue entries · 95 claimed here · 20 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
 
 ## htpx blue entries claimed by detection content here
 
@@ -14,6 +14,7 @@ Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `dete
 | --------------- | ------ | ------------- |
 | `account-removal-4725` | T1531 | `account_access_removal_4725` |
 | `adcs-esc1-4886` | T1649 | `adcs_esc1_san_mismatch_4886` |
+| `aitm-phish-signin` | T1566.002 | `detections/siem/sentinel/entra_aitm_token_replay.yaml` |
 | `asrep-probing-4771` | T1558.004 | `asrep_roast_4768`, `asrep_roast_probing_4771` |
 | `aws-createaccesskey-cloudtrail` | T1098.001 | `aws_iam_access_key_created` |
 | `aws-iam-privesc-cloudtrail` | T1098.003 | `aws_iam_privesc_policy` |
@@ -100,6 +101,7 @@ Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `dete
 | `tfc-agent-audit` | T1543 | `tfc_rogue_agent_pool` |
 | `tfc-token-audit` | T1098 | `tfc_token_backdoor` |
 | `tfc-var-audit` | T1072 | `tfc_variable_injection` |
+| `valid-accounts-signin` | T1078.004 | `detections/siem/sentinel/entra_valid_accounts_signin.yaml` |
 | `vault-approle-audit` | T1098 | `vault_approle_backdoor` |
 | `vault-audit-device-audit` | T1685 | `vault_audit_device_disabled` |
 | `vault-secret-read-audit` | T1555 | `vault_bulk_secret_read` |
@@ -112,14 +114,12 @@ The other side of the boundary. Each is a detection the corpus documents and thi
 
 | htpx blue entry | ATT&CK | Title |
 | --------------- | ------ | ----- |
-| `aitm-phish-signin` | T1566.002 | Detect AiTM phishing (Entra sign-in token replay across ASNs) |
 | `cryptomine-pool-detect` | T1496.001 | Detect cryptojacking (Stratum pool connections + CPU peg) |
 | `dga-nxdomain-entropy` | T1568.002 | Detect DGA beacons (NXDOMAIN burst + label entropy) |
 | `dns-tunnel-sysmon-22` | T1071.004 | Detect DNS tunneling (Sysmon 22 query volume + label length) |
 | `domain-fronting-sni-mismatch` | T1090.004 | Detect domain fronting (CDN edge from a non-browser process; SNI vs Host mismatch) |
 | `ldap-recon-4662` | T1069.002, T1087.002 | Detect LDAP reconnaissance (4662 targeted reads; 1644 broad filters) |
 | `unconstrained-deleg-4624` | T1558 | Detect unconstrained-deleg abuse (DC machine-account auth to a non-DC, 4624) |
-| `valid-accounts-signin` | T1078.004 | Detect valid-account abuse (Entra sign-in, stuffing hit from a new ASN) |
 | `web-service-c2-beacon` | T1102.002 | Detect web-service C2 (non-browser process to SaaS API) |
 
 ## Sigma techniques no htpx entry covers

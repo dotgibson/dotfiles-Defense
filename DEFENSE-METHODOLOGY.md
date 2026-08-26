@@ -116,6 +116,32 @@ corner — but until now the ledger recorded only the `detections/network/` half
 why the weekly `/coverage-gap` routine could keep re-deriving these four as holes. Recording
 them here is the whole purpose of the ledger.
 
+**The Entra sign-in plane is the fourth kind, and it is a join rather than an absence.**
+Two more techniques are covered here and will read zero in `COVERAGE.md` for the same
+reason:
+
+- **T1078.004 Cloud Accounts** (a burst of failed interactive sign-ins for one principal
+  followed by a success in the same window) —
+  `detections/siem/sentinel/entra_valid_accounts_signin.yaml`.
+- **T1566.002 Spearphishing Link** (AiTM session-token replay: an interactive
+  authentication from one ASN, then non-interactive sign-ins for that principal from a
+  different one inside the token's life) —
+  `detections/siem/sentinel/entra_aitm_token_replay.yaml`.
+
+Both are field-to-field comparisons across two sign-in tables, so they are the same shape
+as the Kerberos and relay detections above rather than a new kind of problem — Sigma has
+no way to say "these two events disagree about where the user is". They sit on a logsource
+the repo already ingests: `entra_device_code_signin.yaml` established `SigninLogs` here,
+and the AiTM rule adds `AADNonInteractiveUserSignInLogs` alongside it.
+
+What each one deliberately does **not** do is worth recording, because both invariants are
+weak if stated carelessly. The valid-accounts rule reports the ASN of the winning sign-in
+but does not gate on it — gating would drop the stuffing hit that lands from a residential
+proxy in the user's own country. And the AiTM rule alerts on the auth-vs-token *split*,
+never on a single anomalous-location sign-in, because travel and VPNs produce those all
+day; a real user's token is used from where they authenticated, and that is the whole
+signal.
+
 **Discovery no longer rests on one data source.** Nine of its techniques used to hang on
 `detections/sigma/discovery/host_recon_command_burst.yml` alone, so a tuned-out
 process-creation policy or one EDR-blind host took most of the tactic with it. Two rules
@@ -183,7 +209,7 @@ re-deriving them, each with the condition that would reopen it:
   GCP Data Access telemetry that is off by default. *Reopen when* Data Access logging is
   enabled in the lab project.
 
-<!-- methodology-check: known-absent = T1041, T1048, T1069.003, T1071.001, T1071.004, T1090.004, T1095, T1102.002, T1496.001, T1526, T1557.001, T1558.001, T1558.002, T1568.002, T1572, T1573.002, T1580 -->
+<!-- methodology-check: known-absent = T1041, T1048, T1069.003, T1071.001, T1071.004, T1078.004, T1090.004, T1095, T1102.002, T1496.001, T1526, T1557.001, T1558.001, T1558.002, T1566.002, T1568.002, T1572, T1573.002, T1580 -->
 <!-- Techniques this document names but the SIGMA corpus does not cover — which is not
      the same as "no detection exists". Two classes live here:
        (a) COVERED, but not by Sigma — two planes, both invisible to this gate and to
@@ -197,7 +223,10 @@ re-deriving them, each with the condition that would reopen it:
                          T1558.001 (sentinel/golden_ticket_4769.yaml), T1558.002
                          (sentinel/silver_ticket_4624.yaml), T1557.001
                          (sentinel/ntlm_relay_4624.yaml), each with a matching stanza in
-                         splunk/correlation_searches.conf.
+                         splunk/correlation_searches.conf. And the Entra sign-in JOINS,
+                         same reason: T1078.004
+                         (sentinel/entra_valid_accounts_signin.yaml) and T1566.002
+                         (sentinel/entra_aitm_token_replay.yaml).
        (b) DECLINED, reasons and reopen-conditions in "Declined coverage" above —
            T1090.004, T1102.002, T1526, T1580, T1069.003, and T1041/T1048 (detected in
            effect by zeek/reverse-tunnel.zeek, but not claimed: its shape cannot separate

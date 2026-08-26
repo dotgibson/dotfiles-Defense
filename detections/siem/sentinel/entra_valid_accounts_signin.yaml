@@ -1,0 +1,52 @@
+id: 7b3c9e04-51af-4d62-9c18-2e6f0a83bd47
+name: Entra valid-account abuse (failure burst then success from a new ASN)
+description: |
+  Deploy form (Microsoft Sentinel scheduled analytics rule) of the valid-accounts
+  detection. A successful sign-in with correct credentials is legitimate by
+  construction, so there is no bad event to match — only a bad SHAPE. The credential-
+  stuffing tell is the TRANSITION: a burst of failures for one principal followed by a
+  success inside the same window. That is `password_spray_4625` seen from the winning
+  side rather than the failing side, and on the Entra plane rather than on-prem.
+  Key on the transition, not on a raw failure count: a user who simply mistypes their
+  password produces failures with no anomalous success, and a lone success from a new
+  ASN is ordinary travel.
+  ASN is reported, not gated on. Treat a success whose ASN the principal has not used
+  before as the triage escalator; gating on it here would drop the stuffing hit that
+  lands from a residential proxy inside the user's own country.
+  htpx pair: valid-accounts-cloud / valid-accounts-signin (companion-only in htpx;
+  this is its first deployable form here).
+severity: Medium
+status: Available
+requiredDataConnectors:
+  - connectorId: AzureActiveDirectory
+    dataTypes:
+      - SigninLogs
+queryFrequency: 1h
+queryPeriod: 1h
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - InitialAccess
+relevantTechniques:
+  - T1078.004
+query: |
+  SigninLogs
+  | where IsInteractive == true
+  | summarize failures = countif(ResultType != 0),
+      firstSuccess = minif(TimeGenerated, ResultType == 0),
+      successIP = anyif(IPAddress, ResultType == 0),
+      successASN = anyif(tostring(AutonomousSystemNumber), ResultType == 0)
+      by UserPrincipalName, bin(TimeGenerated, 1h)
+  | where failures > 10 and isnotempty(successIP)
+  | project TimeGenerated, UserPrincipalName, failures, firstSuccess, successIP, successASN
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: FullName
+        columnName: UserPrincipalName
+  - entityType: IP
+    fieldMappings:
+      - identifier: Address
+        columnName: successIP
+version: 1.0.0
+kind: Scheduled
