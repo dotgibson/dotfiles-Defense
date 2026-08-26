@@ -199,6 +199,126 @@ blib_seed() {
   BLIB_SEEDED=$((BLIB_SEEDED + 1))
 }
 
+# ── adopt a config the TOOL ITSELF rewrites ───────────────────────────────────
+# blib_adopt <src> <dst> <note> — like blib_seed, but it also MIGRATES an existing
+# symlink at dst into a real file, and reports drift once Core moves on.
+#
+# Why this exists, in one sentence: a symlinked config is a WRITE PATH BACK INTO THE
+# VENDORED TREE, and for a config whose own tool rewrites it, that path gets used.
+#
+# The case that produced this: ~/.config/mise/config.toml was symlinked to
+# core/mise/config.toml, so `mise use -g ruby@4.0` — an ordinary, documented command,
+# and the exact one mise's own header advertises — wrote straight THROUGH the symlink
+# into vendored Core. That tree must byte-match upstream (core-integrity reports it as
+# TAMPERED otherwise) and sync-core.sh refuses to fan out into a repo with a dirty tree,
+# so one routine command silently took that repo out of the next fleet sync. The write
+# also stripped the trailing comments explaining each pin, because mise rewrites the
+# file rather than editing the line.
+#
+# blib_link is still right for the ~34 configs a tool only ever READS (tmux, starship,
+# lazygit, vimrc): the symlink is what makes a Core edit reach every box for free, and
+# nothing writes back through it. Reach for blib_adopt ONLY where the tool writes its
+# own config. The `jj` config is the other live instance of that shape — `jj config set
+# --user` rewrites it in place — and atuin/lazygit/tealdeer are worth re-checking.
+#
+# The trade this makes, stated plainly: dst stops tracking Core. A later Core edit no
+# longer reaches an adopted box on its own. That is why drift is REPORTED rather than
+# silently tolerated — the divergence becomes a visible, checkable condition instead of
+# an invisible override, the same bargain fleet-drift.sh and core-integrity already make
+# elsewhere in this repo. Reconciling is the user's call: theirs wins by default.
+#
+# Deliberately NOT conf.d. mise reads ~/.config/mise/conf.d/*.toml, which looks like the
+# tidier home for a shared layer. It does not help, and it can REPRODUCE the bug above.
+# Measured on mise 2026.5.16, isolated XDG_CONFIG_HOME, NEUTRAL cwd — mise walks up from
+# the cwd, so run these from outside any repo or you will read a project config instead:
+#   · conf.d OUTRANKS config.toml, in both directions. mise states this itself:
+#       "lua is defined in …/conf.d/00-core.toml which overrides the global config"
+#   · inside conf.d the LOWEST-numbered file wins — 00-core.toml beat 99-local.toml,
+#     the REVERSE of the systemd conf.d convention almost everyone will assume
+#   · read this with `mise current <tool>` or `mise which <tool>`, NOT `mise ls` /
+#     `mise ls --current`: those print one line per config file, which is easy to misread
+#     as a precedence answer — that misreading produced the first, wrong version of this note
+#
+# HOW VERIFYING THIS GOES WRONG. Both ways below were hit for real while establishing the
+# above — by two people independently — so spend the two minutes:
+#   · THE CWD IS THE WHOLE STORY. mise walks UP from the cwd and treats `mise/config.toml`
+#     as a PROJECT config path, so a fixture root containing mise/config.toml loads that
+#     file TWICE — once as the global config via XDG_CONFIG_HOME, once as a project config —
+#     and PROJECT outranks global conf.d. config.toml then appears to win and the whole
+#     conclusion inverts. Run from a directory with no `mise/config.toml` in ANY ancestor;
+#     "a different directory" is not enough, and it looks completely fine when it is wrong.
+#   · NEITHER `mise current` NOR `mise which` DETECTS THAT. Measured: under the confounded
+#     cwd both report the project value and agree with each other, so cross-checking the two
+#     proves nothing.
+#   · `mise config ls` CATCHES ONLY THE LOUD SHAPE, so do not lean on it. There are two, and
+#     only the second produced the wrong note here:
+#       SHAPE 1  cwd sits in some OTHER project that has its own mise/config.toml. That file
+#                is a distinct path, so `mise config ls` shows an extra entry — and in
+#                practice mise refuses it outright until `mise trust`, so this shape
+#                announces itself. A file-count check works here.
+#       SHAPE 2  cwd sits UNDER the XDG tree itself, so the GLOBAL config.toml is ALSO
+#                discovered as the project config. Same path, already trusted, no prompt —
+#                `mise config ls` prints exactly your fixture count and exactly your fixture
+#                paths. Nothing looks wrong, and the ordering is still inverted.
+#     So the only safeguard that covers both is the cwd rule in the bullet above: no
+#     `mise/config.toml` in ANY ancestor. Check that, not the file count.
+#
+# The hazard is WHERE `mise use -g` writes — the highest-precedence file that ALREADY
+# EXISTS. With Core's pins in a conf.d file that gives two failures and no good case:
+#   · fresh box, no ~/.config/mise/config.toml yet — `mise use -g lua@5.5.1` writes
+#     straight INTO conf.d/00-core.toml. Where that is Core's symlink, this is the
+#     original write-through bug, reproduced exactly.
+#   · config.toml already present — the write lands there and is then SHADOWED by Core's
+#     conf.d entry. mise does WARN, so it is not silent, but the user's global choice
+#     does not take effect and the warning names two paths rather than the cause.
+# A plain copy has neither failure. Verify with `mise current` before "fixing" this.
+blib_adopt() {
+  local src="$1" dst="$2" note="$3" was=""
+  if [[ ! -f "$src" ]]; then
+    blib_say "skip (missing): ${src##*/}"
+    BLIB_SKIPPED=$((BLIB_SKIPPED + 1))
+    return 0
+  fi
+  # A symlink here is a box provisioned by the OLDER layout. Migrate it: the content is
+  # identical either way (it resolves to src), so this loses nothing and closes the write
+  # path. readlink, not realpath — a DANGLING link still reports what it recorded, which
+  # is what someone reading the log afterwards needs.
+  if [[ -L "$dst" ]]; then
+    was="$(readlink "$dst")"
+    if _blib_dry; then
+      blib_say "would adopt: $dst (currently -> $was) — $note"
+      BLIB_SEEDED=$((BLIB_SEEDED + 1))
+      return 0
+    fi
+    rm -f "$dst"
+    mkdir -p "$(dirname "$dst")"
+    cp "$src" "$dst"
+    blib_say "adopted $dst — was a symlink -> $was; now a real file you own ($note)"
+    BLIB_SEEDED=$((BLIB_SEEDED + 1))
+    return 0
+  fi
+  if [[ ! -e "$dst" ]]; then
+    if _blib_dry; then
+      blib_say "would seed: $dst ($note)"
+      BLIB_SEEDED=$((BLIB_SEEDED + 1))
+      return 0
+    fi
+    mkdir -p "$(dirname "$dst")"
+    cp "$src" "$dst"
+    blib_say "seeded $dst — $note"
+    BLIB_SEEDED=$((BLIB_SEEDED + 1))
+    return 0
+  fi
+  # dst is a real file the user owns. NEVER clobber it — just say whether it still
+  # matches Core. git hash-object rather than cmp/diff: byte-exact, needs no repository,
+  # and removes the diffutils dependency instead of probing for it (the #572 box had git
+  # but neither cmp nor diff).
+  if [[ "$(git hash-object -- "$src" 2>/dev/null)" != "$(git hash-object -- "$dst" 2>/dev/null)" ]]; then
+    blib_warn "drift: $dst differs from Core's ${src##*/} — yours is kept; reconcile by hand if you want Core's version"
+  fi
+  return 0
+}
+
 # ── read a package list ───────────────────────────────────────────────────────
 # blib_read_pkgs <file> — print one clean package name per line, stripping inline
 # (#...) comments and all whitespace (package names contain none).
@@ -513,7 +633,11 @@ blib_link_core() {
     # lazygit tokyonight theme — DEFAULT path (reached via the `lg` alias + the
     # `prefix + g` tmux popup). In core.manifest, so it wires like starship above.
     [[ -f "$dotfiles/core/lazygit/config.yml" ]] && blib_link "$dotfiles/core/lazygit/config.yml" "$config/lazygit/config.yml"
-    [[ -f "$dotfiles/core/mise/config.toml" ]] && blib_link "$dotfiles/core/mise/config.toml" "$config/mise/config.toml"
+    # mise — ADOPTED (real file), not symlinked, because mise REWRITES this file:
+    # `mise use -g <tool>@<ver>` is documented in the config's own header, and through a
+    # symlink it wrote into vendored core/ and stripped the pin comments on the way. See
+    # blib_adopt for the full reasoning, the drift trade, and why conf.d is the wrong fix.
+    [[ -f "$dotfiles/core/mise/config.toml" ]] && blib_adopt "$dotfiles/core/mise/config.toml" "$config/mise/config.toml" "mise rewrites this file; yours to edit"
     # jujutsu (jj) — OPT-IN colocated git companion. Linked unconditionally (like lazygit
     # above); the config is inert without the jj binary, and the zsh aliases are HAVE_JJ-gated.
     [[ -f "$dotfiles/core/jujutsu/config.toml" ]] && blib_link "$dotfiles/core/jujutsu/config.toml" "$config/jj/config.toml"

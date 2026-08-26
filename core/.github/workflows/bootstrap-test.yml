@@ -342,8 +342,29 @@ jobs:
             if [ -f core/jujutsu/config.toml ] && [ ! -L "$HOME/.config/jj/config.toml" ]; then
               echo "MISSING symlink: $HOME/.config/jj/config.toml" >&2; exit 1
             fi
-            if [ -f core/mise/config.toml ] && [ ! -L "$HOME/.config/mise/config.toml" ]; then
-              echo "MISSING symlink: $HOME/.config/mise/config.toml" >&2; exit 1
+            # mise is ADOPTED, not linked (v5.0.0): `mise use -g` rewrites this file, and a
+            # symlink pointed that write into the vendored core/ tree. So the assertion is
+            # inverted here — a SYMLINK is now the failure, and a real file is the contract.
+            #
+            # This assertion is why v5.0.0 turned the links-only job red across the fleet: the
+            # changed in bootstrap-lib.sh and this file kept asserting the old one. It shipped
+            # green because NOTHING IN CORE RUNS THIS WORKFLOW — it only ever executes in an OS
+            # repo, so the audit in Core cannot see it. Same shape as the other false greens
+            # this release fixed: a gate that never runs cannot report its own breakage.
+            if [ -f core/mise/config.toml ]; then
+              if [ -L "$HOME/.config/mise/config.toml" ]; then
+                echo "STILL A SYMLINK: $HOME/.config/mise/config.toml — bootstrap must ADOPT it (blib_adopt), not link it" >&2; exit 1
+              fi
+              if [ ! -f "$HOME/.config/mise/config.toml" ]; then
+                echo "MISSING file: $HOME/.config/mise/config.toml (expected an adopted real file)" >&2; exit 1
+              fi
+              # A fresh adopt must match Core byte-for-byte; drift only appears once a host
+              # edits it. git hash-object, NOT cmp: Core keeps diffutils optional and the audit
+              # gates on it (the #572 box had git but neither cmp nor diff).
+              if [ "$(git hash-object -- core/mise/config.toml)" \
+                 != "$(git hash-object -- "$HOME/.config/mise/config.toml")" ]; then
+                echo "ADOPTED COPY DIFFERS from core/mise/config.toml on a fresh bootstrap" >&2; exit 1
+              fi
             fi
             for b in clip clip-paste; do
               if [ -f "core/bin/$b" ] && [ ! -L "$HOME/.local/bin/$b" ]; then

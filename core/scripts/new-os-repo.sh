@@ -234,7 +234,15 @@ link "\$REPO/core/tmux/tmux.conf"         "\$CFG/tmux/tmux.conf"
 link "\$REPO/core/tmux/tmux.reset.conf"   "\$CFG/tmux/tmux.reset.conf"
 link "\$REPO/core/nvim"                   "\$CFG/nvim"
 link "\$REPO/core/git/gitconfig"          "\$HOME/.gitconfig"
-link "\$REPO/core/mise/config.toml"       "\$CFG/mise/config.toml"
+# mise is COPIED, not linked: \`mise use -g\` rewrites this file, and through a symlink
+# that write lands in the vendored core/ tree (tampered tree + skipped fleet sync). The
+# full bootstrap (core/lib/bootstrap-lib.sh) uses blib_adopt here, which also migrates an
+# existing symlink and reports drift; this starter template just avoids creating one.
+if [[ ! -e "\$CFG/mise/config.toml" ]]; then
+  mkdir -p "\$CFG/mise"
+  cp "\$REPO/core/mise/config.toml" "\$CFG/mise/config.toml"
+  echo "seeded \${CFG/#\$HOME/~}/mise/config.toml (yours to edit)"
+fi
 echo "done — open a new shell or: exec zsh"
 EOF
 ((DRY)) || chmod +x "$TARGET/bootstrap.sh" 2>/dev/null
@@ -244,6 +252,9 @@ w "$TARGET/.gitignore" <<'EOF'
 zsh/99-local.zsh
 .config/git/local.gitconfig
 *.zwc
+# Crash dumps. `core.[0-9]*`, NOT `core.*`: this repo tracks core.lock, and bare `core` is
+# the vendored Core DIRECTORY — a blanket rule would hide either one silently.
+core.[0-9]*
 EOF
 
 w "$TARGET/README.md" <<EOF
