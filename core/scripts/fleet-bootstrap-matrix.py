@@ -21,6 +21,12 @@ import yaml
 
 CALLER = "dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@"
 
+# Minutes, when a caller declares no `bootstrap_timeout:`. Matches what real-bootstrap.yml
+# applied to every leg before the per-leg value existed, so a repo that declares nothing is
+# unaffected. Emitted on EVERY leg rather than left absent: the workflow interpolates this
+# straight into `timeout-minutes:`, and an empty value there is a workflow-level error.
+DEFAULT_TIMEOUT = 45
+
 
 def legs(repo_dir: pathlib.Path):
     """Every bootstrap-test.yml caller job in this repo, with its image + prep."""
@@ -43,6 +49,17 @@ def legs(repo_dir: pathlib.Path):
             image, prep = w.get("image"), w.get("prep")
             if not image:
                 continue
+            # A repo declaring a non-numeric timeout gets the default rather than a crashed
+            # matrix job — that would take the whole eight-leg sweep down over one typo.
+            try:
+                timeout = int(w.get("bootstrap_timeout", DEFAULT_TIMEOUT))
+            except (TypeError, ValueError):
+                print(
+                    f"::warning::{repo_dir.name}/{job}: bootstrap_timeout is not a number "
+                    f"({w.get('bootstrap_timeout')!r}) — falling back to {DEFAULT_TIMEOUT}m",
+                    file=sys.stderr,
+                )
+                timeout = DEFAULT_TIMEOUT
             yield {
                 "repo": repo_dir.name,
                 "leg": job,
@@ -50,6 +67,7 @@ def legs(repo_dir: pathlib.Path):
                 "image": str(image),
                 "prep": str(prep or ""),
                 "offensive": bool(w.get("offensive", False)),
+                "timeout": timeout,
             }
 
 

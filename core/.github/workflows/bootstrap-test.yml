@@ -89,10 +89,10 @@
 # a Core release, and a MAJOR bump is the one intentional, reviewed caller edit — so a repo
 # pinned @vN keeps that major's assertions until it deliberately moves to @vN+1 as part of the
 # fan-out (re-vendoring the new major's Core + updating its bootstrap together). The fleet is
-# on @v4 today:
+# on @v5 today:
 #   jobs:
 #     test:
-#       uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v4
+#       uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v5
 #       with:
 #         image: alpine:3.20
 #         prep:  apk add --no-cache bash zsh
@@ -158,7 +158,27 @@ on:
         type: string
         required: true
       prep:
-        description: Shell run INSIDE the container to install bootstrap's deps (at least bash).
+        description: >-
+          Shell run INSIDE the container to bring the image up to what THIS repo's bootstrap.sh
+          demands before it will start. Not merely "at least bash" — that wording is what let
+          dotfiles-Debian ship two callers installing only `bash zsh` for the entire life of the
+          repo while its own preflight had required `curl` since the first commit
+          (dotgibson/dotfiles-Debian#28).
+
+          SATISFY YOUR OWN PREFLIGHT. A repo whose bootstrap.sh has a preflight_cmds-style hard
+          requirement list (dotfiles-Debian: apt-get dpkg curl sed awk tar; dotfiles-Fedora:
+          dnf rpm curl sed awk) must install every entry here that the base image does not
+          already carry. The check exits 1 long before provision(), so a shortfall is not a
+          degraded run — it is no run at all.
+
+          NEITHER JOB BELOW CAN CATCH A SHORTFALL, which is why this text has to. The
+          links-only job passes --links-only, and a links-only run is exempt from the
+          requirement list by design (wiring is pure shell plus coreutils). The provision-stub
+          job PREPENDS A CURL SHIM to PATH, so a missing curl resolves to the stub and the
+          preflight is satisfied by the very thing that makes the leg fake. Only the weekly
+          unstubbed real-bootstrap.yml sweep reaches the branch, and it reads this `prep:`
+          statically out of your caller (scripts/fleet-bootstrap-matrix.py) — so the fix for a
+          red leg there belongs HERE, in the caller, not in the sweep.
         type: string
         required: true
       offensive:
@@ -188,6 +208,27 @@ on:
           its own scripts/pkg-filter.sh) should point this at a pre-filtered file instead.
         type: string
         default: install/packages.txt
+      bootstrap_timeout:
+        description: >-
+          Minutes a GENUINELY UNSTUBBED bootstrap needs on this image. Declared here, next
+          to image and prep, because this block is the one place a repo describes its
+          bootstrap CI — but it is NOT consumed by the jobs below. It is read STATICALLY
+          from this caller by scripts/fleet-bootstrap-matrix.py, which feeds the weekly
+          real-bootstrap.yml sweep; that is the only job that installs anything, so it is
+          the only one whose runtime this describes.
+
+          THE JOBS IN THIS FILE DELIBERATELY KEEP THEIR OWN TIGHT TIMEOUTS. They are
+          stubbed and finish in seconds to minutes, so widening them would surrender
+          check-modern rule 8's hang protection for no benefit. Do not "fix" the apparent
+          unused input by wiring it into them.
+
+          Default 45 matches what real-bootstrap.yml used for every leg before this
+          existed, so a repo that declares nothing is unaffected. Raise it only for a
+          bootstrap that genuinely cannot finish in 45m — dotfiles-Gentoo emerges from
+          source and needs hours (dotgibson/dotfiles-core#742). GitHub's per-job ceiling
+          is 360.
+        type: number
+        default: 45
 
 permissions:
   contents: read

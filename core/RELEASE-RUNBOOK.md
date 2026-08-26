@@ -180,7 +180,7 @@ de-list it, then cut the next patch version. That is what v4.11.0 → v4.11.1 wa
 
 #### Step 5, by bump type — the moving `@vN` major alias
 
-Reusable-workflow callers in the fleet pin to `@vN` by default (currently `@v4`), and step 5
+Reusable-workflow callers in the fleet pin to `@vN` by default (currently `@v5`), and step 5
 is where that alias moves. A minority SHA-pin instead, and they split into two kinds that
 behave very differently at release time — count them rather than trusting a number frozen
 into this doc:

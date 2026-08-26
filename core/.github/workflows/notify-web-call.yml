@@ -6,7 +6,7 @@
 #
 #   jobs:
 #     dispatch:
-#       uses: dotgibson/dotfiles-core/.github/workflows/notify-web-call.yml@v4
+#       uses: dotgibson/dotfiles-core/.github/workflows/notify-web-call.yml@v5
 #       secrets:
 #         WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}                 # legacy PAT (fallback)
 #         FLEET_APP_PRIVATE_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY }}   # App auth (G2)

@@ -886,3 +886,75 @@ core_files_identical() { # core_files_identical <a> <b> — 0 iff byte-identical
   [[ -f "$1" && -f "$2" ]] || return 1
   [[ "$(git hash-object -- "$1")" == "$(git hash-object -- "$2")" ]]
 }
+
+# ── _core_workflow_ref_hits: a reusable workflow pinned to a foreign major ────
+# _core_workflow_ref_hits <repo-root> <expected-major> — print every step that checks
+# dotfiles-core out at `ref: vN` where N is not the current major. Silence = clean.
+#
+# WHY THIS EXISTS. The `*-call.yml` reusable workflows check dotfiles-core out a SECOND
+# time to supply the scripts the job actually runs, at a hardcoded `ref: vN`. That ref
+# has to move with every major bump, and it has now failed to twice:
+#
+#   · v3 → v4 — four sites left on `ref: v3` (frozen at v3.9.0). Present from v4.0.0
+#     and not corrected until v4.10.0: TEN minor releases running the previous major's
+#     scripts.
+#   · v4 → v5 — six sites left on `ref: v4` (frozen at v4.19.0) while every caller
+#     moved to `@v5`, so the workflow BODY was v5 and the scripts it ran were not.
+#
+# Both times the fix shipped with a comment telling the next person to keep it in step —
+# claude-routines-call.yml still carries the v3 one, and lint-call.yml:90 says "keep in
+# step on a major bump" in as many words. Both comments were written AFTER the first
+# occurrence and neither prevented the second, because nothing FAILED: the ref resolves,
+# the checkout succeeds, the job goes green, and it silently runs older code. That is the
+# green-because-absent shape of #700, and the lesson is the same one recorded on
+# _core_tool_skip_count — a comment is not a gate.
+#
+# WHY IT COMPARES AGAINST core.version. core.version is the major the tree IS; the refs
+# are the major the tree CLAIMS to run. Those cannot legitimately disagree, so the
+# comparison needs no list to maintain and no allowlist to drift.
+#
+# THE RELEASE ORDERING THIS IMPLIES, so nobody "fixes" a red release by loosening it:
+# `make release VERSION=6.0.0` bumps core.version, so this gate goes red until the refs
+# move to v6 in the SAME change. That is the intent — it is the "keep in step" comment
+# made executable. It is safe even though the `v6` alias does not exist until `make
+# publish`: Core's own CI never exercises these files (they are for OS repos to CALL),
+# and an OS repo still pinned `@v5` reads the v5-TAGGED copy, which still says v5.
+# Nobody reads main's copy in the window between the two.
+#
+# SCOPE IS THE dotfiles-core CHECKOUT, NOT EVERY `ref:`. The association is made per
+# STEP — a chunk starting at a `- ` list item — so a `ref:` belonging to some other
+# repository's checkout is never attributed here. A ref that is not `v<digits>` (a SHA,
+# a branch, an expression) is deliberately NOT judged: this gate answers "which major",
+# and inventing a second opinion about pinning style would make it two gates wearing one
+# name. Order within the step does not matter; both keys are read before judging.
+_core_workflow_ref_hits() { # _core_workflow_ref_hits <repo-root> <expected-major>
+  local root="${1:-.}" want="${2:-}" f
+  [ -n "$want" ] || return 0
+  [ -d "$root/.github/workflows" ] || return 0
+  for f in "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml; do
+    [ -f "$f" ] || continue
+    awk -v want="$want" -v file="${f#"$root"/}" '
+      function flush(   i, ver, line, isdf) {
+        if (n == 0) { return }
+        isdf = 0; ver = ""; line = 0
+        for (i = 0; i < n; i++) {
+          if (buf[i] ~ /^[[:space:]]*repository:[[:space:]].*dotfiles-core[[:space:]]*$/) { isdf = 1 }
+          if (buf[i] ~ /^[[:space:]]*ref:[[:space:]]*v[0-9]+[[:space:]]*$/) {
+            ver = buf[i]
+            sub(/^[[:space:]]*ref:[[:space:]]*v/, "", ver)
+            sub(/[[:space:]]*$/, "", ver)
+            line = ln[i]
+          }
+        }
+        if (isdf && ver != "" && ver != want) {
+          printf "%s:%d: checks out dotfiles-core at ref: v%s, but core.version is major v%s\n", \
+            file, line, ver, want
+        }
+        n = 0
+      }
+      /^[[:space:]]*-[[:space:]]/ { flush() }
+      { buf[n] = $0; ln[n] = NR; n++ }
+      END { flush() }
+    ' "$f"
+  done
+}

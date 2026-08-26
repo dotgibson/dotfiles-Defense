@@ -12,9 +12,9 @@ name: core-integrity (reusable)
 #   permissions: { contents: read }
 #   jobs:
 #     guard:
-#       uses: dotgibson/dotfiles-core/.github/workflows/core-integrity-call.yml@v4
+#       uses: dotgibson/dotfiles-core/.github/workflows/core-integrity-call.yml@v5
 #
-# @v4, NOT @main — the moving MAJOR tag, per the `@vN` policy in RELEASE-STRATEGY.md and the
+# @v5, NOT @main — the moving MAJOR tag, per the `@vN` policy in RELEASE-STRATEGY.md and the
 # same idiom every other *-call.yml stub in this directory documents. A caller's contract then
 # changes only via a Core release. This stub read `@main` and was the ONE first-party ref in
 # .github/ that did, which mattered more than a stray doc comment usually would: rule 3 of the
