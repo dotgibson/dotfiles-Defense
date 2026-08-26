@@ -1,0 +1,1 @@
+{"key": "cron_persist", "comm": "bash", "exe": "/usr/bin/bash", "name": "/etc/cron.d/apache-update", "auid": "1000", "uid": "0"}

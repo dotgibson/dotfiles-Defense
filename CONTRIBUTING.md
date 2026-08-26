@@ -67,8 +67,15 @@ then refuses to run under a mismatched local shellcheck. A distro shellcheck and
 pinned one disagree about which checks exist, so "clean locally, red in CI" is the
 default failure without it — that script's header records the afternoon it cost.
 
-The sigma-dependent targets **skip with a reason** when `sigma-cli` is not installed
+The sigma-dependent targets **skip with a reason** when the Sigma CLI is not installed
 rather than failing. They are hard gates in CI, which installs the pinned tool.
+
+The CLI answers to **two names**: the PyPI `sigma-cli` package installs its entrypoint as
+`sigma` (what CI gets), while distro packages ship it as `sigma-cli`. The targets look for
+both, so a distro install no longer reads as "not installed" and silently skips the SIEM
+deploy-form gate. Set `SIGMA_BIN=/path/to/it` to override. Note the CLI can be present
+*without* the backends it converts through — a separate pip install, and a separate error
+that names what is missing.
 
 ## 5. Adding or changing a detection
 

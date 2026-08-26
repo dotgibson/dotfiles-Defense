@@ -13,7 +13,7 @@
 eventSource =~ "iam.amazonaws.com" and eventName =~ "CreateAccessKey"
 
 // cloud/aws_iam_privesc_policy.yml — AWS IAM privilege escalation via policy attach/put (CloudTrail)
-(eventSource =~ "iam.amazonaws.com" and (eventName in~ ("AttachUserPolicy", "AttachRolePolicy", "AttachGroupPolicy", "PutUserPolicy", "PutRolePolicy", "PutGroupPolicy", "CreatePolicyVersion", "SetDefaultPolicyVersion", "AddUserToGroup"))) and (not(['userIdentity.arn'] startswith "arn:aws:sts::111122223333:assumed-role/terraform-apply/"))
+(eventSource =~ "iam.amazonaws.com" and (eventName in~ ("AttachUserPolicy", "AttachRolePolicy", "AttachGroupPolicy", "PutUserPolicy", "PutRolePolicy", "PutGroupPolicy", "CreatePolicyVersion", "SetDefaultPolicyVersion", "AddUserToGroup", "UpdateAssumeRolePolicy"))) and (not(['userIdentity.arn'] startswith "arn:aws:sts::111122223333:assumed-role/terraform-apply/"))
 
 // cloud/aws_login_profile_created.yml — AWS IAM login profile created or updated (console takeover)
 eventSource =~ "iam.amazonaws.com" and (eventName in~ ("CreateLoginProfile", "UpdateLoginProfile"))
@@ -43,7 +43,7 @@ OperationName in~ ("Add service principal credentials", "Add application credent
 ['resource.type'] =~ "api_token" and ['action.type'] =~ "create"
 
 // cloudflare/cloudflare_waf_rule_disabled.yml — Cloudflare WAF/firewall rule deleted or disabled (edge exposed)
-(['resource.type'] in~ ("firewall_rule", "ruleset")) and (['action.type'] in~ ("delete", "update"))
+((['resource.type'] in~ ("firewall_rule", "ruleset")) and (['action.type'] in~ ("delete", "update"))) and (not(['actor.email'] =~ "ci-deploy@example.com"))
 
 // cloudflare/cloudflare_worker_deployed.yml — Cloudflare Worker deployed (serverless edge code execution)
 ((['resource.type'] in~ ("worker", "workers_script")) and (['action.type'] in~ ("create", "update"))) and (not(['actor.email'] =~ "ci-deploy@example.com"))
@@ -76,7 +76,7 @@ OperationName in~ ("Add service principal credentials", "Add application credent
 (EventID == 4769 and TicketEncryptionType =~ "0x17") and (not((ServiceName in~ ("krbtgt") or ServiceName endswith "$")))
 
 // credential_access/lsass_handle_access.yml — LSASS process access with dump-shaped rights
-(TargetImage endswith "\\lsass.exe" and (GrantedAccess in~ ("0x1010", "0x1410", "0x1438", "0x143a", "0x1fffff"))) and (not((SourceImage contains "\\MsMpEng.exe" or SourceImage contains "\\MsSense.exe" or SourceImage contains "\\wininit.exe" or SourceImage contains "\\csrss.exe" or SourceImage contains "\\CSFalconService.exe" or SourceImage contains "\\SentinelAgent.exe" or SourceImage contains "\\RepMgr.exe")))
+(TargetImage endswith "\\lsass.exe" and (GrantedAccess in~ ("0x1010", "0x1410", "0x1438", "0x143a", "0x1fffff"))) and (not((SourceImage endswith "\\MsMpEng.exe" or SourceImage endswith "\\MsSense.exe" or SourceImage endswith "\\wininit.exe" or SourceImage endswith "\\csrss.exe" or SourceImage endswith "\\CSFalconService.exe" or SourceImage endswith "\\SentinelAgent.exe" or SourceImage endswith "\\RepMgr.exe")))
 
 // credential_access/ntds_dump_ntdsutil_vss_4688.yml — NTDS.dit theft via ntdsutil / VSS on a domain controller
 (Image endswith "\\ntdsutil.exe" and (CommandLine contains "ifm" or CommandLine contains "create full")) or ((CommandLine contains "vssadmin create shadow" or CommandLine contains "wbadmin start backup") and (Image endswith "\\vssadmin.exe" or Image endswith "\\wbadmin.exe")) or Image endswith "\\diskshadow.exe"
@@ -115,7 +115,7 @@ action in~ ("repo.create_deploy_key", "personal_access_token.access_granted")
 action =~ "self_hosted_runner.created"
 
 // gitlab/gitlab_protected_branch_tamper.yml — GitLab protected-branch tampered (unreviewed merge)
-event_type in~ ("protected_branch_removed", "protected_branch_created")
+event_type =~ "protected_branch_removed"
 
 // gitlab/gitlab_rogue_runner_associated.yml — GitLab runner associated with project (CI job/secret capture)
 event_type =~ "set_runner_associated_projects"
@@ -192,6 +192,27 @@ EventID == 7045 and (ImagePath contains "\\ADMIN$\\" or ImagePath contains "%COM
 // linux/ccache_theft_staging.yml — Kerberos ccache file staged by a copy/transfer/interpreter process
 (CommandLine contains "/tmp/krb5cc_" or CommandLine contains ".ccache" or CommandLine contains "krb5.ccache") and (Image endswith "/cp" or Image endswith "/mv" or Image endswith "/dd" or Image endswith "/cat" or Image endswith "/tac" or Image endswith "/tar" or Image endswith "/gzip" or Image endswith "/bzip2" or Image endswith "/xz" or Image endswith "/zip" or Image endswith "/base64" or Image endswith "/xxd" or Image endswith "/scp" or Image endswith "/rsync" or Image endswith "/sftp" or Image endswith "/nc" or Image endswith "/ncat" or Image endswith "/socat" or Image endswith "/curl" or Image endswith "/wget" or Image endswith "/openssl" or Image endswith "/python" or Image endswith "/python3" or Image endswith "/perl" or Image endswith "/ruby")
 
+// linux/cron_persistence.yml — Cron persistence - scheduled-job file written (auditd)
+key =~ "cron_persist" and (not((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
+
+// linux/shadow_file_read.yml — /etc/shadow read by a non-auth process (auditd)
+key =~ "shadow_read" and (not((comm in~ ("unix_chkpwd", "sshd", "login", "su", "sudo", "passwd", "chpasswd", "chage", "pwck", "grpck", "useradd", "usermod", "userdel", "systemd"))))
+
+// linux/ssh_authorized_keys_write.yml — SSH authorized_keys written - key-based persistence (auditd)
+(key =~ "ssh_authkeys" and name contains "authorized_keys") and (not((exe endswith "/cloud-init" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
+
+// linux/ssh_private_key_read.yml — SSH private key read by a non-SSH process (auditd)
+(key =~ "ssh_key_read" and (name contains "/id_rsa" or name contains "/id_ecdsa" or name contains "/id_ed25519" or name contains "/id_dsa" or name contains "/identity")) and (not((comm in~ ("ssh", "sshd", "ssh-agent", "ssh-keygen", "ssh-add", "scp", "sftp", "git"))))
+
+// linux/sudo_root_shell.yml — Root shell spawned under a real login uid - sudo escape (auditd)
+(key =~ "sudo_abuse" and (comm in~ ("bash", "sh", "dash", "zsh", "ksh", "fish", "python", "python3", "perl", "ruby"))) and (not(auid == 1000))
+
+// linux/suid_bit_set.yml — Setuid bit set on a file - SUID backdoor planted (auditd)
+key =~ "suid_change" and (not((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/install" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
+
+// linux/systemd_unit_persistence.yml — Systemd unit persistence - unit or timer file written (auditd)
+key =~ "systemd_persist" and (not((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/systemd" or exe endswith "/systemctl" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
+
 // npm/npm_maintainer_added.yml — npm maintainer or owner added (durable publish backdoor)
 action in~ ("package.owner_add", "team.user_add")
 
@@ -217,7 +238,7 @@ eventType in~ ("user.mfa.factor.reset_all", "user.mfa.factor.deactivate", "syste
 EventID == 4720 and (not(SubjectUserName =~ "svc_iam_provisioning"))
 
 // persistence/scheduled_task_suspicious_4698.yml — Scheduled task created with a suspicious action
-EventID == 4698 and (TaskContent contains "-enc" or TaskContent contains "-EncodedCommand" or TaskContent contains "-w hidden" or TaskContent contains "-WindowStyle Hidden" or TaskContent contains "FromBase64String" or TaskContent contains "\\mshta.exe" or TaskContent contains "\\regsvr32.exe" or TaskContent contains "\\rundll32.exe" or TaskContent contains "DownloadString" or TaskContent contains "IEX")
+EventID == 4698 and (TaskContent contains "-enc " or TaskContent contains "-EncodedCommand" or TaskContent contains "-w hidden" or TaskContent contains "-WindowStyle Hidden" or TaskContent contains "FromBase64String" or TaskContent contains "\\mshta.exe" or TaskContent contains "\\regsvr32.exe" or TaskContent contains "\\rundll32.exe" or TaskContent contains "DownloadString" or TaskContent contains "IEX(" or TaskContent contains "IEX " or TaskContent contains "| IEX")
 
 // persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line or script consumer
 (EventID == 20 and (Destination contains "powershell" or Destination contains "cmd.exe" or Destination contains "mshta" or Destination contains "wscript" or Destination contains "cscript" or Destination contains "rundll32" or Destination contains "-enc" or Destination contains "FromBase64String")) or (EventID == 20 and Type contains "Script")
@@ -247,7 +268,7 @@ action =~ "new release" and (not(publisher_type =~ "trusted_publisher"))
 action startswith "add" and action contains "trusted publisher"
 
 // registry/harbor_artifact_deleted.yml — Harbor artifact deleted (force re-pull / anti-forensics)
-operation =~ "delete" and (resource_type in~ ("artifact", "repository"))
+(operation =~ "delete" and (resource_type in~ ("artifact", "repository"))) and (not(operator =~ "robot$harbor-gc"))
 
 // registry/harbor_image_pushed_trusted_tag.yml — Harbor image push (backdoored image / trusted-tag poisoning)
 (operation =~ "push" and resource_type =~ "artifact") and (not(operator =~ "robot$ci-pipeline"))
@@ -280,7 +301,7 @@ query_type =~ "CREATE_USER" or (query_type =~ "GRANT" and (query_text contains "
 ['resource.type'] =~ "authentication_token" and ['resource.action'] =~ "create"
 
 // terraform/tfc_variable_injection.yml — Terraform Cloud workspace variable created or updated (run hijack)
-['resource.type'] =~ "variable" and (['resource.action'] in~ ("create", "update"))
+(['resource.type'] =~ "variable" and (['resource.action'] in~ ("create", "update"))) and (not(['auth.description'] =~ "ci-deploy@example.com"))
 
 // vault/vault_approle_backdoor.yml — HashiCorp Vault AppRole / auth method created (persistence)
 (type =~ "request" and (['request.operation'] in~ ("create", "update"))) and (['request.path'] startswith "auth/approle/role/" or ['request.path'] startswith "sys/auth/")

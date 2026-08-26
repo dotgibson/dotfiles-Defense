@@ -1,0 +1,1 @@
+{"resource": {"type": "firewall_rule"}, "action": {"type": "delete"}, "actor": {"type": "user", "email": "ci-deploy@example.com"}}

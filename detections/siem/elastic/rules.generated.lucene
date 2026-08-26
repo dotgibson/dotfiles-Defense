@@ -13,7 +13,7 @@
 eventSource:iam.amazonaws.com AND eventName:CreateAccessKey
 
 // cloud/aws_iam_privesc_policy.yml — AWS IAM privilege escalation via policy attach/put (CloudTrail)
-(eventSource:iam.amazonaws.com AND (eventName:(AttachUserPolicy OR AttachRolePolicy OR AttachGroupPolicy OR PutUserPolicy OR PutRolePolicy OR PutGroupPolicy OR CreatePolicyVersion OR SetDefaultPolicyVersion OR AddUserToGroup))) AND (NOT userIdentity.arn:arn\:aws\:sts\:\:111122223333\:assumed\-role\/terraform\-apply\/*)
+(eventSource:iam.amazonaws.com AND (eventName:(AttachUserPolicy OR AttachRolePolicy OR AttachGroupPolicy OR PutUserPolicy OR PutRolePolicy OR PutGroupPolicy OR CreatePolicyVersion OR SetDefaultPolicyVersion OR AddUserToGroup OR UpdateAssumeRolePolicy))) AND (NOT userIdentity.arn:arn\:aws\:sts\:\:111122223333\:assumed\-role\/terraform\-apply\/*)
 
 // cloud/aws_login_profile_created.yml — AWS IAM login profile created or updated (console takeover)
 eventSource:iam.amazonaws.com AND (eventName:(CreateLoginProfile OR UpdateLoginProfile))
@@ -43,7 +43,7 @@ gcp.audit.method_name:google.iam.admin.v1.CreateServiceAccountKey
 resource.type:api_token AND action.type:create
 
 // cloudflare/cloudflare_waf_rule_disabled.yml — Cloudflare WAF/firewall rule deleted or disabled (edge exposed)
-(resource.type:(firewall_rule OR ruleset)) AND (action.type:(delete OR update))
+((resource.type:(firewall_rule OR ruleset)) AND (action.type:(delete OR update))) AND (NOT actor.email:ci\-deploy@example.com)
 
 // cloudflare/cloudflare_worker_deployed.yml — Cloudflare Worker deployed (serverless edge code execution)
 ((resource.type:(worker OR workers_script)) AND (action.type:(create OR update))) AND (NOT actor.email:ci\-deploy@example.com)
@@ -76,7 +76,7 @@ resource.type:api_token AND action.type:create
 (EventID:4769 AND TicketEncryptionType:0x17) AND (NOT (ServiceName:(*$ OR krbtgt)))
 
 // credential_access/lsass_handle_access.yml — LSASS process access with dump-shaped rights
-(TargetImage:*\\lsass.exe AND (GrantedAccess:(0x1010 OR 0x1410 OR 0x1438 OR 0x143a OR 0x1fffff))) AND (NOT (SourceImage:(*\\MsMpEng.exe* OR *\\MsSense.exe* OR *\\wininit.exe* OR *\\csrss.exe* OR *\\CSFalconService.exe* OR *\\SentinelAgent.exe* OR *\\RepMgr.exe*)))
+(TargetImage:*\\lsass.exe AND (GrantedAccess:(0x1010 OR 0x1410 OR 0x1438 OR 0x143a OR 0x1fffff))) AND (NOT (SourceImage:(*\\MsMpEng.exe OR *\\MsSense.exe OR *\\wininit.exe OR *\\csrss.exe OR *\\CSFalconService.exe OR *\\SentinelAgent.exe OR *\\RepMgr.exe)))
 
 // credential_access/ntds_dump_ntdsutil_vss_4688.yml — NTDS.dit theft via ntdsutil / VSS on a domain controller
 (Image:*\\ntdsutil.exe AND (CommandLine:(*ifm* OR *create\ full*))) OR ((CommandLine:(*vssadmin\ create\ shadow* OR *wbadmin\ start\ backup*)) AND (Image:(*\\vssadmin.exe OR *\\wbadmin.exe))) OR Image:*\\diskshadow.exe
@@ -115,7 +115,7 @@ action:(repo.create_deploy_key OR personal_access_token.access_granted)
 action:self_hosted_runner.created
 
 // gitlab/gitlab_protected_branch_tamper.yml — GitLab protected-branch tampered (unreviewed merge)
-event_type:(protected_branch_removed OR protected_branch_created)
+event_type:protected_branch_removed
 
 // gitlab/gitlab_rogue_runner_associated.yml — GitLab runner associated with project (CI job/secret capture)
 event_type:set_runner_associated_projects
@@ -192,6 +192,27 @@ EventID:7045 AND (ImagePath:(*\\ADMIN$\\* OR *%COMSPEC%* OR *\\cmd.exe* OR *powe
 // linux/ccache_theft_staging.yml — Kerberos ccache file staged by a copy/transfer/interpreter process
 (CommandLine:(*\/tmp\/krb5cc_* OR *.ccache* OR *krb5.ccache*)) AND (Image:(*\/cp OR *\/mv OR *\/dd OR *\/cat OR *\/tac OR *\/tar OR *\/gzip OR *\/bzip2 OR *\/xz OR *\/zip OR *\/base64 OR *\/xxd OR *\/scp OR *\/rsync OR *\/sftp OR *\/nc OR *\/ncat OR *\/socat OR *\/curl OR *\/wget OR *\/openssl OR *\/python OR *\/python3 OR *\/perl OR *\/ruby))
 
+// linux/cron_persistence.yml — Cron persistence - scheduled-job file written (auditd)
+key:cron_persist AND (NOT (exe:(*\/dpkg OR *\/rpm OR *\/apt OR *\/apt\-get OR *\/yum OR *\/dnf OR *\/zypper OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)))
+
+// linux/shadow_file_read.yml — /etc/shadow read by a non-auth process (auditd)
+key:shadow_read AND (NOT (comm:(unix_chkpwd OR sshd OR login OR su OR sudo OR passwd OR chpasswd OR chage OR pwck OR grpck OR useradd OR usermod OR userdel OR systemd)))
+
+// linux/ssh_authorized_keys_write.yml — SSH authorized_keys written - key-based persistence (auditd)
+(key:ssh_authkeys AND name:*authorized_keys*) AND (NOT (exe:(*\/cloud\-init OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)))
+
+// linux/ssh_private_key_read.yml — SSH private key read by a non-SSH process (auditd)
+(key:ssh_key_read AND (name:(*\/id_rsa* OR *\/id_ecdsa* OR *\/id_ed25519* OR *\/id_dsa* OR *\/identity*))) AND (NOT (comm:(ssh OR sshd OR ssh\-agent OR ssh\-keygen OR ssh\-add OR scp OR sftp OR git)))
+
+// linux/sudo_root_shell.yml — Root shell spawned under a real login uid - sudo escape (auditd)
+(key:sudo_abuse AND (comm:(bash OR sh OR dash OR zsh OR ksh OR fish OR python OR python3 OR perl OR ruby))) AND (NOT auid:1000)
+
+// linux/suid_bit_set.yml — Setuid bit set on a file - SUID backdoor planted (auditd)
+key:suid_change AND (NOT (exe:(*\/dpkg OR *\/rpm OR *\/apt OR *\/apt\-get OR *\/yum OR *\/dnf OR *\/zypper OR *\/install OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)))
+
+// linux/systemd_unit_persistence.yml — Systemd unit persistence - unit or timer file written (auditd)
+key:systemd_persist AND (NOT (exe:(*\/dpkg OR *\/rpm OR *\/apt OR *\/apt\-get OR *\/yum OR *\/dnf OR *\/zypper OR *\/systemd OR *\/systemctl OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)))
+
 // npm/npm_maintainer_added.yml — npm maintainer or owner added (durable publish backdoor)
 action:(package.owner_add OR team.user_add)
 
@@ -217,7 +238,7 @@ eventType:(user.mfa.factor.reset_all OR user.mfa.factor.deactivate OR system.mfa
 EventID:4720 AND (NOT SubjectUserName:svc_iam_provisioning)
 
 // persistence/scheduled_task_suspicious_4698.yml — Scheduled task created with a suspicious action
-EventID:4698 AND (TaskContent:(*\-enc* OR *\-EncodedCommand* OR *\-w\ hidden* OR *\-WindowStyle\ Hidden* OR *FromBase64String* OR *\\mshta.exe* OR *\\regsvr32.exe* OR *\\rundll32.exe* OR *DownloadString* OR *IEX*))
+EventID:4698 AND (TaskContent:(*\-enc\ * OR *\-EncodedCommand* OR *\-w\ hidden* OR *\-WindowStyle\ Hidden* OR *FromBase64String* OR *\\mshta.exe* OR *\\regsvr32.exe* OR *\\rundll32.exe* OR *DownloadString* OR *IEX\(* OR *IEX\ * OR *\|\ IEX*))
 
 // persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line or script consumer
 (EventID:20 AND (Destination:(*powershell* OR *cmd.exe* OR *mshta* OR *wscript* OR *cscript* OR *rundll32* OR *\-enc* OR *FromBase64String*))) OR (EventID:20 AND Type:*Script*)
@@ -247,7 +268,7 @@ action:new\ release AND (NOT publisher_type:trusted_publisher)
 action:add* AND action:*trusted\ publisher*
 
 // registry/harbor_artifact_deleted.yml — Harbor artifact deleted (force re-pull / anti-forensics)
-operation:delete AND (resource_type:(artifact OR repository))
+(operation:delete AND (resource_type:(artifact OR repository))) AND (NOT operator:robot$harbor\-gc)
 
 // registry/harbor_image_pushed_trusted_tag.yml — Harbor image push (backdoored image / trusted-tag poisoning)
 (operation:push AND resource_type:artifact) AND (NOT operator:robot$ci\-pipeline)
@@ -280,7 +301,7 @@ resource.type:agent_pool AND resource.action:create
 resource.type:authentication_token AND resource.action:create
 
 // terraform/tfc_variable_injection.yml — Terraform Cloud workspace variable created or updated (run hijack)
-resource.type:variable AND (resource.action:(create OR update))
+(resource.type:variable AND (resource.action:(create OR update))) AND (NOT auth.description:ci\-deploy@example.com)
 
 // vault/vault_approle_backdoor.yml — HashiCorp Vault AppRole / auth method created (persistence)
 (type:request AND (request.operation:(create OR update))) AND (request.path:(auth\/approle\/role\/* OR sys\/auth\/*))

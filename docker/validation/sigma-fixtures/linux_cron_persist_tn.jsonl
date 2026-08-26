@@ -1,0 +1,1 @@
+{"key": "cron_persist", "comm": "dpkg", "exe": "/usr/bin/dpkg", "name": "/etc/cron.d/logrotate", "auid": "0", "uid": "0"}

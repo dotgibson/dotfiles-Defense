@@ -2,18 +2,18 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**95 rules · 113 detection documents · 70 techniques · 11 tactics · 24 logsources.**
+**102 rules · 120 detection documents · 77 techniques · 11 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
 | Tactic | ID | Techniques | Rules |
 | ------ | -- | ---------: | ----: |
 | Execution | TA0002 | 8 | 10 |
-| Persistence | TA0003 | 13 | 34 |
-| Privilege Escalation | TA0004 | 7 | 9 |
+| Persistence | TA0003 | 16 | 37 |
+| Privilege Escalation | TA0004 | 9 | 11 |
 | Stealth | TA0005 | 1 | 1 |
 | Defense Impairment | TA0112 | 6 | 10 |
-| Credential Access | TA0006 | 15 | 17 |
+| Credential Access | TA0006 | 17 | 19 |
 | Discovery | TA0007 | 13 | 6 |
 | Lateral Movement | TA0008 | 9 | 7 |
 | Collection | TA0009 | 5 | 4 |
@@ -27,6 +27,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1003.001 | 1 | `lsass_handle_access` |
 | T1003.003 | 1 | `ntds_dump_ntdsutil_vss_4688` |
 | T1003.006 | 1 | `dcsync_replication_4662` |
+| T1003.008 | 1 | `shadow_file_read` |
 | T1005 | 1 | `mass_file_read_4663` |
 | T1007 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1016 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
@@ -36,6 +37,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1046 | 1 | `ldap_recon_explicit_creds_4648` |
 | T1047 | 1 | `wmiexec_wmiprvse_child_4688` |
 | T1049 | 3 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst`, `host_recon_powershell_4104` |
+| T1053.003 | 1 | `cron_persistence` |
 | T1053.005 | 1 | `scheduled_task_suspicious_4698` |
 | T1057 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1059 | 1 | `jenkins_script_console` |
@@ -50,6 +52,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1098 | 16 | `aws_login_profile_created`, `cloudflare_api_token_created`, `gcp_iam_policy_backdoor`, `github_credential_backdoor`, `gitlab_token_backdoor`, `harbor_robot_account_created`, `jenkins_api_token_created`, `k8s_clusteradmin_binding`, `npm_maintainer_added`, `okta_api_token_created`, `pypi_collaborator_added`, `pypi_trusted_publisher_added`, `rbcd_allowedtoact_5136`, `slack_app_installed`, `tfc_token_backdoor`, `vault_approle_backdoor` |
 | T1098.001 | 3 | `aws_iam_access_key_created`, `entra_sp_credential_backdoor`, `gcp_service_account_key_created` |
 | T1098.003 | 3 | `aws_iam_privesc_policy`, `entra_directory_role_grant`, `gws_admin_role_grant` |
+| T1098.004 | 1 | `ssh_authorized_keys_write` |
 | T1110.003 | 1 | `password_spray_4625` |
 | T1114.003 | 1 | `gws_external_mail_forwarding` |
 | T1134.001 | 2 | `potato_seimpersonate_4688`, `potato_seimpersonate_sysmon_1` |
@@ -70,9 +73,13 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1530 | 1 | `aws_s3_bulk_exfil` |
 | T1531 | 1 | `account_access_removal_4725` |
 | T1543 | 3 | `github_self_hosted_runner_registered`, `gitlab_rogue_runner_associated`, `tfc_rogue_agent_pool` |
+| T1543.002 | 1 | `systemd_unit_persistence` |
 | T1546.003 | 1 | `wmi_event_subscription_consumer` |
+| T1548.001 | 1 | `suid_bit_set` |
+| T1548.003 | 1 | `sudo_root_shell` |
 | T1550.002 | 1 | `passthehash_4624_fanout` |
 | T1550.003 | 1 | `unconstrained_delegation_4624` |
+| T1552.004 | 1 | `ssh_private_key_read` |
 | T1552.006 | 1 | `gpp_cpassword_sysvol_5145` |
 | T1555 | 2 | `dpapi_backupkey_5145`, `vault_bulk_secret_read` |
 | T1556 | 2 | `okta_idp_created`, `shadow_credentials_keycredentiallink_5136` |
@@ -112,7 +119,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `jenkins` | `jenkins` | 3 |
 | `kubernetes` | `kubernetes` | 3 |
 | `lateral_movement` | `windows` | 5 |
-| `linux` | `linux` | 1 |
+| `linux` | `linux` | 8 |
 | `npm` | `npm` | 3 |
 | `okta` | `okta` | 3 |
 | `persistence` | `windows` | 4 |

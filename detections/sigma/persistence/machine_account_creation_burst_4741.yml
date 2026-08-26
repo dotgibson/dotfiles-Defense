@@ -22,9 +22,21 @@ logsource:
 detection:
   selection:
     EventID: 4741
-  condition: selection
+  filter_provisioning:
+    # DEPLOY-REQUIRED: replace with the accounts your domain-join / imaging / MDM
+    # provisioning runs as. Provisioning creates computer accounts in bulk by design, so
+    # an imaging run trivially clears the correlation's 3-in-30m threshold below and the
+    # burst rule pages on routine work. This mirrors filter_provisioning in the sibling
+    # rogue_account_creation_4720, on the same field, for the same reason. Until filled
+    # this excludes only the example.
+    # Run detections/sigma/deploy-required.sh to find this.
+    SubjectUserName:
+      - 'svc_iam_provisioning'   # example — replace with your provisioning principals
+  condition: selection and not filter_provisioning
 falsepositives:
-  - Bulk domain-join / imaging runs (allowlist the provisioning account or host).
+  - Bulk domain-join / imaging runs - allowlist the provisioning principals in
+    filter_provisioning; what remains is a non-provisioning identity minting machine
+    accounts.
 level: informational
 ---
 title: Machine-account creation burst - MachineAccountQuota abuse (4741)

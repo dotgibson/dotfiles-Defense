@@ -1,0 +1,1 @@
+{"key": "shadow_read", "comm": "unix_chkpwd", "exe": "/usr/sbin/unix_chkpwd", "name": "/etc/shadow", "auid": "1000", "uid": "0"}

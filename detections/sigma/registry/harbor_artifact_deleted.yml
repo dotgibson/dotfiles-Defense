@@ -29,8 +29,16 @@ detection:
     resource_type:
       - 'artifact'
       - 'repository'
-  condition: selection
+  filter_gc:
+    # DEPLOY-REQUIRED: replace with the account your retention/garbage-collection policy
+    # deletes as. Retention and GC prune artifacts continuously, so without this the
+    # routine housekeeping that clears old tags alerts alongside the anti-forensics
+    # delete this rule is for. Until filled this excludes only the example robot.
+    # Run detections/sigma/deploy-required.sh to find this.
+    operator:
+      - 'robot$harbor-gc'   # example GC robot account — replace
+  condition: selection and not filter_gc
 falsepositives:
   - Retention/GC policy or an admin pruning old tags - allowlist the GC service account
-    and alert on deletes of trusted tags or deletes closely following a push.
+    in filter_gc and alert on deletes of trusted tags or deletes closely following a push.
 level: medium
