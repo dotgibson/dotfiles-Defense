@@ -43,7 +43,7 @@ gcp.audit.method_name:google.iam.admin.v1.CreateServiceAccountKey
 resource.type:api_token AND action.type:create
 
 // cloudflare/cloudflare_waf_rule_disabled.yml — Cloudflare WAF/firewall rule deleted or disabled (edge exposed)
-(resource.type:(firewall_rule OR ruleset)) AND (action.type:(delete OR update))
+((resource.type:(firewall_rule OR ruleset)) AND (action.type:(delete OR update))) AND (NOT actor.email:ci\-deploy@example.com)
 
 // cloudflare/cloudflare_worker_deployed.yml — Cloudflare Worker deployed (serverless edge code execution)
 ((resource.type:(worker OR workers_script)) AND (action.type:(create OR update))) AND (NOT actor.email:ci\-deploy@example.com)
@@ -247,7 +247,7 @@ action:new\ release AND (NOT publisher_type:trusted_publisher)
 action:add* AND action:*trusted\ publisher*
 
 // registry/harbor_artifact_deleted.yml — Harbor artifact deleted (force re-pull / anti-forensics)
-operation:delete AND (resource_type:(artifact OR repository))
+(operation:delete AND (resource_type:(artifact OR repository))) AND (NOT operator:robot$harbor\-gc)
 
 // registry/harbor_image_pushed_trusted_tag.yml — Harbor image push (backdoored image / trusted-tag poisoning)
 (operation:push AND resource_type:artifact) AND (NOT operator:robot$ci\-pipeline)
@@ -280,7 +280,7 @@ resource.type:agent_pool AND resource.action:create
 resource.type:authentication_token AND resource.action:create
 
 // terraform/tfc_variable_injection.yml — Terraform Cloud workspace variable created or updated (run hijack)
-resource.type:variable AND (resource.action:(create OR update))
+(resource.type:variable AND (resource.action:(create OR update))) AND (NOT auth.description:ci\-deploy@example.com)
 
 // vault/vault_approle_backdoor.yml — HashiCorp Vault AppRole / auth method created (persistence)
 (type:request AND (request.operation:(create OR update))) AND (request.path:(auth\/approle\/role\/* OR sys\/auth\/*))

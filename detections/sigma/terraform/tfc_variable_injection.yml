@@ -30,8 +30,18 @@ detection:
     resource.action:
       - 'create'
       - 'update'
-  condition: selection
+  filter_ci:
+    # DEPLOY-REQUIRED: replace with the actor your pipeline writes workspace variables
+    # as, as it appears in the TFC audit trail's auth.description. Variable writes are
+    # among the highest-volume events in any TFC org - this rule's own description says
+    # most of them are benign CI - so without this it alerts on every pipeline variable
+    # write and gets muted. Until filled this excludes only the example actor.
+    # Run detections/sigma/deploy-required.sh to find this.
+    auth.description:
+      - 'ci-deploy@example.com'   # example — replace with your CI service identity
+  condition: selection and not filter_ci
 falsepositives:
-  - Routine CI variable management - allowlist the CI service identity and require
-    config-as-code review; alert on env-var writes by other actors or right before a run.
+  - Routine CI variable management - allowlist the CI service identity in filter_ci and
+    require config-as-code review; alert on env-var writes by other actors or right
+    before a run.
 level: medium

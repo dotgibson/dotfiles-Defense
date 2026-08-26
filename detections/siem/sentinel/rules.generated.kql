@@ -43,7 +43,7 @@ OperationName in~ ("Add service principal credentials", "Add application credent
 ['resource.type'] =~ "api_token" and ['action.type'] =~ "create"
 
 // cloudflare/cloudflare_waf_rule_disabled.yml — Cloudflare WAF/firewall rule deleted or disabled (edge exposed)
-(['resource.type'] in~ ("firewall_rule", "ruleset")) and (['action.type'] in~ ("delete", "update"))
+((['resource.type'] in~ ("firewall_rule", "ruleset")) and (['action.type'] in~ ("delete", "update"))) and (not(['actor.email'] =~ "ci-deploy@example.com"))
 
 // cloudflare/cloudflare_worker_deployed.yml — Cloudflare Worker deployed (serverless edge code execution)
 ((['resource.type'] in~ ("worker", "workers_script")) and (['action.type'] in~ ("create", "update"))) and (not(['actor.email'] =~ "ci-deploy@example.com"))
@@ -247,7 +247,7 @@ action =~ "new release" and (not(publisher_type =~ "trusted_publisher"))
 action startswith "add" and action contains "trusted publisher"
 
 // registry/harbor_artifact_deleted.yml — Harbor artifact deleted (force re-pull / anti-forensics)
-operation =~ "delete" and (resource_type in~ ("artifact", "repository"))
+(operation =~ "delete" and (resource_type in~ ("artifact", "repository"))) and (not(operator =~ "robot$harbor-gc"))
 
 // registry/harbor_image_pushed_trusted_tag.yml — Harbor image push (backdoored image / trusted-tag poisoning)
 (operation =~ "push" and resource_type =~ "artifact") and (not(operator =~ "robot$ci-pipeline"))
@@ -280,7 +280,7 @@ query_type =~ "CREATE_USER" or (query_type =~ "GRANT" and (query_text contains "
 ['resource.type'] =~ "authentication_token" and ['resource.action'] =~ "create"
 
 // terraform/tfc_variable_injection.yml — Terraform Cloud workspace variable created or updated (run hijack)
-['resource.type'] =~ "variable" and (['resource.action'] in~ ("create", "update"))
+(['resource.type'] =~ "variable" and (['resource.action'] in~ ("create", "update"))) and (not(['auth.description'] =~ "ci-deploy@example.com"))
 
 // vault/vault_approle_backdoor.yml — HashiCorp Vault AppRole / auth method created (persistence)
 (type =~ "request" and (['request.operation'] in~ ("create", "update"))) and (['request.path'] startswith "auth/approle/role/" or ['request.path'] startswith "sys/auth/")

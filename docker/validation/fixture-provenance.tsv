@@ -183,3 +183,7 @@ docker/validation/sigma-fixtures/wmi_consumer_20.jsonl	vendor-documented	EID 20 
 docker/validation/sigma-fixtures/wmi_consumer_20_activescript.jsonl	vendor-documented	same field list; Type="Script" per threathunterplaybook.com hunt 200902-RemoteWMIActiveScriptEventConsumers, which selects EID 20 on 'type: script' against a captured dataset. What Destination holds for a script consumer is NOT confirmed - the rule deliberately does not key on it. See #158
 docker/validation/sigma-fixtures/wmi_consumer_20_tn.jsonl	vendor-documented	same field list; benign CommandLineEventConsumer near-miss, shared by both wmi-consumer-20 rows
 docker/validation/sigma-fixtures/wmiexec_4688.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/cloudflare_waf_rule_disabled_ci_tn.jsonl	unverified	actor.email copied from the sibling cloudflare_worker_deployed fixture; not confirmed against a Cloudflare audit export
+docker/validation/sigma-fixtures/cloud/tfc_variable_injection_ci_tn.jsonl	unverified	auth.description inferred from the Terraform Cloud audit-trail schema - no TFC rule here referenced an actor field before this, so nothing corroborates it
+docker/validation/sigma-fixtures/cloud/harbor_artifact_deleted_gc_tn.jsonl	unverified	operator copied from the sibling harbor_image_pushed_trusted_tag fixture
+docker/validation/sigma-fixtures/machine_account_4741_tn.jsonl	unverified	mirrors the committed 4741 TP, SubjectUserName swapped to the provisioning account; sized to 4 events to stay past the correlation gte:3

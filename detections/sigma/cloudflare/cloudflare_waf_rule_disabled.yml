@@ -31,8 +31,21 @@ detection:
     action.type:
       - 'delete'
       - 'update'
-  condition: selection
+  filter_ci:
+    # DEPLOY-REQUIRED: replace with the identity your IaC/deploy pipeline manages edge
+    # rules as (the Terraform or wrangler service account's email, or the token owner
+    # shown in the audit log). ruleset/update is the event for ANY ruleset change, so
+    # without this every pipeline-driven edge change - including the ones that TIGHTEN
+    # the WAF - is a high-severity alert and the rule gets muted. Until filled this
+    # excludes only the example actor.
+    # Run detections/sigma/deploy-required.sh to find this.
+    actor.email:
+      - 'ci-deploy@example.com'   # example — replace with your CI service identity
+  condition: selection and not filter_ci
 falsepositives:
+  - Routine edge-rule management from the IaC pipeline - allowlist the CI service
+    identity in filter_ci and require version-controlled edge config; what remains is
+    the out-of-band change, which is the event this rule is for.
   - Legitimate rule tuning by a security admin during an approved window - reconcile
     against the change ticket and alert on out-of-band firewall/WAF changes.
 level: high
