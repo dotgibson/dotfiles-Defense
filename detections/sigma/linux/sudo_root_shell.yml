@@ -1,0 +1,64 @@
+title: Root shell spawned under a real login uid - sudo escape (auditd)
+id: d40c23b6-bb29-4982-b82e-71d1ed745e05
+status: experimental
+description: |
+  Detects T1548.003 (Abuse Elevation Control Mechanism: Sudo and Sudo Caching): an
+  interactive shell or interpreter running as root while auid - the login uid, which
+  the kernel pins at login and no privilege change rewrites - is still a real user.
+  That gap is the whole invariant. A daemon running as root has auid unset
+  (4294967295); a human who escalated carries their own auid into the root process, so
+  auid != 0 and euid == 0 says "this root shell traces back to a specific person".
+  The abuse is the GTFOBins shape: a sudoers entry grants one seemingly narrow binary,
+  and that binary can spawn a shell, so the narrow grant is a full root shell. Detecting
+  the escape rather than the sudoers entry catches it whether the entry was planted or
+  merely mis-scoped from the start.
+  This fires on legitimate administration too, by construction - an admin running
+  `sudo -i` looks exactly like this. That is why the allowlist below is the deploy
+  step and why the rule is medium: the signal is a root shell traced to someone who is
+  not on your admin list, not the existence of root shells.
+  Requires an auditd syscall rule that sets the key (load with `augenrules --load`):
+    -a always,exit -F arch=b64 -S execve -F euid=0 -F auid>=1000 -F auid!=unset -k sudo_abuse
+  Validate (purple): escape to a root shell through a sudo-allowed binary from
+  dotfiles-Offense (htpx pair sudo-abuse-privesc).
+references:
+  - https://attack.mitre.org/techniques/T1548/003/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/sudo-abuse-auditd.md
+author: dotfiles-Defense
+date: 2026-08-26
+tags:
+  - attack.privilege-escalation
+  - attack.t1548.003
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection:
+    key: 'sudo_abuse'
+    comm:
+      - 'bash'
+      - 'sh'
+      - 'dash'
+      - 'zsh'
+      - 'ksh'
+      - 'fish'
+      - 'python'
+      - 'python3'
+      - 'perl'
+      - 'ruby'
+  filter_admins:
+    # DEPLOY-REQUIRED: replace with the auid values of the people who are SUPPOSED to
+    # hold root on this class of host. Unlike most stubs here this one is not about
+    # volume, it is about meaning: every sudo -i by a real administrator matches the
+    # selection above, so without this list the rule restates your change calendar. With
+    # it, what remains is a root shell traced to a login that should not have one -
+    # which is the finding. Numeric uids, not names: auid is a uid.
+    # Run detections/sigma/deploy-required.sh to find this.
+    auid:
+      - 1000   # example — replace with your administrators' login uids
+  condition: selection and not filter_admins
+falsepositives:
+  - Administrators legitimately taking a root shell - allowlist their login uids in
+    filter_admins; this rule is only as sharp as that list.
+  - Operational tooling invoked through sudo that spawns a shell internally (allowlist
+    the operator's auid, or narrow the auditd rule away from that path).
+level: medium

@@ -179,7 +179,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Offense` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 94 rules / 111 documents, organized by ATT&CK tactic
+### `sigma/` — 102 rules / 120 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -322,11 +322,27 @@ threshold is higher (200 vs 100) *and* its base event ships a `filter_indexers`
 suppression list. Treat that list as mandatory — unfilled, the nightly backup trips it,
 the rule gets muted, and a muted rule is a blind spot.
 
-**`linux/`** (Linux host telemetry — `product: linux`, `category: process_creation`; auditd/Sysmon-for-Linux)
+**`linux/`** (Linux host telemetry — `product: linux`; `category: process_creation` for the
+argv rules and `service: auditd` for the file/syscall watches)
 
-| Rule                   | Event / source                                             | ATT&CK    | Validate with                      |
-| ---------------------- | ---------------------------------------------------------- | --------- | ---------------------------------- |
-| `ccache_theft_staging` | ccache path in argv of a copy/transfer/interpreter process | T1558.005 | Kerberos · cp/base64 an `*.ccache` |
+The auditd rules select on the **watch key**, not on a path list, so the audit rules are
+the single place that decides what is watched and the detection cannot drift away from
+them. Each rule's description carries the `auditd` rules that set its key; load them with
+`augenrules --load` or the rule is inert. What Sigma adds on top is the allowlist auditd
+cannot express — package managers, configuration management, and the auth stack are the
+entire volume on these keys, which is why every one of them ships a `DEPLOY-REQUIRED`
+filter.
+
+| Rule                        | Event / source                                               | ATT&CK    | Validate with                            |
+| --------------------------- | ------------------------------------------------------------ | --------- | ---------------------------------------- |
+| `ccache_theft_staging`      | ccache path in argv of a copy/transfer/interpreter process   | T1558.005 | Kerberos · cp/base64 an `*.ccache`       |
+| `cron_persistence`          | auditd `cron_persist` — write to a cron drop dir / crontab   | T1053.003 | Linux persistence · cron callback        |
+| `systemd_unit_persistence`  | auditd `systemd_persist` — write into a unit directory       | T1543.002 | Linux persistence · unit or timer        |
+| `ssh_authorized_keys_write` | auditd `ssh_authkeys` — write to an `authorized_keys` file   | T1098.004 | Linux persistence · append attacker key  |
+| `ssh_private_key_read`      | auditd `ssh_key_read` — private key read off the SSH stack   | T1552.004 | Linux cred access · harvest private keys |
+| `sudo_root_shell`           | auditd `sudo_abuse` — root shell under a real login uid      | T1548.003 | Linux privesc · GTFOBins sudo escape     |
+| `suid_bit_set`              | auditd `suid_change` — chmod that sets the setuid/setgid bit | T1548.001 | Linux privesc · plant a SUID shell       |
+| `shadow_file_read`          | auditd `shadow_read` — `/etc/shadow` read off the auth stack | T1003.008 | Linux cred access · dump for cracking    |
 
 **`cloud/`** (multi-cloud — Entra `product: azure`, AWS `product: aws`, GCP `product: gcp`)
 
@@ -481,7 +497,8 @@ rules are the non-Windows logsources here
 (`product: linux|azure|aws|gcp|kubernetes|okta|github|harbor|gitlab|vault|terraform|jenkins|snowflake|google_workspace|cloudflare|npm|pypi|slack`)
 and mirror the htpx corpus's companion-only cloud, K8s, Okta, GitHub Actions, Harbor
 registry, GitLab CI/CD, HashiCorp Vault, Terraform Cloud, Jenkins, Snowflake,
-Google Workspace, Cloudflare, npm + PyPI registry, and Slack pairs.
+Google Workspace, Cloudflare, npm + PyPI registry, and Slack pairs, and the
+Linux auditd persistence / privilege-escalation / credential-access pairs.
 The `jenkins/` rules match the Audit Trail plugin's request-URI log line via a `uri`
 field (`uri|contains`), scoped to the specific endpoints (e.g. job `configSubmit` is
 bound to the `/job/` path so global config submits don't trip it).
@@ -495,22 +512,33 @@ spots carry a `DEPLOY-REQUIRED:` marker in a YAML comment; run
 fill each one. (Advisory, exits 0 — the repo ships the placeholders on purpose; a
 comment isn't enforcement, so this is the discoverable checklist instead.)
 
-| Rule                                             | Substitute                                                                                            | Until you do                                                                                                                                                                                                            |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `privilege_escalation/rbcd_allowedtoact_5136`    | `filter_delegation_admins` → your delegation-admin accounts                                           | can't tell admin from user; pair with `machine_account_creation_burst_4741` for fidelity that doesn't need it                                                                                                           |
-| `defense_impairment/dcshadow_rogue_dc_4742`      | `filter_real_dcs` → your real DC computer accounts                                                    | a `GC/` SPN write onto another real DC would alert (low risk — rare regardless)                                                                                                                                         |
-| `lateral_movement/unconstrained_delegation_4624` | `TargetUserName` → your DC computer accounts, **and** `filter_dc_destinations` → those DCs' hostnames | **inert** — the rule matches only the `DC1$`/`DC2$` examples, so a coerced logon from any other DC is missed entirely. This is the one placeholder that makes its rule a no-op rather than merely noisy; fill it first. |
-| `cloud/entra_illicit_consent_grant`              | `filter_known_apps` → sanctioned app (client) IDs                                                     | verified LOB apps holding mail/file scopes alert (the high-risk-scope match still scopes it)                                                                                                                            |
-| `snowflake/snowflake_data_unload`                | `filter_known_stages` → sanctioned named stages                                                       | a named *internal* stage (not `@%`/`@~`) alerts alongside external ones                                                                                                                                                 |
-| `collection/mass_file_read_4663`                 | `filter_indexers` → your backup / AV / indexing / sync agents                                         | **the loudest unfilled placeholder in the repo.** Reads are constant, so an unfilled list means the nightly backup trips it, someone mutes the rule, and the mute is the blind spot. Fill before deploying, not after.  |
-| `collection/archive_staging_utility`             | `filter_backup_tooling` → your backup / packaging / build tooling                                     | the staging-path half alerts on CI and installer builds that archive into `%TEMP%`; the password-protected half is unaffected and stays high-confidence                                                                 |
-| `credential_access/lsass_handle_access`          | `filter_av` → your endpoint-protection agent binaries                                                 | in a non-Defender shop the EDR reads LSASS continuously and this `high` rule fires steadily                                                                                                                             |
-| `persistence/rogue_account_creation_4720`        | `filter_provisioning` → your IAM/JML and helpdesk provisioning principals                             | every routine onboarding alerts                                                                                                                                                                                         |
-| `cloudflare/cloudflare_worker_deployed`          | `filter_ci` → the deploy pipeline's Cloudflare identity                                               | every CI Worker deploy is a `high` alert                                                                                                                                                                                |
-| `cloud/aws_iam_privesc_policy`                   | `filter_iac` → your IaC / access-management automation principal(s)                                   | Terraform's routine policy attachments alert alongside operator-driven ones                                                                                                                                             |
-| `cloud/aws_s3_bulk_exfil`                        | `filter_bulk_readers` → your backup / replication / analytics / ETL role ARNs                         | the S3 twin of `filter_indexers`: object reads are constant, so an unfilled list means the nightly backup or an Athena scan trips the correlation and the rule gets muted                                               |
-| `cloud/aws_data_destruction`                     | `filter_iac` → your IaC / automation principal(s)                                                     | a `terraform destroy` of an ephemeral environment and a scheduled snapshot-retention job both look exactly like the attack from CloudTrail alone                                                                        |
-| `impact/account_access_removal_4725`             | `filter_identity_admins` → your help-desk / JML / IAM provisioning principals                         | bulk offboarding alerts. This list is what makes the rule *sharp*, not merely quiet — the signal is an actor who does **not** normally administer identity                                                              |
+| Rule                                              | Substitute                                                                                            | Until you do                                                                                                                                                                                                              |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `privilege_escalation/rbcd_allowedtoact_5136`     | `filter_delegation_admins` → your delegation-admin accounts                                           | can't tell admin from user; pair with `machine_account_creation_burst_4741` for fidelity that doesn't need it                                                                                                             |
+| `defense_impairment/dcshadow_rogue_dc_4742`       | `filter_real_dcs` → your real DC computer accounts                                                    | a `GC/` SPN write onto another real DC would alert (low risk — rare regardless)                                                                                                                                           |
+| `lateral_movement/unconstrained_delegation_4624`  | `TargetUserName` → your DC computer accounts, **and** `filter_dc_destinations` → those DCs' hostnames | **inert** — the rule matches only the `DC1$`/`DC2$` examples, so a coerced logon from any other DC is missed entirely. This is the one placeholder that makes its rule a no-op rather than merely noisy; fill it first.   |
+| `cloud/entra_illicit_consent_grant`               | `filter_known_apps` → sanctioned app (client) IDs                                                     | verified LOB apps holding mail/file scopes alert (the high-risk-scope match still scopes it)                                                                                                                              |
+| `snowflake/snowflake_data_unload`                 | `filter_known_stages` → sanctioned named stages                                                       | a named *internal* stage (not `@%`/`@~`) alerts alongside external ones                                                                                                                                                   |
+| `collection/mass_file_read_4663`                  | `filter_indexers` → your backup / AV / indexing / sync agents                                         | **the loudest unfilled placeholder in the repo.** Reads are constant, so an unfilled list means the nightly backup trips it, someone mutes the rule, and the mute is the blind spot. Fill before deploying, not after.    |
+| `collection/archive_staging_utility`              | `filter_backup_tooling` → your backup / packaging / build tooling                                     | the staging-path half alerts on CI and installer builds that archive into `%TEMP%`; the password-protected half is unaffected and stays high-confidence                                                                   |
+| `credential_access/lsass_handle_access`           | `filter_av` → your endpoint-protection agent binaries                                                 | in a non-Defender shop the EDR reads LSASS continuously and this `high` rule fires steadily                                                                                                                               |
+| `persistence/rogue_account_creation_4720`         | `filter_provisioning` → your IAM/JML and helpdesk provisioning principals                             | every routine onboarding alerts                                                                                                                                                                                           |
+| `cloudflare/cloudflare_worker_deployed`           | `filter_ci` → the deploy pipeline's Cloudflare identity                                               | every CI Worker deploy is a `high` alert                                                                                                                                                                                  |
+| `cloud/aws_iam_privesc_policy`                    | `filter_iac` → your IaC / access-management automation principal(s)                                   | Terraform's routine policy attachments alert alongside operator-driven ones                                                                                                                                               |
+| `cloud/aws_s3_bulk_exfil`                         | `filter_bulk_readers` → your backup / replication / analytics / ETL role ARNs                         | the S3 twin of `filter_indexers`: object reads are constant, so an unfilled list means the nightly backup or an Athena scan trips the correlation and the rule gets muted                                                 |
+| `cloud/aws_data_destruction`                      | `filter_iac` → your IaC / automation principal(s)                                                     | a `terraform destroy` of an ephemeral environment and a scheduled snapshot-retention job both look exactly like the attack from CloudTrail alone                                                                          |
+| `impact/account_access_removal_4725`              | `filter_identity_admins` → your help-desk / JML / IAM provisioning principals                         | bulk offboarding alerts. This list is what makes the rule *sharp*, not merely quiet — the signal is an actor who does **not** normally administer identity                                                                |
+| `cloudflare/cloudflare_waf_rule_disabled`         | `filter_ci` → the IaC pipeline's Cloudflare identity                                                  | every pipeline-driven edge change is a `high` alert — including the ones that *tighten* the WAF, since `ruleset/update` is the event for any ruleset change                                                               |
+| `terraform/tfc_variable_injection`                | `filter_ci` → the pipeline actor in `auth.description`                                                | fires on every pipeline variable write, among the highest-volume events TFC emits — the rule's own description calls most of them benign CI                                                                               |
+| `registry/harbor_artifact_deleted`                | `filter_gc` → your retention / garbage-collection account                                             | routine retention pruning alerts alongside the anti-forensics delete the rule is for                                                                                                                                      |
+| `persistence/machine_account_creation_burst_4741` | `filter_provisioning` → your domain-join / imaging / MDM principals                                   | an imaging run clears the correlation's 3-in-30m threshold on its own, so the burst rule pages on routine provisioning                                                                                                    |
+| `linux/cron_persistence`                          | `filter_provisioning` → your package manager + CM binaries                                            | every package install and CM converge that touches a cron path alerts                                                                                                                                                     |
+| `linux/systemd_unit_persistence`                  | `filter_provisioning` → your package manager + CM binaries                                            | unit files are written on nearly every package install, so the rule reports your patch window                                                                                                                             |
+| `linux/ssh_authorized_keys_write`                 | `filter_provisioning` → your key-distribution / cloud-init / CM path                                  | where keys are managed centrally that tooling writes these files on every converge and is the whole volume                                                                                                                |
+| `linux/ssh_private_key_read`                      | `filter_ssh_stack` → extend with your backup / endpoint agents                                        | the SSH stack itself is already allowlisted, so this is deployable — a backup agent sweeping home directories is the noise you add to it                                                                                  |
+| `linux/sudo_root_shell`                           | `filter_admins` → the login **uids** of your real administrators                                      | **not a volume stub — a meaning one.** Every `sudo -i` by a legitimate admin matches, so unfilled the rule restates your change calendar; filled, what remains is a root shell traced to a login that should not have one |
+| `linux/suid_bit_set`                              | `filter_provisioning` → your package manager + build tooling                                          | a patch window that ships any setuid binary produces a burst                                                                                                                                                              |
+| `linux/shadow_file_read`                          | `filter_auth_stack` → extend with your compliance scanner / backup agents                             | the standard auth stack is already allowlisted, so this is deployable as-is; until extended a nightly compliance scan alerts                                                                                              |
 
 #### What `status:` means here
 
@@ -676,6 +704,16 @@ point and prefer your own threat intel via `--url`.
   **Microsoft Sentinel KQL** in `siem/sentinel/{golden_ticket_4769,silver_ticket_4624,
   ntlm_relay_4624}.yaml` (and as SPL in Offense's `PURPLE-TEAM.md` via their htpx pairs).
   For Silver Ticket the durable control remains PAC validation.
+- **The Entra sign-in joins are the same shape on a different plane.** **T1078.004**
+  (failure burst then success for one principal) and **T1566.002** (AiTM session-token
+  replay — interactive auth from one ASN, non-interactive token use from another inside
+  the token's life) are field-to-field comparisons across two sign-in tables, so they
+  ship as `siem/sentinel/{entra_valid_accounts_signin,entra_aitm_token_replay}.yaml`
+  rather than as Sigma, and read zero in `COVERAGE.md` for the same reason. Both htpx
+  pairs are companion-only — `PURPLE-TEAM.md` is scoped to on-prem Splunk — so this is
+  their first deployable form. They need the `SigninLogs` connector
+  `entra_device_code_signin.yaml` already assumes, plus
+  `AADNonInteractiveUserSignInLogs` for the AiTM half.
 - **T1486 Data Encrypted for Impact — closed, on both data sources.** The honest invariant
   is mass file modification. This shipped first as `impact/mass_file_encryption_4663`
   (Security 4663 + a SACL, no Sysmon change required), which left the ingestion ticket
@@ -756,12 +794,20 @@ point and prefer your own threat intel via `--url`.
   activity is read-only, low-signal, and lands in GCP Data Access logs that are off by
   default). The marker makes this ledger self-policing: ship a Sigma rule tagged with any
   of them and CI fails until the prose is updated.
-- **External Reconnaissance (TA0043), Initial Access (TA0001), and Resource
-  Development (TA0042)** have no detection here and are not meant to: the first is
-  pre-compromise and only nominally in `DEFENSE-METHODOLOGY.md`'s "Recon / Discovery"
-  row (which is really *internal* Discovery — covered), and the other two are not named
-  in the methodology at all. A Zeek portscan detector under `network/` is the one
-  defensible addition to TA0043 if the scope ever widens.
+- **External Reconnaissance (TA0043) and Resource Development (TA0042)** have no
+  detection here and are not meant to: the first is pre-compromise and only nominally in
+  `DEFENSE-METHODOLOGY.md`'s "Recon / Discovery" row (which is really *internal*
+  Discovery — covered), and the second is attacker-side infrastructure building, invisible
+  to defender telemetry. Neither is a methodology row. A Zeek portscan detector under
+  `network/` is the one defensible addition to TA0043 if the scope ever widens.
+- **Initial Access (TA0001) was in that list until #209**, and only because the two
+  supply-chain rules that cover it were mistagged. `npm_malicious_package_publish` and
+  `pypi_token_release_upload` carry T1195.002 — an Initial-Access-only technique — but
+  tagged `attack.execution`, so the whole tactic column read zero while Execution
+  quietly over-counted. The capability was always there; the label was wrong. The tactic
+  now has a row in `DEFENSE-METHODOLOGY.md` and in `COVERAGE.md`, and
+  `check-attack-tags.sh` gained a tactic↔technique pairing assertion so a tag can no
+  longer claim a tactic ATT&CK does not place the technique in.
 - **`COVERAGE.md` counts Sigma only**, so it understates the corpus by a whole tactic:
   `network/` (Zeek + Suricata) covers Command and Control (TA0011) end to end and
   `siem/` covers the absence/join Kerberos and relay detections, and neither is in the

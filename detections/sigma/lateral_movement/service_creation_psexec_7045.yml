@@ -20,7 +20,11 @@ references:
 author: dotfiles-Defense
 date: 2026-06-30
 tags:
-  - attack.lateral-movement
+  # PsExec's remote service creation IS the lateral-movement step — the service is
+  # created on the TARGET by an operator who is already elsewhere. ATT&CK files
+  # T1569.002 under Execution alone, so the lateral-movement tag is a deliberate
+  # addition, not a mistag.
+  - attack.lateral-movement  # attack-tactic-deliberate
   - attack.execution
   - attack.t1569.002
 logsource:

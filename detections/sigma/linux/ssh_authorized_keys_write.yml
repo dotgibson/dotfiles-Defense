@@ -1,0 +1,56 @@
+title: SSH authorized_keys written - key-based persistence (auditd)
+id: 89f74827-e10c-45cf-99dc-cc786a2e33e5
+status: experimental
+description: |
+  Detects T1098.004 (Account Manipulation: SSH Authorized Keys): a write to an
+  authorized_keys file, seen through an auditd file watch. Appending a public key is
+  the quietest Linux persistence there is - it creates no process, no unit and no
+  scheduled job, it survives password rotation and MFA on the account entirely, and it
+  reads as ordinary SSH configuration afterwards. The write is the only moment it is
+  visible, which is why the watch matters more than any later hunt.
+  The selection is the auditd KEY. Note that authorized_keys lives in every home
+  directory, so the watch has to be recursive over the home tree - adjust the path
+  below to your layout rather than assuming /home.
+  Requires an auditd watch that sets the key (load with `augenrules --load`):
+    -w /home -p wa -k ssh_authkeys
+    -w /root/.ssh/ -p wa -k ssh_authkeys
+  A bare -w /home is broad; if the volume is unworkable, narrow to the .ssh
+  subdirectories your provisioning actually creates and accept the coverage that costs.
+  Validate (purple): append an attacker key to authorized_keys from dotfiles-Offense
+  (htpx pair ssh-authkeys-persist).
+references:
+  - https://attack.mitre.org/techniques/T1098/004/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/ssh-authkeys-auditd.md
+author: dotfiles-Defense
+date: 2026-08-26
+tags:
+  - attack.persistence
+  - attack.t1098.004
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection:
+    key: 'ssh_authkeys'
+    name|contains: 'authorized_keys'
+  filter_provisioning:
+    # DEPLOY-REQUIRED: replace with the tooling that legitimately manages authorized_keys
+    # in your estate - configuration management, cloud-init on first boot, or your key
+    # distribution service. In any fleet where keys are managed centrally that tooling
+    # writes these files on every converge and is the entire volume on this key; what is
+    # left after it is a key appended by something else, which is the event this rule is
+    # for. Until filled this excludes only the examples below.
+    # Run detections/sigma/deploy-required.sh to find this.
+    exe|endswith:
+      - '/cloud-init'            # example — replace with your key-management path
+      - '/ansible-playbook'      # example CM — verify against your fleet
+      - '/puppet'                # example CM — verify against your fleet
+      - '/chef-client'           # example CM — verify against your fleet
+      - '/salt-minion'           # example CM — verify against your fleet
+  condition: selection and not filter_provisioning
+falsepositives:
+  - Configuration management or cloud-init distributing user keys - allowlist that path
+    in filter_provisioning and alert on the rest.
+  - A user rotating their own key by hand (expected - triage on the auid against the
+    home directory being written).
+level: high

@@ -27,6 +27,12 @@
       "comment": "1 rule(s): dcsync_replication_4662"
     },
     {
+      "techniqueID": "T1003.008",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): shadow_file_read"
+    },
+    {
       "techniqueID": "T1005",
       "score": 1,
       "enabled": true,
@@ -79,6 +85,12 @@
       "score": 3,
       "enabled": true,
       "comment": "3 rule(s): host_enum_srvsvc_wkssvc_5145, host_recon_command_burst, host_recon_powershell_4104"
+    },
+    {
+      "techniqueID": "T1053.003",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): cron_persistence"
     },
     {
       "techniqueID": "T1053.005",
@@ -165,6 +177,12 @@
       "comment": "3 rule(s): aws_iam_privesc_policy, entra_directory_role_grant, gws_admin_role_grant"
     },
     {
+      "techniqueID": "T1098.004",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): ssh_authorized_keys_write"
+    },
+    {
       "techniqueID": "T1110.003",
       "score": 1,
       "enabled": true,
@@ -223,6 +241,12 @@
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): dcshadow_rogue_dc_4742"
+    },
+    {
+      "techniqueID": "T1482",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): sharphound_ldap_sweep_4662"
     },
     {
       "techniqueID": "T1484.002",
@@ -285,10 +309,28 @@
       "comment": "3 rule(s): github_self_hosted_runner_registered, gitlab_rogue_runner_associated, tfc_rogue_agent_pool"
     },
     {
+      "techniqueID": "T1543.002",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): systemd_unit_persistence"
+    },
+    {
       "techniqueID": "T1546.003",
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): wmi_event_subscription_consumer"
+    },
+    {
+      "techniqueID": "T1548.001",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): suid_bit_set"
+    },
+    {
+      "techniqueID": "T1548.003",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): sudo_root_shell"
     },
     {
       "techniqueID": "T1550.002",
@@ -301,6 +343,12 @@
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): unconstrained_delegation_4624"
+    },
+    {
+      "techniqueID": "T1552.004",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): ssh_private_key_read"
     },
     {
       "techniqueID": "T1552.006",

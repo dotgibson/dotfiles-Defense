@@ -49,10 +49,41 @@ case "${1:-}" in
   ;;
 esac
 
-if ! command -v sigma >/dev/null 2>&1; then
-  echo "sigma not found — pip install sigma-cli pysigma-backend-splunk pysigma-backend-elasticsearch pysigma-backend-kusto" >&2
+# The PyPI sigma-cli package installs its entrypoint as `sigma`; distro packages ship the
+# same tool as `sigma-cli`. Probing only the first reported "not found" on machines where
+# the tool was installed. SIGMA_BIN overrides both, the way PYTHON does in
+# detections/check-attack-tags.sh.
+SIGMA_BIN="${SIGMA_BIN:-$(command -v sigma 2>/dev/null || command -v sigma-cli 2>/dev/null || true)}"
+if [[ -z "$SIGMA_BIN" ]]; then
+  echo "neither 'sigma' nor 'sigma-cli' found — pip install sigma-cli pysigma-backend-splunk pysigma-backend-elasticsearch pysigma-backend-kusto" >&2
   exit 1
 fi
+
+# The CLI can be present with NO backends — distro packages ship the bare tool, and the
+# three this script converts to arrive as separate pip packages. Without this the first
+# conversion dies on click's own "'splunk' is not one of .", which names neither the cause
+# nor the cure. `sigma plugin list` cannot answer it: that lists what is INSTALLABLE, not
+# what is installed, and prints the same table either way. An intentionally invalid target
+# is the only probe that enumerates the real set — the error names it.
+require_backends() {
+  local probe have missing=() b
+  # `|| true`: the probe is EXPECTED to fail (that is how it reports), and `set -e` would
+  # otherwise abort on the assignment before the check below ever runs.
+  probe="$("$SIGMA_BIN" convert -t __probe__ /dev/null 2>&1 || true)"
+  # If the CLI failed some other way, do not turn a probe we could not run into a verdict.
+  [[ "$probe" == *"is not one of"* ]] || return 0
+  have="$(printf '%s' "$probe" | sed -n "s/.*is not one of \(.*\)\. - run.*/\1/p" | tr -d "' ")"
+  for b in "$@"; do
+    case ",$have," in *",$b,"*) ;; *) missing+=("$b") ;; esac
+  done
+  [[ ${#missing[@]} -eq 0 ]] || {
+    echo "$SIGMA_BIN has no ${missing[*]} backend(s) — the CLI is installed but cannot convert." >&2
+    echo "  installed: ${have:-(none)}" >&2
+    echo "  pip install pysigma-backend-splunk pysigma-backend-elasticsearch pysigma-backend-kusto" >&2
+    exit 1
+  }
+}
+require_backends splunk kusto lucene
 
 # Windows tactic dirs → splunk_windows TA pipeline; non-Windows platform dirs → raw.
 # (Same split convert.sh documents; kept explicit so a new dir is a conscious choice.)
@@ -90,7 +121,7 @@ gen_dir() {
   [[ ${#files[@]} -gt 0 ]] || return 0
   # No stderr suppression: sigma's "Parsing Sigma rules" notice goes to stderr (it does
   # not pollute the generated stdout), and a real conversion error must stay visible.
-  sigma convert -t splunk -f savedsearches "$@" "${files[@]}" | strip_default
+  "$SIGMA_BIN" convert -t splunk -f savedsearches "$@" "${files[@]}" | strip_default
 }
 
 generate_splunk() {
@@ -158,7 +189,7 @@ emit_queries() {
       rel="${f#"$SIGMA"/}"
       title="$(sed -n 's/^title:[[:space:]]*//p' "$f" | head -1)"
       printf '\n%s %s — %s\n' "$comment" "$rel" "$title"
-      if q="$(sigma convert -t "$target" --without-pipeline "$f" 2>"$errf")"; then
+      if q="$("$SIGMA_BIN" convert -t "$target" --without-pipeline "$f" 2>"$errf")"; then
         if [[ "$target" == kusto ]]; then q="$(printf '%s' "$q" | kql_fix)"; fi
         printf '%s\n' "$q"
       else

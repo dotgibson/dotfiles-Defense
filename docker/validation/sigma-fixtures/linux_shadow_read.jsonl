@@ -1,0 +1,1 @@
+{"key": "shadow_read", "comm": "cat", "exe": "/usr/bin/cat", "name": "/etc/shadow", "auid": "1000", "uid": "0"}

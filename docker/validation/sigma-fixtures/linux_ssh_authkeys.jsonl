@@ -1,0 +1,1 @@
+{"key": "ssh_authkeys", "comm": "tee", "exe": "/usr/bin/tee", "name": "/home/dev/.ssh/authorized_keys", "auid": "1000", "uid": "1000"}

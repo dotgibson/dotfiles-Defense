@@ -34,7 +34,15 @@ MD_FILES := $(shell git ls-files '*.md' ':!:core/**' 2>/dev/null)
 # Said once, used by every sigma-dependent target. These gates are HARD in CI, which
 # installs the pinned sigma-cli; locally the tool is optional, so they skip with a reason
 # rather than fail. A skip that does not say why is indistinguishable from a pass.
-SIGMA_MISSING := sigma-cli not installed — CI installs the pinned one; see .github/workflows/sigma.yml
+#
+# TWO SPELLINGS. The PyPI `sigma-cli` package installs its entrypoint as `sigma`, which is
+# what CI gets. Distro packages ship the same tool as `sigma-cli` (Debian/Arch both do), so
+# probing only for `sigma` reported "not installed" on a machine where it plainly was, and
+# the SIEM deploy-form gate then skipped every local run. Resolve once, prefer `sigma`, and
+# let the environment override for anything exotic.
+SIGMA_BIN ?= $(shell command -v sigma 2>/dev/null || command -v sigma-cli 2>/dev/null)
+export SIGMA_BIN
+SIGMA_MISSING := neither 'sigma' nor 'sigma-cli' on PATH — CI installs the pinned one; see .github/workflows/sigma.yml
 
 help: ## Show this help
 	@grep -hE '^[a-z][a-z0-9_-]*:.*?## ' $(MAKEFILE_LIST) \
@@ -61,16 +69,24 @@ markdown: ## markdownlint repo-owned docs (pinned version, same as CI)
 sigma: sigma-lint sigma-compile drift methodology validation-gates ## The sigma.yml hard gates that run offline
 
 sigma-lint: ## Structural lint over every Sigma rule (hermetic)
-	@command -v sigma >/dev/null 2>&1 || { echo "$(SIGMA_MISSING)"; exit 0; }
 	@# --fail-on-issues, exactly as sigma.yml runs it: `sigma check` exits 0 on validator
 	@# ISSUES by default and only fails on parse/semantic errors, so without the flag this
 	@# target would be quietly weaker than the gate it exists to reproduce.
-	@sigma check --fail-on-issues -c detections/sigma-validation-config.yml detections/sigma/
+	@#
+	@# Guard and command share ONE recipe line on purpose. Each line of a recipe is its own
+	@# shell, so the earlier `guard || { echo; exit 0; }` on its own line ended only THAT
+	@# shell — make went straight on to the next line and ran the tool anyway, dying with
+	@# 127. The "skip with a reason" this target advertises never actually happened.
+	@if [ -z "$(SIGMA_BIN)" ]; then echo "⚠ SKIPPED sigma-lint: $(SIGMA_MISSING)"; exit 0; fi; \
+	$(SIGMA_BIN) check --fail-on-issues -c detections/sigma-validation-config.yml detections/sigma/
 
 sigma-compile: ## Compile every rule to Splunk — catches a rule that parses but will not convert
-	@command -v sigma >/dev/null 2>&1 || { echo "$(SIGMA_MISSING)"; exit 0; }
-	@./detections/sigma/convert.sh splunk > /dev/null
-	@echo "✓ every rule compiles to Splunk"
+	@# One shell — see the note in sigma-lint. The success line was a separate recipe line
+	@# too, so it printed even on the runs that skipped.
+	@set -e; \
+	if [ -z "$(SIGMA_BIN)" ]; then echo "⚠ SKIPPED sigma-compile: $(SIGMA_MISSING)"; exit 0; fi; \
+	./detections/sigma/convert.sh splunk > /dev/null; \
+	echo "✓ every rule compiles to Splunk"
 
 drift: ## Are the GENERATED artifacts in step with the rules? (the --check gates)
 	@# These are byte-comparisons, not regenerations: each script rewrites its target from
@@ -79,12 +95,29 @@ drift: ## Are the GENERATED artifacts in step with the rules? (the --check gates
 	@#
 	@# gen-siem.sh converts through sigma-cli, so it is gated on the tool; the navigator and
 	@# coverage generators read the rule frontmatter directly and run anywhere.
-	@command -v sigma >/dev/null 2>&1 && ./detections/siem/gen-siem.sh --check \
-	  || echo "$(SIGMA_MISSING) (skipping the SIEM deploy-form gate)"
-	@./detections/navigator/gen-navigator.sh --check
-	@./detections/navigator/gen-coverage.sh --check
-	@./detections/siem/check-splunk-precedence.sh
-	@echo "✓ generated artifacts are in step with the rules"
+	@#
+	@# ONE shell, `set -e`, and an explicit if — deliberately, because the obvious spelling
+	@# is wrong. This used to read
+	@#
+	@#   command -v sigma && ./detections/siem/gen-siem.sh --check || echo "...skipping..."
+	@#
+	@# and in `A && B || C` a FAILING B runs C. So a genuine SIEM drift failure printed the
+	@# skip notice, exited 0, and the recipe went on to print the success tick underneath
+	@# it. The gate could only ever report "clean" or "skipped" — never "drifted", which is
+	@# the one answer it exists to give.
+	@set -e; \
+	skipped=""; \
+	if [ -n "$(SIGMA_BIN)" ]; then \
+	  ./detections/siem/gen-siem.sh --check; \
+	else \
+	  echo "⚠ SKIPPED the SIEM deploy-form gate: $(SIGMA_MISSING)"; \
+	  echo "⚠   it is a HARD gate in CI — this run did not check it"; \
+	  skipped=" (SIEM deploy-form gate SKIPPED — see above)"; \
+	fi; \
+	./detections/navigator/gen-navigator.sh --check; \
+	./detections/navigator/gen-coverage.sh --check; \
+	./detections/siem/check-splunk-precedence.sh; \
+	echo "✓ generated artifacts are in step with the rules$$skipped"
 
 methodology: ## Does DEFENSE-METHODOLOGY.md still describe the rules that exist?
 	@./detections/check-methodology.sh

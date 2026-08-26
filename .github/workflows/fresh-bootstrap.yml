@@ -12,9 +12,27 @@ name: fresh-bootstrap
 # honestly reports the forensics tooling as missing (this repo does not install it — a
 # probe claiming otherwise is the more dangerous bug).
 #
-# NOT a required check: it pulls an image, runs apt, and clones the zsh plugins, so it
-# takes minutes and needs network. It runs when the things that could break it change —
-# the installer, the role layer, or a Core subtree sync — plus weekly and on demand.
+# It pulls an image, runs apt, and clones the zsh plugins, so it takes minutes and needs
+# network. It does the real work only when the things that could break it change — the
+# installer, the role layer, or a Core subtree sync — plus weekly and on demand.
+#
+# IT IS A REQUIRED CHECK, so the job may not be filtered out. This header used to say the
+# opposite, and the `paths:` filter on `pull_request` below was written to match; when the
+# check was later marked required on `main`, the two facts stopped being compatible. A
+# path-filtered required check never reports on a PR that misses its paths, and GitHub
+# holds that PR at "expected — waiting for status" forever. #210 and #211 both touched only
+# `detections/`, so both were unmergeable with 15/15 green and no way out but an admin
+# override.
+#
+# The fix is the one Core already landed for `audit-alpine`/`audit-arch` (see
+# core/CHANGELOG.md, "Docs-only PRs were permanently unmergeable"): the job runs
+# UNCONDITIONALLY and gates its STEPS instead, so it reports success on a change it cannot
+# be affected by, at the cost of one runner boot. Note Core's variant had the same bug via a
+# job-level `if:` producing a `skipped` conclusion, which a ruleset also refuses — a skip
+# and an absent report are equally unacceptable, so the job must both start and succeed.
+#
+# The `push` filter is left in place: post-merge runs on `main` gate nothing, so skipping
+# them costs a runner and blocks no one.
 
 on:
   push:
@@ -25,13 +43,7 @@ on:
       - "core/**"
       - "tests/test-fresh-bootstrap.sh"
       - ".github/workflows/fresh-bootstrap.yml"
-  pull_request:
-    paths:
-      - "bootstrap.sh"
-      - "defense/**"
-      - "core/**"
-      - "tests/test-fresh-bootstrap.sh"
-      - ".github/workflows/fresh-bootstrap.yml"
+  pull_request: # deliberately unfiltered — see the header
   schedule:
     - cron: "41 4 * * 1" # Mondays 04:41 UTC — ahead of the lab smoke and the routines
   workflow_dispatch:
@@ -50,5 +62,39 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The scope check diffs against the PR base, which shallow history does not carry.
+          fetch-depth: 0
+
+      # The paths that USED to live in the `pull_request:` trigger. Same list, applied one
+      # layer later: the job always reports, only the container is conditional.
+      - name: Does this change touch anything bootstrap can see?
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          # schedule / workflow_dispatch / push have no PR base to diff against, and are
+          # never the required-check path — always do the real work there.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Captured into a variable and matched with a here-string, NOT piped into
+          # `grep -q`: under `pipefail`, grep exiting early on its first match can SIGPIPE
+          # the upstream `git diff`, and the pipeline then reports failure ON A MATCH —
+          # which would silently take the else branch and skip the real test on exactly the
+          # changes it exists to guard.
+          changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
+          if grep -qE \
+            '^(bootstrap\.sh|defense/|core/|tests/test-fresh-bootstrap\.sh|\.github/workflows/fresh-bootstrap\.yml)' \
+            <<<"$changed"; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No bootstrap-relevant path changed - reporting success without booting the container."
+          fi
+
       - name: Bootstrap a machine that has nothing
+        if: steps.scope.outputs.relevant == 'true'
         run: ./tests/test-fresh-bootstrap.sh

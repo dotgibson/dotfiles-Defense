@@ -14,14 +14,20 @@ description: |
 references:
   - https://attack.mitre.org/techniques/T1087/002/
   - https://attack.mitre.org/techniques/T1069/002/
+  - https://attack.mitre.org/techniques/T1482/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/bloodhound-collect-4662.md
 author: dotfiles-Defense
 date: 2026-07-08
 name: dir_object_access_4662
 tags:
+  # Three, matching the htpx pair exactly: SharpHound's one sweep enumerates accounts
+  # (T1087.002), groups (T1069.002) AND domain trusts (T1482) in the same fan-out, and
+  # bloodhound-collect-4662 names all three for this detection. T1482 was missing here,
+  # so the trust-discovery half of the sweep read as uncovered in COVERAGE.md.
   - attack.discovery
   - attack.t1087.002
   - attack.t1069.002
+  - attack.t1482
 logsource:
   product: windows
   service: security
@@ -52,6 +58,7 @@ description: |
 references:
   - https://attack.mitre.org/techniques/T1087/002/
   - https://attack.mitre.org/techniques/T1069/002/
+  - https://attack.mitre.org/techniques/T1482/
 correlation:
   type: value_count
   rules:

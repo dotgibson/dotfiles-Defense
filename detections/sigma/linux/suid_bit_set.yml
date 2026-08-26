@@ -1,0 +1,61 @@
+title: Setuid bit set on a file - SUID backdoor planted (auditd)
+id: 40ea5710-462f-42b0-84bd-17da606c65ef
+status: experimental
+description: |
+  Detects T1548.001 (Abuse Elevation Control Mechanism: Setuid and Setgid): a chmod
+  that sets the setuid or setgid bit. Planting a SUID root binary is persistence and
+  privilege escalation in one step - a copy of a shell with the setuid bit set is a
+  root shell available to any user, at any time, with no credential and no sudoers
+  entry, and it survives reboot as an ordinary file.
+  The bit test lives in the auditd rule, not here: the -F a1&04000 predicate below
+  means the kernel only records the chmods that actually set setuid, so this rule keys
+  on that decision rather than trying to re-derive the mode from a hex argument. What
+  Sigma adds is the allowlist - package managers set setuid bits legitimately on every
+  install that ships one (passwd, sudo, ping and friends).
+  Requires the auditd syscall rules that set the key (load with `augenrules --load`):
+    -a always,exit -F arch=b64 -S chmod,fchmod,fchmodat -F a1&04000 -k suid_change
+    -a always,exit -F arch=b64 -S chmod,fchmod,fchmodat -F a1&02000 -k suid_change
+  Validate (purple): plant a SUID shell from dotfiles-Offense (htpx pair
+  suid-abuse-privesc).
+references:
+  - https://attack.mitre.org/techniques/T1548/001/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/suid-abuse-auditd.md
+author: dotfiles-Defense
+date: 2026-08-26
+tags:
+  - attack.privilege-escalation
+  - attack.t1548.001
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection:
+    key: 'suid_change'
+  filter_provisioning:
+    # DEPLOY-REQUIRED: extend with YOUR package manager and build tooling. Distro
+    # packages that ship a setuid binary set the bit at install time, so a patch window
+    # produces a burst on this key; an in-house build or container image step that
+    # installs setuid helpers will not be in the list below at all. Until filled this
+    # excludes only the entries below.
+    # Run detections/sigma/deploy-required.sh to find this.
+    exe|endswith:
+      - '/dpkg'
+      - '/rpm'
+      - '/apt'
+      - '/apt-get'
+      - '/yum'
+      - '/dnf'
+      - '/zypper'
+      - '/install'
+      - '/ansible-playbook'      # example CM — verify against your fleet
+      - '/puppet'                # example CM — verify against your fleet
+      - '/chef-client'           # example CM — verify against your fleet
+      - '/salt-minion'           # example CM — verify against your fleet
+  condition: selection and not filter_provisioning
+falsepositives:
+  - Package installs setting the setuid bit on binaries that ship with it - allowlist
+    the package manager in filter_provisioning; what remains is a setuid bit set outside
+    the packaging path.
+  - Build or container-image tooling installing setuid helpers (allowlist the build
+    path, or exclude image-build hosts from this watch).
+level: high

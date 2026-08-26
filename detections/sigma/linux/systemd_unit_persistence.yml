@@ -1,0 +1,63 @@
+title: Systemd unit persistence - unit or timer file written (auditd)
+id: 8e08fc2f-6c32-444b-a352-e0a687862ee7
+status: experimental
+description: |
+  Detects T1543.002 (Create or Modify System Process: Systemd Service) on Linux: a
+  write into a systemd unit directory, seen through an auditd file watch. A unit or
+  timer is the modern replacement for the cron callback and is strictly better for the
+  operator - it restarts on failure, starts before login, and a .timer gives the same
+  scheduling cron does while looking like ordinary system configuration. A unit written
+  by anything other than the package manager is the tell.
+  The selection is the auditd KEY, so the watch below is the single place that decides
+  what counts as a unit directory. Sigma contributes the allowlist: package installs
+  write units constantly, and are the whole volume on this key.
+  Requires the auditd watches that set the key (load with `augenrules --load`):
+    -w /etc/systemd/system/ -p wa -k systemd_persist
+    -w /usr/lib/systemd/system/ -p wa -k systemd_persist
+    -w /run/systemd/system/ -p wa -k systemd_persist
+  Note user units (~/.config/systemd/user/) are deliberately not watched above: a
+  per-user watch does not generalize across home directories, and the user-unit path is
+  better served by a recursive watch you scope to your own layout.
+  Validate (purple): install a systemd service or timer callback from dotfiles-Offense
+  (htpx pair systemd-persist).
+references:
+  - https://attack.mitre.org/techniques/T1543/002/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/systemd-persist-auditd.md
+author: dotfiles-Defense
+date: 2026-08-26
+tags:
+  - attack.persistence
+  - attack.t1543.002
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection:
+    key: 'systemd_persist'
+  filter_provisioning:
+    # DEPLOY-REQUIRED: extend with YOUR package manager and configuration-management
+    # binaries - same list as cron_persistence, same reason. Unit files are written on
+    # essentially every package install, so until this matches your fleet the rule
+    # reports your patch window. Until filled this excludes only the entries below.
+    # Run detections/sigma/deploy-required.sh to find this.
+    exe|endswith:
+      - '/dpkg'
+      - '/rpm'
+      - '/apt'
+      - '/apt-get'
+      - '/yum'
+      - '/dnf'
+      - '/zypper'
+      - '/systemd'
+      - '/systemctl'
+      - '/ansible-playbook'      # example CM — verify against your fleet
+      - '/puppet'                # example CM — verify against your fleet
+      - '/chef-client'           # example CM — verify against your fleet
+      - '/salt-minion'           # example CM — verify against your fleet
+  condition: selection and not filter_provisioning
+falsepositives:
+  - Package installs writing unit files - allowlist the package manager in
+    filter_provisioning; what remains is a unit written outside the packaging path.
+  - Configuration management deploying application units (expected - allowlist the CM
+    agent and triage on the auid).
+level: medium

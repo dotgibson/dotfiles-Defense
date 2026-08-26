@@ -39,7 +39,7 @@ detection:
     # binary names differ by product and version. In any non-Defender shop the EDR reads
     # LSASS continuously, so until this matches your agent this high-severity rule fires
     # steadily. Run detections/sigma/deploy-required.sh to find this.
-    SourceImage|contains:
+    SourceImage|endswith:
       - '\MsMpEng.exe'
       - '\MsSense.exe'
       - '\wininit.exe'
