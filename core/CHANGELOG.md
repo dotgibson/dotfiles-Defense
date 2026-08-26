@@ -14,6 +14,331 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.0.2] - 2026-08-25
+
+### Fixed
+
+- **v5.0.0 turned the fleet's `links-only` job red: `bootstrap-test.yml` still asserted the
+  mise SYMLINK.** The contract changed in `bootstrap-lib.sh` (mise is adopted, not linked) and
+  this workflow kept checking the old one, so every OS repo's sync PR failed with
+  `MISSING symlink: $HOME/.config/mise/config.toml` — correctly, against a bootstrap that had
+  deliberately stopped creating it.
+  **It shipped green because nothing in Core runs this workflow.** `bootstrap-test.yml` is a
+  reusable workflow that only ever executes from an OS repo's caller; Core's own audit never
+  invokes it, so no gate here could see the stale assertion. That is the same false-green shape
+  three other fixes in this release address — a gate that never runs cannot report its own
+  breakage — and it is the one that reached the fleet.
+  The assertion is inverted rather than deleted: a symlink at that path is now the FAILURE
+  (`STILL A SYMLINK … bootstrap must ADOPT it`), a missing file is a failure, and a fresh adopt
+  must match `core/mise/config.toml` byte-for-byte. Compared with `git hash-object`, not `cmp` —
+  Core keeps diffutils optional and the audit gates on it.
+  **Rollout note:** repos still calling `@v4` get the v4 test, which asserts the old contract
+  and will keep failing against v5-vendored Core. The `@v4` → `@v5` caller bump is not
+  cosmetic — it is what makes a repo's CI agree with the Core it vendors.
+
+- **v5.0.1 was cut but never tagged**, so its number is retired rather than reused: the
+  release commit carried an empty `[v5.0.1]` section and `make publish` correctly refused
+  it (`release.yml` rejects an empty Release body, and a published tag is immutable here).
+  The entry below was written for that cut and ships as v5.0.2 unchanged.
+
+## [v5.0.0] - 2026-08-25
+
+### Breaking
+
+- **`~/.config/mise/config.toml` is no longer a symlink into vendored `core/`.** `bootstrap.sh`
+  now ADOPTS it — the file becomes a real copy you own (`blib_adopt`). This is the change that
+  makes the release a MAJOR: it alters the `bootstrap.sh` symlink contract.
+
+  **Why it had to change.** A symlinked config is a write path back into the vendored tree, and for
+  a config whose own tool rewrites it, that path gets used. `mise use -g ruby@4.0` — an
+  ordinary command, and the one mise's own header advertises — wrote straight through the
+  symlink into `core/mise/config.toml`: vendored Core edited in place, the trailing pin
+  comments stripped (mise rewrites the file rather than editing the line), the tree
+  TAMPERED per `core-integrity`, and `sync-core.sh` skipping that repo on the next
+  fan-out with an error naming nothing about mise. The entry below restored the stripped
+  comments; this removes the write path that stripped them.
+
+  **No host breaks, and nothing is lost.** Re-running `./bootstrap.sh` migrates an existing
+  symlink to a real file automatically, with identical content, and a copy you have edited is
+  never clobbered. There is no manual step on a host and no command goes away.
+
+  **What you must adapt to is propagation.** That file no longer tracks Core, so a pin change
+  landed here stops reaching a provisioned box on its own — the box picks it up when it
+  re-bootstraps, and `bootstrap.sh` reports drift when your copy has diverged. Fleet-wide pin
+  changes are now: edit Core → release → sync → re-bootstrap. That is the deliberate trade;
+  the alternative was leaving `mise use -g` able to write into the vendored tree, which is
+  what #724 and #727 were fixing.
+
+  **Deliberately NOT `conf.d`**, recorded at `blib_adopt` because the next reader will
+  otherwise "fix" it backwards. Measured on mise 2026.5.16, isolated `XDG_CONFIG_HOME`,
+  neutral cwd: `conf.d` OUTRANKS `config.toml` in both directions — mise states this
+  itself (`"lua is defined in …/conf.d/00-core.toml which overrides the global config"`)
+  — and within `conf.d` the LOWEST-numbered file wins (`00-` beats `99-`, the reverse of
+  the systemd convention). Read it with `mise current <tool>`; `mise ls` prints one line
+  per config file and is easy to misread as a precedence answer.
+
+  The hazard is **where `mise use -g` writes** — the highest-precedence file that already
+  exists — which gives `conf.d` two failures and no good case. On a fresh box with no
+  `config.toml`, the write lands **inside `conf.d/00-core.toml`**; where that is Core's
+  symlink, it reproduces the original write-through bug exactly. Where `config.toml` does
+  exist, the write lands there and is then shadowed by Core's `conf.d` entry — mise warns,
+  so it is not silent, but the user's global choice does not take effect. A plain copy has
+  neither failure.
+
+  **Scope.** `blib_link` remains correct for the ~34 configs a tool only READS — the
+  symlink is what makes a Core edit reach every box for free. `blib_adopt` is only for
+  configs the tool itself writes. `jj` is the other live instance of that shape
+  (`jj config set --user` rewrites in place) and is NOT converted here; `atuin`,
+  `lazygit` and `tealdeer` remain unconverted and unaudited.
+
+  **For repo maintainers:** `v4` stays frozen where it is, so nothing pinned `@v4` changes
+  underneath you. Adopting this major means bumping `uses: dotgibson/dotfiles-core/.github/
+  workflows/*@v4` to `@v5` by hand — 52 references across nine repos at time of writing.
+  `make fleet-drift` does NOT surface these: it compares `core.lock` provenance, not workflow
+  pins, so finding them is a `grep -rl 'uses:.*@v4' .github/workflows` sweep.
+  **`dotfiles-Windows` is invisible to that sweep** — it vendors no `core/`, is absent from
+  `scripts/os-repos.txt`, and SHA-pins its caller deliberately. Check it by hand.
+
+### Added
+
+- **`.gitignore` now drops crash dumps — as `core.[0-9]*`, deliberately not `core.*`.** A
+  `core.<pid>` dump landing in a repo was untracked noise nothing ignored.
+
+  The obvious spelling is the trap. This repo **tracks** `core.manifest` and `core.version`,
+  and every OS repo also tracks `core.lock` — while bare `core` is the vendored Core
+  **directory** there. `core.*` would hide the next such file the moment someone added one,
+  silently, which is exactly the failure #700 already cost us. Pinned in `test-core.sh`
+  against the real `.gitignore`, with `--no-index` so the assertions answer from the rules
+  rather than the index: without that flag, `check-ignore` never calls an already-tracked path
+  ignored and the `core.manifest` / `core.version` cases would pass under `core.*` too —
+  tautologies guarding nothing. Verified by mutating the rule; all three go red.
+
+  `scripts/new-os-repo.sh` seeds the same rule, so a repo generated tomorrow starts with it.
+
+- **`mise.lock` is deliberately NOT ignored, and the reason is recorded where it would be
+  re-proposed.** It was suggested alongside the crash dumps, and it would have been a quiet
+  regression: `mise/config.toml` sets `lockfile = true` precisely so mise records exact
+  resolved versions and checksums — _"the same idea as Cargo.lock / package-lock.json"_ — and
+  that comment says **commit it**. A bare `mise.lock` line carries no slash, so it matches at
+  every depth and would have swallowed `mise/mise.lock`, turning off hermetic tool resolution
+  with nothing to show for it. The `.gitignore` now says so at the point someone would add it,
+  and a test asserts `mise/mise.lock` stays trackable.
+
+- **`audit-core.sh` §1c: a `.claude/` file that ships nowhere and that nothing reports.** §1b
+  (#709) catches a `.claude/` path a routine _names_ but git does not carry. It only fires
+  because something pointed at the missing file — which is why #700 was catchable at all: three
+  routine files referenced the ledger. A `.claude/` file **nothing references** — a new
+  subagent, a convention-named config a hook reads, a second ledger — has no such witness.
+
+  Nothing else reports it either, and that is the whole point. `.gitignore` blocks `.claude/*`
+  wholesale, so git is silent in every direction: not in `git status`, not added by
+  `git add -A`, and invisible to every content gate here, since they all read the working tree
+  where the file is present and correct. The audit was faithfully answering "is this tree
+  consistent" — it was — while nobody was asking "will this reach a clone".
+
+  **The verdict is the `.gitignore` rule that wins,** which is what keeps the gate from needing
+  a hand-kept allowlist. `git check-ignore -v` names the line that hid the file: the blanket
+  `.claude/*` means nobody decided anything about it (a finding), while any more specific rule
+  means somebody wrote a line naming it (a decision, and silent). So `settings.local.json` is
+  exempt because `.gitignore` names it, not because §1c lists it — and the next per-machine
+  file becomes exempt the moment its rule is written, with no edit to the scanner.
+
+  **Untracked-but-visible is deliberately not a finding.** A new file git can still see is
+  already `git status`'s job, and flagging it would red the audit on every work-in-progress
+  file. The defect this exists for is invisibility.
+
+  Blocking on arrival, the §5i argument: `settings.local.json` is the only untracked file under
+  `.claude/` and it carries its own rule, so the tree is green as this lands and every future
+  hit is a regression in the commit under test. Nine fixture cases in `test-core.sh`, each on a
+  throwaway git repo with its own index and `.gitignore` — no text fixture can stand in for
+  "which rule wins" — plus a live canary asserting `.gitignore` still uses the blanket spelling
+  the scanner keys on, so the gate cannot go green by recognising nothing.
+
+### Changed
+
+- **`mise/config.toml`: `ruby` 3.4 → 4.0, `lua` 5.4 → 5.5.** Both verified resolvable before
+  pinning (`mise latest ruby@4.0` → 4.0.6, `lua@5.5` → 5.5.1) — a global pin that does not
+  resolve breaks `mise install` on every box Core lands on, so this is not a place to take an
+  upstream version number on faith.
+
+  **How this surfaced is the part worth recording.** The change was found as an _uncommitted
+  modification inside a vendored `core/` tree_: `~/.config/mise/config.toml` is symlinked to
+  `core/mise/config.toml`, so a `mise use -g` writes straight through the symlink into vendored
+  Core, and `core-integrity` reports such a tree as TAMPERED. (This entry first said the edit
+  was "on course to be silently reverted on the next sync". That is wrong and worth correcting
+  in place, because the real behaviour is the opposite: `sync-core.sh:559-563` refuses to fan
+  out into a repo with a dirty tree, so the edit SURVIVES and the repo is counted a FAILURE —
+  `err "$repo has uncommitted changes"` then `repos_failed=$((repos_failed + 1))`. Nothing is
+  lost, and the fan-out reports the repo as failed rather than merely quiet.)
+  The through-the-symlink write also **stripped the trailing comments** that say why each pin
+  exists; they are restored here. Four more configs have the same exposure (`atuin`, `lazygit`,
+  `jj`, `tealdeer`), so the shape will recur.
+
+  **`lua = "5.5"` is NOT the interpreter luacheck runs on**, and the config now says so at the
+  line. luacheck 1.2.0 — its last release — cannot even _load_ under 5.5: 5.5 made some locals
+  const, which trips `attempt to assign to const variable` inside luacheck's own source. Both
+  installers already pin an explicit 5.4 of their own and are unaffected (`.github/workflows/ci.yml`
+  via `brew lua@5.4`, `.claude/hooks/session-start.sh` via distro `lua5.4`). Anyone who installs
+  luacheck against _this_ lua gets an audit failure naming neither mise nor that file, which is
+  why the warning sits at the pin rather than in a commit message.
+
+### Fixed
+
+- **#732's fix was right; its test could not fail.** The test re-implemented the classification
+  loop inline in `test-core.sh`, so it exercised its own copy and never `audit-core.sh`'s.
+  Demonstrated in review: leaving the new index loop exactly as written and re-adding the two
+  deleted lines after it reintroduces the masked-tool-gap defect in full — and the behavioural
+  test, plus the `grep` guard for `_CORE_ENV_SKIP_IDX`, both stay **green**. A test that cannot
+  fail when the shipped logic changes is documentation, not a gate.
+
+  The classifier is now `_core_tool_skip_count` in `scripts/lib/common.sh`, and both
+  `audit-core.sh` and `test-core.sh` call that one function — the same render-vs-judge split
+  `_core_luacheck_verdict` uses (#728), and the split `skip_env` itself already used.
+
+  Guarded against **both** revert shapes, each verified by mutation: reverting the helper's
+  logic fails the behavioural tests (`4 0 2` instead of `4 1 2`), while the partial revert —
+  helper untouched, arithmetic re-added in `audit-core.sh` — leaves those green and fails a new
+  static assertion that `_tool_skips` is assigned exactly once, straight from the helper, and
+  never post-processed. Neither shape passes now; before, the second one did.
+
+  This is the third defect in this series found by review rather than by the tests shipped
+  alongside it. The tell each time was the same and is worth stating plainly: revert the fix and
+  watch the test. If it still passes, it is not guarding anything — and check that the revert is
+  applied where the shipped logic lives, not to a copy of it.
+
+- **The `blib_adopt` note named the wrong safeguard for the confound it warns about.** #731 said
+  `mise config ls` makes the double-load visible, because "a count higher than the fixtures you
+  created is the confound". That is true of only one of the two shapes — and not the one that
+  produced the wrong precedence note in the first place.
+
+  `SHAPE 1` the cwd sits in some other project carrying its own `mise/config.toml`. Distinct
+  path, so `config ls` does show an extra entry — and mise refuses it until `mise trust`, so
+  this shape announces itself twice over. `SHAPE 2` the cwd sits **under the XDG tree itself**,
+  so the global `config.toml` is also discovered as the project config. Same path, already
+  trusted, no prompt: `config ls` prints exactly your fixture count and exactly your fixture
+  paths, and the ordering is still inverted. Both measured.
+
+  So the file count is **reassurance, not a check** — and it reassures hardest in the case where
+  it is blind, which is how both readers of that note reached the wrong conclusion. The note now
+  says which shape it covers and points at the one safeguard covering both: no
+  `mise/config.toml` in ANY ancestor of the cwd. A comment that tells the reader how to verify
+  has to be right about the verification, or it is worse than saying nothing.
+
+- **The environment-skip classifier decided a gate by prose again, one layer down.** #730 split
+  skips into `tool` / `out of scope` / `environment` precisely so wording would stop being
+  load-bearing — then computed the tool tally as _(skips whose text lacks `out of scope`) minus
+  the environment COUNT_. That subtraction is correct only while no `skip_env` message ever
+  contains `out of scope`, a property nothing enforced and which held purely by how each call
+  site happened to be worded. One such message cancels a genuine gap:
+
+  ```text
+  skip     "luacheck (not installed)"                                 # a real tool gap
+  skip_env "gitleaks policy (no sibling checked out — out of scope)"  # poisoned wording
+  raw tool tally 1 − env 1 = 0                                        → --strict GREEN
+  ```
+
+  That is the false green the gate exists to prevent, reintroduced by the fix for it. The
+  classifier now keys on the **index** `skip_env` records rather than on the message, so wording
+  is irrelevant and two identically-worded skips cannot be confused. No subtraction means no
+  underflow, so the `((_tool_skips < 0)) && _tool_skips=0` floor is gone too — it turned an
+  impossible state into a plausible zero instead of surfacing it.
+
+  Pinned by a test that uses the poisoned wording, since every in-tree call site is worded
+  innocently and a happy-path partition test cannot see this. Found in review, not by the
+  tests that shipped with #730.
+
+- **`lockfile = true` does not do what `mise/config.toml` says it does.** The comment sells
+  hermetic tool resolution — _"`mise install` reproduces the same toolchain everywhere"_ — but
+  `lockfile` is **project-scoped**, and on a provisioned box that file IS the global config.
+  Measured on mise 2026.5.16 with this exact file as the global config and all 11 tools
+  declared: `mise lock` answers `! No tools configured to lock` and writes nothing. The
+  identical content as a project `mise.toml` locks all 7 platforms normally.
+
+  The fleet corroborates it: the setting has been on for some time, real installs have gone
+  through it (ruby 4.0.6 and lua 5.5.1 are installed), and there is **no `mise.lock` anywhere
+  in any of the ten repos**. The floating `lts`/`latest`/`stable` pins are still what a box
+  actually resolves, so two boxes provisioned a month apart can differ — exactly the thing the
+  paragraph promised was solved. The setting is kept (it is live when this repo is entered as
+  a project, which is why `mise/mise.lock` is deliberately trackable — #729); what changes is
+  that the file no longer claims a fleet-wide guarantee it cannot deliver.
+
+- **The `blib_adopt` conf.d note now records how verifying it goes wrong.** It tells the reader
+  to verify before "fixing" the ordering, and two of us independently got it backwards the
+  same way: mise walks up from the cwd and treats `mise/config.toml` as a PROJECT config path,
+  so a fixture root containing `mise/config.toml` loads it twice — once global, once project —
+  and project outranks global `conf.d`. The ordering then inverts and looks fine.
+
+  Worth recording because the obvious cross-check does not catch it: **neither `mise current`
+  nor `mise which` detects the confound** — under it both report the project value and agree
+  with each other. `mise config ls` is the safeguard, since it lists the files actually loaded.
+  A note that says "verify this" owes the reader the two ways verification fails.
+
+- **A run that skipped a third of the fleet-wide gates still signed off `audit OK`.** The
+  summary body said `PARTIAL` and named every skip, but the LAST line — the one a human
+  quotes into a PR — said `audit OK` and nothing else. The verdict now reads
+  `audit OK — PARTIAL (N check(s) skipped; see above)`. Exit status is unchanged: partial is
+  not failure, and `--strict` / the new `--require-siblings` remain the ways to make it one.
+
+  **The deeper problem was that a skip's WORDING was its classification.** Skips were sorted
+  into "tool absent" (a real gap, reds `--strict`) and "out of scope" (an intentional
+  `--scope`/`--changed` narrowing) by testing the message text for the literal `out of scope`.
+  The three fleet-wide gates — helper adoption, the gitleaks-policy sweep, the coverage
+  register — read SIBLING OS repos, which CI never checks out, so their skips were
+  deliberately PHRASED `out of scope` to keep `--strict` green. That made the prose
+  load-bearing: honest wording would have moved a gate. It also filed two different claims —
+  "you asked me to narrow this run" and "this box cannot cover it" — under one heading.
+
+  There is now a third class, recorded STRUCTURALLY by `skip_env()` rather than by text:
+  `tool` / `out of scope` / `environment`. `--strict` keeps its exact previous meaning
+  (absent tools only — verified A/B against `main` on a lone clone: same exit, same
+  `tool_skips: 1`, same message), so CI does not move. `--require-siblings` is the new opt-in
+  that reds on the environment class, and the summary now names the gap and says how to close
+  it rather than leaving the reader to infer that three gates never ran.
+
+  **`--json` was emitting invalid JSON, and only on a full fleet checkout.** The fleet
+  sections' advisory reports printed to stdout unguarded, so `audit-core.sh --json` produced
+  bullets ahead of the object — but only where sibling repos exist, since otherwise those
+  sections skip before reaching the report. CI checks out one repo, so CI never saw it. Now
+  guarded and pinned by a test. That bug is this entry's thesis in miniature: a gate that
+  never runs cannot report its own breakage. Adds `env_skips` and `partial` to the JSON
+  object; `result` keeps its existing vocabulary so the "`--json` must not change the
+  verdict" invariant still holds.
+
+- **The audit reported a luacheck that could not RUN as "luacheck reported issues".** §4 treated
+  every non-zero exit as a lint result, so a broken toolchain was announced as a defect in
+  `nvim/` — and the repair it printed, re-run luacheck, only reproduced the error. It sent the
+  reader hunting through clean code.
+
+  **Exit status alone cannot decide this**, which is why the fix is a probe rather than a
+  threshold. luacheck's own vocabulary is `0` clean / `1` warnings / `2` syntax errors / `3` I/O
+  error — and a **load** failure also exits `1`. That is the documented `mise/config.toml` trap,
+  not a hypothetical: luacheck 1.2.0 cannot load under Lua 5.5 at all ("attempt to assign to
+  const variable" in its own source), so the likeliest toolchain break lands on the same code as
+  honest warnings. A missing interpreter is the easier shape — the shell's 126/127 — and would
+  have been separable; the 5.5 one is not.
+
+  §4 now runs `luacheck --version` first. It lints nothing and loads the same modules, so any
+  failure from it is a toolchain failure by construction. `have luacheck` was never enough on
+  its own: a luarocks wrapper `exec`s an **absolute** interpreter path, so it keeps answering
+  `command -v` long after the Lua it was built against is upgraded away.
+
+  Three verdicts now, not two — `broken`, `broken-midrun` (126/127 _after_ a passing probe, so
+  the tool stopped being runnable mid-audit) and `issues` — decided by
+  `_core_luacheck_verdict` in `scripts/lib/common.sh` so `test-core.sh` can drive every branch.
+  Same split §1b uses, and for the same reason: §4 renders, the helper judges. Twelve cases,
+  including both sides of the 126 boundary and a canary asserting §4 still routes through it.
+
+  §4b solved this class ten lines below — _"gate on the EXIT STATUS as well as the output ... a
+  silent non-zero exit reads as a passing gate, which is the one outcome a backstop must never
+  produce"_ — and §4 had simply never had the same pass applied.
+
+- **The Lua 5.4 requirement now appears where someone installing luacheck will meet it.** It was
+  only in `mise/config.toml`, a runtime pin file nobody reaching for `luarocks install luacheck`
+  reads — and that comment predicts this exact outcome: _"the audit's luacheck leg breaks with
+  an error that names neither mise nor this file."_ It is now in `CONTRIBUTING.md` beside the
+  other luacheck note, and in §4's own `not installed` skip message, which is the moment the
+  reader learns they need the tool.
+
 ## [v4.19.0] - 2026-08-25
 
 ### Added

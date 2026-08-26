@@ -1,12 +1,26 @@
-# core/mise/config.toml  → symlinked to ~/.config/mise/config.toml
+# core/mise/config.toml  → COPIED to ~/.config/mise/config.toml (NOT symlinked)
 # ──────────────────────────────────────────────────────────────────────────────
 # Global runtime versions, managed by mise (https://mise.jdx.dev). Portable —
 # identical on every machine. Per-project versions live in a project-local
 # mise.toml / legacy .nvmrc/.python-version and override these automatically.
 #
 #   mise install              # install everything declared here
-#   mise use -g node@22       # change a global (rewrites this file)
+#   mise use -g node@22       # change a global (REWRITES ~/.config/mise/config.toml)
 #   mise ls                   # show installed + active versions
+#
+# COPIED, NOT SYMLINKED — and the `mise use -g` line above is exactly why. This file
+# used to be symlinked to ~/.config/mise/config.toml, which made that documented command
+# a WRITE PATH INTO THE VENDORED core/ TREE: it rewrote vendored Core in place, stripped
+# the trailing comments below (mise rewrites the file, it does not edit the line), left
+# the tree TAMPERED per core-integrity, and made sync-core.sh skip that repo on the next
+# fan-out with an error naming nothing about mise. bootstrap now ADOPTS this file
+# (core/lib/bootstrap-lib.sh → blib_adopt): the copy at ~/.config/mise/config.toml is
+# yours, `mise use -g` writes there, and core/ is never touched.
+#
+# THE TRADE: your copy no longer tracks this file. Editing a pin HERE does not reach an
+# already-provisioned box — re-run bootstrap, which reports drift rather than clobbering
+# what you have. Changing a pin fleet-wide therefore means: edit here, release, sync,
+# re-bootstrap. Your local copy always wins; that is the point.
 # ──────────────────────────────────────────────────────────────────────────────
 
 [tools]
@@ -18,11 +32,18 @@ python = "3.14"       # many pentest tools (impacket, bloodhound-python) want a 
 # the one those global tools run on. uv owns PER-PROJECT envs (.venv) and tool running: inside a
 # project use `uv run` / `uv sync` (aliased uvr/uvs in zsh/20-aliases.zsh), which resolve the
 # project's venv with no manual activation. Project deps belong in that project's pyproject.toml.
-ruby   = "3.4"        # evil-winrm, some Metasploit modules, web tooling
+ruby   = "4.0"        # evil-winrm, some Metasploit modules, web tooling
 go     = "latest"     # lots of security tooling is `go install`-able; enables gopls
 rust   = "stable"     # see distro note below
 java   = "temurin-21" # Burp Suite, BloodHound legacy — recent LTS
-lua    = "5.4"        # handy when hacking on the Neovim config
+lua    = "5.5"        # handy when hacking on the Neovim config
+# NOT the interpreter luacheck runs on, and do not "harmonize" the two. luacheck 1.2.0
+# (its last release) cannot even LOAD under 5.5 — 5.5 made some locals const, which trips
+# "attempt to assign to const variable" inside luacheck's own source. Both places that
+# install it therefore pin an explicit 5.4 of their own and are unaffected by this line:
+# .github/workflows/ci.yml (brew lua@5.4) and .claude/hooks/session-start.sh (distro
+# lua5.4 + liblua5.4-dev). If you install luacheck against THIS lua, the audit's luacheck
+# leg breaks with an error that names neither mise nor this file.
 
 # Toolchains that back Neovim's conform formatters (plugins/conform.lua declares these fleet-wide,
 # so :checkhealth flags them as "unavailable" on any box that lacks the binary). Declared here so
@@ -55,6 +76,28 @@ quiet = false
 # Cargo.lock / package-lock.json. Generate/refresh it on a real box: `mise install`
 # (or `mise lock`) writes mise.lock; commit it. Until it's committed mise resolves
 # floating as before, so this is a safe no-op until the lock lands.
+#
+# READ THIS BEFORE RELYING ON THE PARAGRAPH ABOVE: `lockfile` is PROJECT-SCOPED. mise does
+# not lock a GLOBAL config's tools — and on a provisioned box this file IS the global config
+# (~/.config/mise/config.toml). Measured on mise 2026.5.16, with this exact file as the
+# global config and all 11 tools declared:
+#
+#     $ mise lock
+#     ! No tools configured to lock            # …and no mise.lock written
+#
+# The identical content as a project mise.toml locks all 7 platforms normally. The fleet
+# corroborates it: `lockfile = true` has been set for some time, real installs have gone
+# through it (ruby 4.0.6, lua 5.5.1 are installed), and there is no mise.lock anywhere in
+# any of the ten repos. So "reproduces the same toolchain everywhere" does NOT hold for the
+# global use today — the floating lts/latest/stable pins above are what a box actually
+# resolves, and two boxes provisioned a month apart can still differ. Here, this is inert.
+#
+# Where it DOES bite: this repo keeps the file at mise/config.toml, a path mise treats as a
+# PROJECT config — so entering dotfiles-core loads it a second time as a project config (the
+# same double-load the global-only-settings note below describes), and `mise install` /
+# `mise lock` run from in here will write mise/mise.lock. That file is deliberately
+# trackable and NOT gitignored (#729). Keeping this setting is therefore correct; believing
+# it makes the FLEET hermetic is not. That would need a different mechanism, not this flag.
 lockfile = true
 
 # NB: mise's GLOBAL-ONLY settings (paranoid, trusted_config_paths, …) are intentionally

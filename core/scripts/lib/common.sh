@@ -63,6 +63,25 @@ _core_palette
 # idempotent), appended by skip() below.
 _CORE_SKIPS=()
 
+# ENVIRONMENT skips — a THIRD class, distinct from the two the summary already knew about.
+# A skip is one of:
+#   · tool absent      — a real coverage gap; --strict reds on it
+#   · out of scope     — the caller NARROWED the run (--scope/--changed); intentional
+#   · environment      — the run COULD NOT cover it here: a sibling OS repo isn't checked
+#                        out, so the fleet-wide gates have nothing to read
+# The third used to be filed under the second by WORDING: the sibling-absence skips were
+# deliberately phrased "out of scope" so the substring test that classifies skips would
+# keep --strict green. That made the message text the classifier, so making the wording
+# honest would have silently changed gate behaviour — and it conflated "you asked me to
+# narrow this" with "this box can't run it", which are not the same claim. A run narrowed
+# by --scope is a request; an absent sibling is an accident of where you invoked from.
+# Recording the class STRUCTURALLY (here) instead of textually lets the wording say what
+# is actually true and lets --require-siblings gate it. Appended by skip_env() below.
+_CORE_ENV_SKIPS=()
+# Indices into _CORE_SKIPS of the entries above — see skip_env() for why the index and not
+# the text is what the classifier keys on.
+_CORE_ENV_SKIP_IDX=()
+
 # _core_set_color <when> — validate WHEN (auto|always|never) and re-evaluate the palette.
 # Non-zero on a bad value so the caller can usage-error. Every gate script's `--color`
 # flag routes through this; `CORE_COLOR=<when>` in the environment works without a flag
@@ -94,6 +113,52 @@ skip() {
   # where stdout must carry only the JSON object (CORE_JSON=1, set by the caller's --json
   # arm and exported to nested gates). The skip is still tallied + recorded either way.
   ((${CORE_JSON:-0})) || printf '%s–%s %s\n' "$c_yel" "$c_rst" "$*"
+}
+# skip_env <label> — a skip this BOX could not cover (a sibling OS repo isn't checked out),
+# as opposed to one the caller narrowed away. Tallies like any other skip, and additionally
+# records the class so the summary can name it and --require-siblings can red on it.
+skip_env() {
+  # Record the INDEX this skip will occupy in _CORE_SKIPS, not just its text. The classifier
+  # needs to identify environment skips WITHOUT re-reading their wording — recording the text
+  # alone forced the caller to subtract counts, and that subtraction was only correct while no
+  # skip_env message happened to contain "out of scope". Which is the exact defect the
+  # environment class was introduced to remove, one layer down: prose deciding a gate. $SKIP is
+  # still the pre-increment count here, so it IS the 0-based index of the entry skip() appends.
+  _CORE_ENV_SKIP_IDX+=("$SKIP")
+  _CORE_ENV_SKIPS+=("$*")
+  skip "$@"
+}
+# _core_tool_skip_count — how many skips are a REAL coverage gap (an absent tool), printed
+# to stdout. The three classes are tool / out-of-scope / environment; this counts the first.
+#
+# It lives HERE, in the shared lib, rather than inline in audit-core.sh's summary — and that
+# placement is the point, not tidiness. The previous version was inline, and the test meant to
+# guard it re-implemented the same loop in the test file. Both stayed green while the defect
+# they existed to catch was fully reintroduced in audit-core.sh, because the test exercised its
+# own copy and never the code that runs. A test that cannot fail when the shipped logic changes
+# is documentation, not a gate.
+#
+# Same render-vs-judge split as _core_luacheck_verdict (#728) and §1b: the caller renders, the
+# helper decides, and test-core.sh drives the helper directly.
+#
+# Environment skips are identified by the INDEX skip_env recorded, never by their wording —
+# see skip_env() for why. Out-of-scope skips are still matched on text, which is correct: that
+# class IS a statement the caller makes in prose about a run it deliberately narrowed.
+_core_tool_skip_count() {
+  local _s _e _i=0 _n=0 _is_env
+  for _s in ${_CORE_SKIPS[@]+"${_CORE_SKIPS[@]}"}; do
+    _is_env=0
+    for _e in ${_CORE_ENV_SKIP_IDX[@]+"${_CORE_ENV_SKIP_IDX[@]}"}; do
+      [[ "$_i" == "$_e" ]] && {
+        _is_env=1
+        break
+      }
+    done
+    _i=$((_i + 1))
+    ((_is_env)) && continue
+    [[ "$_s" == *"out of scope"* ]] || _n=$((_n + 1))
+  done
+  printf '%d' "$_n"
 }
 fail() {
   FAIL=$((FAIL + 1))
@@ -625,6 +690,87 @@ _core_conflict_marker_hits() { # _core_conflict_marker_hits <file>
 # resolving it would mean inventing a semantics the referencing prose does not have.
 # A trailing `:NN` line reference is stripped: `.claude/commands/tool-scout.md:164` is a
 # citation of the same file, and the line number is not part of the name.
+# ── _core_luacheck_verdict: is that non-zero a LINT finding or a broken tool? ──
+# _core_luacheck_verdict <probe-rc> <lint-rc> — print exactly one of:
+#   ok             clean
+#   broken         luacheck cannot run at all (the --version probe failed)
+#   broken-midrun  it stopped being runnable between the probe and the lint pass
+#   issues         luacheck ran and has something to say about nvim/
+#
+# WHY A PROBE RC IS AN INPUT AT ALL, rather than deciding from the lint rc alone. luacheck's
+# own vocabulary is 0 clean / 1 warnings / 2 syntax errors / 3 I/O error — and a LOAD failure
+# also exits 1. That is not hypothetical: luacheck 1.2.0 cannot load under Lua 5.5 ("attempt
+# to assign to const variable" in its own source, see mise/config.toml), so the single most
+# likely toolchain failure lands on the same code as honest warnings and is UNDECIDABLE here
+# without a second signal. `luacheck --version` lints nothing and loads the same modules, so
+# its rc is that signal.
+#
+# 126/127 are the shell's "could not exec", never one of luacheck's codes, so a lint rc in
+# that range after a passing probe means the tool broke mid-audit — a different sentence to
+# print, and cheap to separate (#726).
+_core_luacheck_verdict() { # _core_luacheck_verdict <probe-rc> <lint-rc>
+  local probe_rc="${1:-0}" lint_rc="${2:-0}"
+  case "$probe_rc" in 0) ;; *) printf 'broken\n'; return 0 ;; esac
+  case "$lint_rc" in 0) printf 'ok\n'; return 0 ;; esac
+  if [ "$lint_rc" -ge 126 ] 2>/dev/null; then printf 'broken-midrun\n'; return 0; fi
+  printf 'issues\n'
+}
+
+# ── _core_claude_untracked_hits: a .claude/ file that will never leave this box ──
+# _core_claude_untracked_hits <repo-root> — print every path under .claude/ that git will
+# not ship AND that nothing will ever tell you about. Silence = clean.
+#
+# THE OTHER HALF OF §1b. _core_claude_ref_hits finds a file a routine NAMES but git does not
+# carry. That only works because something pointed at the missing file. A .claude/ file
+# nothing references — a new subagent, a config a hook reads by convention, a second ledger —
+# vanishes with no reference to betray it, and #700's whole lesson was that the vanishing is
+# silent (see the .gitignore comment block).
+#
+# THE DISCRIMINATOR IS THE RULE THAT WINS, NOT A HAND-KEPT ALLOWLIST. `.gitignore` blocks
+# `.claude/*` wholesale and re-admits members one by one, so "untracked" alone cannot separate
+# a file someone forgot to negate from one that is ignored ON PURPOSE. `git check-ignore -v`
+# names the winning rule, and that answers it exactly:
+#   · the blanket `.claude/*`  → nobody decided anything about this file → FINDING
+#   · any more specific rule   → someone wrote a line naming it → deliberate, stays quiet
+# So `.claude/settings.local.json`, which has its own line, is exempt by construction rather
+# than by being listed here — and a future per-machine file becomes exempt the moment someone
+# writes its rule, with no edit to this function.
+#
+# UNTRACKED-BUT-VISIBLE IS DELIBERATELY NOT A FINDING. A new file that git can see is already
+# `git status`'s job, and flagging it would turn the audit red for every work-in-progress file
+# in the tree. The defect this exists for is invisibility: a blanket rule hid the file, so no
+# other signal exists. That is the whole scope.
+_core_claude_untracked_hits() { # _core_claude_untracked_hits <repo-root>
+  local root="${1:-.}" tracked f rel line before pat
+  [ -d "$root/.claude" ] || return 0
+  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  # Newline-DELIMITED for a whole-line membership test with no subprocess per file, and so
+  # `.claude/a.md` is not satisfied by `x.claude/a.md` — the same reasoning audit-core.sh
+  # §1b gives for its own tracked list.
+  tracked=$'\n'"$(git -C "$root" ls-files '.claude/*')"$'\n'
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    rel="${f#"$root"/}"
+    [ "$tracked" != "${tracked/$'\n'"$rel"$'\n'/}" ] && continue # already ships
+    # check-ignore exits 1 when the path is NOT ignored, which is the untracked-but-visible
+    # case above — no output, so the loop below simply does not run. Fed by a heredoc, not a
+    # pipe: audit-core.sh runs with pipefail and that exit 1 would read as a scanner failure.
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      before="${line%%	*}" # the `source:line:pattern` half, before the tab
+      pat="${before#*:}"
+      pat="${pat#*:}"
+      case "$pat" in
+      '.claude/*' | '.claude/**') printf '%s\n' "$rel" ;;
+      esac
+    done <<EOF
+$(git -C "$root" check-ignore -v "$rel" 2>/dev/null)
+EOF
+  done <<EOF
+$(find "$root/.claude" -type f 2>/dev/null | sort)
+EOF
+}
+
 _core_claude_ref_hits() { # _core_claude_ref_hits <file>
   local f="${1:-}" line n p
   [ -f "$f" ] || return 0

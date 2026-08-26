@@ -1931,6 +1931,195 @@ if [[ "$_cr_live" == *":.claude/tool-decisions.md" ]]; then
   pass "routine reference scan: the live routine doc still parses (tool-scout.md names the ledger)"
 else fail "routine reference scan: .claude/commands/tool-scout.md yielded '${_cr_live//$'\n'/, }' — the routines stopped writing paths as code spans, so §1b is scanning for a shape that no longer exists"; fi
 
+# ── .gitignore: crash dumps vs the core.* files this repo actually tracks ─────
+# The rule is `core.[0-9]*`, and the whole point is what it does NOT match. `core.*` is the
+# obvious spelling and is wrong twice: this repo tracks core.manifest and core.version, every
+# OS repo also tracks core.lock, and in those repos bare `core` is the vendored Core
+# DIRECTORY. Gitignore does not untrack a file that is already tracked, so the damage from
+# "simplifying" this would not show up here — it would show up the next time someone adds a
+# core.<something> and git silently declines to see it. That is #700's failure mode exactly,
+# which is why this is pinned rather than left to a comment.
+#
+# Asserted against the REAL .gitignore via git check-ignore, not a fixture: the question is
+# what this repo's own rules do, and a fixture would only test a copy of them.
+#
+# --no-index is load-bearing. Without it check-ignore consults the INDEX first and never calls
+# an already-tracked path ignored — so the core.manifest and core.version cases would pass
+# under `core.*` as readily as under the correct rule, and this block would be three tautologies
+# guarding nothing. Verified: with the rule mutated to `core.*`, all three go red only with
+# --no-index; without it, only core.lock (untracked HERE) catches the mistake.
+if have git && git -C "$HERE" rev-parse --git-dir >/dev/null 2>&1; then
+  hdr ".gitignore: crash dumps, without swallowing core.* files"
+  _gi_is() { # _gi_is <path> <ignored|tracked-able> <why>
+    local want="$2" got
+    if git -C "$HERE" check-ignore -q --no-index "$1" 2>/dev/null; then got="ignored"; else got="tracked-able"; fi
+    if [[ "$got" == "$want" ]]; then
+      pass "gitignore: $1 is $want ($3)"
+    else
+      fail "gitignore: $1 is $got, want $want ($3)"
+    fi
+  }
+  _gi_is "core.1234"      ignored      "a crash dump is noise"
+  _gi_is "core.99999"     ignored      "any pid width"
+  _gi_is "core.manifest"  tracked-able "TRACKED here — core.* would have hidden it"
+  _gi_is "core.version"   tracked-able "TRACKED here — core.* would have hidden it"
+  _gi_is "core.lock"      tracked-able "TRACKED in every OS repo; keep the rule fleet-safe"
+  # A bare `mise.lock` line would have no slash, so it would match at EVERY depth. mise's
+  # lockfile is meant to be COMMITTED (mise/config.toml sets lockfile = true and its comment
+  # says so), and the file lands next to that config — so this is the path that matters.
+  _gi_is "mise/mise.lock" tracked-able "lockfile = true wants this COMMITTED, not ignored"
+  unset -f _gi_is
+else
+  skip "gitignore crash-dump rule (not a git checkout)"
+fi
+
+# ── luacheck verdict (common.sh :: _core_luacheck_verdict) ───────────────────
+# WHY THIS IS TESTED. audit-core.sh §4 used to treat EVERY non-zero luacheck exit as
+# "luacheck reported issues", so a toolchain that never ran was announced as a lint failure in
+# nvim/ — and the repair it printed ("re-run luacheck") only reproduced the error (#726). The
+# fix is a three-way decision, and the whole value is that the three stay distinguishable.
+#
+# THE CASE THAT MAKES THE PROBE NECESSARY is `a load failure also exits 1`. luacheck's own
+# codes are 0/1/2/3, and luacheck 1.2.0 failing to load under Lua 5.5 — the documented
+# mise/config.toml trap, and the likeliest toolchain break going forward — exits 1 too. So the
+# lint rc ALONE cannot separate "warnings" from "did not run", at any threshold. If someone
+# later "simplifies" this to a status check on the lint rc, these cases fail.
+hdr "luacheck verdict (_core_luacheck_verdict)"
+_lv_is() { # _lv_is <label> <probe-rc> <lint-rc> <expected>
+  local got
+  got="$(_core_luacheck_verdict "$2" "$3")"
+  if [[ "$got" == "$4" ]]; then
+    pass "luacheck verdict: $1"
+  else
+    fail "luacheck verdict: $1 (probe=$2 lint=$3 → '$got', want '$4')"
+  fi
+}
+# ── the tool ran ──
+_lv_is "a clean run is ok" 0 0 ok
+_lv_is "exit 1 after a passing probe is warnings, not a broken tool" 0 1 issues
+_lv_is "exit 2 (syntax errors in a checked file) is still a lint result" 0 2 issues
+_lv_is "exit 3 (luacheck's I/O error) is still a lint result" 0 3 issues
+# ── the tool did not run ──
+# The #726 shape: the luarocks wrapper execs an absolute interpreter path that is gone.
+_lv_is "a failing probe is a broken tool even when the lint rc looks clean" 127 0 broken
+# THE UNDECIDABLE-WITHOUT-A-PROBE CASE: luacheck 1.2.0 under Lua 5.5 fails to LOAD and exits
+# 1 — byte-identical in status to honest warnings. Only the probe separates them.
+_lv_is "a load failure that exits 1 is broken, not warnings" 1 1 broken
+_lv_is "a failing probe wins over any lint rc" 1 2 broken
+# 126/127 are the shell's "could not exec", never one of luacheck's codes, so after a passing
+# probe they can only mean it stopped being runnable mid-audit — its own sentence.
+_lv_is "exit 127 after a passing probe is a mid-run break" 0 127 broken-midrun
+_lv_is "exit 126 (found but not executable) is a mid-run break" 0 126 broken-midrun
+# The boundary itself, both sides — 3 is luacheck's highest own code.
+_lv_is "exit 125 stays a lint result (below the shell's exec-failure range)" 0 125 issues
+# Defaults: called with nothing, claim nothing is wrong rather than inventing a failure.
+_lv_is "no arguments is ok (no inputs, no claim)" "" "" ok
+
+# LIVE CANARY, the _core_claude_ref_hits lesson: every case above is synthetic, so all of them
+# would still pass if §4 stopped consulting this function. Assert the real gate still routes
+# through it — otherwise these tests pin a helper nothing calls, which is the shape of a gate
+# that is green because it checks nothing.
+if grep -q '_core_luacheck_verdict' "$HERE/scripts/audit-core.sh"; then
+  pass "luacheck verdict: audit-core.sh §4 still routes its verdict through this function"
+else
+  fail "luacheck verdict: audit-core.sh no longer calls _core_luacheck_verdict — §4 decides on its own again, so every case above pins a helper nothing uses (#726)"
+fi
+unset -f _lv_is
+
+# ── unreferenced .claude/ scanner (common.sh :: _core_claude_untracked_hits) ──
+# WHY THIS IS TESTED ON A REAL REPO. Unlike _core_claude_ref_hits, which is pure text
+# extraction, every verdict here comes from git: is the path tracked, and which .gitignore
+# rule wins. No text fixture can stand in for that, so each case builds a throwaway repo with
+# its own index and .gitignore — the same approach the nvim-reachability tests take, and for
+# the same reason.
+#
+# The discriminator under test is the one that makes the gate self-maintaining: a file hidden
+# by the BLANKET `.claude/*` is a finding, one named by a MORE SPECIFIC rule is a decision.
+# Get that backwards in either direction and the gate either cries wolf on every per-machine
+# file or goes silent on the defect it exists for (#700).
+if have git; then
+  hdr "unreferenced .claude/ scanner (_core_claude_untracked_hits)"
+  _cud="$SANDBOX/claudeuntracked"
+  _cu_fresh() { # a repo whose .gitignore mirrors Core's: blanket + per-path negations
+    rm -rf "$_cud"
+    mkdir -p "$_cud/.claude/commands" "$_cud/.claude/agents"
+    git -C "$_cud" init -q
+    git -C "$_cud" config user.email t@example.com
+    git -C "$_cud" config user.name tester
+    cat >"$_cud/.gitignore" <<'GI'
+.claude/*
+!.claude/commands/
+!.claude/agents/
+!.claude/tool-decisions.md
+.claude/settings.local.json
+GI
+    printf 'cmd\n' >"$_cud/.claude/commands/a.md"
+    git -C "$_cud" add -A >/dev/null 2>&1
+    git -C "$_cud" commit -qm init >/dev/null 2>&1
+  }
+  _cu_is() { # _cu_is <label> <expected>
+    local got
+    got="$(_core_claude_untracked_hits "$_cud")"
+    if [[ "$got" == "$2" ]]; then
+      pass "unreferenced .claude/ scan: $1"
+    else
+      fail "unreferenced .claude/ scan: $1 (got '${got//$'\n'/, }', want '${2//$'\n'/, }')"
+    fi
+  }
+
+  # ── what it must catch ──
+  # THE #700 SHAPE, with no reference to betray it: a top-level file under the blanket rule.
+  _cu_fresh
+  printf 'ledger\n' >"$_cud/.claude/tool-decisions-v2.md"
+  _cu_is "a top-level file hidden by the blanket rule is a finding" ".claude/tool-decisions-v2.md"
+  # …and #700 itself, exactly: the negations are per-path, so a name one character off the
+  # negated one is invisible.
+  _cu_fresh
+  printf 'x\n' >"$_cud/.claude/tool-decisions.md.bak"
+  _cu_is "a near-miss on a negated filename is a finding" ".claude/tool-decisions.md.bak"
+
+  # ── what it must NOT catch ──
+  _cu_fresh
+  _cu_is "a clean tree yields nothing" ""
+  # The negated file, actually tracked — the state the gate wants the tree in.
+  _cu_fresh
+  printf 'ledger\n' >"$_cud/.claude/tool-decisions.md"
+  git -C "$_cud" add -A >/dev/null 2>&1
+  git -C "$_cud" commit -qm ledger >/dev/null 2>&1
+  _cu_is "a tracked file is not a finding" ""
+  # THE EXEMPTION THAT MUST HOLD: its own .gitignore line is a decision, not an oversight.
+  # If this regresses, every developer's per-machine settings turn the audit red.
+  _cu_fresh
+  printf '{}\n' >"$_cud/.claude/settings.local.json"
+  _cu_is "a file with its own specific ignore rule is exempt" ""
+  # UNTRACKED BUT VISIBLE is deliberately out of scope — inside a negated directory git shows
+  # the file in `git status`, so this gate flagging it would red the audit on every
+  # work-in-progress file. The scope is invisibility, not un-added-ness.
+  _cu_fresh
+  printf 'new\n' >"$_cud/.claude/commands/b.md"
+  _cu_is "an untracked file git can still SEE is not a finding" ""
+  # Degenerate inputs: silence, never a crash or a false claim.
+  rm -rf "$_cud"; mkdir -p "$_cud"
+  _cu_is "a directory with no .claude/ yields nothing" ""
+  rm -rf "$_cud"; mkdir -p "$_cud/.claude"; printf 'x\n' >"$_cud/.claude/f.md"
+  _cu_is "a non-git directory yields nothing (no repo, no claim)" ""
+
+  # LIVE CANARY, the _core_claude_ref_hits lesson: every case above is synthetic, so all of
+  # them would still pass if .gitignore stopped using the blanket spelling the scanner
+  # matches — leaving a gate that is green because it recognises nothing. Assert the real
+  # rule still exists in the form the case arm keys on.
+  if grep -qxE '\.claude/\*\*?' "$HERE/.gitignore"; then
+    pass "unreferenced .claude/ scan: .gitignore still uses the blanket rule the scanner keys on"
+  else
+    fail "unreferenced .claude/ scan: .gitignore no longer carries a bare '.claude/*' line — _core_claude_untracked_hits keys its finding on that exact pattern, so it now recognises nothing and passes vacuously"
+  fi
+  rm -rf "$_cud"
+  unset -f _cu_fresh _cu_is
+  unset _cud
+else
+  skip "unreferenced .claude/ scanner (git not installed)"
+fi
+
 # ── nested-gate failure digest (scripts/lib/common.sh :: _core_fail_digest) ───
 # WHY THIS IS TESTED AT ALL. audit-core.sh reports the behavioural suite through this, and its
 # whole reason for existing is that an INTERMITTENT failure is unreproducible by the time the
@@ -3928,7 +4117,9 @@ if have git; then
   # Both are in the `tools` group beside lazygit/jj/tealdeer and were only ever covered by
   # the fixture-directory list above, which proves the SOURCE was copied, not that the LINK
   # lands where bootstrap promises.
-  _lr_is_link_to "$LR/config/mise/config.toml" "$LR/dotfiles/core/mise/config.toml" || _lr_bad="$_lr_bad mise"
+  # mise is deliberately NOT in this group — it is ADOPTED (a real file), not linked,
+  # because `mise use -g` rewrites it and a symlink pointed that write into vendored
+  # core/. Asserted separately below.
   _lr_is_link_to "$LR/config/atuin/config.toml" "$LR/dotfiles/core/atuin/config.toml" || _lr_bad="$_lr_bad atuin"
   _lr_is_link_to "$LR/home/.gitconfig" "$LR/dotfiles/core/git/gitconfig" || _lr_bad="$_lr_bad .gitconfig"
   _lr_is_link_to "$LR/home/.vimrc" "$LR/dotfiles/core/vim/vimrc" || _lr_bad="$_lr_bad .vimrc"
@@ -3937,10 +4128,39 @@ if have git; then
   _lr_is_link_to "$LR/config/tmux/scripts" "$LR/dotfiles/core/tmux/scripts" || _lr_bad="$_lr_bad tmux/scripts"
   [[ -d "$LR/config/tmux/scripts" ]] || _lr_bad="$_lr_bad tmux/scripts(dangling)"
   if [[ -z "$_lr_bad" ]]; then
-    pass "link run: tmux, starship, lazygit, jj, tealdeer, mise, atuin, gitconfig and vimrc land where bootstrap promises"
+    pass "link run: tmux, starship, lazygit, jj, tealdeer, atuin, gitconfig and vimrc land where bootstrap promises"
   else
     fail "link run: wrong or missing links —$_lr_bad"
   fi
+
+  # ── mise is ADOPTED, not linked ─────────────────────────────────────────────
+  # The regression this pins: a symlink here is a write path back into the vendored
+  # core/ tree. `mise use -g ruby@4.0` followed it, tampered the tree, and took the
+  # repo out of the next fleet sync. Asserting "not a symlink" IS the contract.
+  if [[ -f "$LR/config/mise/config.toml" && ! -L "$LR/config/mise/config.toml" ]]; then
+    pass "adopt run: mise config is a real file, not a symlink into core/"
+  else
+    fail "adopt run: mise config is missing or is a symlink (the write-through regression)"
+  fi
+  if [[ "$(git hash-object -- "$LR/config/mise/config.toml" 2>/dev/null)" == \
+        "$(git hash-object -- "$LR/dotfiles/core/mise/config.toml" 2>/dev/null)" ]]; then
+    pass "adopt run: a freshly adopted mise config matches Core byte-for-byte"
+  else
+    fail "adopt run: adopted mise config does not match Core's source"
+  fi
+  # And the write that started all this must now stay local: simulate the rewrite and
+  # prove the vendored tree is untouched.
+  _lr_core_before="$(git hash-object -- "$LR/dotfiles/core/mise/config.toml")"
+  cp "$LR/config/mise/config.toml" "$SANDBOX/mise-adopted.orig"
+  printf '\n[tools]\nruby = "4.0"\n' >>"$LR/config/mise/config.toml"
+  if [[ "$(git hash-object -- "$LR/dotfiles/core/mise/config.toml")" == "$_lr_core_before" ]]; then
+    pass "adopt run: a local mise rewrite does NOT reach vendored core/"
+  else
+    fail "adopt run: a local mise rewrite wrote through into vendored core/"
+  fi
+  # Restore: the later "second pass is a true no-op" assertion shares this fixture, and a
+  # drifted file there would make THIS test the cause of an unrelated failure.
+  cp "$SANDBOX/mise-adopted.orig" "$LR/config/mise/config.toml"
   # clip is SYMLINKED onto PATH — bootstrap-lib chmod +x's the SOURCE, not the link — so
   # assert the target as well as the mode. nvim's clipboard provider, tmux copy-pipe and
   # the zsh helpers all shell out to it by name, so a dangling link breaks copy on every
@@ -4292,32 +4512,127 @@ fi
 # everywhere — including the minimal containers where the heavier fixtures skip.
 hdr "helper-adoption section is --strict-safe (audit-core.sh §5f)"
 # The adoption section reads SIBLING repos off disk, and CI checks out only Core — so every
-# run there takes a skip branch. audit-core.sh treats a skip whose text lacks the literal
-# "out of scope" as a real coverage gap and reds `--strict`, which is what CI runs (ci.yml
-# passes $strict). A section that skips with any other wording would therefore turn the whole
-# fleet's CI red the moment it landed, on every repo, for a purely advisory check.
+# run there takes a skip branch. --strict (which ci.yml passes) reds on TOOL-absent skips, so
+# a sibling-absence skip landing in that class would turn the whole fleet's CI red the moment
+# it landed, on every repo, for a purely advisory check.
+#
+# THIS CONTRACT CHANGED SHAPE. It used to be a WORDING rule: the skip text had to contain the
+# literal "out of scope", because a substring test was what classified skips. That made the
+# message the gate — you could not make the wording honest without moving a gate — and it
+# filed "this box has no sibling to read" under the same heading as "you asked me to narrow
+# this run". The class is recorded structurally now, by skip_env(), so what must be pinned is
+# the CALL, not the prose. Wording is free to change; the classifier is not.
 #
 # Asserted statically on the source rather than by running the audit: reproducing "no sibling
-# checked out" means a fake fleet root, and the property worth pinning is the WORDING, which
-# is exactly what a static read can see.
+# checked out" means a fake fleet root, and the property worth pinning is which function the
+# section calls, which is exactly what a static read can see.
 _ha_bad=0
 while IFS= read -r _ha_line; do
   [ -n "$_ha_line" ] || continue
   case "$_ha_line" in
-  *"out of scope"*) ;;
+  *skip_env*) ;;
   *)
-    fail "helper adoption: a skip without 'out of scope' would red --strict in CI — $_ha_line"
+    fail "helper adoption: a plain skip() here lands in the TOOL-absent class and reds --strict in CI — $_ha_line"
     _ha_bad=1
     ;;
   esac
 done <<EOF
-$(grep -n 'skip "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
+$(grep -n 'skip[_a-z]* "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
 EOF
-if ((_ha_bad == 0)) && grep -q 'skip "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null; then
-  pass "helper adoption: every skip is worded 'out of scope', so --strict stays green in CI"
+if ((_ha_bad == 0)) && grep -q 'skip_env "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null; then
+  pass "helper adoption: every sibling skip goes through skip_env, so --strict stays green in CI"
 elif ((_ha_bad == 0)); then
   fail "helper adoption: audit-core.sh has no helper-adoption skip at all — the section is gone or renamed"
 fi
+# skip_env must actually EXIST and be the thing that records the class — otherwise the
+# assertion above passes against a typo'd call that silently becomes an unbound command.
+if grep -q '^skip_env()' "$HERE/scripts/lib/common.sh" && grep -q '_CORE_ENV_SKIPS' "$HERE/scripts/lib/common.sh"; then
+  pass "helper adoption: skip_env is defined in common.sh and records the environment class"
+else
+  fail "helper adoption: skip_env is missing from common.sh — the sibling skips call nothing"
+fi
+
+# ── skip_env / _core_tool_skip_count: the classifier, as a unit ──────────────
+# These drive _core_tool_skip_count ITSELF — the same function audit-core.sh calls. The
+# previous version of this block re-implemented the classification loop inline, which meant it
+# exercised its own copy and could never fail when audit-core.sh changed. It was demonstrated
+# green while the defect it guarded was fully reintroduced in audit-core.sh. That is the whole
+# reason the logic moved into common.sh: so a test can bind to the code that actually runs.
+_tsc() { # <setup...> — run a scenario against the REAL helper, print its verdict
+  CORE_JSON=1 bash -c '
+    . "'"$HERE"'/scripts/lib/common.sh" 2>/dev/null || exit 9
+    '"$1"'
+    printf "%d %d %d" "$SKIP" "$(_core_tool_skip_count)" "${#_CORE_ENV_SKIPS[@]}"
+  ' 2>/dev/null
+}
+
+# The happy partition: 1 tool, 1 scope, 2 environment.
+_se_out="$(_tsc '
+  skip     "luacheck (not installed)"
+  skip     "nvim config load (out of scope)"
+  skip_env "helper adoption (no sibling OS repo checked out — nothing to read here)"
+  skip_env "coverage register (no sibling OS repo checked out — nothing to read here)"
+')"
+case "$_se_out" in
+"4 1 2") pass "_core_tool_skip_count: 4 skips partition as 1 tool / 1 scope / 2 environment" ;;
+"")      fail "_core_tool_skip_count: could not source scripts/lib/common.sh — the helper is unreachable" ;;
+*)       fail "_core_tool_skip_count: partition is '$_se_out', want '4 1 2' (SKIP, tool, env) — --strict's meaning moved" ;;
+esac
+
+# THE POISONED-WORDING CASE — the one that was actually broken. An environment skip whose text
+# contains "out of scope" must NOT cancel a genuine tool gap. Every call site in-tree is worded
+# innocently, so only a test that supplies the poisoned wording can see this.
+_pw_out="$(_tsc '
+  skip     "luacheck (not installed)"
+  skip_env "gitleaks policy (no sibling checked out — out of scope)"
+')"
+case "$_pw_out" in
+"2 1 1") pass "_core_tool_skip_count: an env skip worded 'out of scope' does not cancel a real tool gap" ;;
+*)       fail "_core_tool_skip_count: got '$_pw_out', want '2 1 1' — a poisoned env message masked an absent tool, so --strict goes green on a real gap" ;;
+esac
+
+# BINDING. The two assertions above are only worth anything if audit-core.sh actually uses the
+# helper AND does not adjust the number afterwards. The demonstrated regression was precisely
+# that shape: leave the classification correct, then re-add a subtracting statement after it.
+_tb=0
+_tb_asg="$(grep -c '^_tool_skips=' "$HERE/scripts/audit-core.sh" || true)"
+[[ "$_tb_asg" == 1 ]] || {
+  fail "binding: _tool_skips is assigned $_tb_asg times in audit-core.sh, want exactly 1 — a second assignment can undo a correct classification"
+  _tb=1
+}
+grep -q '^_tool_skips="\$(_core_tool_skip_count)"' "$HERE/scripts/audit-core.sh" || {
+  fail "binding: audit-core.sh does not take _tool_skips straight from _core_tool_skip_count — the tested helper is not the code that runs"
+  _tb=1
+}
+grep -q '_tool_skips=\$((_tool_skips' "$HERE/scripts/audit-core.sh" && {
+  fail "binding: audit-core.sh post-processes _tool_skips — this is the exact partial revert the helper was extracted to prevent"
+  _tb=1
+}
+((_tb)) || pass "binding: audit-core.sh takes _tool_skips solely from _core_tool_skip_count, with no post-processing"
+
+# --json must stay JSON-ONLY, and the FLEET sections are where that broke. Their advisory
+# reports printed to stdout unguarded, so `audit-core.sh --json` emitted invalid JSON —
+# but ONLY on a box with sibling repos checked out, because otherwise the sections skip
+# before reaching the report. CI checks out just this repo, so CI never saw it. That is the
+# same blind spot --require-siblings exists for, which is why this assertion lives here.
+# ANCHORED to statement position (^[[:space:]]*printf) on purpose: a bare /printf/ also
+# matches a printf inside a $( ) that BUILDS A STRING — §5g composes its report that way —
+# and flagging those would be a false fire that teaches the next reader to widen the guard
+# where no guard belongs. Only a printf that is the statement can reach stdout.
+_jg_bad=0
+while IFS= read -r _jg_line; do
+  [ -n "$_jg_line" ] || continue
+  case "$_jg_line" in
+  *CORE_JSON*) ;;
+  *)
+    fail "--json: an unguarded fleet-section printf breaks JSON-only stdout — $_jg_line"
+    _jg_bad=1
+    ;;
+  esac
+done <<EOF
+$(awk 'NR>=860 && NR<=1045 && /^[[:space:]]*printf/ && !/>&2/ {printf "%d: %s\n", NR, $0}' "$HERE/scripts/audit-core.sh" 2>/dev/null || true)
+EOF
+((_jg_bad)) || pass "--json: every fleet-section report line is CORE_JSON-guarded (stdout stays parseable)"
 # The other half of "advisory": the section must not be able to FAIL. A future edit that
 # swaps the report for a fail() would red every repo's CI on arrival, since 8 of 9 are short.
 if ! grep -q 'fail "helper adoption' "$HERE/scripts/audit-core.sh" 2>/dev/null; then

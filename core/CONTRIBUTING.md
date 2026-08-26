@@ -76,6 +76,18 @@ itself at commit time. Two deliberate non-checks:
   the repo root it misses `nvim/.luacheckrc` and floods false "undefined vim"
   warnings.
 
+If you install luacheck yourself, **build it against an explicit Lua 5.4.** luacheck 1.2.0 (its
+last release) cannot load under 5.5 at all — 5.5 made some locals const, tripping "attempt to
+assign to const variable" inside luacheck's own source. `luarocks install luacheck` picks up
+whatever Lua your `luarocks` was built for, and on this repo's own box that is mise's, which
+`mise/config.toml` pins to 5.5 for the Neovim work. CI and the SessionStart hook each pin a 5.4
+of their own for this reason.
+
+A luarocks wrapper also `exec`s an **absolute** interpreter path, so it keeps answering
+`command -v` long after the Lua it was built against is upgraded away — §4 probes
+`luacheck --version` before linting so that reports as a broken toolchain rather than as a
+defect in `nvim/` (#726).
+
 ## Conventions
 
 - **Executable bits matter.** Anything invoked by path (the `bin/` clip shims, the
