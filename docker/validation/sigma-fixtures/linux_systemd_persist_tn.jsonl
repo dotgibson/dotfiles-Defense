@@ -1,0 +1,1 @@
+{"key": "systemd_persist", "comm": "dpkg", "exe": "/usr/bin/dpkg", "name": "/usr/lib/systemd/system/nginx.service", "auid": "0", "uid": "0"}

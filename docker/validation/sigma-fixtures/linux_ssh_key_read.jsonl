@@ -1,0 +1,1 @@
+{"key": "ssh_key_read", "comm": "tar", "exe": "/usr/bin/tar", "name": "/home/dev/.ssh/id_ed25519", "auid": "1000", "uid": "1000"}

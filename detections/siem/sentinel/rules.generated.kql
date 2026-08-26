@@ -192,6 +192,27 @@ EventID == 7045 and (ImagePath contains "\\ADMIN$\\" or ImagePath contains "%COM
 // linux/ccache_theft_staging.yml — Kerberos ccache file staged by a copy/transfer/interpreter process
 (CommandLine contains "/tmp/krb5cc_" or CommandLine contains ".ccache" or CommandLine contains "krb5.ccache") and (Image endswith "/cp" or Image endswith "/mv" or Image endswith "/dd" or Image endswith "/cat" or Image endswith "/tac" or Image endswith "/tar" or Image endswith "/gzip" or Image endswith "/bzip2" or Image endswith "/xz" or Image endswith "/zip" or Image endswith "/base64" or Image endswith "/xxd" or Image endswith "/scp" or Image endswith "/rsync" or Image endswith "/sftp" or Image endswith "/nc" or Image endswith "/ncat" or Image endswith "/socat" or Image endswith "/curl" or Image endswith "/wget" or Image endswith "/openssl" or Image endswith "/python" or Image endswith "/python3" or Image endswith "/perl" or Image endswith "/ruby")
 
+// linux/cron_persistence.yml — Cron persistence - scheduled-job file written (auditd)
+key =~ "cron_persist" and (not((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
+
+// linux/shadow_file_read.yml — /etc/shadow read by a non-auth process (auditd)
+key =~ "shadow_read" and (not((comm in~ ("unix_chkpwd", "sshd", "login", "su", "sudo", "passwd", "chpasswd", "chage", "pwck", "grpck", "useradd", "usermod", "userdel", "systemd"))))
+
+// linux/ssh_authorized_keys_write.yml — SSH authorized_keys written - key-based persistence (auditd)
+(key =~ "ssh_authkeys" and name contains "authorized_keys") and (not((exe endswith "/cloud-init" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
+
+// linux/ssh_private_key_read.yml — SSH private key read by a non-SSH process (auditd)
+(key =~ "ssh_key_read" and (name contains "/id_rsa" or name contains "/id_ecdsa" or name contains "/id_ed25519" or name contains "/id_dsa" or name contains "/identity")) and (not((comm in~ ("ssh", "sshd", "ssh-agent", "ssh-keygen", "ssh-add", "scp", "sftp", "git"))))
+
+// linux/sudo_root_shell.yml — Root shell spawned under a real login uid - sudo escape (auditd)
+(key =~ "sudo_abuse" and (comm in~ ("bash", "sh", "dash", "zsh", "ksh", "fish", "python", "python3", "perl", "ruby"))) and (not(auid == 1000))
+
+// linux/suid_bit_set.yml — Setuid bit set on a file - SUID backdoor planted (auditd)
+key =~ "suid_change" and (not((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/install" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
+
+// linux/systemd_unit_persistence.yml — Systemd unit persistence - unit or timer file written (auditd)
+key =~ "systemd_persist" and (not((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/systemd" or exe endswith "/systemctl" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
+
 // npm/npm_maintainer_added.yml — npm maintainer or owner added (durable publish backdoor)
 action in~ ("package.owner_add", "team.user_add")
 

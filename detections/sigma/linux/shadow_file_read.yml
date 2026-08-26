@@ -1,0 +1,62 @@
+title: /etc/shadow read by a non-auth process (auditd)
+id: aa667b5b-a7e1-49de-bfd7-6ff3d6daeb12
+status: experimental
+description: |
+  Detects T1003.008 (OS Credential Dumping: /etc/passwd and /etc/shadow): a read of
+  /etc/shadow or /etc/gshadow by a process outside the authentication stack. The file
+  holds every local password hash, so a copy of it is offline cracking against your
+  entire local user base with no further access needed - the Linux equivalent of the
+  NTDS.dit grab the Windows half of this corpus covers.
+  The legitimate reader list is short and stable, which is what makes this a good
+  detection rather than a noisy one: PAM's helper, the login/su/sudo path, and the
+  password-management utilities. Anything else reading the file - cat, an archiver, an
+  interpreter, a transfer tool - is collection.
+  Requires the auditd read watches that set the key (load with `augenrules --load`):
+    -w /etc/shadow -p r -k shadow_read
+    -w /etc/gshadow -p r -k shadow_read
+  Validate (purple): read /etc/shadow for offline cracking from dotfiles-Offense (htpx
+  pair shadow-dump-credaccess).
+references:
+  - https://attack.mitre.org/techniques/T1003/008/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/shadow-dump-auditd.md
+author: dotfiles-Defense
+date: 2026-08-26
+tags:
+  - attack.credential-access
+  - attack.t1003.008
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection:
+    key: 'shadow_read'
+  filter_auth_stack:
+    # DEPLOY-REQUIRED: extend with any agent in YOUR estate that legitimately reads the
+    # shadow file - a compliance/audit scanner and some backup agents are the usual
+    # additions. The list below is the standard authentication stack and is universal;
+    # it is not a placeholder in the way most stubs here are, so this rule is deployable
+    # as-is and the extension is tuning rather than a prerequisite. Until extended, a
+    # nightly compliance scan will alert.
+    # Run detections/sigma/deploy-required.sh to find this.
+    comm:
+      - 'unix_chkpwd'
+      - 'sshd'
+      - 'login'
+      - 'su'
+      - 'sudo'
+      - 'passwd'
+      - 'chpasswd'
+      - 'chage'
+      - 'pwck'
+      - 'grpck'
+      - 'useradd'
+      - 'usermod'
+      - 'userdel'
+      - 'systemd'
+  condition: selection and not filter_auth_stack
+falsepositives:
+  - Compliance or vulnerability scanners auditing password policy - allowlist them in
+    filter_auth_stack.
+  - Backup agents reading /etc wholesale (allowlist the agent, or accept that a backup
+    of /etc includes every local hash and treat the backup store accordingly).
+level: high

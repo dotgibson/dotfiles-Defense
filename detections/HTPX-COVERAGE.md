@@ -6,7 +6,7 @@ A **gap here is not a defect.** htpx spans SaaS and CI/CD platforms this repo ha
 
 Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `detections/htpx.pin`.
 
-**102 blue entries · 86 claimed here · 20 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
+**102 blue entries · 93 claimed here · 20 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
 
 ## htpx blue entries claimed by detection content here
 
@@ -26,6 +26,7 @@ Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `dete
 | `cloud-destroy-cloudtrail` | T1485 | `aws_data_destruction` |
 | `coercion-5145` | T1187 | `coercion_named_pipes_5145`, `detections/network/suricata/coercion.rules` |
 | `consent-grant-auditlogs` | T1528 | `entra_illicit_consent_grant` |
+| `cron-persist-auditd` | T1053.003 | `cron_persistence` |
 | `dcshadow-4742` | T1207 | `dcshadow_rogue_dc_4742` |
 | `dcsync-4662` | T1003.006 | `dcsync_replication_4662` |
 | `device-code-signin` | T1528 | `detections/siem/sentinel/entra_device_code_signin.yaml` |
@@ -81,6 +82,7 @@ Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `dete
 | `schtask-4698` | T1053.005 | `scheduled_task_suspicious_4698` |
 | `service-stop-7036` | T1489 | `service_stop_protected_services` |
 | `shadow-credentials-5136` | T1556 | `shadow_credentials_keycredentiallink_5136` |
+| `shadow-dump-auditd` | T1003.008 | `shadow_file_read` |
 | `silver-ticket-4769` | T1558.002 | `detections/siem/sentinel/silver_ticket_4624.yaml`, `detections/siem/splunk/correlation_searches.conf` |
 | `slack-2fa-audit` | T1685 | `slack_2fa_enforcement_disabled` |
 | `slack-app-audit` | T1098 | `slack_app_installed` |
@@ -90,6 +92,11 @@ Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `dete
 | `snowflake-network-policy-audit` | T1686.001 | `snowflake_network_policy_change` |
 | `snowflake-user-audit` | T1136.003 | `snowflake_user_created` |
 | `sp-cred-auditlogs` | T1098.001 | `entra_sp_credential_backdoor` |
+| `ssh-authkeys-auditd` | T1098.004 | `ssh_authorized_keys_write` |
+| `ssh-key-theft-auditd` | T1552.004 | `ssh_private_key_read` |
+| `sudo-abuse-auditd` | T1548.003 | `sudo_root_shell` |
+| `suid-abuse-auditd` | T1548.001 | `suid_bit_set` |
+| `systemd-persist-auditd` | T1543.002 | `systemd_unit_persistence` |
 | `tfc-agent-audit` | T1543 | `tfc_rogue_agent_pool` |
 | `tfc-token-audit` | T1098 | `tfc_token_backdoor` |
 | `tfc-var-audit` | T1072 | `tfc_variable_injection` |
@@ -106,18 +113,11 @@ The other side of the boundary. Each is a detection the corpus documents and thi
 | htpx blue entry | ATT&CK | Title |
 | --------------- | ------ | ----- |
 | `aitm-phish-signin` | T1566.002 | Detect AiTM phishing (Entra sign-in token replay across ASNs) |
-| `cron-persist-auditd` | T1053.003 | Detect cron persistence (auditd watches on cron paths) |
 | `cryptomine-pool-detect` | T1496.001 | Detect cryptojacking (Stratum pool connections + CPU peg) |
 | `dga-nxdomain-entropy` | T1568.002 | Detect DGA beacons (NXDOMAIN burst + label entropy) |
 | `dns-tunnel-sysmon-22` | T1071.004 | Detect DNS tunneling (Sysmon 22 query volume + label length) |
 | `domain-fronting-sni-mismatch` | T1090.004 | Detect domain fronting (CDN edge from a non-browser process; SNI vs Host mismatch) |
 | `ldap-recon-4662` | T1069.002, T1087.002 | Detect LDAP reconnaissance (4662 targeted reads; 1644 broad filters) |
-| `shadow-dump-auditd` | T1003.008 | Detect /etc/shadow read (auditd read watch, non-auth reader) |
-| `ssh-authkeys-auditd` | T1098.004 | Detect SSH authorized_keys persistence (auditd watch on key files) |
-| `ssh-key-theft-auditd` | T1552.004 | Detect SSH private-key theft (auditd read watch, cross-user sweep) |
-| `sudo-abuse-auditd` | T1548.003 | Detect sudo privilege escalation (root shell under a real loginuid) |
-| `suid-abuse-auditd` | T1548.001 | Detect SUID abuse (setuid-bit change + root shell under a real loginuid) |
-| `systemd-persist-auditd` | T1543.002 | Detect systemd unit persistence (auditd watches on unit dirs) |
 | `unconstrained-deleg-4624` | T1558 | Detect unconstrained-deleg abuse (DC machine-account auth to a non-DC, 4624) |
 | `valid-accounts-signin` | T1078.004 | Detect valid-account abuse (Entra sign-in, stuffing hit from a new ASN) |
 | `web-service-c2-beacon` | T1102.002 | Detect web-service C2 (non-browser process to SaaS API) |

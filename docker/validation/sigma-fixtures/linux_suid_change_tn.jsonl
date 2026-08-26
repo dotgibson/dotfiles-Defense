@@ -1,0 +1,1 @@
+{"key": "suid_change", "comm": "dpkg", "exe": "/usr/bin/dpkg", "name": "/usr/bin/passwd", "auid": "0", "uid": "0"}

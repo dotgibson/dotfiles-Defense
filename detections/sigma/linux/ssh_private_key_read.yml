@@ -1,0 +1,67 @@
+title: SSH private key read by a non-SSH process (auditd)
+id: 235ce210-e121-4374-8a27-a4b9fd833d9c
+status: experimental
+description: |
+  Detects T1552.004 (Unsecured Credentials: Private Keys): a read of an SSH private
+  key by a process that is not the SSH client stack. Harvested keys are how a single
+  compromised host becomes lateral movement across every host that trusts it, and
+  unlike a password they are reusable indefinitely and rarely rotated. The read is the
+  detectable step: legitimate consumers are a short, stable list - ssh, sshd,
+  ssh-agent, ssh-keygen, scp/sftp, git - so a read by anything else (an archiver, an
+  interpreter, a transfer tool) is the collection step, the same argument the sibling
+  ccache_theft_staging rule makes for Kerberos ccaches.
+  This is the single-read shape. The higher-fidelity form is a fan-out - one reader
+  touching many users' keys in a short window - which is a value_count correlation over
+  this rule once you have a baseline for how many key reads are normal on your hosts.
+  The correlation is deliberately not shipped here: its threshold is a property of your
+  estate, not of the rule.
+  Requires an auditd read watch that sets the key (load with `augenrules --load`):
+    -w /home -p r -k ssh_key_read
+    -w /root/.ssh/ -p r -k ssh_key_read
+  Read watches are expensive; scope the path to your home layout before deploying.
+  Validate (purple): harvest private keys from dotfiles-Offense (htpx pair
+  ssh-key-theft-credaccess).
+references:
+  - https://attack.mitre.org/techniques/T1552/004/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/ssh-key-theft-auditd.md
+author: dotfiles-Defense
+date: 2026-08-26
+tags:
+  - attack.credential-access
+  - attack.t1552.004
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection:
+    key: 'ssh_key_read'
+    name|contains:
+      - '/id_rsa'
+      - '/id_ecdsa'
+      - '/id_ed25519'
+      - '/id_dsa'
+      - '/identity'
+  filter_ssh_stack:
+    # DEPLOY-REQUIRED: extend with the agents in YOUR estate that legitimately read
+    # private keys - backup and endpoint agents are the usual additions, and a
+    # configuration-management agent that validates key material will be here too. The
+    # SSH stack below is universal and can stay as-is; the point of this rule is that
+    # the legitimate reader list is SHORT, so an unfilled entry here shows up as an
+    # alert rather than as silence. Until filled this excludes only the entries below.
+    # Run detections/sigma/deploy-required.sh to find this.
+    comm:
+      - 'ssh'
+      - 'sshd'
+      - 'ssh-agent'
+      - 'ssh-keygen'
+      - 'ssh-add'
+      - 'scp'
+      - 'sftp'
+      - 'git'
+  condition: selection and not filter_ssh_stack
+falsepositives:
+  - Backup or endpoint agents reading home directories wholesale - allowlist them in
+    filter_ssh_stack, or narrow the watch away from the paths they sweep.
+  - A user inspecting their own key with cat/less (expected - triage on the auid against
+    the key's owning home directory; a reader outside that home is the real signal).
+level: high

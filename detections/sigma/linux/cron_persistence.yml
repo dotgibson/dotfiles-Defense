@@ -1,0 +1,66 @@
+title: Cron persistence - scheduled-job file written (auditd)
+id: 59b01fb3-e724-41ed-8e25-589f58278f8d
+status: experimental
+description: |
+  Detects T1053.003 (Scheduled Task/Job: Cron) on Linux: a write to a cron drop
+  directory or crontab, seen through an auditd file watch. Cron is the oldest and
+  still the most common Linux persistence primitive - drop a file in /etc/cron.d or
+  append to a user crontab and the payload re-executes on a schedule the operator
+  chooses, surviving reboot with no service to register and no binary to replace.
+  The selection is the auditd KEY, not a path list: the audit rules below decide what
+  is watched, so the watch and the detection cannot drift apart. What Sigma adds is
+  the allowlist auditd cannot express - package managers and configuration management
+  legitimately write these paths on every install and every converge, and they are
+  the entire volume here.
+  Requires the auditd watches that set the key (load with `augenrules --load`):
+    -w /etc/crontab -p wa -k cron_persist
+    -w /etc/cron.d/ -p wa -k cron_persist
+    -w /etc/cron.hourly/ -p wa -k cron_persist
+    -w /etc/cron.daily/ -p wa -k cron_persist
+    -w /etc/cron.weekly/ -p wa -k cron_persist
+    -w /etc/cron.monthly/ -p wa -k cron_persist
+    -w /var/spool/cron/ -p wa -k cron_persist
+  Validate (purple): install a cron callback from dotfiles-Offense (htpx pair
+  cron-persist).
+references:
+  - https://attack.mitre.org/techniques/T1053/003/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/cron-persist-auditd.md
+author: dotfiles-Defense
+date: 2026-08-26
+tags:
+  - attack.persistence
+  - attack.t1053.003
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection:
+    key: 'cron_persist'
+  filter_provisioning:
+    # DEPLOY-REQUIRED: extend with YOUR package manager and configuration-management
+    # binaries. The list below covers the common distro package managers and the four
+    # usual CM agents; yours may differ, and an in-house deploy wrapper will not be here
+    # at all. Package installs and CM converges write cron paths continuously, so until
+    # this matches your fleet the rule reports routine automation rather than the
+    # operator-planted job. Until filled this excludes only the entries below.
+    # Run detections/sigma/deploy-required.sh to find this.
+    exe|endswith:
+      - '/dpkg'
+      - '/rpm'
+      - '/apt'
+      - '/apt-get'
+      - '/yum'
+      - '/dnf'
+      - '/zypper'
+      - '/ansible-playbook'      # example CM — verify against your fleet
+      - '/puppet'                # example CM — verify against your fleet
+      - '/chef-client'           # example CM — verify against your fleet
+      - '/salt-minion'           # example CM — verify against your fleet
+  condition: selection and not filter_provisioning
+falsepositives:
+  - Package installs and configuration-management converges writing cron entries -
+    allowlist the tooling in filter_provisioning; what remains is a cron file written
+    by something that is not your provisioning path.
+  - An administrator editing a crontab by hand during change control (expected - triage
+    on the auid and the file written).
+level: medium

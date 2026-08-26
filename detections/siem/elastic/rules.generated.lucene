@@ -192,6 +192,27 @@ EventID:7045 AND (ImagePath:(*\\ADMIN$\\* OR *%COMSPEC%* OR *\\cmd.exe* OR *powe
 // linux/ccache_theft_staging.yml — Kerberos ccache file staged by a copy/transfer/interpreter process
 (CommandLine:(*\/tmp\/krb5cc_* OR *.ccache* OR *krb5.ccache*)) AND (Image:(*\/cp OR *\/mv OR *\/dd OR *\/cat OR *\/tac OR *\/tar OR *\/gzip OR *\/bzip2 OR *\/xz OR *\/zip OR *\/base64 OR *\/xxd OR *\/scp OR *\/rsync OR *\/sftp OR *\/nc OR *\/ncat OR *\/socat OR *\/curl OR *\/wget OR *\/openssl OR *\/python OR *\/python3 OR *\/perl OR *\/ruby))
 
+// linux/cron_persistence.yml — Cron persistence - scheduled-job file written (auditd)
+key:cron_persist AND (NOT (exe:(*\/dpkg OR *\/rpm OR *\/apt OR *\/apt\-get OR *\/yum OR *\/dnf OR *\/zypper OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)))
+
+// linux/shadow_file_read.yml — /etc/shadow read by a non-auth process (auditd)
+key:shadow_read AND (NOT (comm:(unix_chkpwd OR sshd OR login OR su OR sudo OR passwd OR chpasswd OR chage OR pwck OR grpck OR useradd OR usermod OR userdel OR systemd)))
+
+// linux/ssh_authorized_keys_write.yml — SSH authorized_keys written - key-based persistence (auditd)
+(key:ssh_authkeys AND name:*authorized_keys*) AND (NOT (exe:(*\/cloud\-init OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)))
+
+// linux/ssh_private_key_read.yml — SSH private key read by a non-SSH process (auditd)
+(key:ssh_key_read AND (name:(*\/id_rsa* OR *\/id_ecdsa* OR *\/id_ed25519* OR *\/id_dsa* OR *\/identity*))) AND (NOT (comm:(ssh OR sshd OR ssh\-agent OR ssh\-keygen OR ssh\-add OR scp OR sftp OR git)))
+
+// linux/sudo_root_shell.yml — Root shell spawned under a real login uid - sudo escape (auditd)
+(key:sudo_abuse AND (comm:(bash OR sh OR dash OR zsh OR ksh OR fish OR python OR python3 OR perl OR ruby))) AND (NOT auid:1000)
+
+// linux/suid_bit_set.yml — Setuid bit set on a file - SUID backdoor planted (auditd)
+key:suid_change AND (NOT (exe:(*\/dpkg OR *\/rpm OR *\/apt OR *\/apt\-get OR *\/yum OR *\/dnf OR *\/zypper OR *\/install OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)))
+
+// linux/systemd_unit_persistence.yml — Systemd unit persistence - unit or timer file written (auditd)
+key:systemd_persist AND (NOT (exe:(*\/dpkg OR *\/rpm OR *\/apt OR *\/apt\-get OR *\/yum OR *\/dnf OR *\/zypper OR *\/systemd OR *\/systemctl OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)))
+
 // npm/npm_maintainer_added.yml — npm maintainer or owner added (durable publish backdoor)
 action:(package.owner_add OR team.user_add)
 
