@@ -69,16 +69,24 @@ markdown: ## markdownlint repo-owned docs (pinned version, same as CI)
 sigma: sigma-lint sigma-compile drift methodology validation-gates ## The sigma.yml hard gates that run offline
 
 sigma-lint: ## Structural lint over every Sigma rule (hermetic)
-	@[ -n "$(SIGMA_BIN)" ] || { echo "⚠ SKIPPED sigma-lint: $(SIGMA_MISSING)"; exit 0; }
 	@# --fail-on-issues, exactly as sigma.yml runs it: `sigma check` exits 0 on validator
 	@# ISSUES by default and only fails on parse/semantic errors, so without the flag this
 	@# target would be quietly weaker than the gate it exists to reproduce.
-	@$(SIGMA_BIN) check --fail-on-issues -c detections/sigma-validation-config.yml detections/sigma/
+	@#
+	@# Guard and command share ONE recipe line on purpose. Each line of a recipe is its own
+	@# shell, so the earlier `guard || { echo; exit 0; }` on its own line ended only THAT
+	@# shell — make went straight on to the next line and ran the tool anyway, dying with
+	@# 127. The "skip with a reason" this target advertises never actually happened.
+	@if [ -z "$(SIGMA_BIN)" ]; then echo "⚠ SKIPPED sigma-lint: $(SIGMA_MISSING)"; exit 0; fi; \
+	$(SIGMA_BIN) check --fail-on-issues -c detections/sigma-validation-config.yml detections/sigma/
 
 sigma-compile: ## Compile every rule to Splunk — catches a rule that parses but will not convert
-	@[ -n "$(SIGMA_BIN)" ] || { echo "⚠ SKIPPED sigma-compile: $(SIGMA_MISSING)"; exit 0; }
-	@./detections/sigma/convert.sh splunk > /dev/null
-	@echo "✓ every rule compiles to Splunk"
+	@# One shell — see the note in sigma-lint. The success line was a separate recipe line
+	@# too, so it printed even on the runs that skipped.
+	@set -e; \
+	if [ -z "$(SIGMA_BIN)" ]; then echo "⚠ SKIPPED sigma-compile: $(SIGMA_MISSING)"; exit 0; fi; \
+	./detections/sigma/convert.sh splunk > /dev/null; \
+	echo "✓ every rule compiles to Splunk"
 
 drift: ## Are the GENERATED artifacts in step with the rules? (the --check gates)
 	@# These are byte-comparisons, not regenerations: each script rewrites its target from
