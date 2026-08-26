@@ -13,7 +13,7 @@
 eventSource:iam.amazonaws.com AND eventName:CreateAccessKey
 
 // cloud/aws_iam_privesc_policy.yml — AWS IAM privilege escalation via policy attach/put (CloudTrail)
-(eventSource:iam.amazonaws.com AND (eventName:(AttachUserPolicy OR AttachRolePolicy OR AttachGroupPolicy OR PutUserPolicy OR PutRolePolicy OR PutGroupPolicy OR CreatePolicyVersion OR SetDefaultPolicyVersion OR AddUserToGroup))) AND (NOT userIdentity.arn:arn\:aws\:sts\:\:111122223333\:assumed\-role\/terraform\-apply\/*)
+(eventSource:iam.amazonaws.com AND (eventName:(AttachUserPolicy OR AttachRolePolicy OR AttachGroupPolicy OR PutUserPolicy OR PutRolePolicy OR PutGroupPolicy OR CreatePolicyVersion OR SetDefaultPolicyVersion OR AddUserToGroup OR UpdateAssumeRolePolicy))) AND (NOT userIdentity.arn:arn\:aws\:sts\:\:111122223333\:assumed\-role\/terraform\-apply\/*)
 
 // cloud/aws_login_profile_created.yml — AWS IAM login profile created or updated (console takeover)
 eventSource:iam.amazonaws.com AND (eventName:(CreateLoginProfile OR UpdateLoginProfile))
@@ -76,7 +76,7 @@ resource.type:api_token AND action.type:create
 (EventID:4769 AND TicketEncryptionType:0x17) AND (NOT (ServiceName:(*$ OR krbtgt)))
 
 // credential_access/lsass_handle_access.yml — LSASS process access with dump-shaped rights
-(TargetImage:*\\lsass.exe AND (GrantedAccess:(0x1010 OR 0x1410 OR 0x1438 OR 0x143a OR 0x1fffff))) AND (NOT (SourceImage:(*\\MsMpEng.exe* OR *\\MsSense.exe* OR *\\wininit.exe* OR *\\csrss.exe* OR *\\CSFalconService.exe* OR *\\SentinelAgent.exe* OR *\\RepMgr.exe*)))
+(TargetImage:*\\lsass.exe AND (GrantedAccess:(0x1010 OR 0x1410 OR 0x1438 OR 0x143a OR 0x1fffff))) AND (NOT (SourceImage:(*\\MsMpEng.exe OR *\\MsSense.exe OR *\\wininit.exe OR *\\csrss.exe OR *\\CSFalconService.exe OR *\\SentinelAgent.exe OR *\\RepMgr.exe)))
 
 // credential_access/ntds_dump_ntdsutil_vss_4688.yml — NTDS.dit theft via ntdsutil / VSS on a domain controller
 (Image:*\\ntdsutil.exe AND (CommandLine:(*ifm* OR *create\ full*))) OR ((CommandLine:(*vssadmin\ create\ shadow* OR *wbadmin\ start\ backup*)) AND (Image:(*\\vssadmin.exe OR *\\wbadmin.exe))) OR Image:*\\diskshadow.exe
@@ -115,7 +115,7 @@ action:(repo.create_deploy_key OR personal_access_token.access_granted)
 action:self_hosted_runner.created
 
 // gitlab/gitlab_protected_branch_tamper.yml — GitLab protected-branch tampered (unreviewed merge)
-event_type:(protected_branch_removed OR protected_branch_created)
+event_type:protected_branch_removed
 
 // gitlab/gitlab_rogue_runner_associated.yml — GitLab runner associated with project (CI job/secret capture)
 event_type:set_runner_associated_projects
@@ -217,7 +217,7 @@ eventType:(user.mfa.factor.reset_all OR user.mfa.factor.deactivate OR system.mfa
 EventID:4720 AND (NOT SubjectUserName:svc_iam_provisioning)
 
 // persistence/scheduled_task_suspicious_4698.yml — Scheduled task created with a suspicious action
-EventID:4698 AND (TaskContent:(*\-enc* OR *\-EncodedCommand* OR *\-w\ hidden* OR *\-WindowStyle\ Hidden* OR *FromBase64String* OR *\\mshta.exe* OR *\\regsvr32.exe* OR *\\rundll32.exe* OR *DownloadString* OR *IEX*))
+EventID:4698 AND (TaskContent:(*\-enc\ * OR *\-EncodedCommand* OR *\-w\ hidden* OR *\-WindowStyle\ Hidden* OR *FromBase64String* OR *\\mshta.exe* OR *\\regsvr32.exe* OR *\\rundll32.exe* OR *DownloadString* OR *IEX\(* OR *IEX\ * OR *\|\ IEX*))
 
 // persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line or script consumer
 (EventID:20 AND (Destination:(*powershell* OR *cmd.exe* OR *mshta* OR *wscript* OR *cscript* OR *rundll32* OR *\-enc* OR *FromBase64String*))) OR (EventID:20 AND Type:*Script*)

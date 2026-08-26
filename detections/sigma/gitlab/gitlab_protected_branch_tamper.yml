@@ -3,12 +3,18 @@ id: 029e5b7d-7355-4d56-969b-d18f6726f913
 status: experimental
 description: |
   Detects protected-branch tampering in the GitLab audit events: protected_branch_removed
-  (protection deleted, opening the branch) - pair with protected_branch_created to catch
-  the re-create that covers tracks. Removing protection on a default/release branch
+  - protection deleted, opening the branch. Removing protection on a default/release branch
   bypasses required approvals to land unreviewed code on a protected branch and the
   pipeline that deploys it - a supply-chain evasion (T1685). The action is rare and
   legitimately maps to a change ticket, so a removal outside the approved window, or a
   remove-then-recreate around a push to the same branch, warrants review.
+  Scoped to the removal on purpose. protected_branch_created was selected here as the
+  second half of the cover-tracks shape, but with no correlation to sequence it against
+  the removal it fires standalone - so every legitimate act of ADDING branch protection,
+  an encouraged security action, raised a high alert and buried the removal in it. The
+  GitHub sibling (github_branch_protection_tamper) restricts to genuinely suspicious
+  actions for the same reason. Express the re-create as a remove-then-create correlation
+  by the same actor if you want that shape back; do not fold it into this OR.
   Validate (purple): delete protected-branch rules from dotfiles-Offense (htpx pair
   gl-protected-branch-off).
 references:
@@ -26,7 +32,6 @@ detection:
   selection:
     event_type:
       - 'protected_branch_removed'
-      - 'protected_branch_created'
   condition: selection
 falsepositives:
   - Legitimate branch-protection changes by a maintainer during an approved change

@@ -13,6 +13,13 @@ description: |
   common turns a high-severity rule into a mute button. If you want drop-directory
   coverage, add it as a separate lower-confidence rule gated on a task-name or
   signed-binary allowlist rather than folding it back into this OR.
+  The interpreter tokens are anchored for the same reason the path matches were dropped.
+  A bare 'IEX' is a 3-character case-insensitive substring against the whole task XML, so
+  it matches iexplore.exe and any author/product string containing "iex"; it is written
+  as 'IEX(' / 'IEX ' / '| IEX' instead. '-enc' matched '-encoding', so it carries a
+  trailing space. The space is trailing only, NOT leading - '<Arguments>-enc ...' has a
+  tag, not a space, in front of the flag. DownloadString and FromBase64String are left
+  bare: both are specific enough to stand alone.
   Validate (purple): run schtasks /create (or nxc -M schtask_as) from dotfiles-Offense
   (hacktheplanet "Persistence" fold; htpx pair schtask-persist). Requires the
   Object Access > Other Object Access Events audit subcategory.
@@ -33,7 +40,7 @@ detection:
     EventID: 4698
   suspicious:
     TaskContent|contains:
-      - '-enc'
+      - '-enc '
       - '-EncodedCommand'
       - '-w hidden'
       - '-WindowStyle Hidden'
@@ -42,7 +49,9 @@ detection:
       - '\regsvr32.exe'
       - '\rundll32.exe'
       - 'DownloadString'
-      - 'IEX'
+      - 'IEX('
+      - 'IEX '
+      - '| IEX'
   condition: selection and suspicious
 falsepositives:
   - Software installers that register tasks invoking helper scripts (allowlist).

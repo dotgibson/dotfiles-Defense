@@ -13,7 +13,7 @@
 eventSource =~ "iam.amazonaws.com" and eventName =~ "CreateAccessKey"
 
 // cloud/aws_iam_privesc_policy.yml — AWS IAM privilege escalation via policy attach/put (CloudTrail)
-(eventSource =~ "iam.amazonaws.com" and (eventName in~ ("AttachUserPolicy", "AttachRolePolicy", "AttachGroupPolicy", "PutUserPolicy", "PutRolePolicy", "PutGroupPolicy", "CreatePolicyVersion", "SetDefaultPolicyVersion", "AddUserToGroup"))) and (not(['userIdentity.arn'] startswith "arn:aws:sts::111122223333:assumed-role/terraform-apply/"))
+(eventSource =~ "iam.amazonaws.com" and (eventName in~ ("AttachUserPolicy", "AttachRolePolicy", "AttachGroupPolicy", "PutUserPolicy", "PutRolePolicy", "PutGroupPolicy", "CreatePolicyVersion", "SetDefaultPolicyVersion", "AddUserToGroup", "UpdateAssumeRolePolicy"))) and (not(['userIdentity.arn'] startswith "arn:aws:sts::111122223333:assumed-role/terraform-apply/"))
 
 // cloud/aws_login_profile_created.yml — AWS IAM login profile created or updated (console takeover)
 eventSource =~ "iam.amazonaws.com" and (eventName in~ ("CreateLoginProfile", "UpdateLoginProfile"))
@@ -76,7 +76,7 @@ OperationName in~ ("Add service principal credentials", "Add application credent
 (EventID == 4769 and TicketEncryptionType =~ "0x17") and (not((ServiceName in~ ("krbtgt") or ServiceName endswith "$")))
 
 // credential_access/lsass_handle_access.yml — LSASS process access with dump-shaped rights
-(TargetImage endswith "\\lsass.exe" and (GrantedAccess in~ ("0x1010", "0x1410", "0x1438", "0x143a", "0x1fffff"))) and (not((SourceImage contains "\\MsMpEng.exe" or SourceImage contains "\\MsSense.exe" or SourceImage contains "\\wininit.exe" or SourceImage contains "\\csrss.exe" or SourceImage contains "\\CSFalconService.exe" or SourceImage contains "\\SentinelAgent.exe" or SourceImage contains "\\RepMgr.exe")))
+(TargetImage endswith "\\lsass.exe" and (GrantedAccess in~ ("0x1010", "0x1410", "0x1438", "0x143a", "0x1fffff"))) and (not((SourceImage endswith "\\MsMpEng.exe" or SourceImage endswith "\\MsSense.exe" or SourceImage endswith "\\wininit.exe" or SourceImage endswith "\\csrss.exe" or SourceImage endswith "\\CSFalconService.exe" or SourceImage endswith "\\SentinelAgent.exe" or SourceImage endswith "\\RepMgr.exe")))
 
 // credential_access/ntds_dump_ntdsutil_vss_4688.yml — NTDS.dit theft via ntdsutil / VSS on a domain controller
 (Image endswith "\\ntdsutil.exe" and (CommandLine contains "ifm" or CommandLine contains "create full")) or ((CommandLine contains "vssadmin create shadow" or CommandLine contains "wbadmin start backup") and (Image endswith "\\vssadmin.exe" or Image endswith "\\wbadmin.exe")) or Image endswith "\\diskshadow.exe"
@@ -115,7 +115,7 @@ action in~ ("repo.create_deploy_key", "personal_access_token.access_granted")
 action =~ "self_hosted_runner.created"
 
 // gitlab/gitlab_protected_branch_tamper.yml — GitLab protected-branch tampered (unreviewed merge)
-event_type in~ ("protected_branch_removed", "protected_branch_created")
+event_type =~ "protected_branch_removed"
 
 // gitlab/gitlab_rogue_runner_associated.yml — GitLab runner associated with project (CI job/secret capture)
 event_type =~ "set_runner_associated_projects"
@@ -217,7 +217,7 @@ eventType in~ ("user.mfa.factor.reset_all", "user.mfa.factor.deactivate", "syste
 EventID == 4720 and (not(SubjectUserName =~ "svc_iam_provisioning"))
 
 // persistence/scheduled_task_suspicious_4698.yml — Scheduled task created with a suspicious action
-EventID == 4698 and (TaskContent contains "-enc" or TaskContent contains "-EncodedCommand" or TaskContent contains "-w hidden" or TaskContent contains "-WindowStyle Hidden" or TaskContent contains "FromBase64String" or TaskContent contains "\\mshta.exe" or TaskContent contains "\\regsvr32.exe" or TaskContent contains "\\rundll32.exe" or TaskContent contains "DownloadString" or TaskContent contains "IEX")
+EventID == 4698 and (TaskContent contains "-enc " or TaskContent contains "-EncodedCommand" or TaskContent contains "-w hidden" or TaskContent contains "-WindowStyle Hidden" or TaskContent contains "FromBase64String" or TaskContent contains "\\mshta.exe" or TaskContent contains "\\regsvr32.exe" or TaskContent contains "\\rundll32.exe" or TaskContent contains "DownloadString" or TaskContent contains "IEX(" or TaskContent contains "IEX " or TaskContent contains "| IEX")
 
 // persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line or script consumer
 (EventID == 20 and (Destination contains "powershell" or Destination contains "cmd.exe" or Destination contains "mshta" or Destination contains "wscript" or Destination contains "cscript" or Destination contains "rundll32" or Destination contains "-enc" or Destination contains "FromBase64String")) or (EventID == 20 and Type contains "Script")
