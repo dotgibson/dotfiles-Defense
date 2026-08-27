@@ -14,6 +14,110 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.2.0] - 2026-08-27
+
+### Changed
+
+- **`up` is a dispatcher now, not a seven-package-manager driver (#664).** `zsh/60-update.zsh`
+  was the largest concentration of OS knowledge in Core — five `case` statements that knew how
+  seven archives count and apply updates, including a `grep -qi tumbleweed /etc/os-release` to
+  choose `zypper dup` over `zypper up`. `ARCHITECTURE.md` named it one of two deliberate
+  exceptions to Core's own rule and defended it as "one verb with N backends". The defence of
+  the **verb** was right and still stands; one verb with N backends is what a dispatch table is
+  for, and #663 landed the table.
+
+  What runs is now resolved through `_pkgup_verb` from the OS layer's `os.capabilities`
+  declaration. The seven per-manager parse heuristics collapsed into one pipeline — run the
+  declared count verb, keep lines matching `PKG_PENDING_MATCH`, print field
+  `PKG_PENDING_FIELD` split on `PKG_PENDING_FS` — and the apply `case` into four resolved
+  verbs and one `&&` chain. `_pkgup_mgr` stays: probing with `command -v` is the shape
+  `PORTABILITY.md` asks for, and the token it returns is the label every message interpolates.
+
+  **`ARCHITECTURE.md`'s "two deliberate exceptions" is now one**, and `PORTABILITY.md`'s
+  companion section with it. Note that the issue expected an `audit-core.sh` §5c exception to
+  be removed here and **there was never one to remove** — §5c excepts `zsh/55-maint.zsh` (the
+  `LaunchAgents` segment only) and `*.example`, nothing else. `PORTABILITY.md` already said so:
+  this file was excepted _architecturally, not at the gate_.
+
+- **Core still carries built-in defaults, and they are a stopgap with a demolition date.**
+  #667 — which authors the nine declarations — is **blocked by this change**, so on the day
+  this lands no box in the fleet has one and the built-ins are what every host actually runs.
+  They live in one `typeset -gA` at the top of `zsh/60-update.zsh`, in the declaration's own
+  `KEY=value` shape, so each row is the transcription source for the repo that will replace
+  it and a declaration that behaves differently from its row is a visible diff. #667 deletes
+  the block.
+
+- **A declaration is authoritative — all or nothing, never merged per key.** Per-key fallback
+  is the obvious shape and it is wrong, because in this schema an **omission is a statement**:
+  no `PKG_ASSUME_YES` means _never auto-confirm_, and no `PKG_UPGRADE_PARTIAL` means `up -i`
+  _refuses, this archive updates as a whole_. Merging Core's built-in row into a real
+  declaration answers both of those with a default — handing an auto-confirm flag to a repo
+  that deliberately withheld one, and letting `up -i` through into the partial upgrade a repo
+  deliberately refused. A missing **required** verb is a broken declaration, and the thing
+  that catches it is `scripts/check-capabilities.sh`, a gate you run — not a silent
+  substitution on a box you are SSH'd into.
+
+### Added
+
+- **Nine optional keys, and one required key redefined (#664).** `PKG_UPGRADE` is now the
+  **interactive** upgrade verb — `up` without a flag must still let the manager print its
+  transaction summary and ask, which is what it has always done — and auto-confirm moved to
+  the new `PKG_ASSUME_YES`. New optional keys: `PKG_ASSUME_YES`, `PKG_UPGRADE_PRE`,
+  `PKG_CLEANUP`, `PKG_UPGRADE_PARTIAL`, `PKG_COUNT_REFRESH`, `PKG_COUNT_EXIT_TRUSTED`,
+  `PKG_PENDING_MATCH`, `PKG_PENDING_FIELD`, `PKG_PENDING_FS`. Every one is optional and
+  every default reproduces
+  what the box did before, so #667's authoring burden stays small and a declaration written
+  against the v5 schema keeps validating. `--packages` no longer checks the `PKG_PENDING_*`
+  values as if they were binaries, and `PKG_PENDING_FIELD` is gated as a positive integer —
+  a typo there does not fail at runtime, it reads a different column and reports confident
+  nonsense.
+
+- **`PORTING-MATRIX.md` §"Package-manager commands" gained its macOS and Fedora columns**, and
+  a `count-pending` row. #667 is told to transcribe declarations from that table, and it was
+  two managers short — missing exactly the reference implementation (`dotfiles-MacBook`) and
+  the template the other Linux repos stamp from (`dotfiles-Fedora`), so the two most-copied
+  repos had nothing to copy.
+
+- **`PKG_COUNT_EXIT_TRUSTED`, which is what carries #756 through the refactor.** Gentoo's
+  count is a real Portage resolve, and a resolve that **fails** must report the `-1` unknown
+  sentinel rather than `0` — a box whose Portage cannot resolve is not a box with nothing to
+  do. That distinction cannot be inferred generically, because most archives overload the
+  exit status of their count verb in the opposite direction: `dnf check-update` exits **100
+  when updates exist**, and `pacman -Qu` and `checkupdates` exit non-zero when there are
+  **none**. So Core ignores the status by default and counts lines; an archive whose verb
+  means what it says declares this key. Gentoo is the only one that does.
+
+- **Tests for the dispatch, and two parse arms that never had any.** `brew` and `emerge` had
+  no `_pkgup_count`/`_pkgup_list` coverage at all — the section header claimed four managers
+  and the file has seven — including, now, Gentoo's Portage resolve, its `[nomerge]`
+  filtering and atom stripping, and the failed-resolve sentinel. Both directions of the
+  exit-status question are pinned: a failed resolve reports `-1`, and dnf's exit 100 does
+  **not**. Plus the declared path end to end: a declared verb overriding the built-in row, the
+  assume-yes token appended and _not_ appended, `PKG_UPGRADE_PRE` aborting the upgrade when it
+  fails, `up -i`'s refusal driven by omission, a declared `sudo` mapped onto `doas` on a box
+  that has only `doas`, and a `;` in a declared value staying an argument rather than becoming
+  a command separator.
+
+### Fixed
+
+- **A declared privilege prefix names the intent, not the tool.** A declaration says
+  `sudo zypper dup`, but Alpine has `doas` and not `sudo`, and a container has neither.
+  `_pkgup_run` strips the prefix and hands the rest to `_pkgup_priv`, the existing ladder, so
+  the same declaration is correct on all three. A value with no prefix (`brew upgrade`) runs
+  bare, which for Homebrew is the only correct answer.
+
+### Behaviour deltas
+
+Two, both toward safety, both deliberate — everything else a host types is unchanged:
+
+- **A failing `PKG_UPGRADE_PRE` now aborts the upgrade.** Debian's `apt-get update` used to
+  run un-chained, so a failed index refresh still proceeded to `full-upgrade`; apk, emerge and
+  brew all chained theirs with `&&`. One rule now, and it is the safer three's: an upgrade
+  computed against an index that could not be refreshed is how a box half-applies.
+- **`up -i` on macOS now runs `brew update` first.** The partial path previously skipped it
+  while the full path did not. It costs a network round-trip and removes the case where you
+  hand-pick from a stale outdated list.
+
 ## [v5.1.0] - 2026-08-27
 
 ### Added

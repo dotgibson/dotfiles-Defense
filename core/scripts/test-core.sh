@@ -4353,9 +4353,60 @@ else
   # step NAMED for an assertion it could not perform. A postcheck placed there would be the
   # identical bug wearing a new name, and it would still look green. So: the reference has
   # to sit between the `sh -euc ...` opener and the line that closes it.
+  # EXTRACT THE BLOCK ONCE, AND PROVE IT IS NON-EMPTY BEFORE ASSERTING ANYTHING ABOUT IT.
+  # Both assertions below used to re-run the same inline
+  #     awk "/sh -euc '$/{f=1;next} f&&/^ *'$/{f=0} f"
+  # and neither checked that it had matched. That is two bugs, one of them the exact
+  # failure this file exists to prevent:
+  #
+  #   * the POSTCHECK assertion fails with a message that names the WRONG CAUSE. It says
+  #     "$POSTCHECK is referenced OUTSIDE the sh -euc block", which is a specific,
+  #     alarming, actionable claim — and it is what you get when the extraction simply
+  #     returned nothing, whatever the reason. Observed for real: green on Ubuntu, Arch
+  #     and macOS, red on Alpine, with the workflow byte-identical and the postcheck
+  #     correctly inside the block. Hours went into looking for a misplaced reference
+  #     that was never misplaced.
+  #   * the apostrophe assertion PASSES VACUOUSLY. It is a negative check — `if ... |
+  #     grep -q "'"` — so an empty extraction means no apostrophe found means green. The
+  #     one assertion guarding a quote-injection hazard reports success precisely when it
+  #     has read nothing at all. That is "a gate that never runs reads as coverage", in a
+  #     test written to stop that.
+  #
+  # So: locate the block with grep/sed line numbers rather than a multi-rule awk program
+  # (fewer dialect corners — `next`, a boolean-guarded pattern and a bare `f` action all
+  # vary between awks, and the Alpine leg runs busybox), keep the result in a variable,
+  # and make "could not read the block" its own loud failure that can never be mistaken
+  # for either of the two real findings.
+  #
+  # The content checks are bash pattern matches, NOT `printf ... | grep -q`. That spelling
+  # is the SIGPIPE hazard scripts/audit-core.sh gates for, and it fails in the worst
+  # direction: `grep -q` exits the instant it matches, the producer takes SIGPIPE, and
+  # under `set -o pipefail` the pipeline reports non-zero BECAUSE the pattern was found.
+  #
+  # It is a RACE, not a certainty, which is exactly why it must not be left in. Measured:
+  # at this block's real size (59 lines) the producer finishes first and the pipeline
+  # returns 0, so it would not bite today; at 20k lines with the match on line 1 it
+  # returns 141. A latent failure that switches on when the file grows — and it would
+  # switch on as the POSTCHECK assertion failing precisely when the postcheck is
+  # correctly placed, i.e. the same wrong-cause report this commit exists to remove,
+  # reintroduced one line below it. Written that way first; the audit caught it.
+  _rb_open="$(grep -n "sh -euc '\$" "$_fbm_wf" | head -1 | cut -d: -f1)"
+  _rb_close=""
+  _rb_block=""
+  if [[ -n "$_rb_open" ]]; then
+    # First line at or after the opener that is nothing but a closing quote.
+    _rb_close="$(tail -n +"$((_rb_open + 1))" "$_fbm_wf" | grep -n "^[[:space:]]*'[[:space:]]*\$" | head -1 | cut -d: -f1)"
+    [[ -n "$_rb_close" ]] && _rb_close="$((_rb_open + _rb_close))"
+    [[ -n "$_rb_close" ]] && _rb_block="$(sed -n "$((_rb_open + 1)),$((_rb_close - 1))p" "$_fbm_wf")"
+  fi
+
   if ! grep -q 'docker run .*-e POSTCHECK' "$_fbm_wf"; then
     fail "real-bootstrap: the docker run does not pass -e POSTCHECK — the value never reaches the container"
-  elif ! awk "/sh -euc '\$/{f=1;next} f&&/^ *'\$/{f=0} f" "$_fbm_wf" | grep -q 'POSTCHECK'; then
+  elif [[ -z "$_rb_block" ]]; then
+    # NOT a claim about where POSTCHECK sits. This is the harness failing to read the
+    # file, and saying so plainly beats accusing the workflow of a defect it does not have.
+    fail "real-bootstrap: could not extract the sh -euc block (opener line: ${_rb_open:-none}, closing line: ${_rb_close:-none}) — the extraction in test-core.sh has drifted from the workflow's shape; fix the harness, not real-bootstrap.yml"
+  elif [[ "$_rb_block" != *POSTCHECK* ]]; then
     fail "real-bootstrap: \$POSTCHECK is referenced OUTSIDE the sh -euc block — docker run --rm has destroyed that filesystem by then (#742)"
   else
     pass "real-bootstrap: the postcheck runs inside the container, where the box it asserts still exists"
@@ -4365,11 +4416,17 @@ else
   # The whole script is one single-quoted `sh -euc '...'` argument; a single apostrophe
   # closes it early and the rest is reinterpreted by the outer shell. The existing block
   # says so twice in comments, which is not a gate.
-  if awk "/sh -euc '\$/{f=1;next} f&&/^ *'\$/{f=0} f" "$_fbm_wf" | grep -q "'"; then
+  #
+  # Guarded on a non-empty block for the reason above: unguarded, this is a negative
+  # assertion over possibly-nothing, and it goes green when it has read nothing.
+  if [[ -z "$_rb_block" ]]; then
+    fail "real-bootstrap: cannot check the sh -euc block for apostrophes — the block could not be extracted (see the failure above); refusing to report this as clean"
+  elif [[ "$_rb_block" == *"'"* ]]; then
     fail "real-bootstrap: an apostrophe has appeared inside the single-quoted sh -euc block — it closes the quote early"
   else
-    pass "real-bootstrap: the sh -euc block is still apostrophe-free"
+    pass "real-bootstrap: the sh -euc block is still apostrophe-free ($(wc -l <<<"$_rb_block" | tr -d ' ') lines read)"
   fi
+  unset _rb_open _rb_close _rb_block
 
   unset -f _fbm_caller _fbm_key
   unset _fbm_root _fbm_json _fbm_emits _fbm_missing _fbm_k
@@ -7881,6 +7938,63 @@ else
   else
     skip "validator: dangling --packages (no timeout(1) to bound a possible hang)"
   fi
+
+  # ── the keys #664 added ─────────────────────────────────────────────────────
+  # All OPTIONAL, so the assertion that matters is that dropping every one of them still
+  # validates: an OS repo that needs none must not be forced to declare them, and a
+  # declaration written against the v5 schema must keep passing.
+  grep -vE '^(PKG_ASSUME_YES|PKG_UPGRADE_PARTIAL|PKG_PENDING_MATCH|PKG_PENDING_FIELD|PKG_PENDING_FS|PKG_UPGRADE_PRE|PKG_CLEANUP|PKG_COUNT_REFRESH|PKG_COUNT_EXIT_TRUSTED)=' "$CAPEX" >"$CAPV/no-664"
+  if "$CAPCHK" "$CAPV/no-664" >/dev/null 2>&1; then
+    pass "validator: every #664 key is optional (absent ⇒ Core's default)"
+  else
+    fail "validator: a #664 key was treated as required — all of them are optional"
+  fi
+  # ...and that each one is actually IN the schema. Without this, adding a key to the
+  # dispatcher but not to CAP_OPTIONAL would leave `up` reading a value the gate rejects —
+  # the two halves disagreeing is the exact failure #663 put the schema here to prevent.
+  # A VALID value per key, not a blanket `x`: PKG_PENDING_FIELD indexes an awk field and is
+  # gated as a positive integer below, so `x` would fail here for the right reason and
+  # report the wrong one ("not in the schema").
+  _cap_664_ok=1
+  for _cap_kv in PKG_ASSUME_YES=-y 'PKG_UPGRADE_PRE=sudo dnf makecache' \
+    'PKG_CLEANUP=sudo dnf autoremove' 'PKG_UPGRADE_PARTIAL=sudo dnf upgrade' \
+    'PKG_COUNT_REFRESH=dnf makecache' PKG_COUNT_EXIT_TRUSTED=1 \
+    'PKG_PENDING_MATCH=^v[[:space:]]' PKG_PENDING_FIELD=3 'PKG_PENDING_FS=|'; do
+    _cap_k="${_cap_kv%%=*}"
+    { grep -v "^${_cap_k}=" "$CAPV/no-664"; printf '%s\n' "$_cap_kv"; } >"$CAPV/k-$_cap_k"
+    "$CAPCHK" "$CAPV/k-$_cap_k" >/dev/null 2>&1 || {
+      fail "validator: $_cap_k is not in the schema, but the dispatcher reads it"
+      _cap_664_ok=0
+    }
+  done
+  ((_cap_664_ok)) && pass "validator: all nine #664 keys are accepted by the schema"
+  # PKG_PENDING_FIELD indexes an awk field. A typo does not fail at runtime — awk reads a
+  # different column and `up` reports confident nonsense — so the gate is the only place
+  # this can be caught.
+  { grep -v '^PKG_PENDING_FIELD=' "$CAPEX"; printf 'PKG_PENDING_FIELD=two\n'; } >"$CAPV/field-word"
+  _cap_rejects "a non-numeric PKG_PENDING_FIELD" "$CAPV/field-word"
+  { grep -v '^PKG_PENDING_FIELD=' "$CAPEX"; printf 'PKG_PENDING_FIELD=0\n'; } >"$CAPV/field-zero"
+  _cap_rejects "PKG_PENDING_FIELD=0 (awk fields are 1-based)" "$CAPV/field-zero"
+  # `PKG_COUNT_EXIT_TRUSTED=0` reads as DECLARED, so an author writing it to mean "off"
+  # would switch it firmly on — the worst direction for a key that decides whether a broken
+  # resolve reads as "nothing to do". Omission is how you turn it off.
+  { cat "$CAPEX"; printf 'PKG_COUNT_EXIT_TRUSTED=0\n'; } >"$CAPV/trust-zero"
+  _cap_rejects "PKG_COUNT_EXIT_TRUSTED=0 (omit it to mean off)" "$CAPV/trust-zero"
+  # --packages cross-checks the leading BINARY of each command-valued verb. The
+  # PKG_PENDING_* keys are awk data (`^Inst[[:space:]]`, `3`, `|`), so running them through
+  # that check would warn that `^Inst[[:space:]]` "is not in packages.txt" — nonsense
+  # advice, and the kind that trains people to ignore the gate.
+  printf 'dnf\nawk\n' >"$CAPV/pkgs.txt"
+  { grep -v '^PKG_PENDING_' "$CAPEX"
+    printf 'PKG_PENDING_MATCH=^Inst[[:space:]]\nPKG_PENDING_FIELD=2\nPKG_PENDING_FS=|\n'
+  } >"$CAPV/pending-pkgs"
+  _cap_pkgwarn="$("$CAPCHK" "$CAPV/pending-pkgs" --packages "$CAPV/pkgs.txt" 2>&1 >/dev/null)"
+  case "$_cap_pkgwarn" in
+  *PKG_PENDING_*)
+    fail "validator: --packages checked a PKG_PENDING_* value as if it were a binary" ;;
+  *)
+    pass "validator: --packages skips the PKG_PENDING_* keys (they are awk data, not verbs)" ;;
+  esac
 fi
 
 # ── zsh-gated sections (A load-order, B function units) ───────────────────────
@@ -11852,6 +11966,193 @@ ucheck "update: _pkgup_count parses pacman -Qu (2 upgradable)" \
 ucheck "update: _pkgup_list parses pacman package names" \
   "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *bash* && \$out == *vim* ]]" \
   PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+# brew and emerge had NO parse coverage at all — the header above claimed four managers and
+# the file has seven. brew is the reference implementation's manager and emerge is the one
+# whose count verb can legitimately be absent, so both are exactly the arms a silent
+# regression would sit in longest.
+_mgr_stub brew 'case "$*" in *outdated*) printf "wget\nzsh\n" ;; esac'
+ucheck "update: _pkgup_count parses brew outdated (2 upgradable)" \
+  "source '$UPD'; [[ \$(_pkgup_count) == 2 ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+ucheck "update: _pkgup_list parses brew package names" \
+  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *wget* && \$out == *zsh* ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+# Gentoo asks Portage, not eix (#756), so the fixture is an `emerge --pretend` resolve —
+# ebuild/binary lines counted, [nomerge] ignored, ::repo and the -rN revision stripped off
+# the atom.
+_mgr_stub emerge 'case "$*" in
+*--pretend*) printf "[ebuild  U  ] app-editors/neovim-0.12.3-r1::gentoo\n[binary   N ] dev-libs/tree-sitter-c-0.24.1\n[nomerge     ] sys-apps/eza-0.20.0\n" ;;
+esac'
+ucheck "update: _pkgup_count counts a Portage resolve, not [nomerge] lines (2)" \
+  "source '$UPD'; [[ \$(_pkgup_count) == 2 ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+ucheck "update: _pkgup_list strips ::repo and the -rN revision off each atom" \
+  "source '$UPD'; out=\$(_pkgup_list); [[ \$out == *app-editors/neovim* && \$out != *::gentoo* && \$out != *-r1* && \$out != *eza* ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+# A RESOLVE THAT FAILS MUST REPORT -1, NOT 0 (#756). The two are different claims — 0 is
+# "I checked, nothing pending" — and a box whose Portage cannot resolve (blocks, conflicts)
+# is not a box with nothing to do. This is what PKG_COUNT_EXIT_TRUSTED buys, and Gentoo is
+# the only archive that declares it: everywhere else a non-zero exit means something else
+# entirely (dnf exits 100 when updates EXIST; pacman -Qu exits non-zero when there are NONE).
+_mgr_stub emerge 'exit 1'
+ucheck "update: a failed Portage resolve reports -1 (unknown), never 0" \
+  "source '$UPD'; [[ \$(_pkgup_count) == -1 ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+# ...and the same failure on an archive that does NOT declare the key still counts lines,
+# because there a non-zero exit is not a failure. dnf is the case that proves it: exit 100
+# is how it says updates EXIST, and reading that as "could not answer" would report unknown
+# on every Fedora box that has anything to install.
+_mgr_stub dnf 'printf "bash.x86_64    5.1-2    baseos\n"; exit 100'
+ucheck "update: dnf's exit 100 (updates EXIST) is not read as a failure" \
+  "source '$UPD'; [[ \$(_pkgup_count) == 1 ]]" \
+  PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0
+
+# ── update.zsh dispatches through os.capabilities (#664) ──────────────────────
+# The block above proves the built-in defaults still parse every archive identically. This
+# one proves the OTHER half: that a DECLARATION is what actually drives `up`, because until
+# #667 stamps the fleet no box has one and the built-ins would happily hide a dispatcher
+# that never reads the table at all.
+#
+# Every stub here prints its own argv, so the assertion is on the exact command line `up`
+# builds — the thing a host notices — rather than on an exit status that a no-op also
+# produces. 02-capabilities.zsh is sourced alongside update.zsh (it is band 02 and loads
+# under every profile) and pointed at a scratch declaration via CORE_CAPABILITIES_FILE.
+hdr "update.zsh dispatch through os.capabilities (#664)"
+CAPD_UP="$SANDBOX/capup"
+rm -rf "$CAPD_UP"
+mkdir -p "$CAPD_UP"
+CAPZ="$HERE/zsh/02-capabilities.zsh"
+# _up_stub <name>... — a stub per name that echoes "RUN: <name> <args>".
+_up_stub() {
+  rm -rf "$PMBIN"
+  mkdir -p "$PMBIN"
+  local n
+  for n in "$@"; do
+    printf '#!/bin/sh\nprintf "RUN: %s %%s\\n" "$*"\n' "$n" >"$PMBIN/$n"
+    chmod +x "$PMBIN/$n"
+  done
+  local t
+  for t in grep awk sort cut sed; do
+    [[ -e "$PMBIN/$t" ]] || ln -s "$(command -v "$t")" "$PMBIN/$t" 2>/dev/null
+  done
+}
+# _upcheck <label> <decl-lines> <zsh-body> — seed a declaration, then run the body with
+# ui + capabilities + update sourced. `_core_confirm` is stubbed to accept: `up`'s
+# pre-confirm declines with no TTY by design, which would otherwise short-circuit every
+# assertion here before the dispatch it is testing.
+_upcheck() { # _upcheck <label> <decl> <body>
+  printf '%s\n' "$2" >"$CAPD_UP/os.capabilities"
+  ucheck "$1" \
+    "source '$UI'; source '$CAPZ'; source '$UPD'; _core_confirm() { return 0 }; $3" \
+    PATH="$PMBIN" UPDATE_CHECK_ENABLED=0 CORE_WELCOME=0 \
+    CORE_CAPABILITIES_FILE="$CAPD_UP/os.capabilities"
+}
+
+# 1. A declared verb WINS over Core's built-in row. Tumbleweed is the case this whole
+#    refactor exists for: the built-in row still probes /etc/os-release to choose between
+#    `dup` and `up`, and a declaration must make that probe irrelevant — on any host,
+#    including the one running this suite, which is not openSUSE.
+_up_stub zypper sudo
+_upcheck "up: a declared PKG_UPGRADE overrides Core's built-in row (zypper dup)" \
+  'PKG_UPGRADE=sudo zypper dup' \
+  'out=$(up -y 2>&1); [[ $out == *"RUN: sudo zypper dup"* ]]'
+# 2. PKG_ASSUME_YES is what `up -y` appends — and its ABSENCE means never auto-confirm,
+#    which is how pacman/emerge/apk keep the behaviour they had when it was hardcoded.
+_upcheck "up -y appends the declared PKG_ASSUME_YES token" \
+  'PKG_UPGRADE=sudo zypper up
+PKG_ASSUME_YES=-y' \
+  'out=$(up -y 2>&1); [[ $out == *"RUN: sudo zypper up -y"* ]]'
+# OMISSION IS A STATEMENT, and this is the assertion that proves Core honours it. The
+# stubbed PATH resolves to a manager whose BUILT-IN row does declare `-y`, so a per-key
+# fallback would hand one back to a repo that deliberately left it out — auto-confirming a
+# privileged upgrade nobody asked to auto-confirm. A declaration is all-or-nothing.
+_upcheck "up -y appends nothing when the archive declares no PKG_ASSUME_YES" \
+  'PKG_UPGRADE=sudo zypper up' \
+  'out=$(up -y 2>&1); [[ $out == *"RUN: sudo zypper up"* && $out != *" -y"* ]]'
+_upcheck "up without -y never auto-confirms, even where a token is declared" \
+  'PKG_UPGRADE=sudo zypper up
+PKG_ASSUME_YES=-y' \
+  'out=$(up 2>&1); [[ $out == *"RUN: sudo zypper up"* && $out != *" -y"* ]]'
+# 3. PKG_UPGRADE_PRE runs first and its failure ABORTS — an upgrade computed against an
+#    index that could not be refreshed is how a box half-applies.
+_upcheck "up runs PKG_UPGRADE_PRE before the upgrade" \
+  'PKG_UPGRADE=sudo zypper up
+PKG_UPGRADE_PRE=sudo zypper refresh' \
+  'out=$(up 2>&1); [[ $out == *"RUN: sudo zypper refresh"*"RUN: sudo zypper up"* ]]'
+_up_stub zypper sudo false
+_upcheck "up aborts the upgrade when PKG_UPGRADE_PRE fails" \
+  'PKG_UPGRADE=sudo zypper up
+PKG_UPGRADE_PRE=false' \
+  'out=$(up 2>&1); (( $? != 0 )) && [[ $out != *"RUN: sudo zypper up"* ]]'
+# 4. PKG_CLEANUP runs after a successful FULL upgrade, and carries the auto-confirm token
+#    too: an unattended `up -y` that then stops to ask whether to autoremove has not been
+#    unattended.
+_up_stub apt-get sudo
+_upcheck "up -y runs PKG_CLEANUP after the upgrade, with the assume-yes token" \
+  'PKG_UPGRADE=sudo apt-get full-upgrade
+PKG_CLEANUP=sudo apt-get autoremove
+PKG_ASSUME_YES=-y' \
+  'out=$(up -y 2>&1); [[ $out == *"RUN: sudo apt-get full-upgrade -y"*"RUN: sudo apt-get autoremove -y"* ]]'
+# 5. THE SAFETY DECLARATION. `up -i` refuses on an archive that declares no partial verb —
+#    which is how Arch, Gentoo and Alpine say "this must update as a whole". It is the
+#    ABSENCE that refuses, so an archive Core has never heard of gets the safe answer by
+#    default instead of being waved through.
+# Same shape, and the higher-stakes half: apt's BUILT-IN row names a partial verb, so a
+# per-key fallback would let `up -i` through on a declaration that refused it.
+_upcheck "up -i refuses when the declaration names no PKG_UPGRADE_PARTIAL" \
+  'PKG_UPGRADE=sudo apt-get full-upgrade' \
+  'out=$(up -i 2>&1); (( $? == 1 )) && [[ $out == *"does not support safe partial upgrades"* ]]'
+_upcheck "up -i gets past the safety refusal when a partial verb IS declared" \
+  'PKG_UPGRADE=sudo apt-get full-upgrade
+PKG_UPGRADE_PARTIAL=sudo apt-get install --only-upgrade' \
+  'out=$(up -i </dev/null 2>&1); (( $? == 1 )) && [[ $out == *"needs fzf or gum"* ]]'
+# 6. A DECLARED sudo NAMES THE INTENT, NOT THE TOOL. Alpine has doas and not sudo, and a
+#    container has neither — so a declaration that says `sudo` must still work on both.
+#    _pkgup_run strips the prefix and hands the rest to _pkgup_priv, which is the ladder.
+_up_stub zypper doas
+_upcheck "up maps a declared sudo onto doas on a box that has only doas" \
+  'PKG_UPGRADE=sudo zypper up' \
+  'out=$(up 2>&1); [[ $out == *"RUN: doas zypper up"* ]]'
+_up_stub brew
+_upcheck "up runs an unprefixed verb bare (Homebrew must never be privileged)" \
+  'PKG_UPGRADE=brew upgrade' \
+  'out=$(up 2>&1); [[ $out == *"RUN: brew upgrade"* ]]'
+# 7. The count path, declared. PKG_PENDING_FS/MATCH/FIELD are the three values that replaced
+#    seven hand-written grep/awk heuristics, and they reach awk as DATA — a declaration is
+#    never eval'd. zypper's `|`-delimited table is the one that needs all three.
+rm -rf "$PMBIN"
+mkdir -p "$PMBIN"
+printf '#!/bin/sh\ncase "$*" in *list-updates*) printf "S | repo | name | old | new | arch\nv | repo | bash | 1 | 2 | x86_64\nv | repo | vim | 1 | 2 | x86_64\n" ;; esac\n' >"$PMBIN/zypper"
+chmod +x "$PMBIN/zypper"
+for t in grep awk sort cut sed; do ln -s "$(command -v "$t")" "$PMBIN/$t" 2>/dev/null; done
+_upcheck "count: a declared MATCH/FS/FIELD parses the zypper table (header excluded)" \
+  'PKG_COUNT_PENDING=zypper -q list-updates
+PKG_PENDING_MATCH=^v[[:space:]]
+PKG_PENDING_FS=|
+PKG_PENDING_FIELD=3' \
+  '[[ $(_pkgup_count) == 2 ]] && out=$(_pkgup_list) && [[ $out == *bash* && $out == *vim* && $out != *name* ]]'
+# The defaults must cover an archive that needs none of the three — one name per line is
+# the common case, and forcing every repo to declare a `.`/1 pair would be schema noise.
+rm -rf "$PMBIN"
+mkdir -p "$PMBIN"
+printf '#!/bin/sh\nprintf "a-1.0 x\nb-2.0 x\n"\n' >"$PMBIN/apk"
+chmod +x "$PMBIN/apk"
+for t in grep awk sort cut sed; do ln -s "$(command -v "$t")" "$PMBIN/$t" 2>/dev/null; done
+_upcheck "count: MATCH/FIELD/FS default to '.'/1/whitespace when undeclared" \
+  'PKG_COUNT_PENDING=apk list -u' \
+  '[[ $(_pkgup_count) == 2 ]] && out=$(_pkgup_list) && [[ $out == *a-1.0* && $out == *b-2.0* ]]'
+# A declaration is DATA. If a value ever reached a shell as code, a `;` in it would run —
+# and the one place that would have been easy to get wrong is the count command, which is
+# the only declared value Core word-splits. Assert the split, not an eval.
+rm -rf "$PMBIN"
+mkdir -p "$PMBIN"
+printf '#!/bin/sh\nprintf "RUN: %%s\\n" "$*"\n' >"$PMBIN/marker"
+chmod +x "$PMBIN/marker"
+for t in grep awk sort cut sed; do ln -s "$(command -v "$t")" "$PMBIN/$t" 2>/dev/null; done
+_upcheck "count: a ';' in a declared value is an argument, never a command separator" \
+  "PKG_COUNT_PENDING=marker one ; touch $CAPD_UP/pwned" \
+  "_pkgup_list >/dev/null 2>&1; [[ ! -e '$CAPD_UP/pwned' ]]"
+rm -rf "$PMBIN"
 
 # ── op.zsh 1Password helpers (B7) ─────────────────────────────────────────────
 # op.zsh fans out to nine repos and handles SECRETS, yet had zero behavioral coverage. The

@@ -220,8 +220,37 @@ three are ordered against something, a declaration is read on demand. Copy
 core/scripts/check-capabilities.sh os/<os>.capabilities --packages install/packages.txt
 ```
 
-Absence is not fatal: Core warns once and falls back to its built-in ladders, so a repo
-adopts this by adding a file, not by re-bootstrapping in lockstep.
+Absence is not fatal: Core falls back to its built-in defaults, so a repo adopts this by
+adding a file, not by re-bootstrapping in lockstep. The reader is **silent** about a
+missing declaration — absence is the normal state during the rollout, and a warning on
+every interactive shell and every tmux split was worse than the thing it warned about
+(#715). Set `CORE_CAP_LOUD=1` to opt into it.
+
+**Eight required keys**, all package-manager verbs plus `SCHEDULER`; the validator is the
+schema, so read `check-capabilities.sh` rather than trusting this list to stay current.
+Everything else is optional, and optional means _Core's default reproduces what your box
+does today_ — declare only what your archive actually needs:
+
+| Optional key | What it is for |
+| --- | --- |
+| `TOOLS_OPTIN` | tools `core-doctor` reports as OPT-IN rather than MISSING |
+| `PKG_ASSUME_YES` | the flag `up -y` appends. **Omit to mean "never auto-confirm"** — the right answer for Arch, Gentoo and Alpine |
+| `PKG_UPGRADE_PRE` | run before the upgrade, both paths; **failure aborts** |
+| `PKG_CLEANUP` | run after a successful _full_ upgrade (`autoremove`, `brew cleanup`) |
+| `PKG_UPGRADE_PARTIAL` | upgrade only named packages. **Omitting it is a safety declaration** — `up -i` refuses without one |
+| `PKG_COUNT_REFRESH` | run before `PKG_COUNT_PENDING` in the count path only (Homebrew) |
+| `PKG_COUNT_EXIT_TRUSTED` | `1` when a non-zero exit from `PKG_COUNT_PENDING` means "could not answer", so the count reports `-1` rather than `0`. Off by default — most archives overload that status |
+| `PKG_PENDING_MATCH` | ERE selecting lines that name a package. Default `.` |
+| `PKG_PENDING_FIELD` | which field holds the name. Default `1` |
+| `PKG_PENDING_FS` | awk field separator. Default whitespace; zypper's table is `\|` |
+
+Two things that bite when authoring one:
+
+- **A `#` inside a value is not a comment.** The reader keeps it, so
+  `PKG_OWNS=dnf provides   # owns this` declares a verb that does not exist. The
+  validator rejects it; put the note on its own line.
+- **An ERE cannot end in a literal space.** Trailing whitespace is trimmed, so write
+  `PKG_PENDING_MATCH=^Inst[[:space:]]`, never `^Inst` with a trailing space.
 
 ### What Core already does — do not re-add it
 
