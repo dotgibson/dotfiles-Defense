@@ -6,7 +6,7 @@ A **gap here is not a defect.** htpx spans SaaS and CI/CD platforms this repo ha
 
 Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `detections/htpx.pin`.
 
-**102 blue entries · 95 claimed here · 20 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
+**102 blue entries · 95 claimed here · 22 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
 
 ## htpx blue entries claimed by detection content here
 
@@ -138,6 +138,7 @@ Techniques this repo detects that the corpus has no attack for — so there is n
 | T1049 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1057 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1069.001 | `local_group_enum_sweep_4798_4799` |
+| T1070.003 | `history_clearing` |
 | T1074.001 | `archive_staging_utility` |
 | T1082 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1087.001 | `host_recon_command_burst`, `host_recon_powershell_4104`, `local_group_enum_sweep_4798_4799` |
@@ -148,6 +149,7 @@ Techniques this repo detects that the corpus has no attack for — so there is n
 | T1558.005 | `ccache_theft_staging` |
 | T1560.001 | `archive_staging_utility` |
 | T1569.002 | `service_creation_psexec_7045` |
+| T1685.005 | `windows_event_log_cleared_1102` |
 
 ## Declared holes upstream (`pair: null`)
 

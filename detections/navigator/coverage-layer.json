@@ -129,6 +129,12 @@
       "comment": "1 rule(s): harbor_artifact_deleted"
     },
     {
+      "techniqueID": "T1070.003",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): history_clearing"
+    },
+    {
       "techniqueID": "T1072",
       "score": 2,
       "enabled": true,
@@ -469,6 +475,12 @@
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): gcp_audit_log_sink_deleted"
+    },
+    {
+      "techniqueID": "T1685.005",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): windows_event_log_cleared_1102"
     },
     {
       "techniqueID": "T1686.001",

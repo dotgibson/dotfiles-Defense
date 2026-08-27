@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**102 rules · 120 detection documents · 78 techniques · 12 tactics · 24 logsources.**
+**104 rules · 122 detection documents · 80 techniques · 12 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
@@ -12,8 +12,8 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Execution | TA0002 | 7 | 8 |
 | Persistence | TA0003 | 16 | 37 |
 | Privilege Escalation | TA0004 | 9 | 11 |
-| Stealth | TA0005 | 1 | 1 |
-| Defense Impairment | TA0112 | 6 | 10 |
+| Stealth | TA0005 | 2 | 2 |
+| Defense Impairment | TA0112 | 7 | 11 |
 | Credential Access | TA0006 | 17 | 19 |
 | Discovery | TA0007 | 14 | 6 |
 | Lateral Movement | TA0008 | 9 | 7 |
@@ -45,6 +45,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1069.001 | 1 | `local_group_enum_sweep_4798_4799` |
 | T1069.002 | 1 | `sharphound_ldap_sweep_4662` |
 | T1070 | 1 | `harbor_artifact_deleted` |
+| T1070.003 | 1 | `history_clearing` |
 | T1072 | 2 | `jenkins_job_backdoor`, `tfc_variable_injection` |
 | T1074.001 | 1 | `archive_staging_utility` |
 | T1082 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
@@ -102,6 +103,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1649 | 1 | `adcs_esc1_san_mismatch_4886` |
 | T1685 | 5 | `github_branch_protection_tamper`, `gitlab_protected_branch_tamper`, `npm_publish_2fa_disabled`, `slack_2fa_enforcement_disabled`, `vault_audit_device_disabled` |
 | T1685.002 | 1 | `gcp_audit_log_sink_deleted` |
+| T1685.005 | 1 | `windows_event_log_cleared_1102` |
 | T1686.001 | 2 | `cloudflare_waf_rule_disabled`, `snowflake_network_policy_change` |
 
 ## By logsource
@@ -112,7 +114,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `cloudflare` | `cloudflare` | 3 |
 | `collection` | `windows` | 2 |
 | `credential_access` | `windows` | 10 |
-| `defense_impairment` | `windows` | 1 |
+| `defense_impairment` | `windows` | 2 |
 | `discovery` | `windows` | 6 |
 | `github` | `github` | 3 |
 | `gitlab` | `gitlab` | 3 |
@@ -121,7 +123,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `jenkins` | `jenkins` | 3 |
 | `kubernetes` | `kubernetes` | 3 |
 | `lateral_movement` | `windows` | 5 |
-| `linux` | `linux` | 8 |
+| `linux` | `linux` | 9 |
 | `npm` | `npm` | 3 |
 | `okta` | `okta` | 3 |
 | `persistence` | `windows` | 4 |

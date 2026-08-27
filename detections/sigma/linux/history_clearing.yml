@@ -1,0 +1,58 @@
+title: Shell history cleared or truncated (auditd)
+id: ca8e6e8e-18bd-4ffa-b20c-d781e3e77223
+status: experimental
+description: |
+  Detects T1070.003 (Indicator Removal: Clear Command History): a shell history file
+  unlinked, truncated, or replaced, seen through an auditd syscall rule. Command
+  history is the cheapest record of what an operator actually typed on a host, which
+  is why removing it is close to reflex at the end of an interactive session - and why
+  its removal is worth an alert in its own right, independent of whatever it was
+  hiding.
+  The invariant is the SYSCALL, not the file. This is the part that decides whether the
+  rule works: a plain `-w ~/.bash_history -p wa` watch fires on every logout, because a
+  normal shell exit APPENDS to the history file - the write is the routine case, not the
+  suspicious one. What separates clearing from ordinary use is HOW the file is written:
+  unlink (rm, shred), truncate (`: > ~/.bash_history`, `truncate -s0`), or rename over
+  it. Those never happen in the course of using a shell normally, so the audit rule
+  below selects on the syscalls and this rule keys on the audit key it sets.
+  Note what this does NOT reach, so the coverage is not read as wider than it is:
+  `history -c` and `unset HISTFILE` are bash builtins that touch no file and spawn no
+  process, so they produce no auditd record at all. They are only visible later, as the
+  ABSENCE of history for a session that clearly had some - a hunt, not a detection.
+  This rule catches the operator who removes the file; it does not catch the one who
+  arranges for it never to be written.
+  `_history` rather than `.bash_history` so `.zsh_history` and the other shells' files
+  are covered by the same selection.
+  Requires an auditd syscall rule that sets the key (load with `augenrules --load`):
+    -a always,exit -F arch=b64 -S unlink,unlinkat,truncate,ftruncate,rename,renameat -F dir=/home -F key=hist_tamper
+    -a always,exit -F arch=b64 -S unlink,unlinkat,truncate,ftruncate,rename,renameat -F dir=/root -F key=hist_tamper
+  Scope the dir= to the home layout your estate actually uses rather than assuming
+  /home, the same adjustment ssh_authorized_keys_write.yml calls for on its watch.
+  Validate (purple): `shred -u ~/.bash_history` or `truncate -s0 ~/.bash_history` on a
+  lab host with the rule loaded. The htpx corpus has no entry for this one - its Linux
+  entries are credential-access and persistence, not anti-forensics.
+references:
+  - https://attack.mitre.org/techniques/T1070/003/
+author: dotfiles-Defense
+date: 2026-08-26
+tags:
+  - attack.stealth
+  - attack.t1070.003
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection:
+    key: 'hist_tamper'
+    name|contains: '_history'
+  condition: selection
+falsepositives:
+  - Account deprovisioning or home-directory cleanup removing a departed user's files,
+    which unlinks the history file along with everything else. This rule ships NO filter
+    on purpose - the syscall selection is already narrow enough that an actor allowlist
+    would suppress more than it saves, and deprovisioning is distinguishable at triage by
+    the rest of the home directory going with it. Triage on auid against the home
+    directory being written.
+  - A user deliberately scrubbing a secret they pasted into a shell (expected, and worth
+    knowing about either way - triage on auid and what preceded it).
+level: high
