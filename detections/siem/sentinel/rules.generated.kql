@@ -13,7 +13,7 @@
 eventSource =~ "iam.amazonaws.com" and eventName =~ "CreateAccessKey"
 
 // cloud/aws_iam_privesc_policy.yml — AWS IAM privilege escalation via policy attach/put (CloudTrail)
-(eventSource =~ "iam.amazonaws.com" and (eventName in~ ("AttachUserPolicy", "AttachRolePolicy", "AttachGroupPolicy", "PutUserPolicy", "PutRolePolicy", "PutGroupPolicy", "CreatePolicyVersion", "SetDefaultPolicyVersion", "AddUserToGroup", "UpdateAssumeRolePolicy"))) and (not(['userIdentity.arn'] startswith "arn:aws:sts::111122223333:assumed-role/terraform-apply/"))
+(eventSource =~ "iam.amazonaws.com" and (eventName in~ ("AttachUserPolicy", "AttachRolePolicy", "AttachGroupPolicy", "PutUserPolicy", "PutRolePolicy", "PutGroupPolicy", "CreatePolicyVersion", "SetDefaultPolicyVersion", "AddUserToGroup", "UpdateAssumeRolePolicy", "DeleteUserPermissionsBoundary", "DeleteRolePermissionsBoundary"))) and (not(['userIdentity.arn'] startswith "arn:aws:sts::111122223333:assumed-role/terraform-apply/"))
 
 // cloud/aws_login_profile_created.yml — AWS IAM login profile created or updated (console takeover)
 eventSource =~ "iam.amazonaws.com" and (eventName in~ ("CreateLoginProfile", "UpdateLoginProfile"))
@@ -86,6 +86,9 @@ OperationName in~ ("Add service principal credentials", "Add application credent
 
 // defense_impairment/dcshadow_rogue_dc_4742.yml — DCShadow - rogue DC registration (GC SPN added to a non-DC)
 (EventID == 4742 and ServicePrincipalNames contains "GC/") and (not((TargetUserName in~ ("DC1$", "DC2$"))))
+
+// defense_impairment/windows_event_log_cleared_1102.yml — Windows Security audit log cleared (1102)
+EventID == 1102
 
 // discovery/host_enum_srvsvc_wkssvc_5145.yml — Host enumeration base - IPC$ access to the srvsvc / wkssvc pipes
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -194,6 +197,9 @@ EventID == 7045 and (ImagePath contains "\\ADMIN$\\" or ImagePath contains "%COM
 
 // linux/cron_persistence.yml — Cron persistence - scheduled-job file written (auditd)
 key =~ "cron_persist" and (not((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
+
+// linux/history_clearing.yml — Shell history cleared or truncated (auditd)
+key =~ "hist_tamper" and name contains "_history"
 
 // linux/shadow_file_read.yml — /etc/shadow read by a non-auth process (auditd)
 key =~ "shadow_read" and (not((comm in~ ("unix_chkpwd", "sshd", "login", "su", "sudo", "passwd", "chpasswd", "chage", "pwck", "grpck", "useradd", "usermod", "userdel", "systemd"))))

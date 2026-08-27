@@ -13,7 +13,7 @@
 eventSource:iam.amazonaws.com AND eventName:CreateAccessKey
 
 // cloud/aws_iam_privesc_policy.yml — AWS IAM privilege escalation via policy attach/put (CloudTrail)
-(eventSource:iam.amazonaws.com AND (eventName:(AttachUserPolicy OR AttachRolePolicy OR AttachGroupPolicy OR PutUserPolicy OR PutRolePolicy OR PutGroupPolicy OR CreatePolicyVersion OR SetDefaultPolicyVersion OR AddUserToGroup OR UpdateAssumeRolePolicy))) AND (NOT userIdentity.arn:arn\:aws\:sts\:\:111122223333\:assumed\-role\/terraform\-apply\/*)
+(eventSource:iam.amazonaws.com AND (eventName:(AttachUserPolicy OR AttachRolePolicy OR AttachGroupPolicy OR PutUserPolicy OR PutRolePolicy OR PutGroupPolicy OR CreatePolicyVersion OR SetDefaultPolicyVersion OR AddUserToGroup OR UpdateAssumeRolePolicy OR DeleteUserPermissionsBoundary OR DeleteRolePermissionsBoundary))) AND (NOT userIdentity.arn:arn\:aws\:sts\:\:111122223333\:assumed\-role\/terraform\-apply\/*)
 
 // cloud/aws_login_profile_created.yml — AWS IAM login profile created or updated (console takeover)
 eventSource:iam.amazonaws.com AND (eventName:(CreateLoginProfile OR UpdateLoginProfile))
@@ -86,6 +86,9 @@ resource.type:api_token AND action.type:create
 
 // defense_impairment/dcshadow_rogue_dc_4742.yml — DCShadow - rogue DC registration (GC SPN added to a non-DC)
 (EventID:4742 AND ServicePrincipalNames:*GC\/*) AND (NOT (TargetUserName:(DC1$ OR DC2$)))
+
+// defense_impairment/windows_event_log_cleared_1102.yml — Windows Security audit log cleared (1102)
+EventID:1102
 
 // discovery/host_enum_srvsvc_wkssvc_5145.yml — Host enumeration base - IPC$ access to the srvsvc / wkssvc pipes
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -194,6 +197,9 @@ EventID:7045 AND (ImagePath:(*\\ADMIN$\\* OR *%COMSPEC%* OR *\\cmd.exe* OR *powe
 
 // linux/cron_persistence.yml — Cron persistence - scheduled-job file written (auditd)
 key:cron_persist AND (NOT (exe:(*\/dpkg OR *\/rpm OR *\/apt OR *\/apt\-get OR *\/yum OR *\/dnf OR *\/zypper OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)))
+
+// linux/history_clearing.yml — Shell history cleared or truncated (auditd)
+key:hist_tamper AND name:*_history*
 
 // linux/shadow_file_read.yml — /etc/shadow read by a non-auth process (auditd)
 key:shadow_read AND (NOT (comm:(unix_chkpwd OR sshd OR login OR su OR sudo OR passwd OR chpasswd OR chage OR pwck OR grpck OR useradd OR usermod OR userdel OR systemd)))
