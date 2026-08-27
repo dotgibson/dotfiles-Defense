@@ -97,6 +97,7 @@ branching on an OS name.**
 | clipboard | `bin/clip`, `bin/clip-paste` | `$WSL_DISTRO_NAME` → `pbcopy` → `wl-copy` → `xclip` → `xsel` |
 | scheduler | `_maint_scheduler` (`zsh/55-maint.zsh`) | launchd / `/run/systemd/system` / `crontab` |
 | package manager | `_pkgup_mgr` (`zsh/60-update.zsh`) | `command -v` over seven managers |
+| package-manager **verbs** | `_pkgup_verb` (`zsh/60-update.zsh`) | the OS layer's `os.capabilities` declaration, then Core's built-in row |
 | privilege | `_pkgup_priv`, `_blib_priv` | `sudo` → `doas` → bare |
 | timeout | `_to` (`maint/dotfiles-maint.sh`) | `timeout` → `gtimeout` → unbounded |
 | binary-name drift | `$FD_BIN`, `$BAT_BIN` (`zsh/00-tools.zsh`) | `fd`/`fdfind`, `bat`/`batcat` |
@@ -131,6 +132,10 @@ re-derived it before #449; an OS layer that needs the answer calls Core's, and t
 **When the capability genuinely cannot be probed**, push the knowledge outward rather
 than hardcoding it:
 
+- to the **OS layer's declaration** — `os/<os>.capabilities` is the first thing to reach
+  for when what differs is a _verb_ rather than a path. It is `KEY=value` data, read and
+  never sourced, and Core reads it back through `_core_cap`. `up` resolves every package
+  -manager command this way (#664);
 - to the **OS layer** — `os/<os>.zsh` (band 70–84) is where a real OS path belongs;
 - to **install time** — `maint-install` captures the live `$PATH` and writes it into the
   scheduler unit, so the runner needs no prefix of its own;
@@ -141,19 +146,25 @@ If none of those work, degrade **visibly**: add nothing and let the feature fall
 `tmux-cheat.sh` does to its pager. A wrong absolute path is a silent lie on seven
 machines; a missing optional tool is a visible, local degradation.
 
-### The two documented exceptions
+### The one documented exception
 
-They are exceptions to **different things**, which is worth keeping straight:
+**`zsh/55-maint.zsh`** is excepted **at the gate**. Its launchd arm legitimately writes
+`~/Library/LaunchAgents` and embeds a plist; its systemd arm embeds a unit. It switches
+on `_maint_scheduler`, the correct cross-OS shape, so the OS-specific text is the payload
+rather than an assumption. §5c drops only its `LaunchAgents` lines — the rest of the file
+is scanned like any other, so unrelated drift inside it still fails.
 
-1. **`zsh/55-maint.zsh`** is excepted **at the gate**. Its launchd arm legitimately writes
-   `~/Library/LaunchAgents` and embeds a plist; its systemd arm embeds a unit. It switches
-   on `_maint_scheduler`, the correct cross-OS shape, so the OS-specific text is the
-   payload rather than an assumption. §5c drops only its `LaunchAgents` lines — the rest of
-   the file is scanned like any other, so unrelated drift inside it still fails.
-2. **`zsh/60-update.zsh`** is excepted **architecturally, not at the gate**. It is a
-   seven-package-manager driver — the canonical OS-layer concern — kept in Core so `up` is
-   one verb everywhere. It needs no gate exclusion because it names no OS-absolute path;
-   it would fail §5c like anything else if it did. See `ARCHITECTURE.md`.
+**`zsh/60-update.zsh` used to be listed here as a second exception**, and the distinction
+mattered: it was excepted _architecturally, not at the gate_. It never needed a §5c
+exclusion — it names no OS-absolute path, and would have failed §5c like anything else if
+it did — but it was a seven-package-manager driver, which is the canonical OS-layer
+concern, kept in Core so `up` is one verb everywhere.
+
+Since #664 it is a **dispatcher**: the verb stays, and what it runs is resolved through
+`_pkgup_verb` from the OS layer's `os.capabilities` declaration. That is the pattern this
+document already asks for — one verb, N backends — with the backends pushed outward
+rather than branched on inline. Core still carries a built-in defaults table as a stopgap
+until #667 stamps the fleet; see `ARCHITECTURE.md` for why, and for when it goes.
 
 `*.example` files are also skipped: they are user-edited illustrations, not live config.
 

@@ -23,14 +23,28 @@ _Repo status_ at the bottom).
 
 ## Package-manager commands
 
-| Action    | Arch                     | openSUSE                                         | Alpine                    | Gentoo                          | Kali (apt)                   | Debian/Ubuntu (apt)          |
-| --------- | ------------------------ | ------------------------------------------------ | ------------------------- | ------------------------------- | ---------------------------- | ---------------------------- |
-| refresh   | `sudo pacman -Sy`²³      | `sudo zypper refresh`                            | `doas apk update`         | `sudo emerge --sync`            | `sudo apt-get update`        | `sudo apt-get update`        |
-| upgrade   | `sudo pacman -Syu`       | Leap: `zypper up` · **Tumbleweed: `zypper dup`** | `doas apk upgrade`        | `sudo emerge -uDN @world`       | `sudo apt-get full-upgrade`  | `sudo apt-get full-upgrade`  |
-| install   | `sudo pacman -S <pkg>`   | `sudo zypper in <pkg>`                           | `doas apk add <pkg>`      | `sudo emerge <atom>`            | `sudo apt-get install <pkg>` | `sudo apt-get install <pkg>` |
-| remove    | `sudo pacman -Rns <pkg>` | `sudo zypper rm <pkg>`                           | `doas apk del <pkg>`      | `sudo emerge --depclean <atom>` | `sudo apt-get remove <pkg>`  | `sudo apt-get remove <pkg>`  |
-| search    | `pacman -Ss <term>`      | `zypper se <term>`                               | `apk search <term>`       | `emerge -s <term>`              | `apt-cache search <term>`    | `apt-cache search <term>`    |
-| owns-file | `pacman -Qo <path>`      | `zypper se --provides <f>`                       | `apk info --who-owns <f>` | `equery belongs <path>`         | `dpkg -S <path>`             | `dpkg -S <path>`             |
+**This table is the transcription source for `os/<os>.capabilities`** (#667) — every cell
+below becomes a `PKG_*` value in some repo's declaration, so a wrong cell here is a wrong
+verb on a real box. It gained its **macOS and Fedora columns** in #664: they had been
+missing since the table was written, even though `dotfiles-MacBook` is the reference
+implementation and `dotfiles-Fedora` is the template the other Linux repos stamp from —
+so the two most-copied repos had nothing to copy.
+
+The **count-pending** row is what `up`'s once-a-day nudge runs, and it is the most
+divergent of the lot — the one Core hardcoded worst. It must be **non-root and must not
+mutate the system**, which is why Arch counts with `checkupdates` (a user-space copy of
+the sync DB, never the real one) rather than `-Sy` — and why Gentoo, which cannot answer
+it cheaply at all, pays for a real resolve rather than the fast wrong answer.
+
+| Action        | macOS (brew)              | Fedora (dnf)                    | Arch                     | openSUSE                                         | Alpine                    | Gentoo                          | Kali (apt)                   | Debian/Ubuntu (apt)          |
+| ------------- | ------------------------- | ------------------------------- | ------------------------ | ------------------------------------------------ | ------------------------- | ------------------------------- | ---------------------------- | ---------------------------- |
+| refresh       | `brew update`             | `dnf check-update`³⁵            | `sudo pacman -Sy`²³      | `sudo zypper refresh`                            | `doas apk update`         | `sudo emerge --sync`            | `sudo apt-get update`        | `sudo apt-get update`        |
+| upgrade       | `brew upgrade`            | `sudo dnf upgrade --refresh`    | `sudo pacman -Syu`       | Leap: `zypper up` · **Tumbleweed: `zypper dup`** | `doas apk upgrade`        | `sudo emerge -auvDN @world`     | `sudo apt-get full-upgrade`  | `sudo apt-get full-upgrade`  |
+| count-pending | `brew outdated --quiet`³⁶ | `dnf -q --refresh check-update` | `checkupdates`²³         | `zypper -q list-updates`                         | `apk list -u`             | `emerge -puDN @world`³⁷         | `apt-get -s upgrade`         | `apt-get -s upgrade`         |
+| install       | `brew install <pkg>`      | `sudo dnf install <pkg>`        | `sudo pacman -S <pkg>`   | `sudo zypper in <pkg>`                           | `doas apk add <pkg>`      | `sudo emerge <atom>`            | `sudo apt-get install <pkg>` | `sudo apt-get install <pkg>` |
+| remove        | `brew uninstall <pkg>`    | `sudo dnf remove <pkg>`         | `sudo pacman -Rns <pkg>` | `sudo zypper rm <pkg>`                           | `doas apk del <pkg>`      | `sudo emerge --depclean <atom>` | `sudo apt-get remove <pkg>`  | `sudo apt-get remove <pkg>`  |
+| search        | `brew search <term>`      | `dnf search <term>`             | `pacman -Ss <term>`      | `zypper se <term>`                               | `apk search <term>`       | `emerge -s <term>`              | `apt-cache search <term>`    | `apt-cache search <term>`    |
+| owns-file     | `brew which-formula`³⁸    | `dnf provides <path>`           | `pacman -Qo <path>`      | `zypper se --provides <f>`                       | `apk info --who-owns <f>` | `equery belongs <path>`         | `dpkg -S <path>`             | `dpkg -S <path>`             |
 
 ## Package names (modern CLI stack)
 
@@ -645,8 +659,9 @@ sd_across=(); sd --help 2>/dev/null | grep -q -- --across && sd_across=(-A)
 sd "${sd_across[@]}" 'foo\nbar' baz file
 ```
 
-²³ Arch `refresh` (the **Package-manager commands** table above) is listed for
-completeness — **`dotfiles-Arch` deliberately ships no alias for it.** A bare
+²³ Arch `refresh` **and** `count-pending` (the **Package-manager commands** table above).
+`refresh` is listed for completeness — **`dotfiles-Arch` deliberately ships no alias for
+it** — and `count-pending` is `checkupdates` for the same reason the alias does not exist. A bare
 `pacman -Sy` is safe on its own, but refreshing the sync DB and then installing is
 the partial-upgrade footgun, so `os/arch.zsh` provides only `pacu` (a full `-Syu`)
 and `pacout` (`checkupdates`, which lists updates without touching the sync DB at
@@ -1151,6 +1166,51 @@ floor you _record_ and act on when provisioning, not one you can detect from the
 Core itself is unaffected: nothing in Core shells out to jq (`HAVE_JQ` is detect-only, no
 alias — the same shape as `gron`/`sd`). This is a note for the role layers and for anyone
 piping untrusted JSON through a distro jq.
+
+³⁵ Fedora `refresh` is `dnf check-update`, and it is **not really a refresh** — dnf has no
+standalone index-refresh verb. Refreshing is a _flag_ on the verb that needs it
+(`dnf upgrade --refresh`), which is why the Fedora `upgrade` and `count-pending` cells both
+carry it and why `os/fedora.capabilities` declares no `PKG_UPGRADE_PRE`. The schema calls
+`PKG_REFRESH` "may be a no-op verb" for exactly this case.
+
+³⁶ macOS `count-pending` is two commands, and it is the only archive where that is true.
+`brew outdated` reports against the **locally cached** formula index, so without a `brew
+update` first it reports a stale set — sometimes empty on a box with dozens of upgrades
+pending. That is what the optional `PKG_COUNT_REFRESH` key exists for. Core runs it on the
+**count** path only: the _list_ path (`up`'s pre-confirm preview) deliberately skips it,
+because the once-a-day nudge that produced the count already paid for the network.
+
+³⁷ Gentoo `count-pending` **is** the real dependency calculation, and it is the one cell
+here that cost a measurement to get right (#753 → #756). The obvious answer is `eix -u`,
+which is what Core shipped: it is fast and it reads its own cache. It also answers the
+wrong question. `eix -u` asks "is a higher version present in the tree?"; `up` runs
+`emerge -uDN @world`, which asks "what will actually change?" — and on a healthy box those
+diverge permanently. Measured on a real machine: eix said 70 where emerge merged 8, and
+after a full update **and** a depclean eix still said 2 against emerge's 0. Three causes,
+only the first of which an operator can ever clear — orphans (installed but no longer
+reachable from `@world`), **slots** (the newest thing in SLOT 5.1 is not the newest across
+all slots), and **consumer pins** (a dependent pinning `=cat/pkg-1.2*` the resolver will
+not move past). The last two never clear, so no filter over eix's output fixes this; only
+the resolver knows.
+
+The cost is real and was weighed rather than assumed: ~10s against eix's 0.25s. The caller
+that pays it is throttled to once a day and runs disowned, so it never blocks a prompt, and
+`up`'s foreground use already sits behind a spinner. A once-a-day background resolve is
+affordable; a nudge that **cannot reach zero on a healthy box** is not, because it stops
+being a signal that anything needs doing. Root is not needed (`--pretend` installs nothing)
+and it takes no merge lock, so it is safe beside a real emerge.
+
+A failed resolve must report the `-1` **unknown** sentinel, never 0 — a box whose Portage
+cannot resolve is not a box with nothing to do. That is what the optional
+`PKG_COUNT_EXIT_TRUSTED` key is for, and Gentoo is the only archive that declares it: most
+overload the exit status of their count verb (dnf exits 100 when updates _exist_; `pacman
+-Qu` and `checkupdates` exit non-zero when there are _none_), so Core ignores it by default.
+³⁸ macOS `owns-file` has no good answer and the cell is the least trustworthy in the table.
+`brew which-formula` maps a **command name** to the formula providing it, which is not the
+same question as "which package owns this path" that every other column answers. Homebrew
+has no path-ownership index; the nearest real equivalent is grepping the install receipts
+under the Homebrew prefix, which is neither a stable interface nor something Core may name.
+Treat this cell as "the closest available", and prefer not to build a gate on it.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

@@ -57,7 +57,10 @@ _pkgup_priv() {
   else "$@"; fi
 }
 
-# which package manager is this box? (brew wins on macOS)
+# which package manager is this box? (brew wins on macOS). THE PROBE, and it stays: a
+# `command -v` ladder is the shape PORTABILITY.md blesses, and the token it returns is
+# also the label every user-facing string in `up` interpolates ("via ${mgr}").
+# What it no longer decides is WHAT TO RUN — that is _pkgup_verb, below.
 _pkgup_mgr() {
   if command -v brew >/dev/null 2>&1; then
     echo brew
@@ -76,85 +79,343 @@ _pkgup_mgr() {
   else echo none; fi
 }
 
-# Best-effort, NON-ROOT count of upgradable packages.
-# Offline / unknown → prints -1 (caller stays silent). Never touches the system.
+# ══════════════════════════════════════════════════════════════════════════════
+# BUILT-IN DEFAULTS — DELETE THIS BLOCK IN #667.
+# ══════════════════════════════════════════════════════════════════════════════
+# Everything between here and the end of _pkgup_fallback is the OS knowledge that used
+# to be five `case` statements spread through this file. It is still OS knowledge and it
+# is still in Core, but it is now DATA in one place with a demolition date, rather than
+# control flow woven through the verb.
 #
-# The `</dev/null` hangs off the whole `case`, not the individual probes, because the safety
-# has to hold for every branch and every caller. (It must go on the case and not on the
-# function definition — `f() { ... } </dev/null` binds at DEFINITION time in zsh and does
-# nothing at call time; verified, it still reads a piped stdin.)
-# This used to be documented as "runs in the background", and while
-# that was true the shape was accidentally safe: zsh gives a background job /dev/null stdin
-# under `setopt nomonitor`, so a prompting manager hit EOF and moved on. But `up` also calls
-# it in the FOREGROUND via _pkgup_refresh once the upgrade finishes, and there it inherits the
-# terminal — with stdout captured by $(...) and stderr sent to /dev/null, so any prompt is
-# invisible and unanswerable. That is how `up` came to print "Complete!" and then hang for
-# good on Fedora: a repo with repo_gpgcheck=1 whose signing key only ever reached root's
-# keyring makes every non-root --refresh ask to import it (dnf5 keys repos per user, under
-# <cachedir>/<repo>/pubring), and a declined import is never persisted, so it asks forever.
-# Pinning stdin here makes the probe unpromptable no matter who calls it or how.
-_pkgup_count() {
-  case "$(_pkgup_mgr)" in
-  brew)
-    brew update >/dev/null 2>&1
-    brew outdated --quiet 2>/dev/null | grep -c .
-    ;;
-  pacman)
-    # checkupdates (pacman-contrib) syncs a copy in user space — no root, no
-    # touching the real DB (which would risk a partial upgrade). Fallback: -Qu.
-    if command -v checkupdates >/dev/null 2>&1; then
-      checkupdates 2>/dev/null | grep -c .
-    else pacman -Qu 2>/dev/null | grep -c .; fi
-    ;;
-  dnf)
-    # check-update: exit 100 = updates available, 0 = none; no root needed
-    dnf -q --refresh check-update 2>/dev/null | grep -cE '^[a-zA-Z0-9][^ ]*[[:space:]]'
-    ;;
-  zypper)
-    zypper -q list-updates 2>/dev/null | grep -c '^v '
-    ;;
-  apt)
-    # -s = simulate against EXISTING lists (no root, no network). Count may be
-    # stale until something runs `apt update`; `up` does the real refresh.
-    apt-get -s upgrade 2>/dev/null | grep -cE '^Inst '
-    ;;
-  apk)
-    apk list -u 2>/dev/null | grep -c .
-    ;;
-  emerge)
-    # Gentoo: a real @world calc is far too heavy to background. Only report if
-    # eix is present (cheap, reads its own cache); otherwise stay silent (-1).
-    if command -v eix >/dev/null 2>&1; then
-      eix -u --only-names 2>/dev/null | grep -c .
-    else echo -1; fi
-    ;;
-  *) echo -1 ;;
-  esac </dev/null
+# WHY IT IS STILL HERE. #667 — the change that authors os/<os>.capabilities in all nine
+# repos — is BLOCKED BY THIS ONE. On the day this lands, not a single box in the fleet
+# has a declaration, so this table is what every host actually runs. Deleting it here
+# would break `up` everywhere until the fan-out it is waiting on completes. When #667
+# lands, this block goes and _pkgup_verb loses its second arm.
+#
+# THE SHAPE IS THE DECLARATION'S SHAPE, deliberately: same keys, same command-prefix
+# values, keyed <mgr>.<KEY>. So each row is a transcription source for the repo that
+# will replace it, and a declaration that behaves differently from the row it replaces
+# is a visible diff rather than a silent one.
+#
+# A LEADING `sudo` NAMES THE INTENT, NOT THE TOOL — _pkgup_run maps it onto whatever
+# this box actually has (see there). Rows for verbs that must NOT be privileged (brew)
+# carry no prefix.
+typeset -gA _CORE_CAP_FALLBACK=(
+  # ── Homebrew (macOS) ────────────────────────────────────────────────────────
+  # Never privileged. PKG_COUNT_REFRESH is the network `brew update` the COUNT path
+  # runs and the LIST path deliberately does not — the nudge already paid for it.
+  brew.PKG_UPGRADE            'brew upgrade'
+  brew.PKG_UPGRADE_PRE        'brew update'
+  brew.PKG_UPGRADE_PARTIAL    'brew upgrade'
+  brew.PKG_CLEANUP            'brew cleanup'
+  brew.PKG_COUNT_PENDING      'brew outdated --quiet'
+  brew.PKG_COUNT_REFRESH      'brew update'
+
+  # ── pacman (Arch) — full sync only; never partial, never auto-confirmed ──────
+  # No PKG_UPGRADE_PARTIAL and no PKG_ASSUME_YES: their ABSENCE is what makes `up -i`
+  # refuse and `up -y` fall back to pacman's own prompt. A partial upgrade on a rolling
+  # distro is the documented way to break the box.
+  pacman.PKG_UPGRADE          'sudo pacman -Syu'
+  pacman.PKG_COUNT_PENDING    'pacman -Qu'
+
+  # ── dnf (Fedora) — --refresh needs no root, so there is no separate PRE ──────
+  dnf.PKG_UPGRADE             'sudo dnf upgrade --refresh'
+  dnf.PKG_UPGRADE_PARTIAL     'sudo dnf upgrade --refresh'
+  dnf.PKG_ASSUME_YES          '-y'
+  dnf.PKG_COUNT_PENDING       'dnf -q --refresh check-update'
+  dnf.PKG_PENDING_MATCH       '^[a-zA-Z0-9][^ ]*[[:space:]]'
+
+  # ── zypper (openSUSE) — the Tumbleweed dialect is resolved in _pkgup_fallback ─
+  # `^v[[:space:]]`, not `^v ` — and the same for apt below. The declaration reader
+  # TRIMS TRAILING WHITESPACE (02-capabilities.zsh), so an ERE ending in a literal space
+  # cannot survive being declared. Spelling it as a character class here keeps these rows
+  # transcribable verbatim into os/<os>.capabilities, which is the whole point of them
+  # being in the declaration's shape.
+  zypper.PKG_UPGRADE          'sudo zypper up'
+  zypper.PKG_UPGRADE_PARTIAL  'sudo zypper up'
+  zypper.PKG_ASSUME_YES       '-y'
+  zypper.PKG_COUNT_PENDING    'zypper -q list-updates'
+  zypper.PKG_PENDING_MATCH    '^v[[:space:]]'
+  zypper.PKG_PENDING_FS       '|'
+  zypper.PKG_PENDING_FIELD    '3'
+
+  # ── apt (Debian/Ubuntu/Kali) ────────────────────────────────────────────────
+  # PKG_COUNT_PENDING simulates against the EXISTING lists: no root, no network. The
+  # count can be stale until something runs an index refresh; the upgrade path does one.
+  apt.PKG_UPGRADE             'sudo apt-get full-upgrade'
+  apt.PKG_UPGRADE_PRE         'sudo apt-get update'
+  apt.PKG_UPGRADE_PARTIAL     'sudo apt-get install --only-upgrade'
+  apt.PKG_CLEANUP             'sudo apt-get autoremove'
+  apt.PKG_ASSUME_YES          '-y'
+  apt.PKG_COUNT_PENDING       'apt-get -s upgrade'
+  apt.PKG_PENDING_MATCH       '^Inst[[:space:]]'
+  apt.PKG_PENDING_FIELD       '2'
+
+  # ── apk (Alpine) — musl rolling; full sync only, like pacman ────────────────
+  apk.PKG_UPGRADE             'sudo apk upgrade'
+  apk.PKG_UPGRADE_PRE         'sudo apk update'
+  apk.PKG_COUNT_PENDING       'apk list -u'
+
+  # ── emerge (Gentoo) — -a always asks, so no PKG_ASSUME_YES ever ─────────────
+  # PKG_COUNT_PENDING names a FUNCTION, not a binary, and that is the shape a resolved
+  # verb takes when the archive's answer needs more than a command line — see
+  # _pkgup_emerge_pending below for why Portage has to be asked directly (#756). Core
+  # word-splits the resolved value and runs it; zsh resolves a function name there just
+  # as it resolves a command. A Gentoo repo declaring its own must ship a script instead:
+  # os.capabilities may not reach into Core's internals (see #667).
+  emerge.PKG_UPGRADE            'sudo emerge -auvDN @world'
+  emerge.PKG_UPGRADE_PRE        'sudo emerge --sync'
+  emerge.PKG_COUNT_PENDING      '_pkgup_emerge_pending'
+  emerge.PKG_COUNT_EXIT_TRUSTED '1'
+)
+
+# _pkgup_emerge_pending — the packages a `@world` update would ACTUALLY change, on
+# Gentoo. One implementation feeding both _pkgup_count and _pkgup_list, so the number
+# the nudge shows and the list `up` previews can never disagree.
+#
+# WHY NOT eix, WHICH THIS USED TO USE. `eix -u` answers "is a higher version present
+# in the tree?"; `up` runs `emerge -uDN @world`, which answers "what will actually
+# change?". On a healthy, fully-updated box those are permanently different questions,
+# and the gap is not small — measured on a real machine (dotgibson/dotfiles-core#753):
+# eix said 70 while emerge merged 8, and after a full update and depclean eix still
+# said 2 against emerge's 0. Three distinct causes, only the first of which an
+# operator can ever clear:
+#
+#   orphans        a package left installed but no longer reachable from @world. Any
+#                  `emerge --unmerge` creates them; eix counts them, the resolver does
+#                  not. 60 of the 64 on that box. Clears on --depclean.
+#   SLOTS          dev-lang/lua-5.1.5-r200 IS the newest thing in SLOT 5.1, and six
+#                  packages want that slot. eix compares against the highest version
+#                  across ALL slots (5.4.8) and reports an upgrade that cannot exist.
+#   consumer pins  app-editors/neovim-0.12.3 RDEPENDs `=dev-libs/tree-sitter-c-0.24.1*`.
+#                  Both versions are stable and same-slot; the resolver refuses to move
+#                  because a dependent pinned it. eix sees only the tree.
+#
+# The last two NEVER clear. So this was not eix being imprecise — it was eix being
+# structurally unable to answer the question, and no filter over its output fixes
+# slots or pins. Only the resolver knows, so ask it.
+#
+# ON THE COST, because this branch used to say a real calc was "far too heavy to
+# background" and that judgement is now reversed. Measured: ~10s against eix's 0.25s.
+# But the caller that pays it is throttled to UPDATE_CHECK_INTERVAL (once a day) and
+# runs disowned — it never blocks a prompt, and `up`'s own foreground use already sits
+# behind _core_spin. A once-a-day background resolve is affordable; a permanently wrong
+# number is not, because a nudge that cannot reach zero on a healthy box stops being a
+# signal that anything needs doing.
+#
+# Root is NOT needed (--pretend resolves and installs nothing), and it takes no merge
+# lock, so this is safe to run beside a real emerge.
+_pkgup_emerge_pending() {
+  local _out
+  # Same selection `up` executes (-uDN @world), so the preview cannot drift from the
+  # action. Failure emits nothing AND returns non-zero, so callers can tell "no
+  # updates" from "could not ask".
+  _out="$(emerge --pretend --update --deep --newuse @world 2>/dev/null)" || return 1
+  print -r -- "$_out" | awk '
+    # Only real merges. [nomerge]/[blocks]/[uninstall] are not upgrades.
+    /^\[(ebuild|binary)/ {
+      sub(/^\[[^]]*\][[:space:]]*/, "")
+      split($0, f, /[[:space:]]+/)
+      atom = f[1]
+      sub(/::.*/, "", atom)                       # drop ::repo
+      sub(/-r[0-9]+$/, "", atom)                  # PVR is PV plus an optional -rN,
+      sub(/-[0-9][^-]*$/, "", atom)               #   so the revision comes off first
+      if (atom ~ /\//) print atom
+    }'
 }
 
-# Best-effort LIST of upgradable package names — the names behind _pkgup_count's
-# number, used by `up` to PREVIEW what will change before you confirm. Same non-root,
-# no-system-mutation commands as _pkgup_count, emitting names instead of counting
-# (brew skips the network `brew update` the count does — the nudge already ran it).
-# Empty/unknown manager → nothing, so the caller just falls back to a name-only confirm.
-# Same stdin pin as _pkgup_count, for the same reason: `up` runs this one
-# through _core_spin, which backgrounds it — a prompt there would be doubly hidden, behind
-# both the captured output and a spinner that reads as progress while nothing advances.
-_pkgup_list() {
-  case "$(_pkgup_mgr)" in
-  brew) brew outdated --quiet 2>/dev/null ;;
-  pacman)
-    if command -v checkupdates >/dev/null 2>&1; then
-      checkupdates 2>/dev/null | awk '{print $1}'
-    else pacman -Qu 2>/dev/null | awk '{print $1}'; fi
+# _pkgup_fallback <mgr> <key> — the built-in row, with the two values that cannot be a
+# constant resolved here. Both probe for an OPTIONAL helper, and both are probed ON
+# DEMAND rather than when the table is built, so no interactive shell pays for them.
+_pkgup_fallback() {
+  emulate -L zsh
+  case "$2" in
+  PKG_COUNT_PENDING)
+    # pacman: checkupdates (pacman-contrib) syncs a copy in USER SPACE — no root, and it
+    # never touches the real sync DB, which is what makes counting safe on a rolling
+    # distro. Fall back to -Qu, which reads the local DB only.
+    if [[ "$1" == pacman ]] && command -v checkupdates >/dev/null 2>&1; then
+      print -r -- 'checkupdates'
+      return 0
+    fi
     ;;
-  dnf) dnf -q --refresh check-update 2>/dev/null | awk '/^[a-zA-Z0-9]/{print $1}' ;;
-  zypper) zypper -q list-updates 2>/dev/null | awk -F'|' '/^v /{gsub(/[[:space:]]/,"",$3); print $3}' ;;
-  apt) apt-get -s upgrade 2>/dev/null | awk '/^Inst /{print $2}' ;;
-  apk) apk list -u 2>/dev/null | awk '{print $1}' ;;
-  emerge) command -v eix >/dev/null 2>&1 && eix -u --only-names 2>/dev/null ;;
-  esac </dev/null
+  PKG_UPGRADE | PKG_UPGRADE_PARTIAL)
+    # THE probe this whole refactor exists to retire. Tumbleweed is rolling and upgrades
+    # with `dup`; Leap upgrades with `up`, and half-applying either way is how a box ends
+    # up in a state neither dialect describes. It reads a file that names the distro,
+    # which is exactly the thing Core is not supposed to know — an OS repo declares
+    # PKG_UPGRADE and this arm never runs again.
+    #
+    # PARTIAL DELIBERATELY EXCLUDED: `dup` has no meaningful per-package form, so a
+    # Tumbleweed `up -i` upgrades the named packages with `up`, as it always has.
+    if [[ "$1" == zypper && "$2" == PKG_UPGRADE ]] &&
+      grep -qi tumbleweed /etc/os-release 2>/dev/null; then
+      print -r -- 'sudo zypper dup'
+      return 0
+    fi
+    ;;
+  esac
+  print -r -- "${_CORE_CAP_FALLBACK[$1.$2]:-}"
 }
+# ══════════════════════════════════════════════════════════════════════════════
+# END BUILT-IN DEFAULTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+# _pkgup_verb <key> — THE resolution point, and the only thing in this file that decides
+# what a package manager is asked to do. A box with a declaration is driven ENTIRELY by
+# it; a box with none falls back to Core's built-in row, until #667 retires that. An
+# unresolved key is the empty string, which every caller reads as "this archive does not
+# offer that".
+#
+# ALL OR NOTHING, AND THAT IS THE WHOLE POINT. Falling back PER KEY is the obvious shape
+# and it is wrong, because in this schema an OMISSION IS A STATEMENT:
+#
+#   · no PKG_ASSUME_YES      → never auto-confirm; `up -y` lets the manager ask
+#   · no PKG_UPGRADE_PARTIAL → `up -i` refuses; this archive updates as a whole
+#
+# Per-key fallback silently answers both of those with Core's built-in row for whatever
+# manager happens to be on PATH. An Arch repo that deliberately declares no auto-confirm
+# token would get one; a repo that deliberately offers no partial upgrade would have `up
+# -i` sail through into exactly the partial upgrade it refused. A declaration cannot mean
+# "never" if Core supplies a default for the key you left out.
+#
+# So: the built-ins are a STOPGAP FOR AN UNDECLARED BOX, not a mixin. A declaration that
+# is missing a REQUIRED verb is a broken declaration, and the thing that catches it is
+# scripts/check-capabilities.sh — a gate you run — not a silent substitution at 3am.
+#
+# Reading $_CORE_CAP's SIZE rather than a key is deliberate and is not the thing
+# 02-capabilities.zsh tells consumers not to do: "does this box have a declaration at
+# all" is a different question from "what is this key", and only the latter has to route
+# through _core_cap so that absent and declared-empty stay indistinguishable.
+#
+# THE $+functions GUARD IS NOT DEFENSIVE PADDING. zsh/02-capabilities.zsh is band 02 and
+# every CORE_PROFILE loads it, so in a real shell _core_cap is always there — but this
+# module is also sourced ALONE by the unit suite, the same situation the colour ladder at
+# the top of this file already has a standalone arm for. Degrade to the built-ins rather
+# than error out of a lone source.
+_pkgup_verb() {
+  emulate -L zsh
+  if ((${+functions[_core_cap]})) && ((${#_CORE_CAP})); then
+    _core_cap "$1"
+    return 0
+  fi
+  _pkgup_fallback "$(_pkgup_mgr)" "$1"
+}
+
+# _pkgup_run <word...> — run one resolved verb, mapping a declared privilege prefix onto
+# what this box actually has. A leading `sudo`/`doas` in a declaration NAMES THE INTENT
+# ("this needs root"), not the tool: Alpine has doas and not sudo, and a container has
+# neither. Strip it and hand the rest to _pkgup_priv, which is the ladder. A value with
+# no prefix (`brew upgrade`) runs bare, which for Homebrew is the only correct answer.
+#
+# NO ARGUMENTS IS SUCCESS, deliberately: that is how an undeclared optional step
+# (PKG_UPGRADE_PRE, PKG_CLEANUP) becomes a no-op inside the && chain in `up` without the
+# chain needing to know which manager it is on.
+_pkgup_run() {
+  (($#)) || return 0
+  if [[ "$1" == sudo || "$1" == doas ]]; then
+    shift
+    (($#)) || return 0
+    _pkgup_priv "$@"
+  else
+    "$@"
+  fi
+}
+
+# Best-effort, NON-ROOT list of upgradable package NAMES, one per line. The single parse
+# path for every archive: run the declared count verb, keep the lines that match
+# PKG_PENDING_MATCH, print field PKG_PENDING_FIELD of each. That is the whole of what
+# used to be seven hand-written grep/awk heuristics — the divergence between archives is
+# now three declared values (an ERE, a field index, a separator) rather than seven code
+# branches, and the defaults `.` / 1 / whitespace cover the archives that need none.
+#
+# The values reach awk through -v and -F, never through eval: a declaration is data, and
+# this is the one place it would have been tempting to forget that.
+#
+# The </dev/null hangs off the command GROUP, not the function definition — `f() { … }
+# </dev/null` binds at DEFINITION time in zsh and does nothing at call time. The safety
+# has to hold for every caller: `up` runs this in the FOREGROUND via _pkgup_refresh once
+# an upgrade finishes, with stdout captured by $(...) and stderr discarded, so a manager
+# that stops to ask a question writes the prompt where nobody can see it and then blocks
+# on the terminal forever. That is how `up` came to print "Complete!" and hang for good
+# on Fedora: a repo with repo_gpgcheck=1 whose signing key only ever reached root's
+# keyring makes every non-root --refresh ask to import it, and a declined import is never
+# persisted, so it asks again every time. Pinning stdin makes the probe unpromptable no
+# matter who calls it or how.
+_pkgup_pending() {
+  emulate -L zsh
+  local cmd match field fs
+  cmd="$(_pkgup_verb PKG_COUNT_PENDING)"
+  [[ -n "$cmd" ]] || return 1
+  match="$(_pkgup_verb PKG_PENDING_MATCH)"
+  : "${match:=.}"
+  field="$(_pkgup_verb PKG_PENDING_FIELD)"
+  : "${field:=1}"
+  fs="$(_pkgup_verb PKG_PENDING_FS)"
+  # "${fsarg[@]}" on an EMPTY array expands to zero words in zsh, not to one empty
+  # string — so awk never sees a stray `-F ''` when no separator is declared.
+  local -a fsarg=()
+  [[ -n "$fs" ]] && fsarg=(-F "$fs")
+  # The status this function returns is the COUNT COMMAND's, taken out of $pipestatus —
+  # NOT the pipeline's, which is awk's and is 0 whether or not the manager answered. Only
+  # _pkgup_count acts on it, and only for an archive that declared the status meaningful
+  # (PKG_COUNT_EXIT_TRUSTED); the list path ignores it, because a partial list is still a
+  # better preview than none.
+  {
+    ${=cmd} 2>/dev/null |
+      awk "${fsarg[@]}" -v m="$match" -v f="$field" \
+        '$0 ~ m { v = $f; gsub(/^[ \t]+|[ \t]+$/, "", v); if (v != "") print v }'
+    return ${pipestatus[1]}
+  } </dev/null
+}
+
+# Best-effort, NON-ROOT count of upgradable packages.
+# Offline / unknown → prints -1 (caller stays silent). Never touches the system.
+_pkgup_count() {
+  emulate -L zsh
+  local refresh
+  # No count verb for this archive — no manager at all, or one that declares none. The -1
+  # SENTINEL is what keeps the nudge silent; do not "improve" it to 0, which reads as
+  # "checked, nothing pending" and is a different claim.
+  [[ -n "$(_pkgup_verb PKG_COUNT_PENDING)" ]] || {
+    print -r -- -1
+    return 0
+  }
+  # Homebrew's outdated list is stale until the formula index is fetched, and no other
+  # archive needs a separate step. Count path only: the LIST path deliberately skips it
+  # because the nudge that produced the count already paid for the network.
+  refresh="$(_pkgup_verb PKG_COUNT_REFRESH)"
+  [[ -n "$refresh" ]] && { ${=refresh} >/dev/null 2>&1 </dev/null }
+  # MOST ARCHIVES OVERLOAD THE EXIT STATUS OF THEIR COUNT VERB, which is why Core ignores
+  # it by default and simply counts lines: `dnf check-update` exits 100 when updates
+  # EXIST, and `pacman -Qu` and `checkupdates` exit non-zero when there are NONE. Reading
+  # any of those as failure would report "unknown" on a perfectly healthy box.
+  #
+  # PKG_COUNT_EXIT_TRUSTED is how an archive says its verb is not like that — that a
+  # non-zero exit means it could not answer. Gentoo declares it, because an
+  # `emerge --pretend` that cannot resolve is common (blocks, conflicts) and reporting 0
+  # there would tell you that you are up to date while Portage is stuck (#756). Capture
+  # FIRST and branch on THAT status, then count: piping straight into `grep -c` would take
+  # grep's status, which is 1 on the healthy zero-matches case and would emit both a count
+  # and a sentinel.
+  local _p
+  if [[ -n "$(_pkgup_verb PKG_COUNT_EXIT_TRUSTED)" ]]; then
+    if _p="$(_pkgup_pending)"; then
+      print -r -- "$_p" | grep -c .
+    else
+      print -r -- -1
+    fi
+    return 0
+  fi
+  _pkgup_pending | grep -c .
+}
+
+# Best-effort LIST of upgradable package names — the names behind _pkgup_count's number,
+# used by `up` to PREVIEW what will change before you confirm. Same non-root,
+# no-system-mutation command, minus the count path's network refresh.
+# Empty/unknown manager → nothing, so the caller just falls back to a name-only confirm.
+_pkgup_list() { _pkgup_pending; }
 
 # Refresh → writes "<count>\n<epoch>" to the cache. Backgrounded by the startup hook, but
 # `up` calls it in the FOREGROUND after an upgrade — see _pkgup_count on why that matters.
@@ -316,12 +577,16 @@ _core_welcome() {
 if ((CORE_WELCOME)) && [[ -t 1 ]]; then _core_welcome; fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-# up — apply updates. INTERACTIVE by design. `up -y` auto-confirms ONLY on the
-# package managers where that's safe (apt/dnf/zypper). pacman/emerge are NEVER
-# auto-confirmed (Arch partial-upgrade / Gentoo compile risk). Refreshes the
-# cache afterward so the nudge clears.
+# up — apply updates. INTERACTIVE by design, and now a DISPATCHER: the verb is Core's
+# so every machine has the same muscle memory, but what it runs is resolved through
+# _pkgup_verb from the OS layer's declaration (Core's built-in row until #667).
+#
+# `up -y` auto-confirms only where the archive declared a PKG_ASSUME_YES token to append.
+# pacman/emerge/apk declare none and so are never auto-confirmed (Arch partial-upgrade,
+# Gentoo compile time, musl rolling) — the same three that were named in a `case` here.
+# Refreshes the cache afterward so the nudge clears.
 #   up        # review & confirm
-#   up -y     # auto-confirm where safe
+#   up -y     # auto-confirm where the archive says that is safe
 # ══════════════════════════════════════════════════════════════════════════════
 up() {
   emulate -L zsh
@@ -357,8 +622,10 @@ up() {
     _core_usage "up [-y|--yes] [-n|--dry-run] [-i|--interactive]"
     return 1
   fi
-  local y=()
-  ((yes)) && y=(-y)
+  # The auto-confirm TOKEN is declared, not assumed. Absent (pacman/emerge/apk, and any
+  # archive whose declaration omits it) means `up -y` behaves like `up` and the manager
+  # asks for itself — which is exactly what those three did when the flag was hardcoded.
+  local -a y=()
   local mgr
   mgr="$(_pkgup_mgr)"
   if [[ "$mgr" == none ]]; then
@@ -382,21 +649,28 @@ up() {
     return 0
   fi
   # ── interactive selection (U2): hand-pick WHICH packages to upgrade. This HONORS the
-  # safety model — partial upgrades are offered ONLY where they're safe (apt/dnf/zypper/
-  # brew). pacman/emerge/apk are full-sync-only by design (Arch partial-break, Gentoo
-  # compiles, musl rolling), so -i refuses there and points back at a full `up` rather
-  # than risk a partial system. Needs a TTY + fzf or gum; selecting IS the consent, so
-  # the generic confirm below is skipped for -i. ──
+  # safety model: a partial upgrade is offered only where the archive says one is safe,
+  # and refused everywhere else with a pointer back at a full `up`. Needs a TTY + fzf or
+  # gum; selecting IS the consent, so the generic confirm below is skipped for -i. ──
   local -a selected=()
   if ((interactive)); then
-    case "$mgr" in
-    pacman | emerge | apk)
+    # WHO IS SAFE IS DECLARED, NOT LISTED. This was a `case` naming pacman/emerge/apk —
+    # the three archives that must update as a whole (Arch partial-break, Gentoo compile
+    # time, musl rolling). It is now the ABSENCE of PKG_UPGRADE_PARTIAL, which those three
+    # declare no value for. Same three refuse, and two things improve: an archive Core has
+    # never heard of gets the safe answer by DEFAULT rather than being waved through, and a
+    # distro that gains a safe partial form declares one instead of editing this file.
+    #
+    # This is why _pkgup_verb treats a declaration as all-or-nothing. If an omitted key
+    # fell back to Core's built-in row, a repo that deliberately declared no partial verb
+    # would have this check answered by whatever manager happened to be on PATH — the
+    # refusal would silently stop refusing.
+    if [[ -z "$(_pkgup_verb PKG_UPGRADE_PARTIAL)" ]]; then
       _core_errbox "up -i: ${mgr} does not support safe partial upgrades" \
         "why: ${mgr} must update as a whole — a partial upgrade risks a broken system" \
         "fix: run a full \`up\` (or \`up -y\`) instead"
       return 1
-      ;;
-    esac
+    fi
     # Two distinct -i requirements, checked separately so a message is never misleading:
     # (1) a picker must exist, and (2) we need a real terminal. Checking the picker FIRST
     # means an empty result further down can ONLY mean the user dismissed it (ESC / nothing
@@ -453,6 +727,7 @@ up() {
       return 1
     }
   fi
+  ((yes)) && y=(${=$(_pkgup_verb PKG_ASSUME_YES)})
   # Graceful interrupt (U3): a Ctrl-C mid-sync would otherwise drop you back at the prompt
   # with no word on what state you're in. localtraps scopes this to `up`; the message
   # reassures that re-running is safe (every manager path is idempotent). The manager
@@ -460,40 +735,38 @@ up() {
   setopt localoptions localtraps
   trap '_core_warn "up: interrupted — safe to re-run \`up\` (every path is idempotent)"; return 130' INT
   local rc=0
-  # `selected` is non-empty ONLY under -i on a safe manager (above); every other path
-  # leaves it empty, so the default/-y/-n behaviour is byte-identical to before.
-  case "$mgr" in
-  brew)
-    if ((${#selected})); then brew upgrade "${selected[@]}"
-    else brew update && brew upgrade && brew cleanup; fi
-    ;;
-  pacman) _pkgup_priv pacman -Syu ;; # full sync only; never partial
-  dnf)
-    if ((${#selected})); then _pkgup_priv dnf upgrade --refresh "${y[@]}" "${selected[@]}"
-    else _pkgup_priv dnf upgrade --refresh "${y[@]}"; fi
-    ;;
-  zypper)
-    if ((${#selected})); then _pkgup_priv zypper up "${selected[@]}"
-    elif grep -qi tumbleweed /etc/os-release 2>/dev/null; then _pkgup_priv zypper dup "${y[@]}"
-    else _pkgup_priv zypper up "${y[@]}"; fi
-    ;;
-  apt)
-    _pkgup_priv apt-get update
-    if ((${#selected})); then
-      _pkgup_priv apt-get install --only-upgrade "${y[@]}" "${selected[@]}"
-    else
-      _pkgup_priv apt-get full-upgrade "${y[@]}" &&
-        _pkgup_priv apt-get autoremove "${y[@]}"
-    fi
-    ;;
-  apk) _pkgup_priv apk update && _pkgup_priv apk upgrade ;;
-  emerge) _pkgup_priv emerge --sync && _pkgup_priv emerge -auvDN @world ;; # -a always asks
-  *)
-    # Unreachable (the `none` case is handled above) — kept as defence in depth.
-    _core_err "up: no supported package manager found"
+  # ── the dispatch ────────────────────────────────────────────────────────────
+  # Seven `case` arms became four resolved verbs and one chain. `selected` is non-empty
+  # ONLY under -i on an archive that declared a partial verb (above); every other path
+  # leaves it empty, so default/-y/-n behaviour is what it always was.
+  local -a _pre _cmd _clean
+  _pre=(${=$(_pkgup_verb PKG_UPGRADE_PRE)})
+  if ((${#selected})); then
+    _cmd=(${=$(_pkgup_verb PKG_UPGRADE_PARTIAL)} "${selected[@]}")
+  else
+    _cmd=(${=$(_pkgup_verb PKG_UPGRADE)} "${y[@]}")
+    # Append the auto-confirm token to the cleanup too, not just the upgrade: an
+    # unattended `up -y` that then stops to ask whether to autoremove has not been
+    # unattended. Only on the FULL path — a partial upgrade removes nothing.
+    _clean=(${=$(_pkgup_verb PKG_CLEANUP)})
+    ((${#_clean})) && _clean+=("${y[@]}")
+  fi
+  # An archive with a manager on PATH but no upgrade verb is a broken declaration, not a
+  # box to guess on. Say so instead of running the bare flag token as a command.
+  if ((! ${#_cmd})); then
+    _core_errbox "up: no upgrade verb declared for ${mgr}" \
+      "why: neither this OS repo's os.capabilities nor Core's built-in defaults name one" \
+      "fix: declare PKG_UPGRADE in os/<os>.capabilities (see core/examples/os.capabilities.example)"
     return 1
-    ;;
-  esac
+  fi
+  # _pkgup_run is a no-op on an empty verb, so the chain is the same shape whether or not
+  # this archive has a pre-step or a cleanup step. PKG_UPGRADE_PRE failing ABORTS: an
+  # upgrade computed against an index that could not be refreshed is the thing that
+  # half-applies a box, and three of the four archives that have a pre-step already
+  # chained it this way.
+  _pkgup_run "${_pre[@]}" &&
+    _pkgup_run "${_cmd[@]}" &&
+    _pkgup_run "${_clean[@]}"
   rc=$?
   trap - INT
   # Defensive failure framing (U9): a non-zero manager exit is usually offline or a held
@@ -509,6 +782,11 @@ up() {
 }
 
 # ── True hands-off auto-APPLY belongs at the OS layer, not here ───────────────
+# The VERBS now live at the OS layer too — os/<os>.capabilities, read by
+# zsh/02-capabilities.zsh — so a distro that changes how it upgrades edits its own repo
+# rather than this file. What follows is the remaining advice, which is about the OS
+# scheduler and was never Core's to run.
+#
 # If you want a box to update itself unattended, do it with the OS scheduler in
 # that distro's repo — NOT in this portable file, and NOT on shell start:
 #   • Fedora : dnf-automatic  (set apply_updates=yes; security-only is the sane default)

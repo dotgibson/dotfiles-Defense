@@ -38,7 +38,7 @@ zsh/40-bindings.zsh    # vi-mode keybindings (zvm_after_init hook)
 zsh/45-plugins.zsh     # plugin loader (zsh-defer, carapace, fzf-tab) + tool-native completions (gh/uv/ty) — after compinit, after carapace
 zsh/50-op.zsh          # 1Password CLI helpers (macOS agent socket -> os layer)
 zsh/55-maint.zsh       # daily-maintenance control surface (maint-install/run/log/...)
-zsh/60-update.zsh      # `up` updater + once/day "updates available" nudge
+zsh/60-update.zsh      # `up` updater (dispatches through os.capabilities) + once/day "updates available" nudge
 # autoloaded completions for Core's own verbs — fpath-added by 10-options.zsh, not symlinked.
 # Listed PER-FILE (not as `zsh/completions/`) so the offline audit catches an ADDED or
 # REMOVED completion, not just a deleted directory (B10): a new Core verb must register its

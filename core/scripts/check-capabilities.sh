@@ -35,7 +35,10 @@ set -uo pipefail
 # reason to relax the gate.
 CAP_REQUIRED=(
   PKG_REFRESH        # bring the package index up to date (may be a no-op verb)
-  PKG_UPGRADE        # upgrade everything installed — the dialect that is `dup` on Tumbleweed
+  PKG_UPGRADE        # upgrade everything installed, INTERACTIVELY — the dialect that is
+                     # `dup` on Tumbleweed. Auto-confirm is PKG_ASSUME_YES, not baked in
+                     # here: `up` without -y must still let the manager show its own
+                     # transaction summary and ask, which is what it has always done.
   PKG_INSTALL        # install named packages, non-interactive
   PKG_REMOVE         # remove named packages, non-interactive
   PKG_SEARCH         # search the archive by name/description
@@ -44,9 +47,66 @@ CAP_REQUIRED=(
   SCHEDULER          # systemd | launchd | none — 55-maint.zsh branches on this today
 )
 # OPTIONAL — absent means "Core's built-in default applies".
-#   TOOLS_OPTIN  space-separated tools core-doctor reports as OPT-IN rather than MISSING.
-#                Absent → Core's _CORE_DOCTOR_OPTIN fallback in zsh/30-functions.zsh.
-CAP_OPTIONAL=(TOOLS_OPTIN)
+#
+# EVERY key added for #664 is optional ON PURPOSE. The eight required verbs are what an
+# archive cannot work without; these express the ways archives DIFFER, and an archive that
+# needs none of them declares none. That keeps #667's job — authoring nine of these by
+# hand — as small as it can be, and it means a declaration written against the v5 schema
+# keeps validating.
+#
+#   TOOLS_OPTIN          space-separated tools core-doctor reports as OPT-IN rather than
+#                        MISSING. Absent → Core's _CORE_DOCTOR_OPTIN fallback in
+#                        zsh/30-functions.zsh.
+#
+#   ── how `up` applies (#664) ────────────────────────────────────────────────────────
+#   PKG_ASSUME_YES       the flag `up -y` appends to PKG_UPGRADE (and to PKG_CLEANUP).
+#                        ABSENT MEANS NEVER AUTO-CONFIRM: `up -y` then behaves like `up`
+#                        and the manager asks for itself. That is the right answer for
+#                        Arch (partial-upgrade breakage), Gentoo (`-a` always asks anyway)
+#                        and Alpine — omit it rather than inventing a flag.
+#   PKG_UPGRADE_PRE      a command run immediately BEFORE PKG_UPGRADE, on both the full
+#                        and the partial path. FAILURE ABORTS THE UPGRADE — an upgrade
+#                        computed against an index that could not be refreshed is how a
+#                        box half-applies. Omit where the manager refreshes in one verb
+#                        (`dnf --refresh`, `pacman -Syu`).
+#   PKG_CLEANUP          a command run after a SUCCESSFUL full upgrade (never after a
+#                        partial one, which removes nothing). `apt-get autoremove`,
+#                        `brew cleanup`.
+#   PKG_UPGRADE_PARTIAL  upgrade only the named packages. ITS ABSENCE IS A SAFETY
+#                        DECLARATION: `up -i` refuses on an archive that declares none,
+#                        which is how Arch, Gentoo and Alpine say "this must update as a
+#                        whole". Do not declare one to be helpful.
+#
+#   ── how `up` counts (#664) ─────────────────────────────────────────────────────────
+#   Core runs PKG_COUNT_PENDING and reads ONE package name per matching line out of its
+#   output. These three say how, and are passed to awk as data — never eval'd:
+#   PKG_COUNT_REFRESH    a command run before PKG_COUNT_PENDING in the COUNT path only
+#                        (not the list path). Homebrew needs it; nothing else does.
+#   PKG_COUNT_EXIT_TRUSTED
+#                        set to 1 when a NON-ZERO exit from PKG_COUNT_PENDING means "could
+#                        not answer", so the count reports the -1 unknown sentinel instead
+#                        of 0. OFF BY DEFAULT because most archives overload that status:
+#                        `dnf check-update` exits 100 when updates EXIST, and `pacman -Qu`
+#                        and `checkupdates` exit non-zero when there are NONE. Gentoo
+#                        declares it — an `emerge --pretend` that cannot resolve is common,
+#                        and reporting 0 there says "up to date" while Portage is stuck.
+#   PKG_PENDING_MATCH    ERE selecting the lines that name a package. Default `.`.
+#   PKG_PENDING_FIELD    which field of a matching line holds the name. Default 1.
+#   PKG_PENDING_FS       awk field separator. Default whitespace. zypper's table is `|`.
+CAP_OPTIONAL=(
+  TOOLS_OPTIN
+  PKG_ASSUME_YES PKG_UPGRADE_PRE PKG_CLEANUP PKG_UPGRADE_PARTIAL
+  PKG_COUNT_REFRESH PKG_COUNT_EXIT_TRUSTED
+  PKG_PENDING_MATCH PKG_PENDING_FIELD PKG_PENDING_FS
+)
+# The PKG_* keys whose value is a COMMAND. --packages cross-checks the leading binary of
+# each of these against the repo's package list; the PKG_PENDING_* keys are awk data
+# (`^Inst `, `3`, `|`) and checking their first token as if it were a binary would report
+# nonsense. Kept as an explicit list rather than a `PKG_*` glob for exactly that reason.
+CAP_COMMANDS=(
+  PKG_REFRESH PKG_UPGRADE PKG_INSTALL PKG_REMOVE PKG_SEARCH PKG_OWNS PKG_COUNT_PENDING
+  PKG_UPGRADE_PRE PKG_CLEANUP PKG_UPGRADE_PARTIAL PKG_COUNT_REFRESH
+)
 # SCHEDULER's closed enum. `none` is a real answer (a container, a box with neither
 # init), not a placeholder — it is what tells 55-maint.zsh to offer the manual verb
 # instead of claiming a timer it cannot install.
@@ -166,6 +226,25 @@ for k in "${CAP_REQUIRED[@]}"; do
   esac
 done
 
+# PKG_COUNT_EXIT_TRUSTED is a FLAG, and the only honest value is 1. Anything else would
+# be read as "declared", so a `PKG_COUNT_EXIT_TRUSTED=0` meaning to switch it OFF would
+# switch it firmly ON — the worst possible direction for a typo in a key whose whole job
+# is deciding whether a broken resolve reads as "nothing to do".
+trust="$(cap_value PKG_COUNT_EXIT_TRUSTED)"
+case "$trust" in
+  '' | 1) ;;
+  *) bad "-" "PKG_COUNT_EXIT_TRUSTED must be 1 if declared; omit it to mean off (got: $trust)" ;;
+esac
+
+# PKG_PENDING_FIELD indexes an awk field, so it must be a positive integer. A typo here
+# does not fail at runtime — awk reads a different column and `up` reports confident
+# nonsense — which is precisely the failure mode a gate is for.
+fld="$(cap_value PKG_PENDING_FIELD)"
+case "$fld" in
+  '') ;;
+  *[!0-9]* | 0) bad "-" "PKG_PENDING_FIELD must be a positive integer (got: $fld)" ;;
+esac
+
 # SCHEDULER's enum.
 sched="$(cap_value SCHEDULER)"
 if [[ -n "$sched" ]] && ! in_list "$sched" "${CAP_SCHEDULERS[@]}"; then
@@ -186,7 +265,8 @@ if [[ -n "$PKGFILE" ]]; then
     # not be satisfied by a package called `dnf-plugins-core`.
     PKGNAMES=" $(sed -e 's/#.*//' -e 's/[[:space:]]*$//' "$PKGFILE" | awk 'NF {print $1}' | tr '\n' ' ')"
     while IFS='	' read -r k v; do
-      [[ "$k" == PKG_* && -n "$v" ]] || continue
+      [[ -n "$v" ]] || continue
+      in_list "$k" "${CAP_COMMANDS[@]}" || continue
       # The leading token, minus the privilege tool: `sudo`/`doas` is not the package
       # manager, and Alpine's is `doas`. Only the first REAL token is checked; flags and
       # subcommands are the OS repo's business.

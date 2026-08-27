@@ -1,4 +1,4 @@
-# os.capabilities — the OS-native layer's capability declaration (Core v5, #663).
+# os.capabilities — the OS-native layer's capability declaration (Core v5, #663/#664).
 #
 # COPY THIS to your OS repo as os/<os>.capabilities (beside os/<os>.zsh,
 # os/<os>.conf and os/<os>.gitconfig) and fill in the archive's real verbs.
@@ -8,6 +8,8 @@
 #
 # The values below are Fedora's, transcribed from PORTING-MATRIX.md §"Package-manager
 # commands". They are an EXAMPLE, not a default: nothing in Core falls back to them.
+# (Core does carry BUILT-IN DEFAULTS per manager, in zsh/60-update.zsh — but those are a
+# stopgap that #667 deletes once every repo declares, not a value read from this file.)
 #
 # Validate a real one with:  core/scripts/check-capabilities.sh os/<os>.capabilities
 # That script is where the schema is defined, and it is what rejects an unknown key.
@@ -16,10 +18,16 @@
 # they are not quoted, not expanded and never eval'd as arbitrary strings. Everything
 # after the first `=` is the value, verbatim, minus trailing whitespace. Lines that are
 # blank or start with `#` are ignored. Keys are [A-Z][A-Z0-9_]*.
+#
+# A `#` INSIDE A VALUE IS NOT A COMMENT. The reader keeps it, so
+# `PKG_OWNS=dnf provides   # which package owns this` declares a verb that does not
+# exist. Put the note on its own line above. The validator rejects this.
 
 # ── package-manager verbs (all required) ──────────────────────────────────────
 PKG_REFRESH=sudo dnf check-update
-PKG_UPGRADE=sudo dnf upgrade -y
+# THE INTERACTIVE upgrade verb — no `-y` here. `up` without a flag must still let the
+# manager print its transaction summary and ask; auto-confirm is PKG_ASSUME_YES, below.
+PKG_UPGRADE=sudo dnf upgrade --refresh
 PKG_INSTALL=sudo dnf install -y
 PKG_REMOVE=sudo dnf remove -y
 PKG_SEARCH=dnf search
@@ -28,7 +36,7 @@ PKG_OWNS=dnf provides
 # PKG_REFRESH because it is the single most divergent verb across the seven archives —
 # and the one Core hardcoded worst (`grep -qi tumbleweed /etc/os-release` to choose
 # between `zypper dup` and `zypper up` lived in zsh/60-update.zsh).
-PKG_COUNT_PENDING=dnf -q check-update
+PKG_COUNT_PENDING=dnf -q --refresh check-update
 
 # ── scheduler (required) ──────────────────────────────────────────────────────
 # systemd | launchd | none. `none` is a real answer — a container, or a box with
@@ -36,8 +44,96 @@ PKG_COUNT_PENDING=dnf -q check-update
 # timer it cannot install.
 SCHEDULER=systemd
 
+# ── how `up` applies (all optional, #664) ─────────────────────────────────────
+# The flag `up -y` appends. OMIT IT to mean "never auto-confirm" — the right answer on
+# Arch (partial-upgrade breakage), Gentoo (`-a` asks regardless) and Alpine.
+PKG_ASSUME_YES=-y
+# Upgrade only the named packages. OMITTING THIS IS A SAFETY DECLARATION: `up -i` refuses
+# on an archive that declares no partial verb, which is how a rolling distro says "this
+# must update as a whole". Do not add one to be helpful.
+PKG_UPGRADE_PARTIAL=sudo dnf upgrade --refresh
+# PKG_UPGRADE_PRE — run before the upgrade, on both the full and partial paths; a failure
+# ABORTS. dnf refreshes in one verb, so Fedora needs none. Debian: sudo apt-get update.
+# PKG_CLEANUP — run after a successful FULL upgrade. Debian: sudo apt-get autoremove.
+
+# ── how `up` counts (all optional, #664) ──────────────────────────────────────
+# Core runs PKG_COUNT_PENDING and takes ONE package name per matching line: keep the
+# lines matching PKG_PENDING_MATCH (default `.`), print field PKG_PENDING_FIELD
+# (default 1) split on PKG_PENDING_FS (default whitespace). Passed to awk as DATA — a
+# declaration is never eval'd. dnf's output needs only the match:
+#
+# AN ERE CANNOT END IN A LITERAL SPACE. The reader trims trailing whitespace, so write
+# `^Inst[[:space:]]`, never `^Inst ` — the latter is silently stored as `^Inst` and then
+# matches a line the archive never meant it to.
+PKG_PENDING_MATCH=^[a-zA-Z0-9][^ ]*[[:space:]]
+# PKG_COUNT_REFRESH — run before PKG_COUNT_PENDING in the COUNT path only, never the
+# list path. Homebrew's outdated set is stale without it; no other archive needs one.
+#
+# PKG_COUNT_EXIT_TRUSTED=1 — a non-zero exit from PKG_COUNT_PENDING means "could not
+# answer", so the count reports the -1 unknown sentinel instead of 0. OFF by default,
+# because most archives overload that status: dnf exits 100 when updates EXIST, and
+# `pacman -Qu` / `checkupdates` exit non-zero when there are NONE.
+
 # ── optional ──────────────────────────────────────────────────────────────────
 # Space-separated tools core-doctor reports as OPT-IN rather than MISSING on this OS:
 # things the archive has but this repo deliberately does not install. Omit the key
 # entirely to accept Core's built-in default (_CORE_DOCTOR_OPTIN, zsh/30-functions.zsh).
 TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
+
+# ──────────────────────────────────────────────────────────────────────────────
+# THE OTHER ARCHIVES, for the repos transcribing their own (#667). These are Core's
+# built-in rows from zsh/60-update.zsh, which are what those boxes run TODAY — so a
+# declaration that differs from its row is a deliberate change, not a transcription slip.
+#
+#   Debian/Ubuntu/Kali (apt)
+#     PKG_UPGRADE=sudo apt-get full-upgrade
+#     PKG_UPGRADE_PRE=sudo apt-get update
+#     PKG_UPGRADE_PARTIAL=sudo apt-get install --only-upgrade
+#     PKG_CLEANUP=sudo apt-get autoremove
+#     PKG_ASSUME_YES=-y
+#     PKG_COUNT_PENDING=apt-get -s upgrade
+#     PKG_PENDING_MATCH=^Inst[[:space:]]
+#     PKG_PENDING_FIELD=2
+#
+#   openSUSE (zypper) — Tumbleweed is `dup`, Leap is `up`, and ONE repo serves both.
+#   Core's built-in row still probes /etc/os-release; a declaration cannot, so decide
+#   this deliberately (a wrapper the repo ships, or two declarations) — see #667.
+#     PKG_UPGRADE=sudo zypper dup          # Tumbleweed;  Leap: sudo zypper up
+#     PKG_UPGRADE_PARTIAL=sudo zypper up
+#     PKG_ASSUME_YES=-y
+#     PKG_COUNT_PENDING=zypper -q list-updates
+#     PKG_PENDING_MATCH=^v[[:space:]]
+#     PKG_PENDING_FS=|
+#     PKG_PENDING_FIELD=3
+#
+#   macOS (Homebrew) — never privileged, so no sudo prefix anywhere.
+#     PKG_UPGRADE=brew upgrade
+#     PKG_UPGRADE_PRE=brew update
+#     PKG_UPGRADE_PARTIAL=brew upgrade
+#     PKG_CLEANUP=brew cleanup
+#     PKG_COUNT_PENDING=brew outdated --quiet
+#     PKG_COUNT_REFRESH=brew update
+#     SCHEDULER=launchd
+#
+#   Arch (pacman) — no PKG_UPGRADE_PARTIAL and no PKG_ASSUME_YES, deliberately.
+#     PKG_UPGRADE=sudo pacman -Syu
+#     PKG_COUNT_PENDING=checkupdates       # pacman-contrib; syncs a copy in USER space
+#
+#   Alpine (apk) — doas, not sudo. Full sync only, like Arch.
+#     PKG_UPGRADE=doas apk upgrade
+#     PKG_UPGRADE_PRE=doas apk update
+#     PKG_COUNT_PENDING=apk list -u
+#
+#   Gentoo (emerge) — `-a` always asks, so PKG_ASSUME_YES would be a lie.
+#     PKG_UPGRADE=sudo emerge -auvDN @world
+#     PKG_UPGRADE_PRE=sudo emerge --sync
+#     PKG_COUNT_PENDING=<a script this repo ships>
+#     PKG_COUNT_EXIT_TRUSTED=1
+#   Counting on Gentoo needs more than a command line: `eix -u` answers "is a newer
+#   version in the tree?" and `up` runs `emerge -uDN @world`, which answers "what will
+#   actually change?" — permanently different questions, off by 70-vs-8 on a real box
+#   (#753/#756). Only the resolver knows, and its output needs parsing, so declare a
+#   script the repo ships rather than a one-liner. Core's built-in row calls its own
+#   function for this; a declaration must not reach into Core's internals.
+#   PKG_COUNT_EXIT_TRUSTED says a non-zero exit means "could not answer": an
+#   `emerge --pretend` that cannot resolve must report unknown, never 0.
