@@ -49,33 +49,6 @@ CORE_BRANCH="${CORE_BRANCH:-main}"
 # same place. Override with CORE_REMOTE if your OS repos use a named remote.
 CORE_REMOTE="${CORE_REMOTE:-$(git -C "$HERE" remote get-url origin 2>/dev/null || echo '')}"
 
-# The fleet that vendors Core. SOURCE: scripts/os-repos.txt (B9), so this array cannot
-# drift from the README/PORTING-MATRIX unnoticed.
-# The inline list stays as a hard fallback so a missing/corrupt data file can't strand
-# the maintain button (it degrades to the last-known fleet rather than fanning out to
-# nothing). Lines are trimmed; blanks and `#` comments are dropped.
-# KEEP IT IN STEP with scripts/os-repos.txt — scripts/test-core.sh asserts the two are
-# identical, because a fallback that has silently lost a repo is worse than no fallback:
-# it runs only when the data file is already unreadable.
-# NB: dotfiles-Windows is intentionally NOT here — it's the native host layer (no
-# vendored core/ subtree). See the note in scripts/os-repos.txt.
-ALL_OS_REPOS=(
-  dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian
-  dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense
-  dotfiles-openSUSE
-)
-_OS_REPOS_FILE="$HERE/scripts/os-repos.txt"
-if [[ -r "$_OS_REPOS_FILE" ]]; then
-  _from_file=()
-  while IFS= read -r _line || [[ -n "$_line" ]]; do
-    _line="${_line%%#*}"                       # strip trailing comments
-    _line="${_line#"${_line%%[![:space:]]*}"}" # ltrim
-    _line="${_line%"${_line##*[![:space:]]}"}" # rtrim
-    [[ -n "$_line" ]] && _from_file+=("$_line")
-  done <"$_OS_REPOS_FILE"
-  ((${#_from_file[@]})) && ALL_OS_REPOS=("${_from_file[@]}")
-fi
-
 # usage() is a real heredoc, NOT `sed -n '2,30p' "$0"`: the old form was coupled to
 # this file's header line numbers, so editing the banner above silently drifted
 # `--help` (the exact trap bootstrap.sh's usage() was rewritten to avoid). This stays
@@ -118,7 +91,6 @@ for arg in "$@"; do
     ;;
   esac
 done
-[[ ${#SELECT[@]} -gt 0 ]] && TARGETS=("${SELECT[@]}") || TARGETS=("${ALL_OS_REPOS[@]}")
 
 # Shared palette + pass/skip/fail/have (one definition for every gate script).
 # The lib's counters ARE read here: the summary footer prints them as the `checks:` row,
@@ -130,6 +102,25 @@ source "${BASH_SOURCE[0]%/*}/lib/common.sh"
 # post-fan-out assertion means exactly what that gate will later report (#556).
 # shellcheck source=scripts/lib/core-lock.sh
 source "${BASH_SOURCE[0]%/*}/lib/core-lock.sh"
+
+# The fleet that vendors Core, from scripts/os-repos.txt via the ONE reader in common.sh
+# (#669). There is deliberately no inline fallback list any more: the old one ran only when
+# the data file was already unreadable, which is precisely when nobody would notice the
+# maintain button fanning out into a stale fleet. An unreadable list now stops the run.
+#
+# Loaded HERE rather than at the top of the file for two reasons: fail() only exists once
+# common.sh is sourced (just above), and naming targets on the CLI does not need the fleet
+# list at all — `sync-core.sh dotfiles-Fedora` and `--help` must not depend on it.
+if [[ ${#SELECT[@]} -gt 0 ]]; then
+  TARGETS=("${SELECT[@]}")
+else
+  load_os_repos || {
+    fail "$CORE_OS_REPOS_ERR — the maintain button has no fleet to fan out into"
+    exit 2
+  }
+  TARGETS=("${CORE_OS_REPOS[@]}")
+fi
+
 ok() { pass "$@"; }
 err() { fail "$@"; }
 

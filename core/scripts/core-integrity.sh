@@ -85,26 +85,17 @@ if [[ -n "$SELF_DIR" ]]; then
 else
   [[ -d "$ROOT" ]] || { fail "fleet root not found: $ROOT"; exit 2; }
 
-  # The fleet that vendors the full core/ subtree. SINGLE SOURCE: scripts/os-repos.txt
-  # (same data file sync-core.sh + fleet-drift.sh read), with the inline list as a hard
-  # fallback so a missing/corrupt file degrades to the last-known fleet, not nothing.
-  # NB: dotfiles-Windows is intentionally absent — it vendors only nvim/, no core/
-  # subtree, so there is no tree to integrity-check here (fleet-drift covers its nvim ref).
-  OS_REPOS=()
-  _OS_REPOS_FILE="$HERE/scripts/os-repos.txt"
-  if [[ -r "$_OS_REPOS_FILE" ]]; then
-    while IFS= read -r _line || [[ -n "$_line" ]]; do
-      _line="${_line%%#*}"                       # strip trailing comments
-      _line="${_line#"${_line%%[![:space:]]*}"}" # ltrim
-      _line="${_line%"${_line##*[![:space:]]}"}" # rtrim
-      [[ -n "$_line" ]] && OS_REPOS+=("$_line")
-    done <"$_OS_REPOS_FILE"
-  fi
-  ((${#OS_REPOS[@]})) || OS_REPOS=(
-    dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian
-    dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense
-    dotfiles-openSUSE
-  )
+  # The fleet that vendors the full core/ subtree. SINGLE SOURCE: scripts/os-repos.txt, read
+  # through the ONE parser in lib/common.sh (#669). No inline fallback: an integrity gate
+  # that quietly falls back to a hardcoded fleet when the data file is unreadable reports
+  # "every repo pristine" about a list nobody chose. Unreadable now stops the run.
+  # (dotfiles-Windows's absence is explained once, in scripts/os-repos.txt — it vendors only
+  # nvim/, no core/ subtree, so there is no tree to integrity-check here.)
+  load_os_repos || {
+    fail "$CORE_OS_REPOS_ERR — cannot enumerate the fleet to check"
+    exit 2
+  }
+  OS_REPOS=("${CORE_OS_REPOS[@]}")
 fi
 
 # Both helpers now live in scripts/lib/core-lock.sh, sourced above. They moved because

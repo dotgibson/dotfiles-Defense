@@ -101,6 +101,13 @@
 #         # The probe is NOT free to choose — see "CHOOSING packages_check's PROBE" below;
 #         # `apk info` is Alpine's verified answer, not a template for other distros.
 #         packages_check: apk info
+#         # Both of these are for the WEEKLY real-bootstrap.yml sweep, not for the jobs in
+#         # this file — read statically out of this block. bootstrap_timeout is the ceiling a
+#         # genuinely unstubbed run needs on this image; bootstrap_postcheck asserts, on the
+#         # far side of that run, that the packages actually arrived. Absent means nothing
+#         # runs, so a leg without one passes on exit code and wiring alone (#750).
+#         bootstrap_timeout: 45
+#         bootstrap_postcheck: ./scripts/assert-provisioned.sh
 #
 # A role repo passes the same inputs; nothing extra. Band 80 is skipped automatically
 # because it has no os/*.zsh — see the note above.
@@ -229,6 +236,47 @@ on:
           is 360.
         type: number
         default: 45
+      bootstrap_postcheck:
+        description: >-
+          A command run INSIDE the container on the far side of a GENUINELY UNSTUBBED
+          ./bootstrap.sh, to assert the box actually got its packages. Empty (the default)
+          runs nothing, which is exactly the behaviour before this existed — so a repo that
+          declares none is unaffected. Like bootstrap_timeout above it is NOT consumed by the
+          jobs in this file: it is read STATICALLY from this caller by
+          scripts/fleet-bootstrap-matrix.py, which feeds the weekly real-bootstrap.yml sweep.
+          That sweep is the only job in the fleet that installs anything, so it is the only
+          one that could ever assert this. Do not "fix" the apparent unused input by wiring
+          it into the jobs below; they are stubbed and install nothing.
+
+          WHAT GAP THIS FILLS. The sweep asserts two things after bootstrap.sh: that it
+          returned 0, and that the wiring survived. Both are necessary, neither can see
+          whether the packages arrived. A Gentoo leg that emerged 131 packages over 75
+          minutes went GREEN while the bootstrap printed a two-line ledger naming atoms that
+          did not install (dotgibson/dotfiles-core#750). This input is the missing check.
+
+          WHY NOT --strict. The obvious lever is to make each bootstrap exit non-zero on its
+          own end-of-run ledger. It is the wrong instrument, and the fleet has declined it
+          twice: that ledger deliberately mixes a GENUINE PROVISIONING GAP (an atom that will
+          never install) with an INFRASTRUCTURE BLIP (a rate-limited mise.run, a GURU sync
+          hiccup, a failed tpm clone). --strict cannot tell them apart, so it would red an
+          advisory lane over somebody else's outage — which is how these lanes get switched
+          off. Your script CAN tell them apart, because it knows which tools your own list
+          promises. So the exit code stays an honest signal and the assertion lives here.
+
+          THE STRING IS A COMMAND, not a path — run with `sh -c` from the repo root inside
+          the container, so `./scripts/assert-provisioned.sh` and `sh scripts/x.sh` both work
+          (the first needs the exec bit, the second does not). Non-zero fails the leg, which
+          files an issue and blocks nothing. A STRING rather than a boolean for the same
+          reason packages_check is one: Core does not own a per-distro tool table.
+
+          WRITING ONE. dotfiles-Gentoo/scripts/assert-provisioned.sh is the reference shape:
+          HARD-FAIL on every atom in install/packages.txt, with the binary name DERIVED from
+          a `# bin:NAME` contract in that file rather than kept as a second list that drifts
+          (the app-misc/gum lesson); WARN on the overlay/cargo/go/opt-in tools, which no run
+          promises. Deriving the names is the point — a hand-kept second list is the frozen
+          copy this whole workflow family exists to avoid.
+        type: string
+        default: ""
 
 permissions:
   contents: read
