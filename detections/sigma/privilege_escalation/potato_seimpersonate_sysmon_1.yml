@@ -23,6 +23,16 @@ references:
 author: dotfiles-Defense
 date: 2026-06-30
 tags:
+  # T1134.001 is dual-tactic in ATT&CK v19 — TA0004 and TA0005 (Stealth) — and only the
+  # TA0004 half is claimed here. That is deliberate, not an oversight (dotgibson/dotfiles-Defense#223).
+  # What this rule selects is a service identity spawning a shell: the shape BEFORE the
+  # token is stolen, keyed on the un-masked User. Nothing in it observes the
+  # impersonation itself, which is the part TA0005 is about — and the description above
+  # already concedes the rule cannot see the run-as-SYSTEM result. Claiming the Stealth
+  # half would add a COVERAGE.md row that no detection here earns, and TA0005 is exactly
+  # the thin row /coverage-gap would otherwise rank. Deliberately NOT writing the tag
+  # string in this comment: gen-coverage.sh matches tactic slugs over the whole file, so
+  # naming it here would tag the rule by accident.
   - attack.privilege-escalation
   - attack.t1134.001
 logsource:
