@@ -24,17 +24,18 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Offens
 
 ## ATT&CK tactic → data source → detection
 
-| ATT&CK tactic            | Primary data sources                                              | Where detections live | Validate with (Offense)                                             |
-| ------------------------ | ----------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------- |
-| Initial Access           | npm / PyPI publish audit logs                                     | sigma                 | htpx pairs `npm-malicious-publish` / `pypi-malicious-publish`       |
-| Recon / Discovery        | Zeek, 4688/4769, 4798/4799, 5145                                  | network, sigma        | recon / Kerberoast folds                                            |
-| Credential Access        | Sysmon 10, 4625/4771                                              | sysmon, sigma         | Responder / cracking folds                                          |
-| Lateral Movement         | 4624 type 3, Zeek SMB                                             | sigma, network        | lateral-movement fold                                               |
-| Priv Esc / Persistence   | Sysmon 1/13, 4720/7045                                            | sysmon, sigma         | LOLBAS / persistence folds                                          |
-| Coercion / Relay / AD CS | 5145 pipes, 4886 SAN                                              | siem                  | coercion → relay → DC fold                                          |
-| Collection               | 4663 file reads, 4688 archive cmds                                | sigma                 | collection / exfil fold                                             |
-| Exfil / C2               | Suricata, Zeek conn/dns/ssl                                       | network               | reverse-shell / pivot folds                                         |
-| Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn | sigma, network        | ransomware chain (teardown → recovery → payload); cryptomining pair |
+| ATT&CK tactic            | Primary data sources                                              | Where detections live | Validate with (Offense)                                              |
+| ------------------------ | ----------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------- |
+| Initial Access           | npm / PyPI publish audit logs                                     | sigma                 | htpx pairs `npm-malicious-publish` / `pypi-malicious-publish`        |
+| Recon / Discovery        | Zeek, 4688/4769, 4798/4799, 5145                                  | network, sigma        | recon / Kerberoast folds                                             |
+| Credential Access        | Sysmon 10, 4625/4771                                              | sysmon, sigma         | Responder / cracking folds                                           |
+| Lateral Movement         | 4624 type 3, Zeek SMB                                             | sigma, network        | lateral-movement fold                                                |
+| Priv Esc / Persistence   | Sysmon 1/13, 4720/7045                                            | sysmon, sigma         | LOLBAS / persistence folds                                           |
+| Coercion / Relay / AD CS | 5145 pipes, 4886 SAN                                              | siem                  | coercion → relay → DC fold                                           |
+| Collection               | 4663 file reads, 4688 archive cmds                                | sigma                 | collection / exfil fold                                              |
+| Exfil / C2               | Suricata, Zeek conn/dns/ssl                                       | network               | reverse-shell / pivot folds                                          |
+| Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn | sigma, network        | ransomware chain (teardown → recovery → payload); cryptomining pair  |
+| Anti-forensics           | 1102 audit-log clear, auditd history syscalls, 4742 rogue DC      | sigma                 | DCShadow fold; `wevtutil cl` / `shred ~/.bash_history` on a lab host |
 
 The right-hand column is the point: every row has a Offense fold that proves the
 detection works.
@@ -46,6 +47,37 @@ and `detections/sigma/pypi/pypi_token_release_upload.yml` — have covered T1195
 T1195.002 is Initial-Access-only in ATT&CK, so the tactic column read zero in
 `detections/navigator/COVERAGE.md` while Execution over-counted it, and this table had no row at
 all. The weekly `/coverage-gap` routine caught it in #209.
+
+**The Anti-forensics row spans two ATT&CK tactics, and reading it needs one fact about
+v19 that is easy to get wrong.** ATT&CK v19 split Defense Evasion into **Stealth
+(TA0005)** and **Defense Impairment (TA0112)**, and the split did not fall where the
+names suggest. Log *clearing* went to **Defense Impairment**, not Stealth: the old
+*Clear Windows Event Logs* sub-technique was revoked and re-issued as **T1685.005**
+under TA0112, and *Clear Linux or Mac System Logs* went the same way. (Their pre-v19
+ids are deliberately not written here — a revoked id in this file reads as a coverage
+claim to `detections/check-methodology.sh`, and `detections/check-attack-tags.sh` is
+the gate that pins the current numbering.) So
+`detections/sigma/defense_impairment/windows_event_log_cleared_1102.yml` (T1685.005)
+counts toward Defense Impairment, and only
+`detections/sigma/linux/history_clearing.yml` (**T1070.003** Clear Command History,
+which v19 left where it was) counts toward Stealth.
+
+This is written down because #215 was filed on the opposite assumption — that authoring
+the Windows log-clearing rule would fill the thin `Stealth` row in
+`detections/navigator/COVERAGE.md`. It does not, and tagging it `attack.stealth` to make
+it would fail the pairing assertion in `detections/check-attack-tags.sh`. Nor could the
+gap be ledgered instead: T1070 is already covered by
+`detections/sigma/registry/harbor_artifact_deleted.yml`, so listing it in the
+`known-absent` marker fails `detections/check-methodology.sh` in the other direction.
+Both rules were written; they land in different rows, and that is correct rather than a
+mistag.
+
+Stealth stays thin at two techniques, and that is an honest reading of the corpus rather
+than an artifact of tagging. Of the 78 techniques covered before this row existed,
+exactly two are ones ATT&CK v19 places in TA0005: T1070 and T1134.001 (dual-tactic with
+Privilege Escalation, where the `potato_seimpersonate_*` pair tags it). The rest of
+TA0005 is masquerading, obfuscation, process injection and LOLBAS proxy execution — a
+body of work this repo has not started, not one it has misfiled.
 
 The row is narrow on purpose: it is the *registry* plane, not the endpoint. Both rules
 fire on a publish event in an npm or PyPI audit log — a package shipped by an actor that

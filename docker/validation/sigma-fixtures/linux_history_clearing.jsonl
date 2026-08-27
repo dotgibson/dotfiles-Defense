@@ -1,0 +1,1 @@
+{"key": "hist_tamper", "comm": "shred", "exe": "/usr/bin/shred", "name": "/home/dev/.bash_history", "syscall": "unlink", "auid": "1000", "uid": "1000"}

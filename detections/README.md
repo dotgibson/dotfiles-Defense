@@ -179,7 +179,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Offense` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 102 rules / 120 documents, organized by ATT&CK tactic
+### `sigma/` — 104 rules / 122 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -246,9 +246,10 @@ on `Path` at alert time.
 
 **`defense_impairment/`**
 
-| Rule                     | Event / source                    | ATT&CK | Validate with              |
-| ------------------------ | --------------------------------- | ------ | -------------------------- |
-| `dcshadow_rogue_dc_4742` | 4742 `GC/` SPN write (+5137/4662) | T1207  | AD attack paths · dcshadow |
+| Rule                             | Event / source                    | ATT&CK    | Validate with                        |
+| -------------------------------- | --------------------------------- | --------- | ------------------------------------ |
+| `dcshadow_rogue_dc_4742`         | 4742 `GC/` SPN write (+5137/4662) | T1207     | AD attack paths · dcshadow           |
+| `windows_event_log_cleared_1102` | 1102 Security log cleared         | T1685.005 | `wevtutil cl Security` on a lab host |
 
 **`impact/`** (the ransomware chain — process creation 4688 / Sysmon 1, plus 4663 and Sysmon 11 for the encryption sweep)
 
@@ -330,19 +331,22 @@ the single place that decides what is watched and the detection cannot drift awa
 them. Each rule's description carries the `auditd` rules that set its key; load them with
 `augenrules --load` or the rule is inert. What Sigma adds on top is the allowlist auditd
 cannot express — package managers, configuration management, and the auth stack are the
-entire volume on these keys, which is why every one of them ships a `DEPLOY-REQUIRED`
-filter.
+entire volume on these keys, which is why most of them ship a `DEPLOY-REQUIRED`
+filter. `history_clearing` is the exception and says so in-file: its selection is a
+syscall class ordinary shell use never reaches, so there is no routine volume for an
+allowlist to remove.
 
-| Rule                        | Event / source                                               | ATT&CK    | Validate with                            |
-| --------------------------- | ------------------------------------------------------------ | --------- | ---------------------------------------- |
-| `ccache_theft_staging`      | ccache path in argv of a copy/transfer/interpreter process   | T1558.005 | Kerberos · cp/base64 an `*.ccache`       |
-| `cron_persistence`          | auditd `cron_persist` — write to a cron drop dir / crontab   | T1053.003 | Linux persistence · cron callback        |
-| `systemd_unit_persistence`  | auditd `systemd_persist` — write into a unit directory       | T1543.002 | Linux persistence · unit or timer        |
-| `ssh_authorized_keys_write` | auditd `ssh_authkeys` — write to an `authorized_keys` file   | T1098.004 | Linux persistence · append attacker key  |
-| `ssh_private_key_read`      | auditd `ssh_key_read` — private key read off the SSH stack   | T1552.004 | Linux cred access · harvest private keys |
-| `sudo_root_shell`           | auditd `sudo_abuse` — root shell under a real login uid      | T1548.003 | Linux privesc · GTFOBins sudo escape     |
-| `suid_bit_set`              | auditd `suid_change` — chmod that sets the setuid/setgid bit | T1548.001 | Linux privesc · plant a SUID shell       |
-| `shadow_file_read`          | auditd `shadow_read` — `/etc/shadow` read off the auth stack | T1003.008 | Linux cred access · dump for cracking    |
+| Rule                        | Event / source                                               | ATT&CK    | Validate with                                  |
+| --------------------------- | ------------------------------------------------------------ | --------- | ---------------------------------------------- |
+| `ccache_theft_staging`      | ccache path in argv of a copy/transfer/interpreter process   | T1558.005 | Kerberos · cp/base64 an `*.ccache`             |
+| `cron_persistence`          | auditd `cron_persist` — write to a cron drop dir / crontab   | T1053.003 | Linux persistence · cron callback              |
+| `systemd_unit_persistence`  | auditd `systemd_persist` — write into a unit directory       | T1543.002 | Linux persistence · unit or timer              |
+| `ssh_authorized_keys_write` | auditd `ssh_authkeys` — write to an `authorized_keys` file   | T1098.004 | Linux persistence · append attacker key        |
+| `ssh_private_key_read`      | auditd `ssh_key_read` — private key read off the SSH stack   | T1552.004 | Linux cred access · harvest private keys       |
+| `sudo_root_shell`           | auditd `sudo_abuse` — root shell under a real login uid      | T1548.003 | Linux privesc · GTFOBins sudo escape           |
+| `suid_bit_set`              | auditd `suid_change` — chmod that sets the setuid/setgid bit | T1548.001 | Linux privesc · plant a SUID shell             |
+| `shadow_file_read`          | auditd `shadow_read` — `/etc/shadow` read off the auth stack | T1003.008 | Linux cred access · dump for cracking          |
+| `history_clearing`          | auditd `hist_tamper` — unlink/truncate of a `*_history` file | T1070.003 | Linux anti-forensics · `shred ~/.bash_history` |
 
 **`cloud/`** (multi-cloud — Entra `product: azure`, AWS `product: aws`, GCP `product: gcp`)
 
