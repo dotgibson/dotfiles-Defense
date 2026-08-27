@@ -3,12 +3,20 @@
 # ONE list of the repos Core fans out into (B9). Read by scripts/sync-core.sh as the
 # default TARGETS when no repos are named on the CLI.
 #
-# THIS FILE IS THE SOURCE, BUT IT IS NOT THE ONLY EDIT. sync-core.sh, fleet-drift.sh
-# and core-integrity.sh each keep a hardcoded fallback array for when this file is
-# missing or unreadable — and that fallback is what runs in exactly the situation you
-# are least likely to notice. Adding or removing a target means FOUR coordinated edits:
-# this file plus those three arrays. scripts/test-core.sh asserts they all agree, so a
-# partial change fails the audit rather than silently dropping a repo from the fan-out.
+# THIS FILE IS THE ONLY EDIT. Adding or removing a fleet target is one line, here.
+# sync-core.sh, fleet-drift.sh and core-integrity.sh used to each keep a hardcoded
+# fallback array for when this file was missing or unreadable, which meant FOUR
+# coordinated edits and a fallback that ran in exactly the situation you were least
+# likely to notice. They are gone (#669): every reader now goes through ONE parser,
+# scripts/lib/common.sh :: load_os_repos, and there is no fallback list anywhere.
+#
+# CONSEQUENCE: if this file goes missing, is unreadable, or ends up with every entry
+# commented out, the three fan-out gates FAIL LOUDLY (exit 2) rather than sweeping some
+# other fleet. That is deliberate. A gate that quietly substitutes a stale list reads as
+# coverage while covering nothing — the same reason real-bootstrap.yml errors instead of
+# passing green when it derives zero legs. The advisory readers (audit-core.sh's sibling
+# checks) record an environment SKIP for the same reason: they say they could not cover
+# the fleet instead of implying they did.
 #
 # Format: one repo NAME per line. Blank lines and `#` comments ignored. The name is the
 # GitHub repo, not a path: the fleet scripts look for a sibling directory of that name

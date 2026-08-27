@@ -57,6 +57,10 @@ _core_palette
 : "${PASS:=0}"
 : "${SKIP:=0}"
 : "${FAIL:=0}"
+# Why load_os_repos() sets rather than prints — see its definition below. Declared here with
+# `:=` for the same reason as the tallies: a caller under `set -u` reads it on the failure
+# path, before any successful load has assigned it.
+: "${CORE_OS_REPOS_ERR:=}"
 # Labels of the checks that SKIPPED, so a caller can report exactly WHICH gates didn't
 # run (e.g. a CI-installed linter absent locally) instead of just a count — the
 # difference between "green" and "green but partial". Declared once (this lib is
@@ -801,6 +805,68 @@ _audit_ls() { # _audit_ls <pathspec>… — content-gate file set, deduped
     git ls-files -- "$@" 2>/dev/null
     git ls-files --others --exclude-standard -- "$@" 2>/dev/null
   } | sort -u
+}
+
+# ── the fleet list: ONE reader, and the file is MANDATORY ───────────────────
+# scripts/os-repos.txt is the fleet. It used to be the fleet *and* three hardcoded fallback
+# arrays — one each in sync-core.sh, fleet-drift.sh and core-integrity.sh — for when the file
+# was missing or unreadable, so adding a target was four coordinated edits and the copy you
+# forgot was the one that ran: the fallback fires in exactly the situation you are least able
+# to notice it. test-core.sh asserted the four agreed, which is a backstop for a design flaw
+# rather than a fix (#669).
+#
+# So there is now ONE parser, here, and no fallback at all. An unreadable or empty fleet list
+# is a hard, loud failure in the three fan-out gates — the same posture real-bootstrap.yml
+# takes when it derives zero legs, on the grounds that a gate which silently never runs reads
+# as coverage. A sweep that quietly checks nothing is the failure this replaces, not a
+# degraded mode worth keeping.
+#
+# Path is derived from THIS FILE's location (scripts/lib/ → ../os-repos.txt), not from each
+# caller's $HERE: test-core.sh's fixtures copy common.sh into <fixture>/scripts/lib/ and write
+# <fixture>/scripts/os-repos.txt, so this resolves correctly in the real repo and in every
+# sandbox without the callers having to agree on a variable name — and it fixes the one caller
+# (freshness-dashboard.sh) that was reading a cwd-relative path.
+# `cd -P`'d rather than left as scripts/lib/../os-repos.txt: this path is printed in every
+# error and skip message this loader produces, and a reader who has to mentally collapse a
+# `lib/..` is one step further from checking whether the file is there.
+_CORE_OS_REPOS_FILE="$(cd -P "${BASH_SOURCE[0]%/*}/.." 2>/dev/null && pwd)/os-repos.txt"
+
+# Fills the global CORE_OS_REPOS. Returns 0, or non-zero with CORE_OS_REPOS_ERR set to the
+# reason — it does NOT print. ONE message, three postures: the fan-out gates `fail` + exit 2,
+# audit-core.sh's advisory sibling checks skip_env, test-core.sh's fleet scan skips. A loader
+# that called fail() itself would force the advisory callers to red an unrelated section.
+#
+# A global array rather than stdout, deliberately: bash 3.2 has no mapfile (this runs on
+# macOS), and `while read … < <(load_os_repos)` would throw away the return code in the
+# process substitution — which is the whole signal.
+#
+# Takes NO arguments, deliberately. An optional `[<file>]` override was the obvious shape
+# and every caller passed nothing, which is exactly what shellcheck SC2119 flags: a function
+# with an unused optional $1 makes a bare call ambiguous with "inherit the script's $1", and
+# it fired on all six callers. There is one fleet list; a seam nobody uses is not worth a
+# per-call-site disable comment.
+load_os_repos() { # load_os_repos — fill CORE_OS_REPOS from the fleet list
+  local f="$_CORE_OS_REPOS_FILE" line
+  CORE_OS_REPOS=()
+  CORE_OS_REPOS_ERR=""
+  [[ -r "$f" ]] || {
+    CORE_OS_REPOS_ERR="fleet list unreadable: $f"
+    return 2
+  }
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"                         # strip trailing comments
+    line="${line#"${line%%[![:space:]]*}"}"    # ltrim
+    line="${line%"${line##*[![:space:]]}"}"    # rtrim
+    [[ -n "$line" ]] && CORE_OS_REPOS+=("$line")
+  done <"$f"
+  # Comments-only is the same hazard as absent: the caller would sweep an empty fleet and
+  # report green. Callers may therefore expand "${CORE_OS_REPOS[@]}" after rc 0 without
+  # tripping `set -u` on an empty array (bash <= 4.3).
+  ((${#CORE_OS_REPOS[@]})) || {
+    CORE_OS_REPOS_ERR="fleet list is empty: $f"
+    return 2
+  }
+  return 0
 }
 
 # ── fleet-member resolution: by DIRECTORY NAME, then by REMOTE URL ─────────────

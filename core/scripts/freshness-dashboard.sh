@@ -37,6 +37,11 @@ set -uo pipefail
 
 HERE="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
 cd "$HERE" || exit 1
+# Sourced for ONE thing: load_os_repos, the single reader of scripts/os-repos.txt (#669).
+# This board composes markdown and never prints through the lib's pass/fail helpers, so the
+# only other effect is defining them. fail() is used exactly once, on the fleet-list error.
+# shellcheck source=scripts/lib/common.sh
+source "$HERE/scripts/lib/common.sh"
 ROOT="$(cd "$HERE/.." && pwd)" # siblings of dotfiles-core by default
 OWNER="${GITHUB_REPOSITORY_OWNER:-dotgibson}"
 
@@ -176,10 +181,17 @@ detail 'nvim plugin pins — update-nvim-plugins.sh --check' "$TMP/nvim"
 
 # ── Renovate dependency dashboards (per repo) ─────────────────────────────────
 # The wired fleet: the two standalone repos + web, the Core-vendoring OS repos
-# (scripts/os-repos.txt), and htpx. dotfiles-Windows carries no core/ but is wired.
+# (scripts/os-repos.txt, via the one reader), and htpx. dotfiles-Windows carries no core/
+# but is wired. Only the middle group comes from the fleet list; the four named here are
+# deliberately NOT in it and are spelled out on purpose.
+# A board whose whole subject is fleet freshness must not quietly render four rows when it
+# meant thirteen, so an unreadable list stops it rather than degrading the board (#669).
 REPOS=(dotfiles-core dotfiles-Windows dotfiles-web)
-while IFS= read -r r; do [ -n "$r" ] && REPOS+=("$r"); done \
-  < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' scripts/os-repos.txt)
+load_os_repos || {
+  fail "$CORE_OS_REPOS_ERR — cannot enumerate the fleet to report on"
+  exit 2
+}
+REPOS+=("${CORE_OS_REPOS[@]}")
 REPOS+=(htpx)
 
 # search_count <query...> — total_count for a repo search; EMPTY output + a non-zero status

@@ -426,14 +426,20 @@ the only sanctioned writer of that file:
 CORE_BRANCH=refs/tags/v4 ./scripts/sync-core.sh dotfiles-<Distro>
 ```
 
-Then register the repo **here**, which takes **four coordinated edits**, not one:
-`scripts/os-repos.txt` (the source), plus the hardcoded fallback arrays in
-`scripts/sync-core.sh`, `scripts/fleet-drift.sh` and `scripts/core-integrity.sh`. Those
-fallbacks run when the data file is missing or unreadable, so a repo registered in the
-file alone silently disappears from the fan-out in exactly the situation you are least
-able to spot it. `scripts/test-core.sh` asserts all four agree.
+Then register the repo **here**, which is **one line** in `scripts/os-repos.txt`:
 
-`dotfiles-Windows` is deliberately absent from all four: it replicates the host config
+```sh
+echo 'dotfiles-<Distro>' >> scripts/os-repos.txt   # then re-sort: MacBook first, rest alphabetical
+```
+
+This used to take **four** coordinated edits — that file plus a hardcoded fallback array
+in each of `scripts/sync-core.sh`, `scripts/fleet-drift.sh` and `scripts/core-integrity.sh`,
+so a repo registered in the file alone silently disappeared from the fan-out in exactly the
+situation you were least able to spot it. Those arrays are gone (#669); every fleet script
+now reads the file through `load_os_repos` in `scripts/lib/common.sh`, and an unreadable or
+empty file stops those three gates outright rather than substituting a stale list.
+
+`dotfiles-Windows` is deliberately absent from the file: it replicates the host config
 natively in PowerShell and vendors no `core/` at all.
 
 **The scaffold is a starting point, not the finished contract.** A freshly generated repo

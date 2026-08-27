@@ -862,22 +862,21 @@ fi
 # is structural now, so the wording is free to say what is actually true, and
 # --require-siblings can red on precisely this case without touching --strict.
 #
-# Reads scripts/os-repos.txt with the light sed idiom (as freshness-dashboard.sh does) and
-# NOT the three-script pattern with a hardcoded fallback array: os-repos.txt documents that
-# adding a target is four coordinated edits, and test-core.sh asserts those four agree. A
-# fourth reader should not join that contract for a purely advisory check.
+# Enumerates the fleet through load_os_repos (lib/common.sh) — the ONE reader, since #669
+# removed the three hardcoded fallback arrays. This check keeps the skip_env posture rather
+# than the fan-out gates' hard exit: an unreadable fleet list should not red an advisory
+# section of an otherwise-fine audit, it should say it could not cover the fleet.
 hdr "bootstrap-lib helper adoption (advisory)"
 _ha_root="$(cd "$HERE/.." && pwd)"
-if [[ ! -r "$HERE/scripts/os-repos.txt" ]]; then
-  skip_env "helper adoption (scripts/os-repos.txt unreadable — cannot enumerate the fleet)"
+if ! load_os_repos; then
+  skip_env "helper adoption ($CORE_OS_REPOS_ERR — cannot enumerate the fleet)"
 else
   # <helper> <what its absence costs>. Kept here rather than in bootstrap-lib.sh so the
   # rationale lives with the check that reports it; VENDORING.md carries the human contract.
   _ha_checked=0
   _ha_missing=0
   _ha_absent=0
-  while IFS= read -r _ha_repo; do
-    [ -n "$_ha_repo" ] || continue
+  for _ha_repo in "${CORE_OS_REPOS[@]}"; do
     _ha_dir="$(resolve_repo_dir "$_ha_root" "$_ha_repo")" || _ha_dir="$_ha_root/$_ha_repo"
     if [[ ! -f "$_ha_dir/bootstrap.sh" ]]; then
       _ha_absent=$((_ha_absent + 1))
@@ -903,7 +902,7 @@ else
       _ha_missing=$((_ha_missing + 1))
       ((${CORE_JSON:-0})) || printf '  %s%s%s %s does not call:%s\n' "${c_yel}" "•" "${c_rst}" "$_ha_repo" "$_ha_gaps"
     fi
-  done < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$HERE/scripts/os-repos.txt")
+  done
 
   if ((_ha_checked == 0)); then
     skip_env "helper adoption (no sibling OS repo checked out — nothing to read here)"
@@ -962,14 +961,13 @@ fi
 # the fleet. --require-siblings is what makes an absent sibling red.
 hdr "secret-scan policy adoption"
 _gp_root="$(cd "$HERE/.." && pwd)"
-if [[ ! -r "$HERE/scripts/os-repos.txt" ]]; then
-  skip_env "gitleaks policy (scripts/os-repos.txt unreadable — cannot enumerate the fleet)"
+if ! load_os_repos; then
+  skip_env "gitleaks policy ($CORE_OS_REPOS_ERR — cannot enumerate the fleet)"
 else
   _gp_checked=0
   _gp_bad=0
   _gp_absent=0
-  while IFS= read -r _gp_repo; do
-    [ -n "$_gp_repo" ] || continue
+  for _gp_repo in "${CORE_OS_REPOS[@]}"; do
     _gp_dir="$(resolve_repo_dir "$_gp_root" "$_gp_repo")" || _gp_dir="$_gp_root/$_gp_repo"
     if [[ ! -d "$_gp_dir/.git" ]]; then
       _gp_absent=$((_gp_absent + 1))
@@ -995,7 +993,7 @@ else
       _gp_bad=$((_gp_bad + 1))
       ((${CORE_JSON:-0})) || printf '  %s%s%s %s%s\n' "${c_yel}" "•" "${c_rst}" "$_gp_repo" "$_gp_gaps"
     fi
-  done < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$HERE/scripts/os-repos.txt")
+  done
 
   if ((_gp_checked == 0)); then
     skip_env "gitleaks policy (no sibling OS repo checked out — nothing to read here)"
@@ -1029,6 +1027,11 @@ else
   _fc_rc=$?
   if [[ "$_fc_out" == *"no sibling repo checked out"* ]]; then
     skip_env "coverage register (no sibling OS repo checked out — nothing to read here)"
+  elif [[ "$_fc_out" == *"fleet list "* ]]; then
+    # It could not build the register at all (#669), which is not the same finding as
+    # "some cells are undeclared" — reporting it as the latter would name a cause that is
+    # not there and hide the one that is.
+    skip_env "coverage register (fleet list would not load — cannot enumerate the fleet)"
   elif ((_fc_rc == 0)); then
     pass "coverage register: $_fc_out"
   else
