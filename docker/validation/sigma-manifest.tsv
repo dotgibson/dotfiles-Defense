@@ -106,4 +106,5 @@ linux-sudo-root-shell	none	docker/validation/sigma-fixtures/linux_sudo_root_shel
 linux-suid-change	none	docker/validation/sigma-fixtures/linux_suid_change.jsonl	detections/sigma/linux/suid_bit_set.yml	40ea5710-462f-42b0-84bd-17da606c65ef	docker/validation/sigma-fixtures/linux_suid_change_tn.jsonl
 linux-shadow-read	none	docker/validation/sigma-fixtures/linux_shadow_read.jsonl	detections/sigma/linux/shadow_file_read.yml	aa667b5b-a7e1-49de-bfd7-6ff3d6daeb12	docker/validation/sigma-fixtures/linux_shadow_read_tn.jsonl
 windows-log-cleared-1102	windows-audit	docker/validation/sigma-fixtures/windows_log_cleared_1102.jsonl	detections/sigma/defense_impairment/windows_event_log_cleared_1102.yml	c1df047f-8b4f-4411-bd3c-f406b55c6d47	-
+windows-log-cleared-104	windows-audit	docker/validation/sigma-fixtures/windows_log_cleared_104.jsonl	detections/sigma/defense_impairment/windows_event_log_cleared_104.yml	74f218d3-1988-4151-97ed-8173df2b6647	-
 linux-history-clearing	none	docker/validation/sigma-fixtures/linux_history_clearing.jsonl	detections/sigma/linux/history_clearing.yml	ca8e6e8e-18bd-4ffa-b20c-d781e3e77223	-

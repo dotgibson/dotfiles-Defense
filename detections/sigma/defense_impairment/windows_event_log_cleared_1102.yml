@@ -14,9 +14,10 @@ description: |
   rather than a process-creation matcher on the tool names.
   Scope, stated plainly: 1102 covers the SECURITY channel only. Clearing Application,
   System, or an operational channel such as Sysmon emits 104 in the System channel
-  instead - a different logsource, so a different rule (dotgibson/dotfiles-Defense#215).
-  Until that sibling exists, an operator who clears Sysmon/Operational and leaves the
-  Security log alone is not caught here.
+  instead - a different logsource, so a different rule. That sibling now exists:
+  windows_event_log_cleared_104.yml (id 74f218d3-1988-4151-97ed-8173df2b6647). Deploy
+  both, or an operator who clears Sysmon/Operational and leaves the Security log alone
+  is caught by neither.
   Triage on SubjectUserName and SubjectLogonId - who cleared it - and on whether a
   maintenance window or a log-rotation change explains it. Correlate against what the
   same account did in the minutes before: the cleared log is the end of a chain, and the
