@@ -88,6 +88,27 @@ Privilege Escalation, where the `potato_seimpersonate_*` pair tags it). The rest
 TA0005 is masquerading, obfuscation, process injection and LOLBAS proxy execution — a
 body of work this repo has not started, not one it has misfiled.
 
+**It stays thin on purpose, and #223 settled that.** Because T1134.001 is dual-tactic,
+the `potato_seimpersonate_*` pair could legally claim the TA0005 half — the pairing
+assertion in `detections/check-attack-tags.sh` asserts a tactic tag is *earned* by some
+technique tagged beside it, not that every tactic is claimed, so the tag would pass and
+`detections/navigator/COVERAGE.md` would read `Stealth TA0005 | 3 | 4` instead of
+`2 | 2`. The pair does **not** claim it. What those rules select is a service identity
+spawning a shell — the shape *before* the token is stolen, keyed on the un-masked
+account field — and their own descriptions concede they cannot show the run-as-SYSTEM
+result. The evasion is the part they cannot see. Taking the row would buy four rules'
+worth of apparent TA0005 coverage backed by no detection of evasion, and `/coverage-gap`
+is told to trust `COVERAGE.md` rather than recompute it, so the cost lands on the next
+person ranking holes: it would bury the thinnest real gap in the corpus under a number.
+The precedent runs the same way —
+`detections/sigma/lateral_movement/unconstrained_delegation_4624.yml` claims a deliberate
+subset of its three techniques' tactics and says so above the block.
+
+**Reopen when there is something to tag.** A rule that actually detects the
+impersonation — Sysmon 17/18 on the spoolss/DCOM named pipe, or a token-context anomaly
+on 4624/4672 — earns the TA0005 half on its own evidence, and should take it. The
+decision here is about these two rules, not about the tactic.
+
 The row is narrow on purpose: it is the *registry* plane, not the endpoint. Both rules
 fire on a publish event in an npm or PyPI audit log — a package shipped by an actor that
 is not the sanctioned CI identity, or a release uploaded with a long-lived token rather
