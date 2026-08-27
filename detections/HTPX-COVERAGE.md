@@ -149,7 +149,7 @@ Techniques this repo detects that the corpus has no attack for — so there is n
 | T1558.005 | `ccache_theft_staging` |
 | T1560.001 | `archive_staging_utility` |
 | T1569.002 | `service_creation_psexec_7045` |
-| T1685.005 | `windows_event_log_cleared_1102` |
+| T1685.005 | `windows_event_log_cleared_104`, `windows_event_log_cleared_1102` |
 
 ## Declared holes upstream (`pair: null`)
 

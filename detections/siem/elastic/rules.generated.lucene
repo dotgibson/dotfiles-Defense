@@ -87,6 +87,9 @@ resource.type:api_token AND action.type:create
 // defense_impairment/dcshadow_rogue_dc_4742.yml — DCShadow - rogue DC registration (GC SPN added to a non-DC)
 (EventID:4742 AND ServicePrincipalNames:*GC\/*) AND (NOT (TargetUserName:(DC1$ OR DC2$)))
 
+// defense_impairment/windows_event_log_cleared_104.yml — Windows event log cleared - non-Security channel (104)
+EventID:104
+
 // defense_impairment/windows_event_log_cleared_1102.yml — Windows Security audit log cleared (1102)
 EventID:1102
 
