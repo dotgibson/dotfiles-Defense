@@ -1,0 +1,68 @@
+title: Windows event log cleared - non-Security channel (104)
+id: 74f218d3-1988-4151-97ed-8173df2b6647
+status: experimental
+description: |
+  Detects a non-Security event log being cleared: a 104 record, which the event-log
+  service writes into the SYSTEM channel when Application, System, or an operational
+  channel such as Microsoft-Windows-Sysmon/Operational is cleared. Sysmon is the one that
+  matters most here: that channel is the evidence base for every Sysmon-sourced rule in
+  this corpus, and clearing it destroys the retained history they would be triaged
+  against - on a host where the Security log is untouched and 1102 never fires. The
+  sensor keeps running; what is gone is what it already recorded.
+  Channel: this is the 104 half of a per-channel pair. Its Security twin is
+  windows_event_log_cleared_1102.yml (id c1df047f-8b4f-4411-bd3c-f406b55c6d47), which
+  selects 1102 under `service: security`. The split is forced: 104 is written to the
+  System channel and 1102 to Security, that is a different logsource, and Sigma allows
+  one logsource per rule. It is not that the tradecraft differs. Deploy both, or an
+  operator who clears Sysmon/Operational and leaves the Security log alone is caught by
+  neither.
+  104 is the invariant, not the tool - the same argument the 1102 rule makes. wevtutil
+  cl, Clear-EventLog, Remove-EventLog, the Event Viewer GUI and the EvtClearLog API all
+  produce it, so this does not depend on matching a binary name or a command line and
+  cannot be evaded by renaming the utility or calling the API directly.
+  What this rule cannot tell you is WHICH log was cleared, and the reason is a field-name
+  collision worth knowing about before you try to fix it. The record does carry the
+  answer - a Channel element inside UserData/LogFileCleared naming the cleared log - but
+  every Windows event ALSO carries a Channel on its System block, which for 104 is
+  "System". Flatteners that key on the leaf name (zircolite does, and so do several SIEM
+  ingest paths) collapse the two into one Channel field, and the value that survives is
+  whichever the parser reached first. So a selection or filter on Channel here would read
+  a coin flip, not the cleared log, and this rule deliberately does not attempt one.
+  Read the cleared channel out of the RAW event at triage time instead: a
+  Sysmon/Operational or System clear is a different finding from an Application clear,
+  and only the unflattened record separates them.
+  Triage on SubjectUserName and SubjectDomainName - who cleared it - then on the cleared
+  channel from the raw event, then on whether a maintenance window, an imaging step or a
+  log-rotation change explains it. Correlate against what the same account did in the
+  minutes before: the cleared log is the end of a chain, and the surviving forwarded copy
+  is where that chain still lives.
+  Validate (purple): clear the Application log with `wevtutil cl Application` on a lab
+  host, or Sysmon's own channel with `wevtutil cl Microsoft-Windows-Sysmon/Operational`.
+  The htpx corpus has no entry for this one - its Defense Impairment entries are all
+  cloud-side. Requires no audit subcategory: the event-log service writes 104
+  unconditionally.
+references:
+  - https://attack.mitre.org/techniques/T1685/005/
+  - https://docs.logrhythm.com/devices/docs/evid-104-log-cleared
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-1102
+author: dotfiles-Defense
+date: 2026-08-27
+tags:
+  - attack.defense-impairment
+  - attack.t1685.005
+logsource:
+  product: windows
+  service: system
+detection:
+  selection:
+    EventID: 104
+  condition: selection
+falsepositives:
+  - Routine log rotation and host imaging genuinely clear the Application and operational
+    channels, so 104 is noisier than its 1102 sibling and is rated `medium` where that one
+    is `high`. It still ships NO filter - the only discriminator worth having is the
+    cleared channel's name, and that field collides with the System-block Channel once
+    the event is flattened (see the description), while an actor allowlist is exactly
+    what an operator would target. Triage on SubjectUserName and the change record
+    instead.
+level: medium

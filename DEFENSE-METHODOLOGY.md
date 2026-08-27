@@ -35,7 +35,7 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Offens
 | Collection               | 4663 file reads, 4688 archive cmds                                | sigma                 | collection / exfil fold                                              |
 | Exfil / C2               | Suricata, Zeek conn/dns/ssl                                       | network               | reverse-shell / pivot folds                                          |
 | Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn | sigma, network        | ransomware chain (teardown → recovery → payload); cryptomining pair  |
-| Anti-forensics           | 1102 audit-log clear, auditd history syscalls, 4742 rogue DC      | sigma                 | DCShadow fold; `wevtutil cl` / `shred ~/.bash_history` on a lab host |
+| Anti-forensics           | 1102 + 104 log clears, auditd history syscalls, 4742 rogue DC     | sigma                 | DCShadow fold; `wevtutil cl` / `shred ~/.bash_history` on a lab host |
 
 The right-hand column is the point: every row has a Offense fold that proves the
 detection works.
@@ -57,10 +57,19 @@ under TA0112, and *Clear Linux or Mac System Logs* went the same way. (Their pre
 ids are deliberately not written here — a revoked id in this file reads as a coverage
 claim to `detections/check-methodology.sh`, and `detections/check-attack-tags.sh` is
 the gate that pins the current numbering.) So
-`detections/sigma/defense_impairment/windows_event_log_cleared_1102.yml` (T1685.005)
-counts toward Defense Impairment, and only
+`detections/sigma/defense_impairment/windows_event_log_cleared_1102.yml` and its
+per-channel sibling
+`detections/sigma/defense_impairment/windows_event_log_cleared_104.yml` (both
+**T1685.005**) count toward Defense Impairment, and only
 `detections/sigma/linux/history_clearing.yml` (**T1070.003** Clear Command History,
 which v19 left where it was) counts toward Stealth.
+
+Two rules for one technique is not double-counting: 1102 is written only for the
+Security channel and 104 only for everything else, they therefore sit on different
+logsources (`service: security` vs `service: system`), and Sigma allows one logsource
+per rule. Deploy both — clearing Sysmon's operational channel and leaving Security alone
+is a real evasion, and it is 104 that catches it. The same forced split is why
+`detections/sigma/privilege_escalation/` carries a `potato_seimpersonate_*` pair.
 
 This is written down because #215 was filed on the opposite assumption — that authoring
 the Windows log-clearing rule would fill the thin `Stealth` row in

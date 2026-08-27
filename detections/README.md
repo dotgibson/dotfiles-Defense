@@ -179,7 +179,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Offense` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 104 rules / 122 documents, organized by ATT&CK tactic
+### `sigma/` — 105 rules / 123 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -246,10 +246,11 @@ on `Path` at alert time.
 
 **`defense_impairment/`**
 
-| Rule                             | Event / source                    | ATT&CK    | Validate with                        |
-| -------------------------------- | --------------------------------- | --------- | ------------------------------------ |
-| `dcshadow_rogue_dc_4742`         | 4742 `GC/` SPN write (+5137/4662) | T1207     | AD attack paths · dcshadow           |
-| `windows_event_log_cleared_1102` | 1102 Security log cleared         | T1685.005 | `wevtutil cl Security` on a lab host |
+| Rule                             | Event / source                    | ATT&CK    | Validate with                           |
+| -------------------------------- | --------------------------------- | --------- | --------------------------------------- |
+| `dcshadow_rogue_dc_4742`         | 4742 `GC/` SPN write (+5137/4662) | T1207     | AD attack paths · dcshadow              |
+| `windows_event_log_cleared_1102` | 1102 Security log cleared         | T1685.005 | `wevtutil cl Security` on a lab host    |
+| `windows_event_log_cleared_104`  | 104 non-Security log cleared      | T1685.005 | `wevtutil cl Application` on a lab host |
 
 **`impact/`** (the ransomware chain — process creation 4688 / Sysmon 1, plus 4663 and Sysmon 11 for the encryption sweep)
 

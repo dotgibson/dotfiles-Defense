@@ -478,9 +478,9 @@
     },
     {
       "techniqueID": "T1685.005",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): windows_event_log_cleared_1102"
+      "comment": "2 rule(s): windows_event_log_cleared_104, windows_event_log_cleared_1102"
     },
     {
       "techniqueID": "T1686.001",
