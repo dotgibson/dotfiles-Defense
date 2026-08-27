@@ -15,6 +15,18 @@ description: |
   attacker's principal is allowed to assume it. No policy is attached and no group
   changes - the grant is in the role's trust document - so an attach-only view misses it
   as completely as it misses the policy-version path below.
+  DeleteUserPermissionsBoundary/DeleteRolePermissionsBoundary are the third direction to
+  the same outcome. A permissions boundary caps what a principal's identity policies can
+  actually do, so deleting one widens that principal's effective permissions immediately,
+  without attaching anything or editing a single policy document - the grant is in what
+  was removed. The Put* half of the pair is deliberately NOT selected: applying a boundary
+  almost always RESTRICTS, and CloudTrail carries no field separating a permissive
+  boundary from a tightening one, so selecting it would alert on a hardening action and
+  bury the removal in that noise. That is the defect #210 fixed in
+  gitlab_protected_branch_tamper, which fired high on the benign half of a pair; the
+  decision is recorded here (dotgibson/dotfiles-Defense#216) so it is not re-derived every
+  review. Reconsider if the boundary policy document ever lands in the event, which would
+  make the permissive-vs-tightening split expressible rather than assumed.
   CreatePolicyVersion/SetDefaultPolicyVersion are the quiet ones: no policy is attached
   to anything, so an attach-only detection misses them entirely - the attacker edits a
   policy the target already holds. Triage on the granted policy (AdministratorAccess,
@@ -49,6 +61,8 @@ detection:
       - 'SetDefaultPolicyVersion'
       - 'AddUserToGroup'
       - 'UpdateAssumeRolePolicy'
+      - 'DeleteUserPermissionsBoundary'
+      - 'DeleteRolePermissionsBoundary'
   filter_iac:
     # DEPLOY-REQUIRED: replace with your IaC / access-management automation principal(s)
     # so pipeline-driven IAM changes - the busiest source of these events in any account
