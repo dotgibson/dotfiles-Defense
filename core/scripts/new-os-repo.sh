@@ -292,11 +292,20 @@ printf '\n%s──────── dotfiles-%s scaffolded ──────�
 if ((DRY)); then
   echo "dry-run — nothing was written."
 else
+  # The registration step is named HERE because it is the one thing the scaffold cannot do
+  # for you and the one thing nothing downstream will remind you about: a repo that exists
+  # but is not in scripts/os-repos.txt is invisible to the fan-out, to fleet-drift and to
+  # core-integrity, and every one of them stays green while ignoring it. Since #669 that
+  # registration is a single line rather than four coordinated edits — see VENDORING.md.
   cat <<EOF
   next:
     cd "$TARGET"
     git add -A && git commit -m "scaffold dotfiles-$OS"
     ./bootstrap.sh            # wire the symlinks
     \$EDITOR os/$os_lc.zsh     # add your $OS-native bits
+
+  then, back in dotfiles-core — REGISTER IT, or the fleet never sees this repo:
+    echo dotfiles-$OS >> scripts/os-repos.txt   # one line; keep the list sorted
+    ./scripts/sync-core.sh dotfiles-$OS         # materializes core/ and stamps core.lock
 EOF
 fi

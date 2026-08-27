@@ -14,6 +14,101 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.1.0] - 2026-08-27
+
+### Added
+
+- **The weekly sweep can finally tell a full box from a half-provisioned one (#750).**
+  `real-bootstrap.yml` is the only job in the fleet that installs anything, and it asserted
+  exactly two things on the far side of `./bootstrap.sh`: that it returned 0, and that the
+  wiring survived. Both necessary; neither can see whether the packages actually arrived.
+
+  The Gentoo leg proved it. The first leg of this sweep ever to run to completion — 75.3
+  minutes, 131 packages emerged — was **green** while the bootstrap printed a ledger naming
+  two steps that did not complete: one atom unreachable through its own dependency chain, one
+  whose upstream build cannot succeed on that toolchain at all. Both were real, and both are
+  now fixed in the OS repo (#751 corrected the matrix cells that had pointed at them). The
+  **reporting** gap is this repo's, and it outlives whichever two tools exposed it: this job
+  was the only one in the fleet that could ever have caught them, and it reported success.
+
+  New opt-in `bootstrap_postcheck` input on `bootstrap-test.yml`, declared where every other
+  per-leg knob already lives — the repo's own caller — and read **statically** by
+  `scripts/fleet-bootstrap-matrix.py`, exactly as `bootstrap_timeout` is. The value is a
+  command run **inside** the `docker run`, after `./bootstrap.sh`, where the box it asserts
+  still exists; `--rm` has destroyed that filesystem by the time a following step starts,
+  which is the bug the wiring assertion itself carried until #742. Absent by default, so no
+  leg changes behaviour on landing.
+
+  **Not `--strict`**, which is the obvious lever and the wrong instrument. It turns each
+  bootstrap's end-of-run ledger into a non-zero exit, and that ledger deliberately mixes a
+  genuine provisioning gap (an atom that will never install) with an infrastructure blip (a
+  rate-limited `mise.run`, a GURU sync hiccup, a failed `tpm` clone). `--strict` cannot tell
+  them apart, so it would red an advisory lane over somebody else's outage — per this
+  workflow's own header, "exactly how these lanes get switched off". `dotfiles-Fedora`'s
+  `bootstrap-full.yml` refused it in those words and did a far-side presence assertion
+  instead; this is that, made reusable and derived rather than listed. A repo's own script
+  **can** make the distinction Core cannot, because it knows which tools its own list
+  promises, so the bootstrap exit code stays an honest signal nobody weakens.
+
+  **A leg with no postcheck now says so** — in the fleet listing at the top of the run and
+  again in its own summary line. The previous single sentence read identically whether the
+  packages had been asserted or not, which is the pass that hid those two atoms behind a
+  green tick. `dotfiles-Gentoo` ships `scripts/assert-provisioned.sh` already, so the hook
+  has a real consumer as soon as `@v5` moves.
+
+  First tests for `fleet-bootstrap-matrix.py`, which had none: a scratch-fleet fixture
+  covering declared/absent/non-string, plus two assertions that encode #742 — that every
+  `matrix.leg.<key>` the sweep reads is a key the script actually **emits** (a mismatch
+  would make the hook a permanent silent no-op that reads as coverage), and that the
+  postcheck reference sits inside the `sh -euc` block rather than in a later step.
+
+### Changed
+
+- **`scripts/os-repos.txt` is now the single source of the fleet, not one of four (#669).**
+  The file was documented as canonical and its own header admitted it was not: `sync-core.sh`,
+  `fleet-drift.sh` and `core-integrity.sh` each carried a hardcoded nine-name fallback array
+  for when the file was missing or unreadable. Adding a target meant **four** coordinated
+  edits, and **the copy you forgot was the one that ran** — the fallback fires precisely when
+  the data file is already broken, which is the moment nobody is watching. `test-core.sh`
+  asserted the four agreed, which is a backstop for a design flaw rather than a fix.
+
+  All three arrays are deleted. There is one parser, `load_os_repos` in
+  `scripts/lib/common.sh`, and **no fallback anywhere**: an absent, unreadable or
+  commented-out-to-empty fleet list now exits 2 in those three gates instead of sweeping a
+  list nobody chose. That is the posture `real-bootstrap.yml` already takes when it derives
+  zero legs — a gate that silently never runs reads as coverage.
+
+  Rejected the alternative of _generating_ the fallbacks from the file: it trades one
+  duplication for a codegen step plus a new gate asserting the generated output is current,
+  i.e. the same "these must agree" problem with an extra moving part — and the generated
+  array would still run silently when its source was unreadable. Regenerating stale data
+  more reliably does not stop it being substituted.
+
+  `resolve_repo_dir` is untouched, so a repo renamed upstream still resolves from a clone
+  sitting under its old directory name. The loader turns the file into names; that function
+  still turns a name into a path.
+
+  **Seven further copies folded in while the list was open**, because "one edit" has to mean
+  every consumer:
+
+  - `test-core.sh`'s owned-block fleet scan hardcoded **seven of the nine** names —
+    `dotfiles-Defense` and `dotfiles-Offense` were silently never scanned, in the same file
+    that policed the other three arrays.
+  - `fleet-coverage.sh` swallowed an unreadable file with `2>/dev/null` and rendered an
+    **empty coverage register**, indistinguishable from a fleet where nothing is covered.
+  - `audit-core.sh`'s two sibling checks and `freshness-dashboard.sh` each hand-rolled the
+    same parse. The advisory ones keep their `skip_env` posture — they now say they could
+    not enumerate the fleet rather than implying they covered it.
+  - `claude-routines.yml`'s doc-audit and drift-triage sweeps each spelled the nine names out
+    inline, uncovered by any test; a tenth repo would have left both blind to it.
+
+  The `test-core.sh` agreement assertion is **repurposed**, not just deleted: it now asserts
+  the file is loadable, that each of the three scripts calls `load_os_repos`, and that no
+  hardcoded list has grown back — plus new fixtures that **drive** the fail-closed path
+  (absent and comments-only) and check the fan-out touched nothing, rather than trusting a
+  comment that says it fails closed. Registering a fleet target is one line, and
+  `new-os-repo.sh` now says so at the end of a scaffold.
+
 ## [v5.0.3] - 2026-08-26
 
 ### Added

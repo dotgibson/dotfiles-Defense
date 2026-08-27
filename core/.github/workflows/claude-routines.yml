@@ -134,9 +134,13 @@ jobs:
           path: dotfiles-core
       - name: Clone the rest of the fleet (read-only, shallow)
         run: |
-          for r in dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian \
-                   dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense \
-                   dotfiles-openSUSE dotfiles-Windows dotfiles-web; do
+          # The Core-vendoring fleet comes from scripts/os-repos.txt (#669) — this loop used
+          # to spell the nine names out, so registering a tenth repo left this sweep blind to
+          # it with no test watching. Windows and web are appended by hand on purpose: both
+          # are wired but vendor no core/, so neither is in that file. Path is prefixed
+          # because Core is checked out into dotfiles-core/ here, unlike fleet-drift.yml.
+          repos=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' dotfiles-core/scripts/os-repos.txt)
+          for r in $repos dotfiles-Windows dotfiles-web; do
             git clone --depth 1 "https://github.com/${OWNER}/${r}.git" "$r" 2>/dev/null \
               || echo "::warning::could not clone $r (skipping it in the sweep)"
           done
@@ -378,9 +382,11 @@ jobs:
           fetch-depth: 0
       - name: Clone the rest of the fleet (read-only, shallow)
         run: |
-          for r in dotfiles-MacBook dotfiles-Alpine dotfiles-Arch dotfiles-Debian \
-                   dotfiles-Defense dotfiles-Fedora dotfiles-Gentoo dotfiles-Offense \
-                   dotfiles-openSUSE dotfiles-Windows; do
+          # scripts/os-repos.txt is the fleet (#669); Windows is appended by hand because it
+          # vendors no core/ and so is deliberately absent from that file. See the doc-audit
+          # job above for why the path is prefixed with dotfiles-core/.
+          repos=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' dotfiles-core/scripts/os-repos.txt)
+          for r in $repos dotfiles-Windows; do
             git clone --depth 1 "https://github.com/${OWNER}/${r}.git" "$r" 2>/dev/null \
               || echo "::warning::could not clone $r (skipping it in the sweep)"
           done

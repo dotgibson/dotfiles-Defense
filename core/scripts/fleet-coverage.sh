@@ -70,10 +70,15 @@ _g=()
 for g in "${GATES[@]}"; do [[ "$g" == notify-failure-call ]] || _g+=("$g"); done
 GATES=("${_g[@]}")
 
-REPOS=()
-while IFS= read -r r; do [[ -n "$r" ]] && REPOS+=("$r"); done < <(
-  sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$HERE/scripts/os-repos.txt" 2>/dev/null
-)
+# The fleet, through the ONE reader in lib/common.sh (#669). The old inline parse swallowed
+# an unreadable file with `2>/dev/null` and left REPOS empty — which renders as a coverage
+# register with no rows, i.e. a report that every gate is covered by nobody, indistinguishable
+# from a fleet that genuinely has no repos. An empty register is a lie; say so and stop.
+load_os_repos || {
+  fail "$CORE_OS_REPOS_ERR — cannot enumerate the fleet to report on"
+  exit 2
+}
+REPOS=("${CORE_OS_REPOS[@]}")
 
 _cell() { # _cell <repo-dir> <gate> → "reusable" | "own:<why>" | "none:<why>" | ""
   local d="$1" g="$2" decl

@@ -37,9 +37,29 @@ name: real-bootstrap
 # exactly how these lanes get switched off. Same posture packages.yml's advisory lanes use.
 #
 # THE MATRIX IS DERIVED, NOT LISTED. scripts/fleet-bootstrap-matrix.py reads each repo's OWN
-# bootstrap-test.yml caller for its `image:` and `prep:`, so this can never drift from what
-# the per-PR gate actually runs. A repo bumping its image is followed with no edit here.
+# bootstrap-test.yml caller for every per-leg knob — `image:`, `prep:`, `bootstrap_timeout:`,
+# `bootstrap_postcheck:` — so this can never drift from what the per-PR gate actually runs.
+# A repo bumping its image is followed with no edit here.
 # (This repo has been burned by frozen counts before — one commit fixed eleven, #519.)
+#
+# EXIT 0 AND INTACT SYMLINKS ARE NOT PROOF THE BOX GOT ITS PACKAGES, and for a long time
+# they were all this sweep asserted. A Gentoo leg that emerged 131 packages over 75 minutes
+# went GREEN while the bootstrap printed a ledger naming two that did not install — one
+# unreachable through its own dependency chain, one whose upstream build cannot succeed on
+# that toolchain at all. This job is the only one in the fleet that installs anything, so it
+# was the only one that could ever have caught them, and it reported success (#750). Both
+# have since been fixed in the OS repo; the REPORTING gap was this repo's, and it outlives
+# whichever two tools happened to expose it. `bootstrap_postcheck` is the fix:
+# an opt-in, repo-declared assertion run below, on the far side of a real provision.
+#
+# AND NOT `--strict`, which is the obvious lever and the wrong one. It turns each bootstrap's
+# end-of-run ledger into a non-zero exit, and that ledger deliberately mixes a GENUINE
+# PROVISIONING GAP (an atom that will never install) with an INFRASTRUCTURE BLIP (a
+# rate-limited mise.run, a GURU sync hiccup, a failed tpm clone). --strict cannot tell them
+# apart, so it would red this lane over an outage that is not ours — see the posture note
+# above for how that ends. dotfiles-Fedora's bootstrap-full.yml refused it in the same words
+# and did a far-side presence assertion instead; this is that, made reusable. The bootstrap
+# exit code stays an honest signal nobody weakens and nobody tolerates (#742).
 #
 # NOT COVERED HERE, deliberately, and both say so in their own .github/core-gates.txt:
 # dotfiles-MacBook (macOS; provision() hard-exits without the Command Line Tools, and this
@@ -102,7 +122,10 @@ jobs:
           fi
           echo "legs=$legs" >>"$GITHUB_OUTPUT"
           echo "count=$n" >>"$GITHUB_OUTPUT"
-          printf '%s\n' "$legs" | python3 -c 'import json,sys;[print("-",x["name"]) for x in json.load(sys.stdin)]' \
+          # The postcheck marker is not decoration. A sweep where most legs assert nothing
+          # about provisioning still ends in a wall of green ticks, so the coverage gap has
+          # to be legible at the TOP of the run, not only in whichever leg you open (#750).
+          printf '%s\n' "$legs" | python3 -c 'import json,sys;[print("-",x["name"],"" if x["postcheck"] else "(no postcheck — provisioning not asserted)") for x in json.load(sys.stdin)]' \
             >>"$GITHUB_STEP_SUMMARY"
 
   bootstrap:
@@ -143,9 +166,10 @@ jobs:
           IMAGE: ${{ matrix.leg.image }}
           PREP: ${{ matrix.leg.prep }}
           OFFENSIVE: ${{ matrix.leg.offensive }}
+          POSTCHECK: ${{ matrix.leg.postcheck }}
         run: |
           set -euo pipefail
-          docker run --rm -e PREP -e OFFENSIVE -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
+          docker run --rm -e PREP -e OFFENSIVE -e POSTCHECK -e BLIB_SU= -v "$PWD:/repo" -w /repo "$IMAGE" sh -euc '
             n=0
             until [ "$n" -ge 5 ]; do
               sh -c "$PREP" && break
@@ -178,15 +202,52 @@ jobs:
               fi
             done
             echo "wiring survived provisioning"
+
+            # THE PROVISIONING ASSERTION, opt-in per repo, and it must live in HERE for the
+            # same reason the wiring check above does: docker run --rm has destroyed this
+            # filesystem by the time any following step starts. See the header for why this
+            # is a far-side presence check rather than --strict.
+            #
+            # THE REPO SCRIPT OWNS THE TIERING, not this workflow. It knows which tools its
+            # own package list promises, so it can hard-fail on those and merely warn on the
+            # overlay/cargo/opt-in ones no run guarantees. Core cannot make that distinction
+            # for eight distros and does not try: it runs the command and honours the exit.
+            #
+            # NO SINGLE QUOTES in here, as above. The value arrives through the ENVIRONMENT
+            # rather than being interpolated into this block, so a caller string may contain
+            # anything without closing the sh -euc quote or injecting into it. This is the
+            # same shape PREP already uses; a foreign caller is no more trusted than the
+            # bootstrap.sh this job runs unstubbed by design.
+            if [ -n "$POSTCHECK" ]; then
+              echo ":: postcheck (declared by the repo under test): $POSTCHECK"
+              if sh -c "$POSTCHECK"; then
+                echo "postcheck passed — the box carries what this repo promises"
+              else
+                echo "POSTCHECK FAILED: bootstrap.sh returned 0 and the wiring survived, but this box is missing tools its own list promises" >&2
+                exit 1
+              fi
+            else
+              echo "NO postcheck declared for this leg — nothing here asserted that any package actually installed"
+            fi
           '
 
-      # Reporting only — the assertion itself ran in the container above, where the
-      # filesystem it checks still exists. This step reaching at all means the leg passed.
+      # Reporting only — the assertions themselves ran in the container above, where the
+      # filesystem they check still exists. This step reaching at all means the leg passed.
+      #
+      # IT MUST NOT CLAIM MORE THAN RAN. A leg with no postcheck was asserted on its exit
+      # code and its symlinks and nothing else, which is precisely the pass that hid two
+      # missing packages behind a green tick (#750). Say so, per leg, rather than printing
+      # one sentence that reads identically either way.
       - name: Record the leg in the run summary
         env:
           IMAGE: ${{ matrix.leg.image }}
+          POSTCHECK: ${{ matrix.leg.postcheck }}
         run: |
-          echo "bootstrap.sh returned 0 on $IMAGE with no stubbing, and the wiring survived" >>"$GITHUB_STEP_SUMMARY"
+          if [ -n "$POSTCHECK" ]; then
+            echo "$IMAGE: bootstrap.sh returned 0 with no stubbing, the wiring survived, and the repo postcheck passed" >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "$IMAGE: bootstrap.sh returned 0 with no stubbing and the wiring survived — NO postcheck declared, so nothing asserted the packages arrived" >>"$GITHUB_STEP_SUMMARY"
+          fi
 
   # A red run FILES AN ISSUE; it blocks nothing. See the posture note in the header.
   notify-failure:
@@ -200,4 +261,4 @@ jobs:
       workflow: real-bootstrap
       title: "ci-failure: the weekly real bootstrap is red"
       run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      details: "A genuinely unstubbed `./bootstrap.sh` failed on at least one distro image. This is the only gate that installs anything, so it is the only one that can see a wrong package name, a rotated repo key, a failure branch, or a step invoked by absolute path — check which leg went red before assuming an upstream mirror hiccup. Two failure shapes read differently: an exit 2 is a bootstrap that finished and REPORTED its own half-provisioned state, so the ledger it printed names the tools that did not install and is the place to start; a leg cancelled at its timeout is not a hang unless the log actually stalled — Gentoo builds from source and legitimately takes hours. Read the ledger or the last log lines before blaming a mirror."
+      details: "A genuinely unstubbed `./bootstrap.sh` failed on at least one distro image. This is the only gate that installs anything, so it is the only one that can see a wrong package name, a rotated repo key, a failure branch, or a step invoked by absolute path — check which leg went red before assuming an upstream mirror hiccup. Two failure shapes read differently: an exit 2 is a bootstrap that finished and REPORTED its own half-provisioned state, so the ledger it printed names the tools that did not install and is the place to start; a leg cancelled at its timeout is not a hang unless the log actually stalled — Gentoo builds from source and legitimately takes hours. Read the ledger or the last log lines before blaming a mirror. A third shape reads differently again: a POSTCHECK FAILED line means bootstrap.sh exited 0 and kept its symlinks, but the repo-declared far-side check found tools its own package list promises are not on the box — that is a genuine provisioning gap, not a blip, and the postcheck script names which tools."

@@ -93,9 +93,9 @@ _Repo status_ at the bottom).
 | op (1Password)¹³ | AUR               | vendor rpm    | vendor apk        | GURU¹²                     | vendor apt        | vendor apt    |
 | hyperfine²¹      | `hyperfine`       | `hyperfine`   | `hyperfine`       | `app-benchmarks/hyperfine` | `hyperfine`       | `hyperfine`   |
 | watchexec²¹ ²⁵   | `watchexec`       | `watchexec`   | `watchexec`       | cargo²⁵                    | cargo²⁵           | —²⁹           |
-| shellcheck²¹     | `shellcheck`      | `ShellCheck`  | `shellcheck`      | `dev-util/shellcheck`      | `shellcheck`      | `shellcheck`  |
+| shellcheck²¹     | `shellcheck`      | `ShellCheck`  | `shellcheck`      | `dev-util/shellcheck-bin`  | `shellcheck`      | `shellcheck`  |
 | shfmt⁷ ²¹        | `shfmt`           | `shfmt`       | `shfmt`           | go²¹                       | `shfmt`⁷          | `shfmt`       |
-| ouch²¹           | `ouch`            | `ouch`¹⁸      | testing¹⁴         | cargo²¹                    | cargo²¹           | —²⁹           |
+| ouch²¹           | `ouch`            | `ouch`¹⁸      | testing¹⁴         | GURU¹² ²¹                  | cargo²¹           | —²⁹           |
 | jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`     | `jujutsu`         | `dev-vcs/jj`²¹             | cargo²¹           | —²⁹           |
 | sesh⁹            | AUR⁹              | go⁹           | go⁹               | go⁹                        | go⁹               | go³           |
 | difftastic¹⁰     | `difftastic`      | `difftastic`  | `difftastic`      | `dev-util/difftastic`      | asset²⁸           | asset²⁸       |
@@ -249,6 +249,29 @@ and must not be added back**: `app-misc/gum` exists in neither GURU nor `::gento
 which reads like a keyword mask and gets "fixed" with an `accept_keywords` entry that unmasks
 nothing. That is exactly how it survived in `guru_install` for months; see ³⁰ for what provides
 gum on Gentoo now.
+
+**`ouch` is a GURU atom too, but it is NOT in that `guru_install` list** — it is opt-in, and
+`--no-extras` has to be able to skip it. `dotfiles-Gentoo` therefore has a third seam,
+`guru_extras_install`, for the one pairing neither existing list covers: overlay-sourced AND
+opt-in. It was `cargo install --locked ouch` until dotgibson/dotfiles-Gentoo#133, on the same
+upstream-latest reasoning `watchexec`²⁵ still carries. That reasoning does not survive contact
+here twice over. The cargo build **cannot succeed on a GCC/libstdc++ box at all**: ouch's
+default `unrar` feature pulls `unrar-ng-sys`, whose `build.rs` unconditionally adds
+`-stdlib=libc++`. And GURU's `app-arch/ouch` is 0.8.1 — the _same_ version as upstream's
+latest release, with a `src_prepare()` that seds exactly that flag out. So the route-around
+bought no version and cost the tool, on every run, silently.
+
+**`shellcheck` on Gentoo is `dev-util/shellcheck-bin`, and the `-bin` is load-bearing.**
+`dev-util/shellcheck` is the Haskell build: it needs `>=dev-haskell/aeson-1.4.0` and the rest
+of the GHC chain, every one `~arch`, so keywording _shellcheck_ alone unmasks nothing and the
+emerge still fails — while the `accept_keywords` file you were told to edit now carries the
+entry you were told to add. That is the `gum` trap above arriving from the other direction, and
+it is the more expensive one: reaching the source atom by hand costs ~60 `dev-haskell/*`
+keyword lines plus a GHC build. `dev-util/shellcheck-bin` is upstream's own static release,
+`KEYWORDS="-* amd64 ~arm arm64"` — **stable** on amd64 and arm64, so it needs no keyword line
+at all. Note the leading `-*`: on x86, ppc64 or riscv it is reachable only via `**`, never
+`~arch`. The two atoms block each other (`RDEPEND="!dev-util/shellcheck"`), so a box that
+already merged the source one must `emerge --unmerge dev-util/shellcheck` first.
 ¹³ op = **1Password CLI**. bootstrap.sh installs it from 1Password's official **signed** repo,
 which differs per family: dnf/rpm repo (Fedora/openSUSE), apt repo (Debian/Kali), apk repo
 (Alpine — a native musl build, so it's fine on the musl outlier), the AUR `1password-cli`
@@ -544,9 +567,9 @@ you:
 | Tool           | macOS `Brewfile` | Alpine             | Gentoo                                    | Arch / Debian / Fedora / openSUSE |
 | -------------- | ---------------- | ------------------ | ----------------------------------------- | --------------------------------- |
 | `hyperfine`    | ✓                | `hyperfine`        | `app-benchmarks/hyperfine`                | —                                 |
-| `shellcheck`   | ✓                | `shellcheck`       | `dev-util/shellcheck`                     | —                                 |
+| `shellcheck`   | ✓                | `shellcheck`       | `dev-util/shellcheck-bin`                 | —                                 |
 | `shfmt`        | ✓                | `shfmt`            | bootstrap, go⁷ (unconditional)            | —                                 |
-| `ouch`         | ✓                | bootstrap, cargo¹⁴ | bootstrap, cargo (extras)                 | openSUSE: `ouch`¹⁸; others —      |
+| `ouch`         | ✓                | bootstrap, cargo¹⁴ | bootstrap, `app-arch/ouch` (extras)       | openSUSE: `ouch`¹⁸; others —      |
 | `lnav`²⁴       | ✓                | `lnav`             | `app-admin/lnav`                          | —                                 |
 | `git-absorb`²⁶ | ✓                | `git-absorb`       | `dev-vcs/git-absorb`                      | —                                 |
 | `gping`¹⁹      | ✓                | `gping`            | bootstrap, `net-analyzer/gping` (GURU¹²)  | —                                 |

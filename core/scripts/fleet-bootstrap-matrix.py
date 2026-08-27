@@ -6,10 +6,16 @@ shimmed). Neither installs anything, so a wrong package name, a rotated repo key
 failure branch is invisible to both (dotgibson/dotfiles-core#589). The only thing that sees
 those is a real bootstrap on a real image — which is what the weekly job this feeds runs.
 
-The image and prep are READ FROM THE CALLER rather than listed here, deliberately. A frozen
-copy would drift from what the per-PR gate actually uses, and this repo has been burned by
-frozen counts before (#519 fixed eleven). If a repo bumps `image: fedora:latest` to something
-else, the weekly run follows it with no edit here.
+Every per-leg knob — image, prep, bootstrap_timeout, bootstrap_postcheck — is READ FROM THE
+CALLER rather than listed here, deliberately. A frozen copy would drift from what the per-PR
+gate actually uses, and this repo has been burned by frozen counts before (#519 fixed eleven).
+If a repo bumps `image: fedora:latest` to something else, the weekly run follows it with no
+edit here.
+
+bootstrap_postcheck is the one that closes #750: exiting 0 and keeping its symlinks is all the
+sweep could ever assert, so a box that emerged 131 packages and silently skipped two reported
+success. The postcheck is the repo-declared far-side check that says whether the tools are
+actually THERE. Absent for a repo that declares none, which is every repo until it opts in.
 
 Usage: fleet-bootstrap-matrix.py <fleet-root>   → JSON array on stdout
 """
@@ -60,6 +66,24 @@ def legs(repo_dir: pathlib.Path):
                     file=sys.stderr,
                 )
                 timeout = DEFAULT_TIMEOUT
+            # A postcheck is a STRING: a command the sweep runs with `sh -c` inside the
+            # container, on the far side of a real provision. Anything else is a caller typo —
+            # `bootstrap_postcheck: true` parses as a bool and would run `True` as a command,
+            # reddening the leg for a reason that has nothing to do with provisioning, which is
+            # precisely the false-accusation failure this lane must not have.
+            #
+            # Warn and treat as absent, the same degrade-do-not-crash trade the timeout above
+            # makes: one repo typo must not take the whole sweep down. It does not quietly
+            # delete coverage either — real-bootstrap.yml announces a postcheck-less leg in the
+            # run summary, so the gap is visible rather than reading as a clean pass.
+            postcheck = w.get("bootstrap_postcheck", "")
+            if not isinstance(postcheck, str):
+                print(
+                    f"::warning::{repo_dir.name}/{job}: bootstrap_postcheck is not a string "
+                    f"({postcheck!r}) — this leg will run with NO provisioning assertion",
+                    file=sys.stderr,
+                )
+                postcheck = ""
             yield {
                 "repo": repo_dir.name,
                 "leg": job,
@@ -68,6 +92,7 @@ def legs(repo_dir: pathlib.Path):
                 "prep": str(prep or ""),
                 "offensive": bool(w.get("offensive", False)),
                 "timeout": timeout,
+                "postcheck": postcheck.strip(),
             }
 
 
