@@ -11,13 +11,44 @@
 # at source time (the proven pattern from 10-options.zsh / 55-maint.zsh).
 typeset -g _CORE_VERSION_FILE="${${(%):-%x}:A:h:h}/core.version"
 
-# _core_install_prefix <mgr>  → the copy-pasteable "install" command prefix for a
-# package manager (the verb differs per distro: apt install / pacman -S / apk add / …).
-# Pure mapping, no probing — callers pass the manager from 60-update.zsh's _pkgup_mgr. Used
-# by core-doctor (U2) and the command-not-found handler (U1) to turn a missing tool into
-# an actionable line instead of a bare ✗. Unknown/none → non-zero, caller stays silent.
+# _core_install_prefix [mgr] → the copy-pasteable "install" command prefix for this box.
+# Used by core-doctor (U2) and the command-not-found handler (U1) to turn a missing tool
+# into an actionable line instead of a bare ✗. Non-zero when it cannot answer, and the
+# caller then stays silent rather than printing a half-line.
+#
+# THE DECLARED PATH FIRST. PKG_INSTALL is exactly this string, authored by the layer that
+# knows it, so a box with a declaration needs no mapping here — these were the last of the
+# 154 package-manager references Core carried in portable modules (#663/#667), and they
+# were the only ones left after `up` (#664) and the maint runner (#665) moved.
+#
+# IT ALSO FIXES A REACH THE MAPPING COULD NOT MAKE. $_CORE_CAP is populated at band 02, so
+# EVERY CORE_PROFILE has it — but the <mgr> token the case below needs comes from
+# 60-update.zsh's _pkgup_mgr, which is band 60 and absent under `minimal` and `standard`.
+# Both call sites therefore guarded on `$+functions[_pkgup_mgr]` and simply printed nothing
+# on a lean profile. On a declaring box the hint now works under every profile, which is
+# why the argument is OPTIONAL: callers that cannot name a manager may ask anyway.
 _core_install_prefix() {
-  case "$1" in
+  emulate -L zsh
+  # The declaration is authoritative when there is one — the same all-or-nothing rule
+  # _pkgup_verb applies, for the same reason: a declaration cannot mean anything if Core
+  # answers over the top of it.
+  if ((${+functions[_core_cap]})) && ((${#_CORE_CAP})); then
+    local _decl
+    _decl="$(_core_cap PKG_INSTALL)"
+    [[ -n "$_decl" ]] && { print -r -- "$_decl"; return 0 }
+  fi
+  # ════════════════════════════════════════════════════════════════════════════
+  # BUILT-IN DEFAULTS — DELETE THIS BLOCK IN #763.
+  # ════════════════════════════════════════════════════════════════════════════
+  # The undeclared box's answer, and the third of the three fallback blocks that retire
+  # together — the others are zsh/60-update.zsh's _CORE_CAP_FALLBACK and zsh/55-maint.zsh's
+  # _maint_unit_dir_default. All three exist for one reason: a declaration only reaches a
+  # box once bootstrap.sh has linked it, so between a Core fan-out and the box's next
+  # `--links-only` run there is a window in which $_CORE_CAP is empty. #667 authored the
+  # declarations; #763 deletes these once the fleet has actually re-bootstrapped.
+  #
+  # Pure mapping, no probing — callers pass the manager from 60-update.zsh's _pkgup_mgr.
+  case "${1:-}" in
   brew)   print -r -- "brew install" ;;
   pacman) print -r -- "sudo pacman -S" ;;
   dnf)    print -r -- "sudo dnf install" ;;
@@ -27,6 +58,7 @@ _core_install_prefix() {
   emerge) print -r -- "sudo emerge" ;;
   *)      return 1 ;;
   esac
+  # ════════════════════════════════════════════════════════════════════════════
 }
 
 # core-version — print the vendored Core layer's version. Lets you tell WHICH Core a
@@ -214,8 +246,11 @@ typeset -ga _CORE_DOCTOR_GROUPS=(
 # to stop.
 #
 # So the array below is NOT a placeholder awaiting that file. It is the DEFAULT a box falls
-# back to when its OS repo declares no TOOLS_OPTIN — which, until #667 stamps the fleet, is
-# still every box. #666 wired the doctor through $_CORE_CAP; this is what it falls back to.
+# back to when its OS repo declares no TOOLS_OPTIN. #667 authored the declarations, and
+# five of the seven deliberately omit this key — Arch, openSUSE and Alpine package jj and
+# ast-grep, and macOS and Fedora have no column in PORTING-MATRIX.md's footnote-21 table to
+# derive a delta from — so this array stays the live answer on most of the fleet rather
+# than a transitional one. #666 wired the doctor through $_CORE_CAP; this is the fallback.
 typeset -ga _CORE_DOCTOR_OPTIN=(
   lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
 )
@@ -680,8 +715,8 @@ _core_doctor_render() {
   done
 
   # Name the ✗'d tools and give THIS box's install verb (U2), so the reader is not left
-  # looking each one up. Gated on 60-update.zsh's _pkgup_mgr being loaded (it isn't in the
-  # unit harness, which sources ui+functions alone) and on a known manager.
+  # looking each one up. Silent when neither the declaration nor the manager probe can
+  # name one — a bare "install missing" with no verb is worse than no section.
   #
   # What this deliberately does NOT print is `<prefix> <every missing tool>` as one line.
   # That read as paste-ready and was not: apt/dnf/zypper/pacman all abort the WHOLE
@@ -694,9 +729,15 @@ _core_doctor_render() {
   # exclusion list cannot rescue it — and the alternative, a command→package map per
   # distro, is a rot-prone duplicate of PORTING-MATRIX.md, which is where that data lives.
   # So: print the names as names, the verb as a template, and point at the matrix.
-  if ((${#missing})) && (($+functions[_pkgup_mgr])); then
-    local _mgr _pfx
-    _mgr="$(_pkgup_mgr)"
+  #
+  # NO LONGER GATED ON _pkgup_mgr BEING LOADED. That probe is band 60, which `minimal` and
+  # `standard` omit, so this remedy used to vanish on a lean profile — while the ✗ rows it
+  # explains stayed. _core_install_prefix answers from the declaration first (band 02, in
+  # every profile) and only needs the manager token for an UNDECLARED box, so the token is
+  # now passed when it can be and omitted when it cannot.
+  if ((${#missing})); then
+    local _mgr="" _pfx
+    (($+functions[_pkgup_mgr])) && _mgr="$(_pkgup_mgr)"
     if _pfx="$(_core_install_prefix "$_mgr")"; then
       print -r -- "${c}install missing${r}"
       print -r -- "  ${d}${missing[*]}${r}"
@@ -1527,10 +1568,13 @@ if [[ $- == *i* ]] && ((CORE_CNF_ENABLED)); then
     _sug="$(_core_suggest "$cmd" $_verbs)"
     if [[ -n "$_sug" ]]; then
       _core_hint "did you mean ${_sug}?"
-    elif (($+functions[_pkgup_mgr])); then
-      # No near Core verb — offer an install path for THIS box's package manager.
-      local _pfx
-      _pfx="$(_core_install_prefix "$(_pkgup_mgr)")" && _core_hint "try: ${_pfx} ${cmd}"
+    else
+      # No near Core verb — offer an install path for THIS box's package manager. The
+      # declaration answers this in every CORE_PROFILE; _pkgup_mgr is band 60 and is only
+      # consulted as the undeclared box's fallback, so it is probed rather than required.
+      local _pfx _mgr=""
+      (($+functions[_pkgup_mgr])) && _mgr="$(_pkgup_mgr)"
+      _pfx="$(_core_install_prefix "$_mgr")" && _core_hint "try: ${_pfx} ${cmd}"
     fi
     return 127
   }

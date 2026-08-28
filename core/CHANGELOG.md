@@ -14,6 +14,96 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.4.1] - 2026-08-28
+
+### Fixed
+
+- **The `os.capabilities` fleet gate deadlocked the fan-out it depends on (#667).** §9c shipped
+  BLOCKING on a missing declaration, and `scripts/sync-core.sh` runs `make audit` over a fleet
+  checkout **before** it vendors anything — deliberately, so a red tree never reaches nine repos.
+  But a declaration cannot merge into an OS repo until that repo has vendored the Core whose
+  validator accepts it, and **that vendoring is the fan-out**. So the gate refused to fan out the
+  very release that would let the declarations land: v5.4.0 published, `sync-fanout` failed, and
+  zero vendor PRs opened.
+
+  The two findings now carry two severities. A **malformed** declaration still blocks — the repo
+  authored one and got it wrong, and no release cycle makes that acceptable. **No declaration at
+  all** is advisory for one cycle, then flips.
+
+  This is the same red-on-arrival shape §5f and `lint-call.yml`'s owned-block gate both name, and
+  both answer the same way. It is also the shape this change's _own_ `lint-call.yml` step already
+  got right — that step makes a missing declaration advisory and a malformed one blocking. The
+  asymmetry between the two halves was the defect, not the reasoning in the workflow.
+
+## [v5.4.0] - 2026-08-27
+
+### Added
+
+- **The fleet declares (#667).** #663 defined `os.capabilities` and #664/#665/#666 made `up`, the
+  maint runner and `core-doctor` dispatch through it — but **nothing had authored one**. All nine
+  repos lacked `os/<os>.capabilities`, so `blib_link_os_layer`'s `[[ -f ]]` guard linked nothing,
+  `$_CORE_CAP` was empty on every box, and all three consumers ran Core's built-in fallback rows.
+  The mechanism was live and unexercised for two releases. **Seven declarations** now exist,
+  transcribed from `PORTING-MATRIX.md` §"Package-manager commands" and cross-read against Core's
+  built-in rows, so a declaration that behaves differently from the row it replaces is a visible
+  diff rather than a silent one.
+
+  **Seven, not nine, and that is the answer to the question #667 left open.** `dotfiles-Offense`
+  and `dotfiles-Defense` have no `os/` directory and never call `blib_link_os_layer` — the OS band
+  belongs to the repo underneath them — so they declare nothing and inherit the OS layer's table.
+
+- **`audit-core.sh` §9c — fleet coverage.** §9a holds Core's shipped example to the schema; this
+  holds the repos that run on real boxes to it. It is the half that matters for the failure above:
+  a per-repo `make lint` catches a _broken_ declaration, but only a fleet sweep catches a _missing_
+  one — a repo that never authored a file has nothing for a per-repo target to fail on, and the
+  absence is invisible from inside it. The Role-repo exemption is **structural** (does this repo
+  have an `os/` directory) rather than a name list, so a repo that grows an OS band starts being
+  gated automatically, and per-tier declarations are picked up without the gate knowing they exist.
+
+- **`scripts/new-os-repo.sh` scaffolds a schema-valid declaration.** The script already centralised
+  the load order _"so a scaffolded repo can never start out of order"_; the capability table is the
+  same argument, and a repo scaffolded without one boots onto the fallbacks and **looks fine** —
+  which is precisely how the fleet reached nine repos and zero declarations. The stub carries every
+  required key (so `make capabilities` is green on day one) with Fedora's values and a banner saying
+  they are wrong anywhere else. The optional keys are deliberately **not** stubbed: in this schema an
+  omission is a statement, so pre-declaring them would hand every new repo the permissive answer.
+
+### Changed
+
+- **`_core_install_prefix` reads `PKG_INSTALL` (#667).** The last **17** of the 154 package-manager
+  references Core carried in portable modules. It also fixes a reach the mapping could not make: the
+  `<mgr>` token came from `_pkgup_mgr`, which is band 60 and absent under `CORE_PROFILE=minimal` and
+  `standard`, so `core-doctor`'s "install missing" remedy and the command-not-found hint printed
+  **nothing** on a lean profile while the `✗` rows they explain stayed. `$_CORE_CAP` is band 02 and
+  in every profile, so on a declaring box both now work everywhere.
+
+- **`scripts/new-os-repo.sh` vendors `refs/tags/v5`, not `v4`.** Unrelated to the above and found
+  next to it: a repo scaffolded today pinned a Core **a major behind** — one with no capability
+  dispatch at all, so the stub it now writes would have had nothing to dispatch through.
+
+### Fixed
+
+- **Two comments that named a key the schema has never had.** `zsh/55-maint.zsh` and its
+  `audit-core.sh` §5c note both said `SCHEDULER_UNIT_PATH`; the key is `SCHEDULER_UNIT_DIR`, and the
+  DIRECTORY-not-path distinction is the whole reason it exists — Core appends its own unit name so
+  the unit it writes cannot be decoupled from the one it enables.
+
+### Note
+
+- **The built-in fallbacks are NOT deleted here.** Three blocks say "DELETE THIS BLOCK IN #667";
+  they now say #763. A declaration reaches a box only once `bootstrap.sh` has **linked** it, and
+  that is a separate event from the Core fan-out that delivers this release — so deleting them here
+  would leave `up` answering "this archive does not offer that" on every host that pulled and had
+  not re-run `./bootstrap.sh --links-only`. #763 does the demolition, gated on evidence that the
+  fleet has actually re-bootstrapped rather than on elapsed time.
+
+- **No clipboard capability key, superseded rather than skipped.** #667 listed
+  `PORTING-MATRIX.md` §"Clipboard packages to install" as a transcription source; #663 had already
+  decided otherwise and the schema rejects such a key. `bin/clip` is re-exec'd by nvim and tmux on
+  every yank and paste, and its WSL probe was already rewritten once to avoid forking a `grep` per
+  invocation — a file read and parse there would give back exactly what that bought, for a value
+  that changes once per machine. The matrix now records this so it is not re-opened.
+
 ## [v5.3.0] - 2026-08-27
 
 ### Changed

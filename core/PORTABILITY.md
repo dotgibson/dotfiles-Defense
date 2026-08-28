@@ -151,7 +151,7 @@ machines; a missing optional tool is a visible, local degradation.
 **`zsh/55-maint.zsh`** is excepted **at the gate**, and since #665 that exception is one
 block wide and has a retirement date. The scheduler and its unit directory are declared
 (`SCHEDULER`, `SCHEDULER_UNIT_DIR`), so `~/Library/LaunchAgents` survives only in the
-built-in fallback for a box that has not declared yet; #667 deletes it and the §5c
+built-in fallback for a box that has not declared yet; #763 deletes it and the §5c
 exception together. The plist and unit **templates** stay — they are portable text
 parameterised by paths, selected by `_maint_scheduler`, and duplicating a systemd unit
 across seven repos is the #449 drift this document exists to prevent. §5c drops only the
@@ -168,7 +168,8 @@ Since #664 it is a **dispatcher**: the verb stays, and what it runs is resolved 
 `_pkgup_verb` from the OS layer's `os.capabilities` declaration. That is the pattern this
 document already asks for — one verb, N backends — with the backends pushed outward
 rather than branched on inline. Core still carries a built-in defaults table as a stopgap
-until #667 stamps the fleet; see `ARCHITECTURE.md` for why, and for when it goes.
+until every box has re-bootstrapped onto the declarations #667 authored; see
+`ARCHITECTURE.md` for why, and #763 for when it goes.
 
 `*.example` files are also skipped: they are user-edited illustrations, not live config.
 

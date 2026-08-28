@@ -744,9 +744,12 @@ blib_link_os_layer() {
   # against the rest of the chain; a declaration is read on demand by whoever wants it,
   # so a band number would only imply a load position it does not have.
   #
-  # The [[ -f ]] guard is the migration path: until an OS repo authors its declaration
-  # (#667) nothing is linked, Core's 02-capabilities.zsh stays SILENT, and every existing
-  # hardcoded ladder keeps working. Absence is enforced by the audit, not by bootstrap.
+  # The [[ -f ]] guard was the migration path while no OS repo had authored a declaration.
+  # #667 authored them, so on a synced repo this now links — and the guard keeps its second
+  # job: it is what makes a Role repo (no os/ band) and a partially-synced checkout a no-op
+  # rather than an error. A box that has not re-bootstrapped simply has no symlink, Core's
+  # 02-capabilities.zsh stays SILENT, and every existing hardcoded ladder keeps working
+  # until #763 retires it. Presence is enforced by the audit (§9c), not by bootstrap.
   #
   # "warns once" is what this comment used to claim, and it was false twice over (#715):
   # there is no once-per-box state anywhere in that fragment, and the warning fired on

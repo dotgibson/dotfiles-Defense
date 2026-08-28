@@ -8829,8 +8829,24 @@ not an assignment at all
 PKG_EMPTY=
 SCHEDULER=systemd
 CAPS
-  printf 'PKG_TRAILING=dnf provides   \n' >>"$CAPD/good"
-  printf 'PKG_SEARCH=dnf whatprovides\n' >>"$CAPD/good"   # duplicate: LAST wins
+  # Appended by printf rather than written in the heredoc above, because each of these
+  # carries something a quoted heredoc would make invisible or a reader would "tidy":
+  # trailing spaces, a deliberate duplicate, and a lone metacharacter.
+  #
+  # THE LONE METACHARACTER IS NOT HYPOTHETICAL: since #667 dotfiles-openSUSE declares
+  # `PKG_PENDING_FS=|` — zypper's list-updates prints a pipe-delimited table and is the
+  # only archive in the fleet whose count output is not whitespace-separated. The reader
+  # must store it as DATA; a `|` that reached a shell as syntax would be a parse error at
+  # login, on a box you are very likely SSH'd into to fix something else. Nothing else in
+  # this fixture has a value that is pure punctuation.
+  #
+  # Grouped into one redirect: three consecutive `>>` to the same file is SC2129, and this
+  # suite is held to the same shellcheck run as the rest of the repo.
+  {
+    printf 'PKG_TRAILING=dnf provides   \n'
+    printf 'PKG_SEARCH=dnf whatprovides\n'   # duplicate: LAST wins
+    printf 'PKG_PENDING_FS=|\n'
+  } >>"$CAPD/good"
 
   # A multi-word value is the whole reason this is not blib_read_pkgs (which strips ALL
   # whitespace); interior spacing must survive verbatim.
@@ -8840,6 +8856,8 @@ CAPS
     "$(_cap_probe "$CAPD/good" 'print -r -- "[$_CORE_CAP[PKG_TRAILING]]"')" "[dnf provides]"
   _cap_is "duplicate key: the last one wins" \
     "$(_cap_probe "$CAPD/good" 'print -r -- "[$_CORE_CAP[PKG_SEARCH]]"')" "[dnf whatprovides]"
+  _cap_is "a lone metacharacter value is data, not syntax (zypper's PKG_PENDING_FS)" \
+    "$(_cap_probe "$CAPD/good" 'print -r -- "[$_CORE_CAP[PKG_PENDING_FS]]"')" "[|]"
   # Junk must not merely be tolerated — it must be ABSENT. A lowercase or mixed-case key
   # half-parsed into the table would be a capability nothing ever reads and nothing reports.
   #
@@ -8851,7 +8869,7 @@ CAPS
   # no expansion-flag subtlety at all; LC_ALL=C pins collation across the four CI legs.
   _cap_keys="$(_cap_probe "$CAPD/good" 'print -rl -- ${(k)_CORE_CAP}' | LC_ALL=C sort | tr '\n' ' ')"
   _cap_is "only well-formed KEYS land in the table" "${_cap_keys% }" \
-    "PKG_EMPTY PKG_INSTALL PKG_SEARCH PKG_TRAILING SCHEDULER"
+    "PKG_EMPTY PKG_INSTALL PKG_PENDING_FS PKG_SEARCH PKG_TRAILING SCHEDULER"
   # The parser's scratch variables must not leak into the interactive shell. They cannot be
   # `local` (the fragment is sourced at top level), so the explicit unset is load-bearing.
   _cap_is "parser scratch vars do not leak" \
@@ -8895,11 +8913,20 @@ CAPS
   # regression nobody notices until it is vendored out.
   _cap_quiet_err="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; source '$HERE/zsh/02-capabilities.zsh'" 2>&1 >/dev/null)"
   _cap_is "a missing declaration is SILENT by default (no CORE_CAP_LOUD)" "[$_cap_quiet_err]" "[]"
-  # The hint must point at AUTHORING the declaration. It used to say `--links-only`, which
-  # re-runs the same `[[ -f ]]` guard that skipped the link — advice that cannot work.
+  # The hint must name a remedy that can actually work. It once said `--links-only` ALONE,
+  # which re-ran the same `[[ -f ]]` guard that skipped the link — advice that could not
+  # work while no repo had authored a declaration. Since #667 every OS repo has one, so
+  # `--links-only` IS the remedy for a box that has not re-bootstrapped; the example is
+  # still named for the case where the repo genuinely has no declaration. Both must appear,
+  # because from inside the shell the two cases are indistinguishable.
   _cap_hint="$(zsh -f -c "CORE_CAPABILITIES_FILE='$CAPD/does-not-exist'; CORE_CAP_LOUD=1; source '$HERE/zsh/02-capabilities.zsh'" 2>&1 >/dev/null)"
   case "$_cap_hint" in
-    *"os.capabilities.example"*) pass "capabilities: the warning points at authoring a declaration" ;;
+    *"os.capabilities.example"*)
+      case "$_cap_hint" in
+        *"--links-only"*) pass "capabilities: the warning names both remedies (relink, and authoring)" ;;
+        *) fail "capabilities: the warning names the example but not --links-only — got [$_cap_hint]" ;;
+      esac
+      ;;
     *) fail "capabilities: the warning should name the example file — got [$_cap_hint]" ;;
   esac
 
@@ -11245,7 +11272,8 @@ ucheck "maint: _maint_scheduler resolves to a valid scheduler" \
   "source '$UI'; source '$MNT'; [[ \$(_maint_scheduler) == (systemd|launchd|cron) ]]" \
   PATH="$PMBIN"
 # ── maint dispatches through os.capabilities (#665) ──────────────────────────
-# The probe above is what an UNDECLARED box uses, and until #667 that is every box — so it
+# The probe above is what an UNDECLARED box uses, and that is every box that has not yet
+# re-bootstrapped onto the declaration #667 authored for it — so it
 # must keep working. These pin the other half: that a declaration is what actually decides,
 # because a dispatcher nothing ever dispatches through looks identical to one that works.
 CAPD_MNT="$SANDBOX/capmnt"
@@ -12164,7 +12192,8 @@ ucheck "update: dnf's exit 100 (updates EXIST) is not read as a failure" \
 # ── update.zsh dispatches through os.capabilities (#664) ──────────────────────
 # The block above proves the built-in defaults still parse every archive identically. This
 # one proves the OTHER half: that a DECLARATION is what actually drives `up`, because until
-# #667 stamps the fleet no box has one and the built-ins would happily hide a dispatcher
+# a box re-bootstraps onto the declaration #667 authored it has none, and the built-ins
+# would happily hide a dispatcher
 # that never reads the table at all.
 #
 # Every stub here prints its own argv, so the assertion is on the exact command line `up`

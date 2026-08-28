@@ -31,7 +31,7 @@ CORE_REMOTE="${CORE_REMOTE:-$(git -C "$HERE" remote get-url origin 2>/dev/null |
 # exact commit a release tag points at, so a tree vendored from whatever `main` happened
 # to be is not a commit any core.lock would record — and core-integrity reports the fresh
 # subtree as TAMPERED before the repo has done anything wrong (#588).
-CORE_BRANCH="${CORE_BRANCH:-refs/tags/v4}"
+CORE_BRANCH="${CORE_BRANCH:-refs/tags/v5}"
 
 usage() {
   cat <<'EOF'
@@ -46,7 +46,7 @@ Scaffold a new OS repo that vendors Core: subtree-add core/, then write a correc
   --no-vendor    scaffold the files but skip the `git subtree add` (do it yourself later)
 
 Env: CORE_REMOTE (default: this repo's origin)
-     CORE_BRANCH (default: refs/tags/v4 — a RELEASED tag, never main; pin a specific
+     CORE_BRANCH (default: refs/tags/v5 — a RELEASED tag, never main; pin a specific
                   vX.Y.Z to freeze the tree at a known version)
 EOF
 }
@@ -191,6 +191,71 @@ w "$TARGET/os/$os_lc.zsh" <<EOF
 # and the reusable lint workflow now flags a duplicate. See VENDORING.md.
 EOF
 
+# ── OS capability declaration stub (#663/#667) ────────────────────────────────
+# THE SAME ARGUMENT AS THE LOAD ORDER ABOVE. This script centralises the canonical
+# module order in ONE place so a scaffolded repo can never start out of order; the
+# capability table is the other thing a repo cannot be correct without and cannot
+# discover for itself. A repo scaffolded without one boots into Core's built-in
+# fallback rows and looks fine — which is exactly how the fleet ended up with nine
+# repos and zero declarations for two releases after the schema landed.
+#
+# SCHEMA-VALID FROM BIRTH, so `make capabilities` and Core's audit §9c are green on
+# day one and the author edits values rather than fighting a red gate. Every REQUIRED
+# key is present; the values are dnf's and are WRONG for any other archive, which the
+# banner says in the one place someone will actually read it.
+#
+# The optional keys are deliberately NOT stubbed out as commented placeholders. In this
+# schema an OMISSION IS A STATEMENT — no PKG_ASSUME_YES means "never auto-confirm", no
+# PKG_UPGRADE_PARTIAL means "`up -i` refuses", no MAINT_UNATTENDED_UPGRADE means
+# "refuse" — so a stub that pre-declares them would hand every new repo the permissive
+# answer by default. Point at the example instead; it documents all of them.
+w "$TARGET/os/$os_lc.capabilities" <<EOF
+# os/$os_lc.capabilities — the $OS capability declaration (Core v5, #663).
+#
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │ REPLACE EVERY VALUE BELOW. They are FEDORA's (dnf), copied so this file   │
+# │ satisfies the schema from birth — they are NOT defaults and nothing in    │
+# │ Core falls back to them. On any other archive they are simply wrong.      │
+# └──────────────────────────────────────────────────────────────────────────┘
+#
+# Read (never sourced) by Core's zsh/02-capabilities.zsh into \$_CORE_CAP, and by
+# core/maint/dotfiles-maint.sh, which is bash. bootstrap.sh links it to
+# \$ZDOTDIR/os.capabilities.
+#
+# core/PORTING-MATRIX.md §"Package-manager commands" tabulates all seven archives and
+# is the transcription source. core/examples/os.capabilities.example documents every
+# key, including the OPTIONAL ones this stub deliberately omits — in this schema an
+# omission is a STATEMENT (no PKG_ASSUME_YES = never auto-confirm; no
+# PKG_UPGRADE_PARTIAL = \`up -i\` refuses; no MAINT_UNATTENDED_UPGRADE = refuse), so
+# read that file before adding one.
+#
+# Validate with:  core/scripts/check-capabilities.sh os/$os_lc.capabilities
+#
+# A \`#\` INSIDE A VALUE IS NOT A COMMENT — the reader keeps it. Notes go above.
+
+# ── package-manager verbs (all required) ──────────────────────────────────────
+PKG_REFRESH=sudo dnf check-update
+# The INTERACTIVE upgrade verb — no auto-confirm flag here; that is PKG_ASSUME_YES.
+PKG_UPGRADE=sudo dnf upgrade --refresh
+PKG_INSTALL=sudo dnf install -y
+PKG_REMOVE=sudo dnf remove -y
+PKG_SEARCH=dnf search
+PKG_OWNS=dnf provides
+# What \`up\`'s once-a-day "N updates available" nudge counts, and the verb that
+# diverges most across archives. Non-root and non-mutating, always.
+PKG_COUNT_PENDING=dnf -q --refresh check-update
+
+# ── scheduler (required) ──────────────────────────────────────────────────────
+# systemd | launchd | cron | none. \`cron\` is what an OpenRC box gets; \`none\` is a
+# real answer (a container) and tells the maint layer to offer the manual verb
+# rather than claim a timer it cannot install.
+SCHEDULER=systemd
+# REQUIRED for systemd and launchd; cron and none take NONE. A DIRECTORY, not a full
+# path — Core appends its own unit name. An OS-absolute path is CORRECT here and
+# wrong in Core, which is this key's whole point.
+SCHEDULER_UNIT_DIR=~/.config/systemd/user
+EOF
+
 # ── starter bootstrap ─────────────────────────────────────────────────────────
 w "$TARGET/bootstrap.sh" <<EOF
 #!/usr/bin/env bash
@@ -225,6 +290,10 @@ link() { # link <src> <dest> — back up a real file once, then symlink
 # Core zsh modules + entry layer
 for f in "\$REPO"/core/zsh/*.zsh; do link "\$f" "\$CFG/zsh/\$(basename "\$f")"; done
 link "\$REPO/os/$os_lc.zsh" "\$CFG/zsh/80-os.zsh"
+# The capability DECLARATION. Un-numbered and not a .zsh on purpose: the loader globs
+# [0-9][0-9]-*.zsh, so this is never sourced into your shell — it is DATA that Core
+# READS, which is what keeps a per-repo file off the code-execution path.
+link "\$REPO/os/$os_lc.capabilities" "\$CFG/zsh/os.capabilities"
 link "\$REPO/zsh/zshenv.zsh"   "\$HOME/.zshenv"
 link "\$REPO/zsh/zprofile.zsh" "\$CFG/zsh/.zprofile"
 link "\$REPO/zsh/zshrc.zsh"    "\$CFG/zsh/.zshrc"
@@ -262,6 +331,26 @@ w "$TARGET/README.md" <<EOF
 
 The $OS machine repo. Vendors [Core](../dotfiles-core) under \`core/\` (git subtree)
 and adds the $OS-native layer (\`os/$os_lc.zsh\`, package manager, paths).
+
+## The capability declaration
+
+\`os/$os_lc.capabilities\` tells Core how THIS archive updates: the package-manager
+verbs, the scheduler, and which tools are opt-in here. Core's \`up\`, its maintenance
+runner and \`core-doctor\` all dispatch through it, so it is the file that stops Core
+from carrying $OS knowledge it has no business having.
+
+**The scaffold shipped Fedora's values.** Replace them —
+\`core/PORTING-MATRIX.md\` §"Package-manager commands" tabulates every archive, and
+\`core/examples/os.capabilities.example\` documents every key. Then:
+
+\`\`\`bash
+core/scripts/check-capabilities.sh os/$os_lc.capabilities
+\`\`\`
+
+In this schema an **omission is a statement**: no \`PKG_ASSUME_YES\` means never
+auto-confirm, no \`PKG_UPGRADE_PARTIAL\` means \`up -i\` refuses, and no
+\`MAINT_UNATTENDED_UPGRADE\` means the scheduled runner will not apply system upgrades
+here. Leave a key out to mean those things; do not add one to be helpful.
 
 ## Install
 
@@ -303,6 +392,11 @@ else
     git add -A && git commit -m "scaffold dotfiles-$OS"
     ./bootstrap.sh            # wire the symlinks
     \$EDITOR os/$os_lc.zsh     # add your $OS-native bits
+
+  THEN FIX THE CAPABILITY DECLARATION — it was scaffolded with FEDORA's verbs so the
+  schema is satisfied from birth, and they are wrong for any other archive:
+    \$EDITOR os/$os_lc.capabilities
+    core/scripts/check-capabilities.sh os/$os_lc.capabilities
 
   then, back in dotfiles-core — REGISTER IT, or the fleet never sees this repo:
     echo dotfiles-$OS >> scripts/os-repos.txt   # one line; keep the list sorted

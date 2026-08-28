@@ -341,6 +341,78 @@ jobs:
           fi
           echo "${#files[@]} repo-owned .zsh — none re-implements a Core-owned block"
 
+      # ── BLOCKING: the OS capability declaration validates against Core's schema.
+      #
+      # WHY HERE AND NOT IN EACH REPO'S `make lint`. Every declaring repo does have a
+      # `capabilities` target, and it runs the SAME script — but no OS repo's CI invokes
+      # `make` at all: they all call this reusable workflow instead. A gate that only fires
+      # when someone types `make lint` locally is not a gate on the fleet, and the whole
+      # argument for shipping the validator as a standalone taking a PATH was "nine repos
+      # gated by one definition of the schema" (see check-capabilities.sh's header).
+      # This is that one definition actually reaching them.
+      #
+      # NEEDS NO PINNED TOOL — it is bash, like the RETURN-trap and owned-block legs.
+      #
+      # THE VALIDATOR IS THE CALLER'S VENDORED COPY, not $CORE_ROOT's. That is deliberate:
+      # a repo must be gated by the schema IT vendors, so a declaration cannot be validated
+      # against a Core the repo has not adopted yet. It also makes the failure legible —
+      # "your core/ is older than this key" is a sync problem, and reading Core's checkout
+      # here would hide exactly that.
+      #
+      # A repo with no os/ directory (the Role repos) and one whose vendored Core predates
+      # the validator both skip cleanly: there is nothing to check, not a silent pass on
+      # something unchecked — the two are distinguished in the output.
+      - name: os.capabilities (schema — Core v5 #663/#667)
+        working-directory: caller
+        run: |
+          chk=core/scripts/check-capabilities.sh
+          if [ ! -x "$chk" ]; then
+            echo "no vendored $chk — this repo's core/ predates the v5 capability schema; nothing to check"
+            exit 0
+          fi
+          # Unmatched globs stay LITERAL in sh, so every hit is -e tested before use.
+          # Without that this would "validate" a file named os/*.capabilities and pass on
+          # nothing, which is the one outcome a coverage check must never produce.
+          found=0 rc=0
+          for f in os/*.capabilities; do
+            [ -e "$f" ] || continue
+            found=$((found + 1))
+            if [ -r install/packages.txt ]; then
+              "$chk" "$f" --packages install/packages.txt || rc=1
+            else
+              # dotfiles-MacBook declares its packages in a Brewfile; feeding that to a
+              # reader that takes the first token of each line would test `brew` against
+              # `brew` and report nonsense. The cross-check is opt-in for that reason.
+              "$chk" "$f" || rc=1
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            # TWO DIFFERENT ZEROS, and conflating them would report the wrong thing about
+            # whichever repo is not the one you assumed. No os/ directory is a ROLE repo:
+            # correct, permanent, nothing to declare. An os/ directory with no declaration
+            # is an OS repo that has not authored one yet.
+            if [ ! -d os ]; then
+              echo "no os/ directory — a Role repo layers on an OS repo and has no OS band to declare for"
+              exit 0
+            fi
+            # ADVISORY, not blocking, and the same reasoning as the owned-block leg above:
+            # this lands in the fleet one Core release BEFORE the declarations do, so a
+            # blocking check here would be red-on-arrival on every OS repo, which is how a
+            # gate gets switched off. audit-core.sh §9c is the BLOCKING backstop — it sweeps
+            # the fleet from Core, where the declarations cannot be missing unnoticed.
+            echo "::warning::this repo has an os/ band but no os/*.capabilities — Core is running its built-in fallback rows here"
+            echo "Author one: see core/examples/os.capabilities.example and core/PORTING-MATRIX.md"
+            echo "(dotgibson/dotfiles-core#663 defines the schema, #667 stamped the fleet)"
+            exit 0
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::os.capabilities does not satisfy Core's schema (see the FAIL lines above)"
+            echo "The schema is core/scripts/check-capabilities.sh — that script IS the definition."
+            echo "core/examples/os.capabilities.example documents every key."
+            exit 1
+          fi
+          echo "$found declaration(s) validate against the vendored schema"
+
       # ── ADVISORY: formatting vs a 2-space indent spec (matching core/.editorconfig).
       # The if/else swallows shfmt's drift exit so the step is non-blocking WITHOUT
       # continue-on-error (a genuine install failure still reds).
