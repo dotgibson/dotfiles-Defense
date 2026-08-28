@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**105 rules · 123 detection documents · 80 techniques · 12 tactics · 24 logsources.**
+**106 rules · 124 detection documents · 80 techniques · 12 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
@@ -11,8 +11,8 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Initial Access | TA0001 | 1 | 2 |
 | Execution | TA0002 | 7 | 8 |
 | Persistence | TA0003 | 16 | 37 |
-| Privilege Escalation | TA0004 | 9 | 11 |
-| Stealth | TA0005 | 2 | 2 |
+| Privilege Escalation | TA0004 | 9 | 12 |
+| Stealth | TA0005 | 3 | 3 |
 | Defense Impairment | TA0112 | 7 | 12 |
 | Credential Access | TA0006 | 17 | 19 |
 | Discovery | TA0007 | 14 | 6 |
@@ -57,7 +57,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1098.004 | 1 | `ssh_authorized_keys_write` |
 | T1110.003 | 1 | `password_spray_4625` |
 | T1114.003 | 1 | `gws_external_mail_forwarding` |
-| T1134.001 | 2 | `potato_seimpersonate_4688`, `potato_seimpersonate_sysmon_1` |
+| T1134.001 | 3 | `potato_seimpersonate_4688`, `potato_seimpersonate_sysmon_1`, `spoolss_pipe_impersonation_sysmon_17` |
 | T1135 | 3 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1136.001 | 1 | `rogue_account_creation_4720` |
 | T1136.002 | 2 | `machine_account_creation_burst_4741`, `rogue_account_creation_4720` |
@@ -127,7 +127,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `npm` | `npm` | 3 |
 | `okta` | `okta` | 3 |
 | `persistence` | `windows` | 4 |
-| `privilege_escalation` | `windows` | 5 |
+| `privilege_escalation` | `windows` | 6 |
 | `pypi` | `pypi` | 3 |
 | `registry` | `harbor` | 3 |
 | `slack` | `slack` | 3 |

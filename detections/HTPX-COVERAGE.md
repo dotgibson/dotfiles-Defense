@@ -73,7 +73,7 @@ Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `dete
 | `okta-idp-audit` | T1556 | `okta_idp_created` |
 | `okta-mfa-reset-audit` | T1556.006 | `okta_mfa_factor_reset` |
 | `password-spray-4625` | T1110.003 | `password_spray_4625` |
-| `potato-seimpersonate-4688` | T1134.001 | `potato_seimpersonate_4688`, `potato_seimpersonate_sysmon_1` |
+| `potato-seimpersonate-4688` | T1134.001 | `potato_seimpersonate_4688`, `potato_seimpersonate_sysmon_1`, `spoolss_pipe_impersonation_sysmon_17` |
 | `pypi-publish-audit` | T1195.002 | `pypi_token_release_upload` |
 | `pypi-role-audit` | T1098 | `pypi_collaborator_added` |
 | `pypi-trusted-publisher-audit` | T1098 | `pypi_trusted_publisher_added` |

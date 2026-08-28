@@ -24,6 +24,32 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **`spoolss_pipe_impersonation_sysmon_17` — the one hole where the telemetry was already
+  enabled and no rule consumed it (#225).** `detections/sysmon/sysmonconfig-detection-lab.xml`
+  has collected Sysmon PipeEvent 17/18 on five pipe names since it was written, with a
+  comment saying it exists to corroborate `potato_seimpersonate` — and no Sigma rule
+  selected it. Both potato rules told the analyst to "confirm the SYSTEM outcome with
+  Sysmon 17/18 on the spoolss/DCOM named pipe", which was an instruction to go read
+  telemetry the corpus collected and had no detection for. The ingestion was done ahead of
+  the detection and the detection never followed.
+  The new rule closes that. Its invariant is ownership rather than content: legitimate
+  `spoolss` pipes are created by the print spooler, and PrintSpoofer-class tools stand up
+  their *own* pipe and coerce the spooler into connecting to it, so a non-spooler process
+  creating one is the anomaly. That is a shape, not an IOC — it survives renaming the
+  binary. It is pinned to `EventType: CreatePipe` deliberately: `category: pipe_created`
+  resolves to 17 *and* 18, but the only connect the attack generates is the spooler binding
+  back, which the rule's own `spoolsv.exe` filter removes — so everything surviving the
+  filter on 18 would be ordinary print traffic. Signal on 17, noise on 18.
+- **This reverses the standing decision in #223/#224, on the terms that decision set.** Those
+  issues declined the TA0005 (Stealth) half of T1134.001 for the `potato_seimpersonate` pair
+  because what the pair selects is a service identity spawning a shell — the shape *before*
+  the token is stolen — and recorded a reopen condition: a rule that actually detects the
+  impersonation "earns the TA0005 half on its own evidence, and should take it". This is
+  that rule, and it takes both tactic tags. The pair still declines, and
+  `DEFENSE-METHODOLOGY.md` now records the argument as settled rather than pending; the
+  4624/4672 token-context half of the reopen condition remains open. Ledger:
+  `Stealth TA0005 2 | 2 -> 3 | 3`, `Privilege Escalation TA0004 9 | 11 -> 9 | 12`.
+
 - **`htpx-drift.yml` — a weekly question about the pinned corpus, and a correction to what
   #202 claimed.** Pinning htpx (`detections/htpx.pin`) is what makes `check-htpx-pairing.sh`
   reproducible, and it opens one specific hole: **the gate reads the pinned sha, but the

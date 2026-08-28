@@ -93,8 +93,11 @@
       </RegistryEvent>
     </RuleGroup>
 
-    <!-- Events 17/18: PipeEvent — corroborates potato_seimpersonate (spoolss/DCOM
-         coercion pipes) and named-pipe lateral movement. -->
+    <!-- Events 17/18: PipeEvent — feeds spoolss_pipe_impersonation_sysmon_17, which
+         fires on a spoolss pipe CREATED by anything other than the spooler; also
+         corroborates potato_seimpersonate (spoolss/DCOM coercion pipes) and named-pipe
+         lateral movement. Note this is an include list: the rule only ever sees the
+         five pipe names below. -->
     <RuleGroup name="pipe-events" groupRelation="or">
       <PipeEvent onmatch="include">
         <PipeName condition="contains">spoolss</PipeName>

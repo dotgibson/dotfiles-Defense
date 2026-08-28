@@ -30,7 +30,7 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Offens
 | Recon / Discovery        | Zeek, 4688/4769, 4798/4799, 5145                                  | network, sigma        | recon / Kerberoast folds                                             |
 | Credential Access        | Sysmon 10, 4625/4771                                              | sysmon, sigma         | Responder / cracking folds                                           |
 | Lateral Movement         | 4624 type 3, Zeek SMB                                             | sigma, network        | lateral-movement fold                                                |
-| Priv Esc / Persistence   | Sysmon 1/13, 4720/7045                                            | sysmon, sigma         | LOLBAS / persistence folds                                           |
+| Priv Esc / Persistence   | Sysmon 1/13/17, 4720/7045                                         | sysmon, sigma         | LOLBAS / persistence folds                                           |
 | Coercion / Relay / AD CS | 5145 pipes, 4886 SAN                                              | siem                  | coercion → relay → DC fold                                           |
 | Collection               | 4663 file reads, 4688 archive cmds                                | sigma                 | collection / exfil fold                                              |
 | Exfil / C2               | Suricata, Zeek conn/dns/ssl                                       | network               | reverse-shell / pivot folds                                          |
@@ -81,33 +81,48 @@ gap be ledgered instead: T1070 is already covered by
 Both rules were written; they land in different rows, and that is correct rather than a
 mistag.
 
-Stealth stays thin at two techniques, and that is an honest reading of the corpus rather
-than an artifact of tagging. Of the 78 techniques covered before this row existed,
-exactly two are ones ATT&CK v19 places in TA0005: T1070 and T1134.001 (dual-tactic with
-Privilege Escalation, where the `potato_seimpersonate_*` pair tags it). The rest of
+Stealth is three techniques and three rules, and that is an honest reading of the corpus
+rather than an artifact of tagging. Two of them — T1070 and T1070.003 — are the command-
+history and artifact-removal work described above. The third is T1134.001, and it arrived
+by the route this section reserved for it rather than by a tag: see below. The rest of
 TA0005 is masquerading, obfuscation, process injection and LOLBAS proxy execution — a
-body of work this repo has not started, not one it has misfiled.
+body of work this repo has not started, not one it has misfiled. The row being one wider
+is not the gap closing.
 
-**It stays thin on purpose, and #223 settled that.** Because T1134.001 is dual-tactic,
-the `potato_seimpersonate_*` pair could legally claim the TA0005 half — the pairing
-assertion in `detections/check-attack-tags.sh` asserts a tactic tag is *earned* by some
-technique tagged beside it, not that every tactic is claimed, so the tag would pass and
-`detections/navigator/COVERAGE.md` would read `Stealth TA0005 | 3 | 4` instead of
-`2 | 2`. The pair does **not** claim it. What those rules select is a service identity
+**The pair still declines the row, and #223 is still the reason.** Because T1134.001 is
+dual-tactic, `detections/sigma/privilege_escalation/potato_seimpersonate_4688.yml` and its
+Sysmon-1 twin could legally claim the TA0005 half — the pairing assertion in
+`detections/check-attack-tags.sh` asserts a tactic tag is *earned* by some technique
+tagged beside it, not that every tactic is claimed, so the tag would pass and
+`detections/navigator/COVERAGE.md` would read `Stealth TA0005 | 3 | 5` instead of
+`3 | 3`. The pair does **not** claim it. What those rules select is a service identity
 spawning a shell — the shape *before* the token is stolen, keyed on the un-masked
 account field — and their own descriptions concede they cannot show the run-as-SYSTEM
-result. The evasion is the part they cannot see. Taking the row would buy four rules'
+result. The evasion is the part they cannot see. Taking the row would buy two rules'
 worth of apparent TA0005 coverage backed by no detection of evasion, and `/coverage-gap`
 is told to trust `COVERAGE.md` rather than recompute it, so the cost lands on the next
-person ranking holes: it would bury the thinnest real gap in the corpus under a number.
-The precedent runs the same way —
+person ranking holes. The precedent runs the same way —
 `detections/sigma/lateral_movement/unconstrained_delegation_4624.yml` claims a deliberate
 subset of its three techniques' tactics and says so above the block.
 
-**Reopen when there is something to tag.** A rule that actually detects the
-impersonation — Sysmon 17/18 on the spoolss/DCOM named pipe, or a token-context anomaly
-on 4624/4672 — earns the TA0005 half on its own evidence, and should take it. The
-decision here is about these two rules, not about the tactic.
+**Reopened and answered by #225.** This section used to end on a condition: *a rule that
+actually detects the impersonation — Sysmon 17/18 on the spoolss/DCOM named pipe, or a
+token-context anomaly on 4624/4672 — earns the TA0005 half on its own evidence, and
+should take it.* The spoolss half of that condition is now met by
+`detections/sigma/privilege_escalation/spoolss_pipe_impersonation_sysmon_17.yml`, which
+takes both tactic tags. PrintSpoofer-class tools do not abuse the spooler's own pipe;
+they stand up their own and coerce the spooler into connecting to it, so a non-spooler
+process *creating* a pipe named `spoolss` is the impersonation becoming visible. That is
+evidence of the evasion, not of the shape around it, which is what the tag was being
+reserved for. Note the rule pins itself to pipe **creation**: `category: pipe_created`
+resolves to Sysmon 17 and 18, and on a connect event the only thing the attack produces
+is the spooler binding back — which the rule's own `spoolsv.exe` filter removes — so
+everything that would survive the filter there is ordinary print traffic.
+
+The **token-context half remains open**: nothing here reads 4624/4672 for an anomalous
+token context, and a rule that did would be a second, independent piece of TA0005
+evidence for the same technique. The decision here is about these two rules, not about
+the tactic.
 
 The row is narrow on purpose: it is the *registry* plane, not the endpoint. Both rules
 fire on a publish event in an npm or PyPI audit log — a package shipped by an actor that
