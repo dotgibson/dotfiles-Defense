@@ -30,7 +30,10 @@ typeset -g _MAINT_LOG="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles-maint/main
 # the fallback for a box that has not declared yet.
 #
 # THE PROBE IS NOT REDUNDANT AND MUST NOT BE DELETED WITH THE FALLBACK. It is what an
-# undeclared box uses, and until #667 stamps the fleet that is every box.
+# undeclared box uses — and #667 authored the declarations but cannot have LINKED them,
+# so that remains every box until each one re-runs its bootstrap. It also survives #763,
+# which deletes the unit-path fallback below: a box whose declaration is not yet linked
+# still has to find its scheduler.
 _maint_scheduler() {
   emulate -L zsh
   # A declaration is authoritative, the same all-or-nothing rule `up` uses: an OS repo that
@@ -50,17 +53,23 @@ _maint_scheduler() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
-# BUILT-IN DEFAULT UNIT PATHS — DELETE THIS BLOCK IN #667.
+# BUILT-IN DEFAULT UNIT PATHS — DELETE THIS BLOCK IN #763.
 # ══════════════════════════════════════════════════════════════════════════════
 # Where each scheduler keeps the maint unit. This is the LAST OS-ABSOLUTE PATH IN CORE,
 # and it is the reason audit-core.sh §5c still carries a per-line exception for this file:
 # `~/Library/LaunchAgents` is a macOS literal, correct on exactly one of the nine boxes.
 #
-# It is here because a declaration cannot be assumed yet. #667 authors
-# SCHEDULER_UNIT_PATH in all nine repos, and when it lands this block goes and the §5c
-# exception goes with it — the same demolition #664 scheduled for the package-manager
-# defaults in 60-update.zsh. Until then, deleting it would leave an undeclared box unable
-# to install the timer it has always been able to install.
+# It is here because a declaration cannot be assumed yet. #667 authored SCHEDULER_UNIT_DIR
+# in the seven repos that have an OS band, but a file in a repo is not a symlink on a box:
+# until each one re-runs `./bootstrap.sh --links-only`, $_CORE_CAP is empty there. #763
+# deletes this block once that has happened, and the §5c exception goes with it — the same
+# demolition #664 scheduled for the package-manager defaults in 60-update.zsh. Until then,
+# deleting it would leave an undeclared box unable to install the timer it has always been
+# able to install.
+#
+# (The key is SCHEDULER_UNIT_DIR. This comment said SCHEDULER_UNIT_PATH, which is not a key
+# the schema has ever accepted — a DIRECTORY is the whole point, since Core appends its own
+# unit name.)
 #
 # An OS-absolute path is CORRECT in an OS repo's declaration and wrong here. That is the
 # whole layering rule, and this block is the last place Core still breaks it.

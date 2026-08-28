@@ -11,9 +11,10 @@
 # a dispatch table is for. The verb stays here; the backends move to the layer that
 # changes with the OS, and this file reads them back.
 #
-# This fragment ONLY populates the table. Nothing in Core dispatches through it yet —
-# `up` (#664), the maint scheduler (#665) and core-doctor's opt-in split (#666) are
-# separate changes. Landing the schema alone keeps the foundational commit small.
+# This fragment ONLY populates the table; it dispatches nothing itself. Its consumers are
+# separate changes and have all landed: `up` (#664), the maint scheduler (#665) and
+# core-doctor's opt-in split (#666), with the fleet's declarations authored in #667.
+# Landing the schema alone first is what kept the foundational commit small.
 #
 # WHY A DATA FILE AND NOT A FRAGMENT. loader.zsh globs `[0-9][0-9]-*.zsh` and sources
 # by NN order, so a declaration named `os.capabilities` is never globbed — it has to be
@@ -82,27 +83,35 @@ if [[ -r "$CORE_CAPABILITIES_FILE" ]]; then
   done <"$CORE_CAPABILITIES_FILE"
   unset _cap_line _cap_k _cap_v
 elif [[ -n "${CORE_CAP_LOUD:-}" ]]; then
-  # ABSENT IS THE NORMAL STATE, so silence is the default and this warning is OPT-IN.
-  # It shipped the other way round and could not have been right: no OS repo has authored
-  # os/<os>.capabilities yet, blib_link_os_layer's `[[ -f ]]` guard therefore links nothing,
-  # and this branch is unthrottled — so every interactive shell, every tmux split and every
-  # `zsh -i -c` on every box in the fleet printed two lines of stderr. The remedy it named
-  # was worse than the noise: `bootstrap.sh --links-only` re-runs the SAME guard, so an
-  # operator who followed the advice saw nothing change and the warning persist.
+  # ABSENT IS STILL THE NORMAL STATE, so silence stays the default and this warning stays
+  # OPT-IN. It shipped the other way round and could not have been right: when it landed no
+  # OS repo had authored os/<os>.capabilities, blib_link_os_layer's `[[ -f ]]` guard
+  # therefore linked nothing, and this branch is unthrottled — so every interactive shell,
+  # every tmux split and every `zsh -i -c` on every box in the fleet printed two lines of
+  # stderr. The remedy it named was worse than the noise: `bootstrap.sh --links-only`
+  # re-ran the SAME guard, so an operator who followed the advice saw nothing change.
   #
-  # Nothing dispatches through $_CORE_CAP yet, so a missing declaration costs a box exactly
-  # nothing today — there is no user-visible degradation to warn anyone about. When a
-  # consumer lands, the thing to warn about is that consumer falling back, at ITS call site,
-  # where the message can name what actually degraded. Flip this default back only when the
-  # warning can be both true and actionable.
+  # WHAT CHANGED, AND WHY THE DEFAULT DID NOT. #667 authored the declarations, so the file
+  # now exists in every OS repo with an OS band — and `--links-only` IS the remedy at last,
+  # which is why it is named again below. But a box only picks it up when it re-runs its
+  # bootstrap, and that is a separate event from the Core fan-out that delivered this file.
+  # Between the two, absence is expected and unremarkable, and a warning that fires on every
+  # shell during a normal migration window is how an operator learns to ignore stderr.
+  #
+  # Consumers DO dispatch through $_CORE_CAP now (`up`, the maint runner, core-doctor), so a
+  # missing declaration is no longer free — but each of them falls back to a built-in row and
+  # keeps working, and the honest place to say so is that consumer's own call site, where
+  # the message can name what actually degraded rather than warning about a table nobody in
+  # this shell may go on to read. Revisit this default when #763 removes those fallbacks:
+  # absence stops being survivable then, and the warning becomes both true and urgent.
   #
   # 05-ui.zsh defines _core_warn/_core_hint — and it loads AFTER this fragment, so those
   # helpers do not exist yet. Write the plain thing rather than call a function that is
   # not there. stderr, so it never pollutes a `$(...)` capture from a login shell.
   print -u2 -- "core: no OS capability declaration at ${CORE_CAPABILITIES_FILE}"
-  print -u2 -- "  -> Core is using its built-in defaults. To declare this OS's verbs, author"
-  print -u2 -- "     os/<os>.capabilities in your OS repo (see core/examples/os.capabilities.example),"
-  print -u2 -- "     then re-run its ./bootstrap.sh --links-only to link it."
+  print -u2 -- "  -> Core is using its built-in defaults. If your OS repo already ships"
+  print -u2 -- "     os/<os>.capabilities, re-run its ./bootstrap.sh --links-only to link it."
+  print -u2 -- "     If it does not, author one first (see core/examples/os.capabilities.example)."
 fi
 
 # _core_cap <key> [fallback] — read one capability, echoing <fallback> when the key is

@@ -673,7 +673,7 @@ fi
 # where it is simply wrong. Assert the sourced zsh modules stay OS-agnostic. EXCLUDED:
 # zsh/55-maint.zsh — whose built-in FALLBACK unit directory is still a macOS literal for a
 # box that has not declared SCHEDULER_UNIT_DIR yet (#665); only THOSE lines are exempt, not
-# the whole file, and the exemption retires with the fallback in #667 (see the note below).
+# the whole file, and the exemption retires with the fallback in #763 (see the note below).
 # Comment-stripped first, so an explanatory comment naming an OS path can't trip it.
 # Pure sed+grep (busybox-safe), and CROSS-CUTTING rather than shell-scoped — the scope is
 # the manifest, so it covers configs and the nvim tree too, and no --scope may skip it.
@@ -699,7 +699,7 @@ hdr "Core⇄OS boundary (no OS paths in portable Core files)"
 #     unit directory is a DECLARED value (SCHEDULER_UNIT_DIR), so the ~/Library/LaunchAgents
 #     literal no longer appears at the six call sites it used to: it survives in exactly one
 #     place, _maint_unit_dir_default, the built-in fallback for a box that has not declared
-#     yet. #667 authors that key in all nine repos and deletes the block, and THIS EXCEPTION
+#     yet. #667 authored that key across the fleet; #763 deletes the block, and THIS EXCEPTION
 #     GOES WITH IT — together with the sibling package-manager fallback #664 left in
 #     zsh/60-update.zsh. Only the LaunchAgents lines are dropped. Skipping the whole file
 #     would re-open the blind spot inside it: an accidental /opt/homebrew or /mnt/c
@@ -1322,6 +1322,146 @@ EOF
   fi
 else
   skip "os.capabilities schema ($CAP_CHECK or $CAP_EXAMPLE missing)"
+fi
+
+# ── 9c. os.capabilities fleet coverage (every OS repo declares, and it validates) ──
+# The FLEET half of §9a. That section holds Core's shipped example to the schema; this
+# one holds the repos that actually run on real boxes to it (#667).
+#
+# Numbered 9c and not 9b because a CHANGELOG entry already pins "section 9b" to the
+# tool-integrity check above; renumbering that would falsify a shipped release note.
+#
+# WHY THE GATE LIVES HERE AND NOT ONLY IN EACH REPO. Every declaring repo runs the same
+# validator from its own `make lint`, which catches a BROKEN declaration. Only a
+# fleet-wide sweep catches a MISSING one — a repo that never authored a file has nothing
+# for a per-repo target to fail on, and the absence is invisible from inside it. That is
+# the failure this section exists for, and it is the state the whole fleet was in before
+# #667: nine repos, zero declarations, `blib_link_os_layer`'s `[[ -f ]]` guard linking
+# nothing, and every consumer silently on Core's built-in fallback rows.
+#
+# TWO FINDINGS, TWO SEVERITIES, AND THE SPLIT IS LOAD-BEARING.
+#
+#   a malformed declaration  BLOCKING. The repo authored one and got it wrong; nothing
+#                            about the release cycle makes that temporarily acceptable.
+#   no declaration at all    ADVISORY, for one release cycle.
+#
+# THE SECOND ONE SHIPPED BLOCKING AND DEADLOCKED THE FAN-OUT. scripts/sync-core.sh runs
+# `make audit` over a fleet checkout BEFORE it vendors anything — deliberately, so a red
+# tree never reaches nine repos. But a declaration cannot be merged into an OS repo until
+# that repo has vendored the Core whose validator accepts it, and that vendoring IS the
+# fan-out. So a blocking "you have no declaration" refused to fan out the very release
+# that would let the declarations land. v5.4.0 published, the fan-out failed, and zero
+# vendor PRs opened.
+#
+# This is the same red-on-arrival shape §5f and the owned-block gate in lint-call.yml both
+# name, and both answer the same way: warn for a cycle, then flip. It is also the shape
+# THIS FILE's own lint-call.yml step already got right — that step makes a missing
+# declaration advisory and a malformed one blocking, and the asymmetry with this section
+# was the defect, not the reasoning there.
+#
+# FLIP IT TO BLOCKING once `make fleet-drift` shows every OS repo carrying a declaration —
+# a three-line change, and the tracking issue is #763's sibling.
+#
+# THE ROLE-REPO EXEMPTION IS STRUCTURAL, NOT A NAME LIST. dotfiles-Offense and
+# dotfiles-Defense sit ON TOP of an OS-native layer rather than being one: neither has an
+# os/ directory, neither calls blib_link_os_layer, and the OS band belongs to the repo
+# underneath them. So the test is "does this repo have an os/ directory" — a repo that
+# grows one starts being gated automatically, and a hardcoded pair of names could not do
+# that. It also picks up per-tier declarations for free: dotfiles-Debian ships
+# os/debian.capabilities plus os/debian.kali.capabilities, dotfiles-openSUSE ships a Leap
+# twin, and the glob validates each without this section knowing they exist.
+#
+# --packages IS PASSED ONLY WHERE THERE IS A LIST TO PASS. dotfiles-MacBook declares its
+# packages in a Brewfile, not install/packages.txt, and feeding a Brewfile to a reader
+# that takes the first token of each line would test `brew` against `brew` and report
+# nonsense. The cross-check is opt-in for exactly this reason.
+#
+# Same skip_env (ENVIRONMENT) class as §5f and the gitleaks section: --strict counts only
+# TOOL-absent skips, so this is inert in CI (which checks out this repo alone) and bites
+# locally and in any sweep that clones the fleet. --require-siblings is what reds an
+# absent sibling.
+hdr "os.capabilities fleet coverage"
+_cf_root="$(cd "$HERE/.." && pwd)"
+if [[ ! -x "$CAP_CHECK" ]]; then
+  skip "os.capabilities fleet coverage ($CAP_CHECK missing)"
+elif ! load_os_repos; then
+  skip_env "os.capabilities fleet coverage ($CORE_OS_REPOS_ERR — cannot enumerate the fleet)"
+else
+  _cf_checked=0
+  _cf_bad=0
+  _cf_absent=0
+  _cf_role=0
+  _cf_undeclared=0
+  for _cf_repo in "${CORE_OS_REPOS[@]}"; do
+    _cf_dir="$(resolve_repo_dir "$_cf_root" "$_cf_repo")" || _cf_dir="$_cf_root/$_cf_repo"
+    if [[ ! -d "$_cf_dir/.git" ]]; then
+      _cf_absent=$((_cf_absent + 1))
+      continue
+    fi
+    # No os/ directory → a Role repo, which has no OS band to declare for.
+    if [[ ! -d "$_cf_dir/os" ]]; then
+      _cf_role=$((_cf_role + 1))
+      continue
+    fi
+    _cf_checked=$((_cf_checked + 1))
+    _cf_gaps=""
+    _cf_found=0
+    # Unmatched globs stay LITERAL here (nullglob is off), so every hit is tested with
+    # -e before it is used — otherwise a repo with no declaration would "validate" a file
+    # named os/*.capabilities and this gate would pass on nothing, which is the one
+    # outcome a coverage check must never produce.
+    _cf_pkgs="$_cf_dir/install/packages.txt"
+    for _cf_f in "$_cf_dir"/os/*.capabilities; do
+      [[ -e "$_cf_f" ]] || continue
+      _cf_found=$((_cf_found + 1))
+      if [[ -r "$_cf_pkgs" ]]; then
+        _cf_out="$("$CAP_CHECK" "$_cf_f" --packages "$_cf_pkgs" 2>&1)" || _cf_gaps="$_cf_gaps
+      ${_cf_f#"$_cf_dir"/}: $(printf '%s' "$_cf_out" | grep '^FAIL' | tr '\n' ';' | sed 's/;$//')"
+      else
+        _cf_out="$("$CAP_CHECK" "$_cf_f" 2>&1)" || _cf_gaps="$_cf_gaps
+      ${_cf_f#"$_cf_dir"/}: $(printf '%s' "$_cf_out" | grep '^FAIL' | tr '\n' ';' | sed 's/;$//')"
+      fi
+    done
+    # UNDECLARED IS COUNTED SEPARATELY FROM MALFORMED — see the header. Rolling it into
+    # _cf_gaps is what made this blocking and deadlocked the fan-out.
+    if ((_cf_found == 0)); then
+      _cf_undeclared=$((_cf_undeclared + 1))
+      ((${CORE_JSON:-0})) || printf '  %s%s%s %s\n      no os/*.capabilities — Core is running its built-in fallback rows here (see examples/os.capabilities.example)\n' \
+        "${c_yel}" "•" "${c_rst}" "$_cf_repo"
+      continue
+    fi
+    if [[ -n "$_cf_gaps" ]]; then
+      _cf_bad=$((_cf_bad + 1))
+      ((${CORE_JSON:-0})) || printf '  %s%s%s %s%s\n' "${c_yel}" "•" "${c_rst}" "$_cf_repo" "$_cf_gaps"
+    fi
+  done
+
+  # A ROLE REPO IS REPORTED IN THE PASS LINE, NOT AS A SKIP, and the distinction is not
+  # cosmetic. `skip` means "this gate did not run"; --strict reds on any skip that is not
+  # an environment or out-of-scope one, and _core_tool_skip_count classifies exactly that
+  # way. But a Role repo carrying no declaration is the CORRECT answer, fully determined
+  # by this run — nothing went unchecked. Emitting it as a skip made `--strict` fail on a
+  # complete, green fleet, and put "2 Role repo(s) exempt" in the summary's "this run is
+  # PARTIAL" list, where it claimed the opposite of what is true.
+  _cf_role_note=""
+  ((_cf_role)) && _cf_role_note="; $_cf_role Role repo(s) exempt — no os/ band of their own"
+  if ((_cf_checked == 0)); then
+    skip_env "os.capabilities fleet coverage (no sibling OS repo checked out — nothing to read here)"
+  elif ((_cf_bad)); then
+    fail "os.capabilities: $_cf_bad of $_cf_checked checked-out OS repo(s) have a declaration that does not satisfy the schema (see the lines above)"
+  elif ((_cf_undeclared)); then
+    # ADVISORY, not a skip and not a failure. `pass` is honest here — the sweep RAN and
+    # answered; what it found is a gap the fleet is mid-way through closing. A skip would
+    # claim the check did not run (and --strict would red on it); a fail deadlocks the
+    # fan-out that closes the gap.
+    pass "os.capabilities: $_cf_undeclared of $_cf_checked checked-out OS repo(s) have not declared yet — advisory until the fleet is stamped (#667), then this blocks$_cf_role_note"
+  else
+    pass "os.capabilities: every checked-out OS repo declares and validates ($_cf_checked repo(s)$_cf_role_note)"
+  fi
+  # An ABSENT sibling is genuinely uncovered, so it stays a skip — and an ENVIRONMENT one,
+  # which --strict ignores because CI checks out this repo alone. --require-siblings is
+  # what reds it.
+  ((_cf_absent)) && skip_env "os.capabilities: $_cf_absent repo(s) not checked out — not covered by this run"
 fi
 
 # ── 9b. tool download integrity (every downloaded *_VERSION has a *_SHA256) ────

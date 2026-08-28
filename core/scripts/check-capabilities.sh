@@ -8,8 +8,9 @@
 # A section buried inside Core's own gate could only ever check Core's example copy.
 # As a standalone taking a PATH, the SAME validator runs from `make audit` here AND
 # from each OS repo's `make lint` as `core/scripts/check-capabilities.sh os/<os>.capabilities`
-# — nine repos gated by one definition of the schema instead of nine hand-written
-# greps that drift. audit-core.sh calls it on examples/os.capabilities.example, so
+# — the whole fleet gated by one definition of the schema instead of per-repo greps that
+# drift. Seven repos declare; dotfiles-Offense and dotfiles-Defense are Role repos with no
+# OS band of their own, so they declare nothing and inherit the OS layer's table (#667). audit-core.sh calls it on examples/os.capabilities.example, so
 # the shipped example is held to the same rules the fleet is.
 #
 # THE SCHEMA IS DECLARED HERE, ONCE. Core's reader (zsh/02-capabilities.zsh) is
@@ -44,15 +45,16 @@ CAP_REQUIRED=(
   PKG_SEARCH         # search the archive by name/description
   PKG_OWNS           # which package owns this path/binary
   PKG_COUNT_PENDING  # list pending upgrades — what `up`'s once-a-day nudge counts
-  SCHEDULER          # systemd | launchd | none — 55-maint.zsh branches on this today
+  SCHEDULER          # systemd | launchd | cron | none — see CAP_SCHEDULERS below, which
+                     # is the authority; 55-maint.zsh branches on this
 )
 # OPTIONAL — absent means "Core's built-in default applies".
 #
 # EVERY key added for #664 is optional ON PURPOSE. The eight required verbs are what an
 # archive cannot work without; these express the ways archives DIFFER, and an archive that
-# needs none of them declares none. That keeps #667's job — authoring nine of these by
-# hand — as small as it can be, and it means a declaration written against the v5 schema
-# keeps validating.
+# needs none of them declares none. That kept #667's job — authoring these by hand across
+# the fleet — as small as it could be, and it means a declaration written against the v5
+# schema keeps validating.
 #
 #   TOOLS_OPTIN          space-separated tools core-doctor reports as OPT-IN rather than
 #                        MISSING. Absent → Core's _CORE_DOCTOR_OPTIN fallback in

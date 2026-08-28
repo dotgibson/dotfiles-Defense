@@ -25,7 +25,12 @@ _Repo status_ at the bottom).
 
 **This table is the transcription source for `os/<os>.capabilities`** (#667) — every cell
 below becomes a `PKG_*` value in some repo's declaration, so a wrong cell here is a wrong
-verb on a real box. It gained its **macOS and Fedora columns** in #664: they had been
+verb on a real box. **That transcription has now happened**: seven repos declare (the two
+Role repos have no OS band and inherit the OS layer's table), so this is no longer only a
+reference — it is the upstream of live files, and `audit-core.sh` §9c holds every one of
+them to the schema. Two cells could not be transcribed flat and are worth knowing about:
+openSUSE's `dup`-vs-`up` split and Debian's Kali lane each became a **second declaration
+file** their repo's `bootstrap.sh` relinks, because a declaration is data and cannot probe. It gained its **macOS and Fedora columns** in #664: they had been
 missing since the table was written, even though `dotfiles-MacBook` is the reference
 implementation and `dotfiles-Fedora` is the template the other Linux repos stamp from —
 so the two most-copied repos had nothing to copy.
@@ -1217,6 +1222,16 @@ Treat this cell as "the closest available", and prefer not to build a gate on it
 <!-- Clipboard selection lives in Core's cross-OS clip/clip-paste scripts; each
      os/<distro>.zsh only aliases pbcopy/pbpaste to them — no distro swaps a
      backend in its zsh layer. This table is the packages each backend needs. -->
+
+> **This table is deliberately NOT an `os.capabilities` source, unlike the
+> package-manager table above.** #667 listed it as one; #663 had already decided
+> otherwise and the schema has no clipboard key, so
+> `scripts/check-capabilities.sh` rejects one. The reason is in
+> `zsh/02-capabilities.zsh`: `bin/clip` is re-exec'd by nvim and tmux on **every
+> yank and paste**, and its WSL probe was already rewritten once to avoid forking
+> a `grep` per invocation. Adding a file read and parse to that path would give
+> back exactly what that bought — for a value that changes once per machine.
+> The ladder stays hardcoded. Do not re-open this without a measurement.
 
 | Distro        | Wayland                                      | X11 fallback                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

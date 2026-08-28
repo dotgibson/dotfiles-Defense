@@ -58,7 +58,7 @@ here rather than left to be rediscovered as drift:
   are **declared** (`SCHEDULER`, `SCHEDULER_UNIT_DIR`), so `~/Library/LaunchAgents` no
   longer appears at the six call sites it used to — it survives only in the built-in
   fallback for a box that has not declared yet. `audit-core.sh` §5c's exception now covers
-  that one block, and retires with it in #667.
+  that one block, and retires with it in #763.
 
   The launchd plist and the systemd unit **templates** stay in Core deliberately, and are
   not the exception. They are portable text parameterised by paths, selected by
@@ -67,9 +67,11 @@ here rather than left to be rediscovered as drift:
   `VENDORING.md` records as the #449 failure. What belongs to the OS layer is *where* the
   unit goes, not *what it says*.
 
-**Both exceptions are now scheduled for demolition in the same change (#667)**, which is
+**Both exceptions are now scheduled for demolition in the same change (#763)**, which is
 the point of the declaration: what is left in Core is a stopgap for boxes that have not
-declared, not a standing carve-out.
+declared, not a standing carve-out. Since #667 the declarations themselves all exist —
+seven of them, one per repo with an OS band — so what #763 waits on is each box picking
+its own up, not anyone writing one.
 
 **There used to be a second, larger one**, and retiring it is what `os.capabilities` was for.
 `zsh/60-update.zsh` — the `up` verb — knew how seven package managers count and apply
@@ -86,10 +88,18 @@ Two things about that are worth knowing rather than rediscovering:
 
 - **Core still carries built-in defaults**, one table at the top of `zsh/60-update.zsh`
   in the declaration's own `KEY=value` shape. It is a stopgap with a demolition date:
-  #667 authors the nine declarations that replace it, and it is deleted in the same
-  change. Until then it is what every box actually runs, because no repo has declared yet.
-  It is data in one marked place rather than control flow through five `case` statements,
-  and each row is the transcription source for the repo that will replace it.
+  #667 authored the declarations that replace it, and #763 deletes it. Each row was the
+  transcription source for the repo that replaced it, which is why it is data in one
+  marked place rather than control flow through five `case` statements.
+
+  **Why the two are separate changes** is the thing worth not rediscovering. Authoring a
+  declaration puts a *file in a repo*; what a box reads is a *symlink*, and only
+  `bootstrap.sh` creates it. Those are separate events — a Core release fans out to the OS
+  repos, and each machine re-bootstraps on its own schedule after that. Between them
+  `$_CORE_CAP` is empty and this table is what the host actually runs, so deleting it
+  alongside the declarations would have broken `up` on every box that pulled and had not
+  yet re-run `./bootstrap.sh --links-only`. #763 is therefore gated on evidence that the
+  fleet has re-bootstrapped, not on the declarations existing.
 - **The line between interactive and unattended apply has not moved.** `60-update.zsh`
   never applies unattended — `up` is a verb you run. Scheduled apply lives one file over,
   in `maint/dotfiles-maint.sh`, and is **opt-in and deliberately narrowed**: off unless

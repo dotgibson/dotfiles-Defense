@@ -80,18 +80,21 @@ _pkgup_mgr() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
-# BUILT-IN DEFAULTS — DELETE THIS BLOCK IN #667.
+# BUILT-IN DEFAULTS — DELETE THIS BLOCK IN #763.
 # ══════════════════════════════════════════════════════════════════════════════
 # Everything between here and the end of _pkgup_fallback is the OS knowledge that used
 # to be five `case` statements spread through this file. It is still OS knowledge and it
 # is still in Core, but it is now DATA in one place with a demolition date, rather than
 # control flow woven through the verb.
 #
-# WHY IT IS STILL HERE. #667 — the change that authors os/<os>.capabilities in all nine
-# repos — is BLOCKED BY THIS ONE. On the day this lands, not a single box in the fleet
-# has a declaration, so this table is what every host actually runs. Deleting it here
-# would break `up` everywhere until the fan-out it is waiting on completes. When #667
-# lands, this block goes and _pkgup_verb loses its second arm.
+# WHY IT IS STILL HERE. #667 has now authored os/<os>.capabilities in all seven OS repos
+# (the two Role repos have no OS band and declare nothing), so the FILES exist — but a
+# declaration only reaches a box once bootstrap.sh has LINKED it, and that is a separate
+# event from the Core fan-out that delivers this file. Between the two, $_CORE_CAP is
+# empty and this table is what the host actually runs; deleting it in #667 would have
+# left `up` answering "this archive does not offer that" on every box that pulled and
+# had not yet re-run `./bootstrap.sh --links-only`. #763 deletes it once the fleet has
+# re-bootstrapped, and _pkgup_verb loses its second arm then.
 #
 # THE SHAPE IS THE DECLARATION'S SHAPE, deliberately: same keys, same command-prefix
 # values, keyed <mgr>.<KEY>. So each row is a transcription source for the repo that
@@ -264,7 +267,7 @@ _pkgup_fallback() {
 
 # _pkgup_verb <key> — THE resolution point, and the only thing in this file that decides
 # what a package manager is asked to do. A box with a declaration is driven ENTIRELY by
-# it; a box with none falls back to Core's built-in row, until #667 retires that. An
+# it; a box with none falls back to Core's built-in row, until #763 retires that. An
 # unresolved key is the empty string, which every caller reads as "this archive does not
 # offer that".
 #
@@ -579,7 +582,7 @@ if ((CORE_WELCOME)) && [[ -t 1 ]]; then _core_welcome; fi
 # ══════════════════════════════════════════════════════════════════════════════
 # up — apply updates. INTERACTIVE by design, and now a DISPATCHER: the verb is Core's
 # so every machine has the same muscle memory, but what it runs is resolved through
-# _pkgup_verb from the OS layer's declaration (Core's built-in row until #667).
+# _pkgup_verb from the OS layer's declaration (Core's built-in row until #763).
 #
 # `up -y` auto-confirms only where the archive declared a PKG_ASSUME_YES token to append.
 # pacman/emerge/apk declare none and so are never auto-confirmed (Arch partial-upgrade,
