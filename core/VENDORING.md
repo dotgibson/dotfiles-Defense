@@ -226,19 +226,22 @@ missing declaration — absence is the normal state during the rollout, and a wa
 every interactive shell and every tmux split was worse than the thing it warned about
 (#715). Set `CORE_CAP_LOUD=1` to opt into it.
 
-**Eight required keys**, all package-manager verbs plus `SCHEDULER`; the validator is the
+**Eight required keys**, all package-manager verbs plus `SCHEDULER` (`systemd` \| `launchd`
+\| `cron` \| `none` — `cron` is what an OpenRC box gets); the validator is the
 schema, so read `check-capabilities.sh` rather than trusting this list to stay current.
 Everything else is optional, and optional means _Core's default reproduces what your box
 does today_ — declare only what your archive actually needs:
 
 | Optional key | What it is for |
 | --- | --- |
-| `TOOLS_OPTIN` | tools `core-doctor` reports as OPT-IN rather than MISSING |
+| `TOOLS_OPTIN` | tools `core-doctor` reports as OPT-IN rather than MISSING. A declared list **replaces** Core's default rather than adding to it, so re-state everything you still consider optional. The one key where a partial declaration falls back per-key |
 | `PKG_ASSUME_YES` | the flag `up -y` appends. **Omit to mean "never auto-confirm"** — the right answer for Arch, Gentoo and Alpine |
 | `PKG_UPGRADE_PRE` | run before the upgrade, both paths; **failure aborts** |
 | `PKG_CLEANUP` | run after a successful _full_ upgrade (`autoremove`, `brew cleanup`) |
 | `PKG_UPGRADE_PARTIAL` | upgrade only named packages. **Omitting it is a safety declaration** — `up -i` refuses without one |
 | `PKG_COUNT_REFRESH` | run before `PKG_COUNT_PENDING` in the count path only (Homebrew) |
+| `SCHEDULER_UNIT_DIR` | the **directory** your scheduler reads units from. **Required** for `systemd`/`launchd`, forbidden for `cron`/`none`. A directory, not a path — Core appends its own unit name |
+| `MAINT_UNATTENDED_UPGRADE` | `1` to let the daily run apply **system** upgrades. **Omitting it refuses**, and that is the safe direction — it is the second of two gates, with the operator's `MAINT_SYSTEM_UPGRADE=1` |
 | `PKG_COUNT_EXIT_TRUSTED` | `1` when a non-zero exit from `PKG_COUNT_PENDING` means "could not answer", so the count reports `-1` rather than `0`. Off by default — most archives overload that status |
 | `PKG_PENDING_MATCH` | ERE selecting lines that name a package. Default `.` |
 | `PKG_PENDING_FIELD` | which field holds the name. Default `1` |

@@ -93,11 +93,39 @@ CAP_REQUIRED=(
 #   PKG_PENDING_MATCH    ERE selecting the lines that name a package. Default `.`.
 #   PKG_PENDING_FIELD    which field of a matching line holds the name. Default 1.
 #   PKG_PENDING_FS       awk field separator. Default whitespace. zypper's table is `|`.
+#
+#   ── the scheduled runner (#665) ────────────────────────────────────────────────────
+#   SCHEDULER_UNIT_DIR   the DIRECTORY this box's scheduler reads units from. REQUIRED when
+#                        SCHEDULER is systemd or launchd (checked below), meaningless for
+#                        cron (which has no file of its own) and none.
+#
+#                        A DIRECTORY, not a full path, and the distinction is load-bearing:
+#                        WHERE units live is an OS fact and belongs here, but what Core
+#                        calls its own job is Core's identity — `dotfiles-maint.service`,
+#                        `com.dotfiles.maint`. Those names appear in `systemctl enable`,
+#                        `launchctl` and the status verbs, so letting a declaration rename
+#                        the file would silently decouple the unit Core WRITES from the one
+#                        it then enables and reports on. This is the key that
+#                        gets the last OS-ABSOLUTE PATH out of Core: `~/Library/LaunchAgents`
+#                        appeared at six sites in zsh/55-maint.zsh and was the reason
+#                        audit-core.sh §5c carried a per-file exception for it. An OS-absolute
+#                        path is CORRECT in an OS repo's declaration and wrong in Core, which
+#                        is the whole layering rule stated in one key.
+#   MAINT_UNATTENDED_UPGRADE
+#                        set to 1 to permit the scheduled runner to apply SYSTEM package
+#                        upgrades on this box. ABSENT MEANS REFUSE, and that direction is
+#                        load-bearing: a fail-open here silently enables unattended full
+#                        upgrades on an engagement box. It is the SECOND of two gates — the
+#                        operator's MAINT_SYSTEM_UPGRADE=1 env var is the first, and both
+#                        must be true. Kali does not declare it (engagement boxes are
+#                        updated by hand between ops); Arch and Gentoo do not either
+#                        (a rolling distro that half-upgrades unattended is a broken box).
 CAP_OPTIONAL=(
   TOOLS_OPTIN
   PKG_ASSUME_YES PKG_UPGRADE_PRE PKG_CLEANUP PKG_UPGRADE_PARTIAL
   PKG_COUNT_REFRESH PKG_COUNT_EXIT_TRUSTED
   PKG_PENDING_MATCH PKG_PENDING_FIELD PKG_PENDING_FS
+  SCHEDULER_UNIT_DIR MAINT_UNATTENDED_UPGRADE
 )
 # The PKG_* keys whose value is a COMMAND. --packages cross-checks the leading binary of
 # each of these against the repo's package list; the PKG_PENDING_* keys are awk data
@@ -110,7 +138,13 @@ CAP_COMMANDS=(
 # SCHEDULER's closed enum. `none` is a real answer (a container, a box with neither
 # init), not a placeholder — it is what tells 55-maint.zsh to offer the manual verb
 # instead of claiming a timer it cannot install.
-CAP_SCHEDULERS=(systemd launchd none)
+#
+# `cron` was MISSING until #665, and its absence was a defect in this list rather than a
+# judgement about cron. zsh/55-maint.zsh has had a live cron arm all along — it is what an
+# OpenRC box (Alpine, Gentoo) gets, having `crontab` and no systemd — so the schema was
+# rejecting a value Core itself produces. Alpine's only honest declaration was `none`,
+# which means "offer the manual verb, this box cannot hold a timer", on a box that can.
+CAP_SCHEDULERS=(systemd launchd cron none)
 
 FILE="" PKGFILE="" RC=0
 while [[ $# -gt 0 ]]; do
@@ -250,6 +284,40 @@ sched="$(cap_value SCHEDULER)"
 if [[ -n "$sched" ]] && ! in_list "$sched" "${CAP_SCHEDULERS[@]}"; then
   bad "-" "SCHEDULER must be one of: ${CAP_SCHEDULERS[*]} (got: $sched)"
 fi
+
+# SCHEDULER_UNIT_PATH is CONDITIONALLY required: systemd and launchd each keep the unit in
+# a file whose location only this OS knows, and Core no longer carries a default for it.
+# cron has no file of its own (the entry lives in the user's crontab) and `none` installs
+# nothing, so requiring it there would be asking for a value with nothing to say.
+unitp="$(cap_value SCHEDULER_UNIT_DIR)"
+case "$sched" in
+systemd | launchd)
+  [[ -z "${unitp//[[:space:]]/}" ]] &&
+    bad "-" "SCHEDULER=$sched requires SCHEDULER_UNIT_DIR (the directory units live in)"
+  ;;
+cron | none)
+  [[ -n "$unitp" ]] &&
+    bad "-" "SCHEDULER=$sched takes no SCHEDULER_UNIT_DIR (cron has no unit file)"
+  ;;
+esac
+# A DIRECTORY, so a value ending in .service/.plist is someone declaring the full path —
+# the exact confusion the dir-vs-path split exists to prevent. Core appends its own
+# filename, so a path here would produce `…/dotfiles-maint.service/dotfiles-maint.service`.
+case "$unitp" in
+*.service | *.plist | *.timer)
+  bad "-" "SCHEDULER_UNIT_DIR is a DIRECTORY; Core appends its own unit name (got: $unitp)"
+  ;;
+esac
+
+# MAINT_UNATTENDED_UPGRADE is a FLAG whose only honest value is 1, for the same reason
+# PKG_COUNT_EXIT_TRUSTED is: `=0` reads as DECLARED, so writing it to mean "do not apply
+# upgrades unattended" would permit exactly what it was meant to forbid. Omission is how a
+# repo refuses, and refusing is the default.
+unatt="$(cap_value MAINT_UNATTENDED_UPGRADE)"
+case "$unatt" in
+'' | 1) ;;
+*) bad "-" "MAINT_UNATTENDED_UPGRADE must be 1 if declared; omit it to refuse (got: $unatt)" ;;
+esac
 
 # Cross-check: the binary each PKG_* verb actually runs should be one the repo installs.
 # The leading token is skipped when it is `sudo`/`doas` — the privilege tool is not the

@@ -671,9 +671,9 @@ fi
 # That rule is documented but was ungated — a hard-coded /opt/homebrew, /home/linuxbrew,
 # or macOS ~/Library path could slip into a portable shell module and fan out to nine repos
 # where it is simply wrong. Assert the sourced zsh modules stay OS-agnostic. EXCLUDED:
-# zsh/55-maint.zsh — the scheduler CONTROL SURFACE whose launchd arm legitimately writes
-# ~/Library/LaunchAgents (it switches on _maint_scheduler, the correct cross-OS shape);
-# only THOSE lines are exempt, not the whole file (see the per-line note below).
+# zsh/55-maint.zsh — whose built-in FALLBACK unit directory is still a macOS literal for a
+# box that has not declared SCHEDULER_UNIT_DIR yet (#665); only THOSE lines are exempt, not
+# the whole file, and the exemption retires with the fallback in #667 (see the note below).
 # Comment-stripped first, so an explanatory comment naming an OS path can't trip it.
 # Pure sed+grep (busybox-safe), and CROSS-CUTTING rather than shell-scoped — the scope is
 # the manifest, so it covers configs and the nvim tree too, and no --scope may skip it.
@@ -695,9 +695,13 @@ hdr "Core⇄OS boundary (no OS paths in portable Core files)"
 #
 # EXCLUDED, both deliberately and visibly — and note the exemption is per-LINE, not
 # per-file, for the one module that needs it:
-#   · zsh/55-maint.zsh — the scheduler CONTROL SURFACE, whose launchd arm legitimately
-#     writes ~/Library/LaunchAgents (it switches on _maint_scheduler, the correct
-#     cross-OS shape). Only the LaunchAgents lines are dropped. Skipping the whole file
+#   · zsh/55-maint.zsh — and this exception is now on a CLOCK. Since #665 the scheduler's
+#     unit directory is a DECLARED value (SCHEDULER_UNIT_DIR), so the ~/Library/LaunchAgents
+#     literal no longer appears at the six call sites it used to: it survives in exactly one
+#     place, _maint_unit_dir_default, the built-in fallback for a box that has not declared
+#     yet. #667 authors that key in all nine repos and deletes the block, and THIS EXCEPTION
+#     GOES WITH IT — together with the sibling package-manager fallback #664 left in
+#     zsh/60-update.zsh. Only the LaunchAgents lines are dropped. Skipping the whole file
 #     would re-open the blind spot inside it: an accidental /opt/homebrew or /mnt/c
 #     added to maint-install, or to any other function there, would sail through.
 #   · *.example — user-edited illustrations, not the live config.

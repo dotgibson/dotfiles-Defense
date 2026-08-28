@@ -7880,8 +7880,44 @@ else
   _cap_rejects "a missing required key" "$CAPV/missing"
   sed 's/^PKG_SEARCH=.*/PKG_SEARCH=/' "$CAPEX" >"$CAPV/blank"
   _cap_rejects "a required key declared empty" "$CAPV/blank"
-  sed 's/^SCHEDULER=.*/SCHEDULER=cron/' "$CAPEX" >"$CAPV/sched"
+  sed 's/^SCHEDULER=.*/SCHEDULER=bsdinit/' "$CAPEX" >"$CAPV/sched"
   _cap_rejects "a SCHEDULER outside the enum" "$CAPV/sched"
+  # `cron` IS in the enum as of #665, and this assertion used to say the opposite. Core's
+  # own _maint_scheduler has always had a cron arm — it is what an OpenRC box (Alpine,
+  # Gentoo) gets, having crontab and no systemd — so the schema was rejecting a value Core
+  # itself produces, and Alpine's only honest declaration was `none`: "this box cannot hold
+  # a timer", on a box that can. cron keeps no unit file of its own, so it takes no
+  # SCHEDULER_UNIT_DIR.
+  { grep -vE '^(SCHEDULER|SCHEDULER_UNIT_DIR)=' "$CAPEX"; printf 'SCHEDULER=cron\n'; } >"$CAPV/sched-cron"
+  if "$CAPCHK" "$CAPV/sched-cron" >/dev/null 2>&1; then
+    pass "validator: SCHEDULER=cron is accepted (OpenRC boxes — Alpine, Gentoo)"
+  else
+    fail "validator: SCHEDULER=cron was rejected — Core's own _maint_scheduler returns it"
+  fi
+  # systemd/launchd keep the unit in a file, and only the OS knows where. Core carries no
+  # default any more, so a declaration that names the scheduler and not the directory is
+  # incomplete — and the gate is the only place that can say so.
+  grep -v '^SCHEDULER_UNIT_DIR=' "$CAPEX" >"$CAPV/nounitdir"
+  _cap_rejects "SCHEDULER=systemd with no SCHEDULER_UNIT_DIR" "$CAPV/nounitdir"
+  # ...and the reverse: cron has no unit file, so a directory there is a misunderstanding.
+  { grep -vE '^(SCHEDULER|SCHEDULER_UNIT_DIR)=' "$CAPEX"
+    printf 'SCHEDULER=cron\nSCHEDULER_UNIT_DIR=~/.config/systemd/user\n'
+  } >"$CAPV/cron-unitdir"
+  _cap_rejects "SCHEDULER=cron with a SCHEDULER_UNIT_DIR" "$CAPV/cron-unitdir"
+  # A DIRECTORY, not a path. Core appends its own unit name, so a full path here would
+  # produce .../dotfiles-maint.service/dotfiles-maint.service — and the reason the split
+  # exists is that the unit NAME is what `systemctl enable` and `launchctl` use, so letting
+  # a declaration rename it would decouple the unit Core writes from the one it enables.
+  { grep -v '^SCHEDULER_UNIT_DIR=' "$CAPEX"
+    printf 'SCHEDULER_UNIT_DIR=~/.config/systemd/user/dotfiles-maint.service\n'
+  } >"$CAPV/unitdir-path"
+  _cap_rejects "a SCHEDULER_UNIT_DIR that names a unit FILE" "$CAPV/unitdir-path"
+  # MAINT_UNATTENDED_UPGRADE=0 must be REFUSED for the same reason PKG_COUNT_EXIT_TRUSTED=0
+  # is, and with more at stake: `=0` reads as DECLARED, so an author writing it to mean "do
+  # not upgrade this box unattended" would permit exactly what they meant to forbid — on an
+  # engagement box, on a schedule, unwatched. Omission is how a repo refuses.
+  { cat "$CAPEX"; printf 'MAINT_UNATTENDED_UPGRADE=0\n'; } >"$CAPV/unatt-zero"
+  _cap_rejects "MAINT_UNATTENDED_UPGRADE=0 (omit it to refuse)" "$CAPV/unatt-zero"
   { cat "$CAPEX"; printf 'PKG_SEARCH=dnf search\n'; } >"$CAPV/dupe"
   _cap_rejects "a duplicate key" "$CAPV/dupe"
   { cat "$CAPEX"; printf 'this is not an assignment\n'; } >"$CAPV/junk"
@@ -7893,7 +7929,10 @@ else
   _cap_rejects "an unreadable file" "$CAPV/nope-does-not-exist"
   # `none` is a REAL scheduler answer (a container, a box with neither init), not a
   # placeholder — asserting it keeps someone from "tightening" the enum to systemd|launchd.
-  sed 's/^SCHEDULER=.*/SCHEDULER=none/' "$CAPEX" >"$CAPV/sched-none"
+  # Drops SCHEDULER_UNIT_DIR along with the scheduler: `none` installs nothing, so a unit
+  # directory there is a contradiction the gate now refuses (#665). The fixture has to say
+  # what a real `none` declaration says.
+  { grep -vE '^(SCHEDULER|SCHEDULER_UNIT_DIR)=' "$CAPEX"; printf 'SCHEDULER=none\n'; } >"$CAPV/sched-none"
   if "$CAPCHK" "$CAPV/sched-none" >/dev/null 2>&1; then
     pass "validator: SCHEDULER=none is accepted (containers, boxes with neither init)"
   else
@@ -7959,7 +7998,8 @@ else
   for _cap_kv in PKG_ASSUME_YES=-y 'PKG_UPGRADE_PRE=sudo dnf makecache' \
     'PKG_CLEANUP=sudo dnf autoremove' 'PKG_UPGRADE_PARTIAL=sudo dnf upgrade' \
     'PKG_COUNT_REFRESH=dnf makecache' PKG_COUNT_EXIT_TRUSTED=1 \
-    'PKG_PENDING_MATCH=^v[[:space:]]' PKG_PENDING_FIELD=3 'PKG_PENDING_FS=|'; do
+    'PKG_PENDING_MATCH=^v[[:space:]]' PKG_PENDING_FIELD=3 'PKG_PENDING_FS=|' \
+    MAINT_UNATTENDED_UPGRADE=1; do
     _cap_k="${_cap_kv%%=*}"
     { grep -v "^${_cap_k}=" "$CAPV/no-664"; printf '%s\n' "$_cap_kv"; } >"$CAPV/k-$_cap_k"
     "$CAPCHK" "$CAPV/k-$_cap_k" >/dev/null 2>&1 || {
@@ -9102,6 +9142,77 @@ check "core-doctor's legend names all three states" \
 # `·` and not `○`: the wired block below the tools uses ○ for "installed but IDLE". Two
 # meanings for one glyph on one screen is the legibility problem this change is about, so the
 # separation is pinned rather than left to whoever edits next.
+# ── the opt-in split is PER REPO now (#666) ──────────────────────────────────
+# The bug: one Core-side list cannot say "opt-in over there, expected here", so `jj` and
+# `ast-grep` — 21 in the Gentoo and Kali cells ONLY — were reported as expected on every
+# box, showing a degraded integration where nothing was wrong. That is the failure mode
+# most likely to train an operator to ignore the report.
+#
+# `check` sources ui + 30-functions only, so these need 02-capabilities and a seeded
+# declaration; hence a local runner rather than reusing it.
+CAPD_DOC="$SANDBOX/capdoc"
+rm -rf "$CAPD_DOC"
+mkdir -p "$CAPD_DOC"
+_doccheck() { # _doccheck <label> <decl> <zsh-body>
+  local label="$1" decl="$2" body="$3" out
+  printf '%s\n' "$decl" >"$CAPD_DOC/os.capabilities"
+  if out="$(HOME="$SANDBOX" CORE_CAPABILITIES_FILE="$CAPD_DOC/os.capabilities" \
+      zsh -fc "source '$UI' || exit 1; source '$HERE/zsh/02-capabilities.zsh' || exit 1; source '$FN' || exit 1; $body" 2>&1)"; then
+    pass "$label"
+  else
+    fail "$label"
+    [[ -n "$out" ]] && printf '%s\n' "$out" | sed 's/^/    /' >&2
+  fi
+}
+# THE FIX, stated as the bug it closes: a repo that declares jj opt-in gets a dot, and the
+# same tool stays a cross on a repo that does not — the sentence the old list could not
+# express in both directions at once.
+_doccheck "core-doctor: a declared TOOLS_OPTIN reclassifies jj as opt-in" \
+  'TOOLS_OPTIN=jj ast-grep' \
+  '_core_doctor_optin jj && _core_doctor_optin ast-grep'
+_doccheck "core-doctor: a tool absent from a declared TOOLS_OPTIN is EXPECTED" \
+  'TOOLS_OPTIN=jj ast-grep' \
+  '! _core_doctor_optin lnav'
+# ...and the JSON contract moves with the render, because a gate asserting `expected` must
+# not disagree with the glyph a human reads two lines above it.
+_doccheck "core-doctor --json: expected follows the declared split, not Core's list" \
+  'TOOLS_OPTIN=jj ast-grep' \
+  '_core_have() { return 1 }
+   _core_doctor_present() { return 1 }
+   out=$(core-doctor --json 2>&1)
+   q=$(printf \\42)
+   exp=${out#*expected}
+   [[ $exp == *${q}jj${q}:false* ]] && [[ $exp == *${q}lnav${q}:true* ]]'
+# PER-KEY FALLBACK, and deliberately unlike `up` and the maint runner. A declaration is
+# authoritative there because an OMISSION IS A SAFETY STATEMENT (no assume-yes token means
+# never auto-confirm). TOOLS_OPTIN carries no such claim — omitting it says the repo has not
+# curated a list, not that nothing is optional — and reading it as "nothing is opt-in" would
+# mark every uninstalled optional tool degraded, manufacturing the alarm fatigue the state
+# exists to prevent.
+_doccheck "core-doctor: a declaration with no TOOLS_OPTIN falls back to Core's default" \
+  'PKG_UPGRADE=sudo dnf upgrade --refresh' \
+  '_core_doctor_optin lnav && ! _core_doctor_optin jj'
+# An EMPTY declared value is the same as absent — _core_cap's own contract, and the thing
+# that stops `TOOLS_OPTIN=` from silently meaning "everything is expected".
+_doccheck "core-doctor: an empty TOOLS_OPTIN is 'not declared', not 'nothing is opt-in'" \
+  'TOOLS_OPTIN=' \
+  '_core_doctor_optin lnav'
+# #666 warned these two could disagree: #697 added stale-flag reporting, and this changes
+# what "expected" means underneath it. They are independent by construction —
+# _core_doctor_stale runs on BOTH the opt-in and the missing branch — and this pins that, so
+# a future edit cannot quietly make a reclassified tool stop being checked for a stale flag.
+# _CORE_PROBED is band 00's ledger and these tests source three fragments, so it is seeded
+# here: without it _core_doctor_stale returns early ("detection never ran") and the
+# assertion would pass for the wrong reason on a run that proved nothing.
+_doccheck "core-doctor: reclassifying a tool opt-in does not stop stale-flag reporting (#697)" \
+  'TOOLS_OPTIN=jq' \
+  '_core_have() { return 1 }
+   _core_doctor_present() { return 1 }
+   HAVE_JQ=1
+   typeset -gA _CORE_PROBED=(jq 1)
+   out=$(NO_COLOR=1 core-doctor 2>&1)
+   [[ $out == *"· jq"* ]] && [[ $out == *stale* ]]'
+
 check "core-doctor does not reuse the wired block's ○ for opt-in tools" \
   '_core_have() { return 1; }
    _core_doctor_present() { return 1; }
@@ -9143,9 +9254,12 @@ assert not (set(gate) & set(optin)), \"a tool cannot be both\"
 #
 # The rule, stated once here and in the array's comment: a tool is opt-in iff its Tool cell
 # carries a ROW-level ²¹, or one of the two footnotes ²¹ itself calls "the same shape" (¹⁷
-# jnv, ¹⁹ gping). Cell-level ²¹ (jj, ast-grep — Gentoo and Kali only) is deliberately NOT
-# included: a Core-side list cannot say "opt-in there, expected here", and muting them
-# globally would hide a real ✗ on the repos that do install them.
+# jnv, ¹⁹ gping). Cell-level ²¹ (jj, ast-grep — Gentoo and Kali only) is still deliberately
+# NOT included, but the REASON changed in #666. It used to be that a Core-side list could not
+# say "opt-in there, expected here" at all, so muting them globally would have hidden a real
+# ✗ on the repos that do install them. Now it can — the OS repo says so in TOOLS_OPTIN — and
+# this array is only the DEFAULT for a box that has not. A cell-level case belongs to the
+# repo whose cell it is, so it must still stay out of here.
 check_dep "core-doctor's opt-in list is derivable from PORTING-MATRIX footnote 21" python3 \
   '_MATRIX="'"$HERE"'/PORTING-MATRIX.md" _OPTIN="${_CORE_DOCTOR_OPTIN[*]}" python3 -c "
 import os, re
@@ -11130,6 +11244,46 @@ _pm_only crontab
 ucheck "maint: _maint_scheduler resolves to a valid scheduler" \
   "source '$UI'; source '$MNT'; [[ \$(_maint_scheduler) == (systemd|launchd|cron) ]]" \
   PATH="$PMBIN"
+# ── maint dispatches through os.capabilities (#665) ──────────────────────────
+# The probe above is what an UNDECLARED box uses, and until #667 that is every box — so it
+# must keep working. These pin the other half: that a declaration is what actually decides,
+# because a dispatcher nothing ever dispatches through looks identical to one that works.
+CAPD_MNT="$SANDBOX/capmnt"
+rm -rf "$CAPD_MNT"
+mkdir -p "$CAPD_MNT"
+CAPZ_M="$HERE/zsh/02-capabilities.zsh"
+_mntcheck() { # _mntcheck <label> <decl> <body> [VAR=VAL ...]
+  local label="$1" decl="$2" body="$3"
+  shift 3
+  printf '%s\n' "$decl" >"$CAPD_MNT/os.capabilities"
+  ucheck "$label" "source '$UI'; source '$CAPZ_M'; source '$MNT'; $body" \
+    PATH="$PMBIN" CORE_CAPABILITIES_FILE="$CAPD_MNT/os.capabilities" "$@"
+}
+_mntcheck "maint: a declared SCHEDULER decides, not the probe" \
+  'SCHEDULER=systemd
+SCHEDULER_UNIT_DIR=~/.config/systemd/user' \
+  '[[ $(_maint_scheduler) == systemd ]]'
+# SCHEDULER=none is a REAL answer — a container, a box with neither init — and probing past
+# it to install a timer anyway would make the declaration a suggestion. This host has
+# crontab on the stub PATH, so a fallthrough would answer `cron` and the assertion catches it.
+_mntcheck "maint: a declared SCHEDULER=none is honoured, never probed past" \
+  'SCHEDULER=none' \
+  '[[ $(_maint_scheduler) == none ]]'
+# The unit path is the declared DIRECTORY plus CORE's filename — the split that keeps
+# `systemctl enable dotfiles-maint.timer` naming the file Core actually wrote.
+_mntcheck "maint: the unit path is the declared dir + Core's own unit name" \
+  'SCHEDULER=systemd
+SCHEDULER_UNIT_DIR=/opt/units' \
+  '[[ $(_maint_unit_file) == /opt/units/dotfiles-maint.service ]]'
+_mntcheck "maint: a leading ~ in the declared dir expands (the reader never expands)" \
+  'SCHEDULER=launchd
+SCHEDULER_UNIT_DIR=~/Agents' \
+  '[[ $(_maint_unit_file) == "$HOME/Agents/com.dotfiles.maint.plist" ]]'
+# cron keeps no unit file of its own, so there is nothing to name.
+_mntcheck "maint: cron resolves to no unit file (its entry lives in the crontab)" \
+  'SCHEDULER=cron' \
+  '[[ -z $(_maint_unit_file) ]]'
+
 # maint-log defensive input (#6): a non-numeric N must be rejected in Core's voice, not
 # handed to `tail` to fail with a raw "invalid number". -f/--follow and a positive int
 # are the only valid args (mirrors serve/cdup/mkbak's input guards).
