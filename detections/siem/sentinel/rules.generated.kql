@@ -267,6 +267,9 @@ EventID in~ ("4886", "4887")
 // privilege_escalation/shadow_credentials_keycredentiallink_5136.yml — Shadow Credentials - msDS-KeyCredentialLink write
 EventID == 5136 and AttributeLDAPDisplayName =~ "msDS-KeyCredentialLink"
 
+// privilege_escalation/spoolss_pipe_impersonation_sysmon_17.yml — SeImpersonate privesc - non-spooler process creating a spoolss named pipe (Sysmon 17)
+(EventType =~ "CreatePipe" and PipeName contains "spoolss") and (not(Image endswith "\\spoolsv.exe"))
+
 // pypi/pypi_collaborator_added.yml — PyPI project collaborator added (durable publish backdoor)
 action startswith "add Owner" or action startswith "add Maintainer"
 

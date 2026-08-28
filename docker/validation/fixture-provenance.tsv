@@ -177,6 +177,8 @@ docker/validation/sigma-fixtures/share_session_enum_5145.jsonl	unverified	-
 docker/validation/sigma-fixtures/share_session_enum_5145_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/sharphound_4662.jsonl	unverified	-
 docker/validation/sigma-fixtures/sharphound_4662_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/spoolss_pipe_17_tn.jsonl	unverified	Sysmon PipeEvent EventData key set (EventType/UtcTime/ProcessGuid/ProcessId/PipeName/Image/User) taken from the schema the shipped sysmonconfig-detection-lab.xml PipeEvent block implies, not from a captured 17
+docker/validation/sigma-fixtures/spoolss_pipe_17_tp.jsonl	unverified	Sysmon PipeEvent EventData key set (EventType/UtcTime/ProcessGuid/ProcessId/PipeName/Image/User) taken from the schema the shipped sysmonconfig-detection-lab.xml PipeEvent block implies, not from a captured 17
 docker/validation/sigma-fixtures/unconstrained_deleg_4624.jsonl	unverified	-
 docker/validation/sigma-fixtures/unconstrained_deleg_4624_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/wmi_consumer_20.jsonl	vendor-documented	EID 20 EventData field list per trustedsec/SysmonCommunityGuide chapters/WMI-events.md; Type="Command Line" from a captured EID 20 at research.splunk.com/sources/aeee5374-3203-4286-b744-a8cc4ad1cd7e/ . Replaces a row that put "Consumer" (an EID 21 field) in an EID 20 record

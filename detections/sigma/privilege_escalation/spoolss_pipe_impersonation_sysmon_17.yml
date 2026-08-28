@@ -1,0 +1,75 @@
+title: SeImpersonate privesc - non-spooler process creating a spoolss named pipe (Sysmon 17)
+id: d5c5c185-a62f-415a-ab0f-2572f910b541
+status: experimental
+description: |
+  Detection posture: high. This is the rule that observes the impersonation itself,
+  rather than the shape around it. PrintSpoofer/GodPotato do not abuse the print
+  spooler's own pipe - they stand up their OWN pipe named for the spoolss endpoint
+  and coerce the spooler into connecting to it, so the coerced SYSTEM context can be
+  impersonated. The invariant is therefore ownership, not content: legitimate spoolss
+  pipes are CREATED by the print spooler, so any other process creating one is the
+  anomaly. That is a shape rather than an IOC - it does not depend on the tool's
+  filename and survives renaming the binary.
+  Creation, not connection. `category: pipe_created` resolves to Sysmon 17 and 18
+  under the sysmon pipeline, and this rule pins the selection to EventType
+  CreatePipe on purpose. Trace both halves and the reason is arithmetic: every true
+  positive is a creation (the tool standing up its pipe, under its own Image), while
+  the only CONNECT the attack generates is the spooler binding back to that pipe -
+  which arrives as spoolsv.exe and is removed by filter_legit anyway. What would
+  survive filter_legit on a connect event is ordinary print clients binding
+  \pipe\spoolss under their own Image, which is noise carrying no signal. Do not
+  widen this to ConnectPipe without re-deriving that trade.
+  filter_legit is NOT an environment-specific allowlist and needs no tuning before
+  deployment: \spoolsv.exe is a fixed Windows invariant, not a property of your
+  estate, so there is no placeholder here for an operator to populate.
+  Relationship to the rest of the corpus. The potato pair -
+  potato_seimpersonate_4688.yml (id 9486ed6c-4c38-457f-a475-188a978eaa4a) and
+  potato_seimpersonate_sysmon_1.yml (id 03e878f6-bbdc-41e1-afa6-68b2979938fe) - see a
+  service identity spawning a shell, which is the shape BEFORE the token is stolen;
+  their own descriptions concede they cannot show the run-as-SYSTEM result. This rule
+  is the confirmation they point at. On the wire, coercion_named_pipes_5145.yml (id
+  29ac7a00-b6fe-48d8-8c65-f62a8b83808d) catches the same pipe set over IPC$ via 5145;
+  that is the network-plane view of a remote coercion, this is the host-plane view of
+  a local one. All three on one host is the privilege-escalation chain end to end.
+  Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
+  "Windows privilege escalation" fold; htpx pair potato-seimpersonate).
+  Requires Sysmon PipeEvent (EventID 17). Note that the shipped
+  detections/sysmon/sysmonconfig-detection-lab.xml enables PipeEvent as an
+  onmatch="include" list of five pipe names, so on hosts running that baseline the
+  agent has already scoped the feed to those five before Sigma sees an event -
+  spoolss is one of them, and this rule needs no config change.
+references:
+  - https://attack.mitre.org/techniques/T1134/001/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/potato-seimpersonate-4688.md
+author: dotfiles-Defense
+date: 2026-08-27
+tags:
+  # Both halves of T1134.001 are claimed here, and the Stealth half is the point of the
+  # rule. T1134.001 is dual-tactic in the pinned v19.2 bundle, so check-attack-tags.sh's
+  # pairing assertion earns both with no attack-tactic-deliberate escape. Where the
+  # potato_seimpersonate_* pair declines TA0005 - correctly, per
+  # dotgibson/dotfiles-Defense#223 - because it observes the shape before the token is
+  # stolen, this rule observes the pipe the impersonation cannot avoid standing up, which
+  # is the evasion itself. dotgibson/dotfiles-Defense#225 is where that was settled.
+  - attack.stealth
+  - attack.privilege-escalation
+  - attack.t1134.001
+logsource:
+  category: pipe_created
+  product: windows
+detection:
+  selection:
+    EventType: 'CreatePipe'
+    PipeName|contains: 'spoolss'
+  filter_legit:
+    # The print spooler creating its own endpoint. A fixed OS invariant, not a
+    # deployment-time allowlist - see the description.
+    Image|endswith: '\spoolsv.exe'
+  condition: selection and not filter_legit
+falsepositives:
+  - Print-management or spooler-adjacent software that hosts its own spoolss endpoint
+    out of process (rare; allowlist the specific Image after confirming the publisher).
+  - A Sysmon config that rewrites or omits EventType on PipeEvent, which would make the
+    selection silently unsatisfiable rather than noisy - verify against a real 17 before
+    trusting silence from this rule.
+level: high

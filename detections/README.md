@@ -179,7 +179,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Offense` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 105 rules / 123 documents, organized by ATT&CK tactic
+### `sigma/` — 106 rules / 124 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -201,6 +201,7 @@ purple-validatable out of the box.
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------- |
 | `adcs_esc1_san_mismatch_4886`                                 | 4886/4887 cert request                                                                            | T1649     | AD CS abuse · adcs-esc1-certipy              |
 | `potato_seimpersonate_4688` / `potato_seimpersonate_sysmon_1` | proc create (service→shell); per-channel pair (Security-4688 `SubjectUserName` / Sysmon-1 `User`) | T1134.001 | Win privesc · potato-seimpersonate           |
+| `spoolss_pipe_impersonation_sysmon_17`                        | Sysmon 17 PipeEvent (`\spoolss` created by anything but `spoolsv.exe`)                            | T1134.001 | Win privesc · potato-seimpersonate           |
 | `shadow_credentials_keycredentiallink_5136`                   | 5136 msDS-KeyCredentialLink                                                                       | T1556     | AD attack paths · shadow-credentials-certipy |
 | `rbcd_allowedtoact_5136`                                      | 5136 msDS-AllowedToActOnBehalf…                                                                   | T1098     | AD attack paths · rbcd-impacket              |
 
@@ -290,8 +291,9 @@ Two techniques carry a deliberate set of rules, covering different halves:
   its reach is exactly your SACL's scope; `mass_file_encryption_sysmon_11` reads Sysmon
   FileCreate, which is **ACL-independent** and therefore covers the shares nobody put a
   SACL on, at the cost of enabling event 11. They are a per-source pair in the same sense
-  as `potato_seimpersonate_*` — genuinely different field names (`ObjectName`/`ProcessName`
-  vs `TargetFilename`/`Image`), so one rule naming both would null under either pipeline.
+  as the `potato_seimpersonate` 4688/Sysmon-1 pair — genuinely different field names
+  (`ObjectName`/`ProcessName` vs `TargetFilename`/`Image`), so one rule naming both would
+  null under either pipeline.
   Deploy whichever you collect; deploy both if you collect both.
 
 **`collection/`** (host-side collection — proc create 4688 / Sysmon 1, plus 4663 for the read sweep)
@@ -492,7 +494,8 @@ process that issues ten destructive API calls a minute. The two process-creation
 (`host_recon_command_burst`, `service_stop_burst`) group by `Computer` rather than by
 account on purpose — the actor field differs per channel (Security-4688
 `SubjectUserName` vs Sysmon-1 `User`) and naming either would null the rule under the
-other channel's pipeline, the same trap the `potato_seimpersonate_*` pair documents.
+other channel's pipeline, the same trap the `potato_seimpersonate` 4688/Sysmon-1 pair
+documents.
 Both bursts are a property of the host anyway.
 
 The `linux/`, `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,
@@ -567,8 +570,8 @@ Nothing is `stable` yet — that would claim production-tuning history this repo
 A deliberately minimal Sysmon baseline that turns on **exactly** the telemetry
 the rules above need (ProcessCreate 1, ProcessAccess 10 on LSASS, FileCreate 11
 for the encryption sweep, Registry 12/13 for autorun/WDigest, PipeEvent 17/18 for
-coercion pipes, WmiEvent 19/20/21). It is a lab baseline, not production —
-graduate to `sysmon-modular` and tune.
+the coercion pipes and the spoolss impersonation rule, WmiEvent 19/20/21). It is a
+lab baseline, not production — graduate to `sysmon-modular` and tune.
 
 **FileCreate 11 is the one block that costs real volume**, and it is enabled on
 purpose: it is what makes `mass_file_encryption_sysmon_11` ACL-independent, where the
