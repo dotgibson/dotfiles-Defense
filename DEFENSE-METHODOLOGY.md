@@ -119,9 +119,11 @@ resolves to Sysmon 17 and 18, and on a connect event the only thing the attack p
 is the spooler binding back — which the rule's own `spoolsv.exe` filter removes — so
 everything that would survive the filter there is ordinary print traffic.
 
-The **token-context half remains open**: nothing here reads 4624/4672 for an anomalous
-token context, and a rule that did would be a second, independent piece of TA0005
-evidence for the same technique. The decision here is about these two rules, not about
+The **token-context half remains open** and is tracked in #230: nothing here reads
+4624/4672 for an anomalous token context, and a rule that did would be a second,
+independent piece of TA0005 evidence for the same technique — one that sits downstream of
+every potato variant, including the ones that coerce over an endpoint other than `spoolss`
+and so leave the pipe rule silent. The decision here is about these two rules, not about
 the tactic.
 
 The row is narrow on purpose: it is the *registry* plane, not the endpoint. Both rules
