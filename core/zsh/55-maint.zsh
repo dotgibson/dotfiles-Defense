@@ -23,7 +23,23 @@ typeset -g _MAINT_SH="${${(%):-%x}:A:h}/../maint/dotfiles-maint.sh"
 _MAINT_SH="${_MAINT_SH:A}"
 typeset -g _MAINT_LOG="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles-maint/maint.log"
 
+# _maint_scheduler — WHICH scheduler holds this box's daily run. The DISPATCHER, and it
+# stays: switching on a capability rather than on an OS name is the correct cross-OS shape,
+# and it is what ARCHITECTURE.md always said was right about this file. What changed in
+# #665 is where the answer comes from — the OS layer declares it, and the probe below is
+# the fallback for a box that has not declared yet.
+#
+# THE PROBE IS NOT REDUNDANT AND MUST NOT BE DELETED WITH THE FALLBACK. It is what an
+# undeclared box uses, and until #667 stamps the fleet that is every box.
 _maint_scheduler() {
+  emulate -L zsh
+  # A declaration is authoritative, the same all-or-nothing rule `up` uses: an OS repo that
+  # declares SCHEDULER=none is SAYING this box holds no timer, and probing past that answer
+  # to install one anyway would make the declaration a suggestion.
+  if ((${+functions[_core_cap]})) && ((${#_CORE_CAP})); then
+    _core_cap SCHEDULER none
+    return 0
+  fi
   if [[ "$OSTYPE" == darwin* ]]; then
     echo launchd
   elif [[ -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1; then
@@ -31,6 +47,60 @@ _maint_scheduler() {
   elif command -v crontab >/dev/null 2>&1; then
     echo cron
   else echo none; fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BUILT-IN DEFAULT UNIT PATHS — DELETE THIS BLOCK IN #667.
+# ══════════════════════════════════════════════════════════════════════════════
+# Where each scheduler keeps the maint unit. This is the LAST OS-ABSOLUTE PATH IN CORE,
+# and it is the reason audit-core.sh §5c still carries a per-line exception for this file:
+# `~/Library/LaunchAgents` is a macOS literal, correct on exactly one of the nine boxes.
+#
+# It is here because a declaration cannot be assumed yet. #667 authors
+# SCHEDULER_UNIT_PATH in all nine repos, and when it lands this block goes and the §5c
+# exception goes with it — the same demolition #664 scheduled for the package-manager
+# defaults in 60-update.zsh. Until then, deleting it would leave an undeclared box unable
+# to install the timer it has always been able to install.
+#
+# An OS-absolute path is CORRECT in an OS repo's declaration and wrong here. That is the
+# whole layering rule, and this block is the last place Core still breaks it.
+_maint_unit_dir_default() {
+  emulate -L zsh
+  case "$1" in
+  systemd) print -r -- "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user" ;;
+  launchd) print -r -- "$HOME/Library/LaunchAgents" ;;
+  *) print -r -- "" ;;
+  esac
+}
+# ══════════════════════════════════════════════════════════════════════════════
+
+# _maint_unit_file [scheduler] — THE path this box's maint unit lives at: the declared
+# DIRECTORY plus Core's own filename. Empty for cron (whose entry lives in the user's
+# crontab, not a file of its own) and for `none`.
+#
+# CORE OWNS THE FILENAME, the OS layer owns the directory. `dotfiles-maint.service` and
+# `com.dotfiles.maint` are the names `systemctl enable`, `launchctl` and the status verbs
+# use, so a declaration that could rename the file would decouple the unit Core writes from
+# the one it then enables — installed, reported healthy, never run.
+#
+# A leading `~` is expanded here rather than by the reader: the declaration is DATA, read
+# and never sourced, so nothing has expanded it — and a `~/`-rooted dir is the natural thing to
+# write. Only a LEADING `~/` is touched; anything else is the author's business.
+_maint_unit_file() {
+  emulate -L zsh
+  local sched="${1:-$(_maint_scheduler)}" d=
+  if ((${+functions[_core_cap]})) && ((${#_CORE_CAP})); then
+    d="$(_core_cap SCHEDULER_UNIT_DIR)"
+  else
+    d="$(_maint_unit_dir_default "$sched")"
+  fi
+  [[ -n "$d" ]] || { print -r -- ""; return 0 }
+  [[ "$d" == '~/'* ]] && d="$HOME/${d#'~/'}"
+  case "$sched" in
+  systemd) print -r -- "${d%/}/dotfiles-maint.service" ;;
+  launchd) print -r -- "${d%/}/com.dotfiles.maint.plist" ;;
+  *) print -r -- "" ;;
+  esac
 }
 
 # ── The PATH a scheduler must hand the runner ────────────────────────────────
@@ -192,8 +262,8 @@ _maint_unit_runner() {
   local f line cmd xml rest argv0 sq dq esc
   case "$(_maint_scheduler)" in
   systemd)
-    f="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/dotfiles-maint.service"
-    [[ -f "$f" ]] || return 0
+    f="$(_maint_unit_file systemd)"
+    [[ -n "$f" && -f "$f" ]] || return 0
     line="$(grep '^ExecStart=/usr/bin/env bash ' "$f" 2>/dev/null | head -n 1)"
     [[ -n "$line" ]] || return 0
     line="${line#ExecStart=/usr/bin/env bash }"
@@ -216,8 +286,8 @@ _maint_unit_runner() {
     # ProgramArguments[1] — argv[0] is the interpreter, argv[1] the runner. Parsed with
     # zsh string ops rather than python3/plutil: this is a login-shell function, and the
     # suite's plist parsing (plistlib) is a TEST-side luxury Core itself cannot assume.
-    f="$HOME/Library/LaunchAgents/com.dotfiles.maint.plist"
-    [[ -f "$f" ]] || return 0
+    f="$(_maint_unit_file launchd)"
+    [[ -n "$f" && -f "$f" ]] || return 0
     xml="$(<"$f")"
     xml="${xml//$'\n'/ }" # tolerate the array wrapped across lines
     rest="${xml#*<key>ProgramArguments</key>}"
@@ -358,16 +428,16 @@ _maint_unit_needs_refresh() {
   _MAINT_REFRESH_WHY=''
   case "$(_maint_scheduler)" in
   systemd)
-    f="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/dotfiles-maint.service"
-    [[ -f "$f" ]] || return 1
+    f="$(_maint_unit_file systemd)"
+    [[ -n "$f" && -f "$f" ]] || return 1
     grep -q '^Environment="PATH=' "$f" && has_path=1
     ;;
   launchd)
     # Test for the PATH KEY, not merely for an EnvironmentVariables dict: a plist
     # carrying some unrelated variable would otherwise read as current while the
     # runner still gets a stripped PATH — the exact silent-skip this detects.
-    f="$HOME/Library/LaunchAgents/com.dotfiles.maint.plist"
-    [[ -f "$f" ]] || return 1
+    f="$(_maint_unit_file launchd)"
+    [[ -n "$f" && -f "$f" ]] || return 1
     grep -q '<key>PATH</key>' "$f" && has_path=1
     ;;
   cron)
@@ -400,9 +470,19 @@ maint-install() {
 
   case "$(_maint_scheduler)" in
   systemd)
-    local ud="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+    # The declared path names the .service; the .timer is its sibling, derived rather
+    # than declared twice — two keys that must agree is two keys that can disagree.
+    local svc tmr ud
+    svc="$(_maint_unit_file systemd)"
+    if [[ -z "$svc" ]]; then
+      _core_err "maint-install: SCHEDULER=systemd but no SCHEDULER_UNIT_DIR is declared"
+      _core_hint "declare it in os/<os>.capabilities (see core/examples/os.capabilities.example)"
+      return 1
+    fi
+    tmr="${svc%.service}.timer"
+    ud="${svc:h}"
     mkdir -p "$ud"
-    cat >"$ud/dotfiles-maint.service" <<EOF
+    cat >"$svc" <<EOF
 [Unit]
 Description=dotfiles daily maintenance (brew, plugins, nvim, mise)
 After=network-online.target
@@ -432,7 +512,13 @@ EOF
     _core_hint "headless/server box you're not always logged into? run: loginctl enable-linger $USER"
     ;;
   launchd)
-    local plist="$HOME/Library/LaunchAgents/com.dotfiles.maint.plist"
+    local plist
+    plist="$(_maint_unit_file launchd)"
+    if [[ -z "$plist" ]]; then
+      _core_err "maint-install: SCHEDULER=launchd but no SCHEDULER_UNIT_DIR is declared"
+      _core_hint "declare it in os/<os>.capabilities (see core/examples/os.capabilities.example)"
+      return 1
+    fi
     mkdir -p "${plist:h}" "${_MAINT_LOG:h}"
     cat >"$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -549,14 +635,16 @@ maint-uninstall() {
   case "$(_maint_scheduler)" in
   systemd)
     systemctl --user disable --now dotfiles-maint.timer 2>/dev/null
-    rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/dotfiles-maint."{service,timer}
+    local svc
+    svc="$(_maint_unit_file systemd)"
+    [[ -n "$svc" ]] && rm -f "$svc" "${svc%.service}.timer"
     systemctl --user daemon-reload
     _core_ok "removed systemd timer"
     ;;
   launchd)
-    local p="$HOME/Library/LaunchAgents/com.dotfiles.maint.plist"
-    launchctl unload "$p" 2>/dev/null
-    rm -f "$p"
+    local p
+    p="$(_maint_unit_file launchd)"
+    [[ -n "$p" ]] && { launchctl unload "$p" 2>/dev/null; rm -f "$p"; }
     _core_ok "removed launchd agent"
     ;;
   cron)

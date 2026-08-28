@@ -214,17 +214,45 @@ typeset -ga _CORE_DOCTOR_GROUPS=(
 # to stop.
 #
 # So the array below is NOT a placeholder awaiting that file. It is the DEFAULT a box falls
-# back to when its OS repo declares no TOOLS_OPTIN — which, until #666 wires the doctor
-# through $_CORE_CAP, is still every box.
+# back to when its OS repo declares no TOOLS_OPTIN — which, until #667 stamps the fleet, is
+# still every box. #666 wired the doctor through $_CORE_CAP; this is what it falls back to.
 typeset -ga _CORE_DOCTOR_OPTIN=(
   lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
 )
 
 # _core_doctor_optin <tool> → 0 if the tool is opt-in (absence is expected, never an alarm).
 # A function rather than an inline loop because both renderers ask, and they must not drift.
+#
+# THE BUG THIS FIXES (#666). Classifying against ONE Core-side list cannot say "opt-in over
+# there, expected here", so a tool that is genuinely optional on one distro was reported as
+# expected on all of them. `jj` and `ast-grep` are the known cases — PORTING-MATRIX.md marks
+# them ²¹ in the Gentoo and Kali cells only, and Arch, openSUSE and Alpine package them — and
+# `dust` is the same shape on the Debian family. The result was a health report showing a
+# degraded integration on a box where nothing is wrong, which is the failure mode most likely
+# to train an operator to ignore the report.
+#
+# PER-KEY FALLBACK HERE, AND THAT IS DELIBERATELY UNLIKE `up` AND THE MAINT RUNNER. Those
+# treat a declaration as authoritative all-or-nothing, because for them an OMISSION IS A
+# SAFETY STATEMENT: no PKG_ASSUME_YES means never auto-confirm, no MAINT_UNATTENDED_UPGRADE
+# means refuse. Reading Core's default into either would answer a refusal with a permission.
+#
+# TOOLS_OPTIN carries no such claim. It is a REPORTING preference, and omitting it says
+# nothing about which tools this archive considers optional — it says the repo has not
+# curated a list. Falling back to Core's default there costs a possibly-imprecise glyph;
+# treating the omission as "nothing is opt-in" would mark every uninstalled optional tool
+# as degraded and manufacture exactly the alarm fatigue this state exists to prevent. Both
+# #663's schema comment and the note above already specify this key as "absent → Core's
+# default"; this is that, and the asymmetry is the point rather than an oversight.
 _core_doctor_optin() {
   local _o
-  for _o in $_CORE_DOCTOR_OPTIN; do [[ "$_o" == "$1" ]] && return 0; done
+  local -a _list
+  # `${=…}` splits the declared value on whitespace — TOOLS_OPTIN is a space-separated list,
+  # and the reader stores it verbatim as one string.
+  if ((${+functions[_core_cap]})); then
+    _list=(${=$(_core_cap TOOLS_OPTIN)})
+  fi
+  ((${#_list})) || _list=($_CORE_DOCTOR_OPTIN)
+  for _o in $_list; do [[ "$_o" == "$1" ]] && return 0; done
   return 1
 }
 

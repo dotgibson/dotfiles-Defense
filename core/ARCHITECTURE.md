@@ -53,12 +53,25 @@ contract read from the consuming OS repo's side.
 The test above is absolute, so the one place Core knowingly departs from it is named
 here rather than left to be rediscovered as drift:
 
-- **`zsh/55-maint.zsh`** — the scheduler control surface. Its launchd arm writes
-  `~/Library/LaunchAgents` and embeds an Apple plist; its systemd arm embeds a unit file.
-  Two OS-specific payloads in one Core file, but selected by `_maint_scheduler`, which is
-  the correct cross-OS shape. Excepted explicitly in `audit-core.sh` §5c.
+- **`zsh/55-maint.zsh`** — the scheduler control surface, and what is left of it is now
+  small and time-boxed. Since #665 the scheduler itself and the directory its unit lives in
+  are **declared** (`SCHEDULER`, `SCHEDULER_UNIT_DIR`), so `~/Library/LaunchAgents` no
+  longer appears at the six call sites it used to — it survives only in the built-in
+  fallback for a box that has not declared yet. `audit-core.sh` §5c's exception now covers
+  that one block, and retires with it in #667.
 
-**There used to be a second**, and retiring it is what `os.capabilities` was for.
+  The launchd plist and the systemd unit **templates** stay in Core deliberately, and are
+  not the exception. They are portable text parameterised by paths, selected by
+  `_maint_scheduler` — the correct cross-OS shape. Pushing them into the OS repos would put
+  one systemd unit in seven copies with no owner, which is the hand-maintained N-way drift
+  `VENDORING.md` records as the #449 failure. What belongs to the OS layer is *where* the
+  unit goes, not *what it says*.
+
+**Both exceptions are now scheduled for demolition in the same change (#667)**, which is
+the point of the declaration: what is left in Core is a stopgap for boxes that have not
+declared, not a standing carve-out.
+
+**There used to be a second, larger one**, and retiring it is what `os.capabilities` was for.
 `zsh/60-update.zsh` — the `up` verb — knew how seven package managers count and apply
 updates, including a `grep -qi tumbleweed /etc/os-release` to choose `zypper dup` over
 `zypper up`. The defence was that `up` is **one verb with N backends**, structurally

@@ -39,10 +39,23 @@ PKG_OWNS=dnf provides
 PKG_COUNT_PENDING=dnf -q --refresh check-update
 
 # ── scheduler (required) ──────────────────────────────────────────────────────
-# systemd | launchd | none. `none` is a real answer — a container, or a box with
+# systemd | launchd | cron | none. `none` is a real answer — a container, or a box with
 # neither — and tells the maint layer to offer the manual verb rather than claim a
-# timer it cannot install.
+# timer it cannot install. `cron` is what an OpenRC box (Alpine, Gentoo) gets: it has
+# crontab and no systemd.
 SCHEDULER=systemd
+# The DIRECTORY this box's scheduler reads units from. REQUIRED for systemd and launchd;
+# cron takes none (its entry lives in the user's crontab, not a file of its own) and
+# neither does `none`.
+#
+# A DIRECTORY, not a full path — Core appends its own unit name. WHERE units live is an
+# OS fact and belongs to you; what Core calls its job (dotfiles-maint.service,
+# com.dotfiles.maint) is Core's identity and appears in `systemctl enable` and `launchctl`.
+#
+# THIS IS THE KEY THAT GETS THE LAST OS-ABSOLUTE PATH OUT OF CORE. An absolute path is
+# CORRECT here and wrong in Core — the layering rule in one line. macOS declares
+# ~/Library/LaunchAgents.
+SCHEDULER_UNIT_DIR=~/.config/systemd/user
 
 # ── how `up` applies (all optional, #664) ─────────────────────────────────────
 # The flag `up -y` appends. OMIT IT to mean "never auto-confirm" — the right answer on
@@ -74,10 +87,33 @@ PKG_PENDING_MATCH=^[a-zA-Z0-9][^ ]*[[:space:]]
 # because most archives overload that status: dnf exits 100 when updates EXIST, and
 # `pacman -Qu` / `checkupdates` exit non-zero when there are NONE.
 
+# ── the scheduled runner (optional, #665) ─────────────────────────────────────
+# Set to 1 to permit the daily maint run to apply SYSTEM package upgrades on this box.
+# OMITTING IT REFUSES, and that direction is the point: a fail-open here silently enables
+# unattended full upgrades on a box nobody is watching. It is the SECOND of two gates —
+# the operator's MAINT_SYSTEM_UPGRADE=1 is the first, and both must be true.
+#
+# WHO SHOULD NOT DECLARE IT: Kali (engagement boxes are updated by hand between ops, so a
+# background upgrade breaks reproducibility mid-engagement), and Arch and Gentoo (a rolling
+# distro that half-upgrades unattended is how you get a box that will not boot).
+MAINT_UNATTENDED_UPGRADE=1
+
 # ── optional ──────────────────────────────────────────────────────────────────
 # Space-separated tools core-doctor reports as OPT-IN rather than MISSING on this OS:
 # things the archive has but this repo deliberately does not install. Omit the key
 # entirely to accept Core's built-in default (_CORE_DOCTOR_OPTIN, zsh/30-functions.zsh).
+#
+# A DECLARED LIST IS COMPLETE FOR THIS BOX — it REPLACES Core's default, it does not add to
+# it. So a repo that declares this key must re-state every tool it still considers optional,
+# not only the ones it is adding: declaring `TOOLS_OPTIN=jj` alone would make lnav,
+# hyperfine and the rest of Core's default list report as MISSING here. Start from the
+# default above and edit it.
+#
+# THIS KEY IS THE ONE PLACE A PARTIAL DECLARATION FALLS BACK per-key (#666). Everywhere
+# else — PKG_ASSUME_YES, PKG_UPGRADE_PARTIAL, MAINT_UNATTENDED_UPGRADE — an omission is a
+# SAFETY statement and Core honours it exactly. Omitting this one says only that you have
+# not curated a list, so Core's default applies rather than "nothing here is optional",
+# which would mark every uninstalled optional tool as degraded.
 TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -114,12 +150,14 @@ TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
 #     PKG_COUNT_PENDING=brew outdated --quiet
 #     PKG_COUNT_REFRESH=brew update
 #     SCHEDULER=launchd
+#     SCHEDULER_UNIT_DIR=~/Library/LaunchAgents
 #
 #   Arch (pacman) — no PKG_UPGRADE_PARTIAL and no PKG_ASSUME_YES, deliberately.
 #     PKG_UPGRADE=sudo pacman -Syu
 #     PKG_COUNT_PENDING=checkupdates       # pacman-contrib; syncs a copy in USER space
 #
-#   Alpine (apk) — doas, not sudo. Full sync only, like Arch.
+#   Alpine (apk) — doas, not sudo. Full sync only, like Arch. OpenRC, so SCHEDULER=cron
+#   (busybox crond) and no SCHEDULER_UNIT_DIR.
 #     PKG_UPGRADE=doas apk upgrade
 #     PKG_UPGRADE_PRE=doas apk update
 #     PKG_COUNT_PENDING=apk list -u

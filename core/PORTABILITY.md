@@ -95,7 +95,7 @@ branching on an OS name.**
 | Capability | Shim | Selects by |
 | --- | --- | --- |
 | clipboard | `bin/clip`, `bin/clip-paste` | `$WSL_DISTRO_NAME` → `pbcopy` → `wl-copy` → `xclip` → `xsel` |
-| scheduler | `_maint_scheduler` (`zsh/55-maint.zsh`) | launchd / `/run/systemd/system` / `crontab` |
+| scheduler | `_maint_scheduler` (`zsh/55-maint.zsh`) | the OS layer's declared `SCHEDULER`, else launchd / `/run/systemd/system` / `crontab` |
 | package manager | `_pkgup_mgr` (`zsh/60-update.zsh`) | `command -v` over seven managers |
 | package-manager **verbs** | `_pkgup_verb` (`zsh/60-update.zsh`) | the OS layer's `os.capabilities` declaration, then Core's built-in row |
 | privilege | `_pkgup_priv`, `_blib_priv` | `sudo` → `doas` → bare |
@@ -148,11 +148,15 @@ machines; a missing optional tool is a visible, local degradation.
 
 ### The one documented exception
 
-**`zsh/55-maint.zsh`** is excepted **at the gate**. Its launchd arm legitimately writes
-`~/Library/LaunchAgents` and embeds a plist; its systemd arm embeds a unit. It switches
-on `_maint_scheduler`, the correct cross-OS shape, so the OS-specific text is the payload
-rather than an assumption. §5c drops only its `LaunchAgents` lines — the rest of the file
-is scanned like any other, so unrelated drift inside it still fails.
+**`zsh/55-maint.zsh`** is excepted **at the gate**, and since #665 that exception is one
+block wide and has a retirement date. The scheduler and its unit directory are declared
+(`SCHEDULER`, `SCHEDULER_UNIT_DIR`), so `~/Library/LaunchAgents` survives only in the
+built-in fallback for a box that has not declared yet; #667 deletes it and the §5c
+exception together. The plist and unit **templates** stay — they are portable text
+parameterised by paths, selected by `_maint_scheduler`, and duplicating a systemd unit
+across seven repos is the #449 drift this document exists to prevent. §5c drops only the
+`LaunchAgents` lines — the rest of the file is scanned like any other, so unrelated drift
+inside it still fails.
 
 **`zsh/60-update.zsh` used to be listed here as a second exception**, and the distinction
 mattered: it was excepted _architecturally, not at the gate_. It never needed a §5c

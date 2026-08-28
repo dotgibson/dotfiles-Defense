@@ -43,6 +43,10 @@ export HOME="${HOME:?}"
 # brew instead. The floor is a last resort for a hand-wired scheduler, not a preference.
 export PATH="$HOME/.local/bin:${CARGO_HOME:-$HOME/.cargo}/bin${PATH:+:$PATH}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 : "${XDG_CACHE_HOME:=$HOME/.cache}"
+# CONFIG too, as of #665: the capability declaration lives under it, and an unset
+# XDG_CONFIG_HOME would otherwise resolve the file to a bare `/zsh/os.capabilities` —
+# unreadable, so the runner would silently behave as though the box declared nothing.
+: "${XDG_CONFIG_HOME:=$HOME/.config}"
 : "${XDG_STATE_HOME:=$HOME/.local/state}"
 : "${XDG_DATA_HOME:=$HOME/.local/share}"
 # v4: plugins are DATA (under $XDG_DATA_HOME), no longer in the $ZDOTDIR config tree.
@@ -140,6 +144,116 @@ _pkgcount() {
     return 0
   fi
   printf '%s\n' "$out" | grep -cE "$pat"
+}
+
+# ── the OS layer's capability declaration, read from bash ────────────────────
+# The same file zsh/02-capabilities.zsh reads, read the same way: EXTRACTED, never sourced.
+# That is the whole reason #663 chose flat KEY=value over a shell fragment — sourcing a
+# per-repo file into a privileged unattended runner is a code-execution surface, and this
+# runner is the one process in the system that may call `sudo -n`. Extraction cannot
+# execute anything.
+#
+# Parsed once into a pair of parallel arrays rather than re-sed'ing per lookup: bash 3.2 is
+# the floor here (macOS ships it, and audit-core.sh holds every gate to it), so there are no
+# associative arrays to reach for.
+#
+# Deliberately the same strictness as the zsh reader: a line must be KEY=value with KEY
+# matching [A-Z][A-Z0-9_]*, and anything else is skipped in SILENCE. The audit is what
+# reports a malformed declaration (scripts/check-capabilities.sh); an unattended runner's
+# job is to not be confused by one at 3am.
+CAP_FILE="${CORE_CAPABILITIES_FILE:-${ZSH_CFG:-$XDG_CONFIG_HOME/zsh}/os.capabilities}"
+CAP_KEYS="" CAP_VALS=""
+if [[ -r "$CAP_FILE" ]]; then
+  while IFS= read -r _cl || [[ -n "$_cl" ]]; do
+    case "$_cl" in
+    [A-Z]*=*) ;;
+    *) continue ;;
+    esac
+    _ck="${_cl%%=*}"
+    case "$_ck" in *[!A-Z0-9_]*) continue ;; esac
+    _cv="${_cl#*=}"
+    # Trim trailing whitespace only, exactly as the zsh reader does — a leading space is
+    # part of a command prefix and the author's business; a trailing one is always an
+    # accident, and the two readers must not disagree about the same file.
+    while [[ "$_cv" == *[[:space:]] ]]; do _cv="${_cv%?}"; done
+    CAP_KEYS="$CAP_KEYS $_ck"
+    CAP_VALS="$CAP_VALS$_ck	$_cv
+"
+  done <"$CAP_FILE"
+  unset _cl _ck _cv
+fi
+
+# cap_declared — does this box have a declaration AT ALL? The all-or-nothing test, and the
+# same rule `up` applies: a declaration is authoritative, so an OMITTED optional key means
+# what its absence says (refuse, never, none) rather than falling through to a Core default
+# for whatever manager happens to be installed.
+cap_declared() { [[ -n "$CAP_KEYS" ]]; }
+
+# cap <key> — the declared value, empty when absent. NO PIPE, for the reason audit-core.sh
+# §5d gates against: under `set -o pipefail` an awk that exits on its match makes the
+# producer take EPIPE and the pipeline report failure on the SUCCESS path. A read loop has
+# neither the hazard nor a fork.
+cap() {
+  local _k _v
+  while IFS='	' read -r _k _v; do
+    if [[ "$_k" == "$1" ]]; then printf '%s' "$_v"; return 0; fi
+  done <<EOF
+$CAP_VALS
+EOF
+  return 1
+}
+
+# _pkgcount_decl <secs> <ere> <field> <fs> <cmd...> — the declared counter. Same
+# no-answer-is--1 contract as _pkgcount above and for the same reasons; what differs is that
+# the archive's output shape arrives as DATA (an ERE, a field index, a separator) instead of
+# a hand-written pattern per manager. Kept as its own function rather than folded into
+# _pkgcount because the two have different arities and _pkgcount has other callers.
+_pkgcount_decl() {
+  local secs="$1" pat="$2" field="$3" fs="$4" out rc
+  shift 4
+  out="$(_to "$secs" "$@" 2>/dev/null)"
+  rc=$?
+  if ((rc == 124 || rc >= 128)); then
+    echo -1
+    return 0
+  fi
+  # PKG_COUNT_EXIT_TRUSTED: most archives overload this status (dnf exits 100 when updates
+  # EXIST; pacman -Qu and checkupdates exit non-zero when there are NONE), so it is ignored
+  # unless the declaration says it means what it says. Gentoo declares it — an emerge
+  # --pretend that cannot resolve must read as unknown, never as "nothing to do".
+  if [[ -n "$(cap PKG_COUNT_EXIT_TRUSTED)" ]] && ((rc != 0)); then
+    echo -1
+    return 0
+  fi
+  if [[ -n "$fs" ]]; then
+    printf '%s\n' "$out" | awk -F"$fs" -v m="$pat" -v f="$field" \
+      '$0 ~ m { v = $f; gsub(/^[ \t]+|[ \t]+$/, "", v); if (v != "") print v }' | grep -c .
+  else
+    printf '%s\n' "$out" | awk -v m="$pat" -v f="$field" \
+      '$0 ~ m { v = $f; gsub(/^[ \t]+|[ \t]+$/, "", v); if (v != "") print v }' | grep -c .
+  fi
+}
+
+# _priv_decl <word...> — rewrite a declared verb's privilege prefix for UNATTENDED use.
+# A declaration says `sudo dnf upgrade`, naming the intent; this runner needs `sudo -n`, so
+# a verb that would stop at a password prompt fails fast and is logged rather than blocking
+# the daily run forever. `doas` takes -n for the same purpose. A verb with no prefix (brew)
+# is emitted unchanged — Homebrew must never be privileged.
+# Sets PRIV_ARGV rather than echoing, so the caller passes a real argument vector to step()
+# instead of re-splitting a string — the difference between a command and a rumour about one.
+PRIV_ARGV=()
+_priv_decl() {
+  case "${1:-}" in
+  sudo)
+    shift
+    PRIV_ARGV=(sudo -n "$@")
+    ;;
+  doas)
+    shift
+    PRIV_ARGV=(doas -n "$@")
+    ;;
+  *) PRIV_ARGV=("$@") ;;
+  esac
 }
 
 # run a labeled step, capture rc, never abort the script
@@ -365,7 +479,24 @@ count=-1
 # reports -1 rather than 0 when the bound actually fires (see its comment above).
 # pacman -Qu reads the local DB only: it cannot stall, so it stays unwrapped and counted
 # directly — a 0 from it is a real 0.
-if have brew; then
+if cap_declared; then
+  # THE DECLARED PATH. One probe, whatever the archive — the seven-arm ladder below was the
+  # SECOND copy of the one in zsh/60-update.zsh and had already drifted from it: it grew no
+  # emerge arm at all, so a Gentoo box's daily run has never counted anything, and its
+  # zypper apply says `up` where the interactive one says `dup` on Tumbleweed. Two copies of
+  # one fact is how that happens; there is now one.
+  _cmd="$(cap PKG_COUNT_PENDING)"
+  if [[ -n "$_cmd" ]]; then
+    _refresh="$(cap PKG_COUNT_REFRESH)"
+    # shellcheck disable=SC2086  # deliberate word-split: the declared value is a command
+    [[ -n "$_refresh" ]] && _to "$MAINT_PKGCOUNT_TIMEOUT" $_refresh >/dev/null 2>&1
+    _match="$(cap PKG_PENDING_MATCH)"; : "${_match:=.}"
+    _field="$(cap PKG_PENDING_FIELD)"; : "${_field:=1}"
+    _fs="$(cap PKG_PENDING_FS)"
+    # shellcheck disable=SC2086  # same deliberate split
+    count=$(_pkgcount_decl "$MAINT_PKGCOUNT_TIMEOUT" "$_match" "$_field" "$_fs" $_cmd)
+  fi
+elif have brew; then
   count=$(_pkgcount "$MAINT_PKGCOUNT_TIMEOUT" '.' brew outdated --quiet)
 elif have checkupdates; then
   count=$(_pkgcount "$MAINT_PKGCOUNT_TIMEOUT" '.' checkupdates)
@@ -393,8 +524,60 @@ else
 fi
 
 # ── Optional system apply (opt-in, and only where unattended is sane) ─────────
+# TWO GATES, AND BOTH MUST BE TRUE. MAINT_SYSTEM_UPGRADE is the OPERATOR's (an env var on
+# this run); MAINT_UNATTENDED_UPGRADE is the REPO's (a declared value). Neither can enable
+# unattended upgrades alone, which is the property the distro-string checks below were
+# reaching for by hand.
 if [[ "$MAINT_SYSTEM_UPGRADE" == 1 ]]; then
-  if [[ "$OS_ID" == kali ]]; then
+  if cap_declared; then
+    # THE DECLARED PATH — and the direction of the default is the whole point. A repo that
+    # declares nothing REFUSES; permitting is the thing you have to write down. That is why
+    # this is not `!= 0`: a fail-open here silently applies full system upgrades on an
+    # engagement box, unattended, on a schedule nobody is watching.
+    #
+    # The three refusals this replaces were Kali (read out of /etc/os-release, OS knowledge
+    # in Core) and Arch/Gentoo (inferred from `have pacman || have emerge`, which is a probe
+    # for a BINARY standing in for a claim about a DISTRO — true on any box with pacman
+    # installed for other reasons). Each repo now says so itself, and a repo Core has never
+    # heard of refuses by default instead of being waved through.
+    if [[ -z "$(cap MAINT_UNATTENDED_UPGRADE)" ]]; then
+      log "system upgrade SKIPPED: this OS repo does not declare MAINT_UNATTENDED_UPGRADE — apply with \`up\`"
+    else
+      _pre="$(cap PKG_UPGRADE_PRE)"
+      _up="$(cap PKG_UPGRADE)"
+      _yes="$(cap PKG_ASSUME_YES)"
+      _clean="$(cap PKG_CLEANUP)"
+      if [[ -z "$_up" ]]; then
+        log "system upgrade SKIPPED: no PKG_UPGRADE declared"
+      else
+        # sudo -n, NOT the declared prefix: unattended means non-interactive, so a verb that
+        # would sit at a password prompt must fail fast and be logged instead. The declared
+        # `sudo`/`doas` names the INTENT (this needs root); -n is how an unattended runner
+        # spells it. A box without passwordless sudo logs the failure and moves on, which is
+        # what it has always done.
+        #
+        # `${a[@]+"${a[@]}"}` on the assume-yes vector, not a bare `"${a[@]}"`: expanding an
+        # EMPTY array under `set -u` is an unbound-variable ERROR on bash 3.2, which macOS
+        # still ships and which every gate in this repo is held to. An archive that declares
+        # no PKG_ASSUME_YES (Arch, Gentoo, Alpine) is exactly the empty case.
+        _yes_argv=()
+        [[ -n "$_yes" ]] && _yes_argv=("$_yes")
+        if [[ -n "$_pre" ]]; then
+          # shellcheck disable=SC2086  # deliberate word-split: a declared value IS a command
+          _priv_decl $_pre
+          step "system: refresh" "${PRIV_ARGV[@]}"
+        fi
+        # shellcheck disable=SC2086  # same deliberate split
+        _priv_decl $_up
+        step "system: upgrade" "${PRIV_ARGV[@]}" ${_yes_argv[@]+"${_yes_argv[@]}"}
+        if [[ -n "$_clean" ]]; then
+          # shellcheck disable=SC2086  # same deliberate split
+          _priv_decl $_clean
+          step "system: cleanup" "${PRIV_ARGV[@]}" ${_yes_argv[@]+"${_yes_argv[@]}"}
+        fi
+      fi
+    fi
+  elif [[ "$OS_ID" == kali ]]; then
     log "system upgrade SKIPPED: Kali — update engagement boxes by hand between ops"
   elif have pacman || have emerge; then
     log "system upgrade SKIPPED: Arch/Gentoo must not be upgraded unattended — run \`up\`"
