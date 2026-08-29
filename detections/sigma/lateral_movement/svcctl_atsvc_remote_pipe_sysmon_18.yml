@@ -32,8 +32,9 @@ description: |
   Detection posture, honestly: this is a triage surface and no filter would fix it.
   Legitimate remote administration - sc.exe against a remote host, schtasks /s, SCCM, a
   clustering or backup agent - produces the SAME event. Sysmon PipeEvent carries no source
-  host and no authenticating principal: User is the LOCAL process's identity (SYSTEM), not
-  the account on the far end of the SMB session. So unlike coercion_named_pipes_5145.yml
+  host and no authenticating principal - captured 17/18 records show its EventData is
+  RuleName/EventType/UtcTime/ProcessGuid/ProcessId/PipeName/Image and nothing else, so there
+  is no user field on this event at all. So unlike coercion_named_pipes_5145.yml
   (id 29ac7a00-b6fe-48d8-8c65-f62a8b83808d) this rule has no machine-account filter
   available and no principal to allowlist, which is why it ships with no filter_* block at
   all rather than a cosmetic one. Scope it by asset instead - deploy it to the servers that
@@ -86,7 +87,14 @@ falsepositives:
     by volume, and pivot to 5145 for the source principal.
   - A Sysmon build that attributes the kernel SMB path to something other than System would
     make the selection silently unsatisfiable rather than noisy. The fix is a one-value
-    change, but verify against a real 18 before trusting silence from this rule - the
-    fixtures behind it are unverified (docker/validation/fixture-provenance.tsv). The lab
-    run that would settle it is dotgibson/dotfiles-Defense#235.
+    change. This is now measured rather than feared - captured 18s from three hosts show a
+    remote SMB open arriving as Image=System ProcessId=4, including \atsvc, on which this
+    rule fires. See docker/validation/labruns/2026-08-sysmon18-remote-pipe.md. Two limits
+    remain, so do not read the rule's silence as proof of absence. \svcctl was not directly
+    observed (only \atsvc was), and the capture is third-party Sysmon 2019-2020 rather than
+    our shipped config at schemaversion 4.90. dotgibson/dotfiles-Defense#235 tracks the
+    first-party run that would close both.
+  - Pre-2020 Sysmon builds omit EventType from PipeEvent entirely, which makes this rule's
+    EventType pin silently unsatisfiable on them. Observed in the same capture, not
+    hypothetical. Confirm EventType is present in a real 18 before deploying to old agents.
 level: medium

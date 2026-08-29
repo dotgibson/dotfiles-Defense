@@ -86,6 +86,8 @@ falsepositives:
   - Print-management or spooler-adjacent software that hosts its own spoolss endpoint
     out of process (rare; allowlist the specific Image after confirming the publisher).
   - A Sysmon config that rewrites or omits EventType on PipeEvent, which would make the
-    selection silently unsatisfiable rather than noisy - verify against a real 17 before
-    trusting silence from this rule.
+    selection silently unsatisfiable rather than noisy. Measured rather than feared.
+    pre-2020 Sysmon builds omit EventType from PipeEvent entirely, while captured 17s from
+    2020 carry EventType=CreatePipe as this rule expects. Confirm it is present before
+    deploying to old agents - see docker/validation/labruns/2026-08-sysmon18-remote-pipe.md.
 level: high
