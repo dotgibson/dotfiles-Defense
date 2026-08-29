@@ -18,6 +18,15 @@ description: |
   alerting subset plus a distinct-target fan-out correlation for the noisy pair (the shape
   host_enum_srvsvc_wkssvc_5145 already uses) is the next step if the machine-account filter
   alone does not bring the volume down.
+  Second plane, and where it stops. coercion_efsrpc_pipe_sysmon_18.yml (id
+  04ebb60d-1d9c-471e-9da8-56abcff3235c) sees the efsrpc bind on the host itself, on Sysmon
+  18, so that half of this rule now has a corroborating view that survives an estate with
+  no detailed file-share auditing at all. lsarpc and netlogon stay 5145-only on purpose:
+  Sysmon PipeEvent carries no authenticating principal, so filter_machine - the block that
+  makes those two names survivable here - has no counterpart on that plane, and every
+  coercion bind and every routine domain bind would arrive as the same event. This rule
+  therefore remains the primary for PetitPotam's default lsarpc path.
+  dotgibson/dotfiles-Defense#229.
   Validate (purple): run PetitPotam / coercer / printerbug from dotfiles-Offense
   (hacktheplanet "Poisoning & relay" fold; htpx pair coerce-petitpotam). Requires
   detailed file-share auditing (5145) on DCs and servers.
@@ -26,6 +35,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/coercion-5145.md
 author: dotfiles-Defense
 date: 2026-07-15
+modified: 2026-08-28
 tags:
   - attack.credential-access
   - attack.t1187

@@ -12,6 +12,12 @@ description: |
   that registers a service from a temp path, and a rule that fires on routine software
   installs gets muted. If you want drop-directory coverage, add it as a separate lower-
   confidence rule gated on a service-name or signed-binary allowlist.
+  Second plane, and only that. svcctl_atsvc_remote_pipe_sysmon_18.yml (id
+  e9d70412-5340-436c-9917-b3664f5d77a7) sees the svcctl pipe bind that PRECEDES this
+  service install, on Sysmon 18 rather than the System channel. It is corroboration, not
+  coverage this rule lacks - but it survives an estate that never forwards 7045, and it
+  fires earlier in the chain, on the request rather than the result.
+  dotgibson/dotfiles-Defense#229.
   Validate (purple): run impacket-psexec from dotfiles-Offense (hacktheplanet "Lateral
   movement & remote execution" / "Active Directory" folds; pairs with pth-lateral-nxc).
 references:
@@ -19,6 +25,7 @@ references:
   - https://github.com/dotgibson/dotfiles-Offense/blob/main/PURPLE-TEAM.md
 author: dotfiles-Defense
 date: 2026-06-30
+modified: 2026-08-28
 tags:
   # PsExec's remote service creation IS the lateral-movement step — the service is
   # created on the TARGET by an operator who is already elsewhere. ATT&CK files

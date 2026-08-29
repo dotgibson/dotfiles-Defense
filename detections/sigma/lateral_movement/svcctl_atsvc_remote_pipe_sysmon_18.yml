@@ -1,0 +1,91 @@
+title: Remote service-control / task-scheduling named-pipe bind (Sysmon 18)
+id: e9d70412-5340-436c-9917-b3664f5d77a7
+status: experimental
+description: |
+  Detection posture: corroboration, not new coverage - read the ledger narrowly. What this
+  rule sees is already caught downstream on another plane. service_creation_psexec_7045.yml
+  (id fd22807d-bdb8-44b8-81f4-8d44c8be24b4) catches the service smbexec/psexec install over
+  svcctl, and scheduled_task_suspicious_4698.yml (id 8ae44ad2-6331-4444-97f4-b2eac893717c)
+  catches the task atexec schedules over atsvc. Nothing here is a gap those two leave open.
+  What it adds is a SECOND, INDEPENDENT plane: the pipe bind is visible on the host even
+  where the 7045 / 4698 audit subcategory is never forwarded, and it happens EARLIER in the
+  chain than the artifact those rules key on - the bind is the request, the service or the
+  task is the result. That is a defence-in-depth argument, and it is the only one being
+  made. Do not read this rule as widening coverage.
+  The invariant is origin, not content. A named pipe opened by a REMOTE SMB client is
+  serviced by the kernel SMB server, so the connecting process is System (pid 4) rather
+  than the local tool that would otherwise be binding svcctl or atsvc - sc.exe,
+  services.exe, schtasks.exe, an MMC snap-in. Selecting Image System is therefore "this
+  bind came from off-box", which is exactly what separates impacket from local
+  administration. It is a shape rather than an IOC: it does not depend on the tool's
+  filename, and a remote-execution tool cannot avoid it without giving up being remote.
+  Connection, not creation - and the trade runs the OPPOSITE way to
+  spoolss_pipe_impersonation_sysmon_17.yml (id d5c5c185-a62f-415a-ab0f-2572f910b541), so do
+  not read that rule's reasoning across. `category: pipe_created` resolves to Sysmon 17 and
+  18 under the sysmon pipeline; the spoolss rule pins CreatePipe because PrintSpoofer stands
+  up its own pipe and coerces the spooler into it. Nothing here does. svcctl is created once
+  at boot by services.exe and atsvc by the Task Scheduler, and every tool named above
+  CONNECTS to the pipe that is already there - so on these two names the creation half
+  detects nothing at all. impacket-psexec does create pipes of its own (RemCom_*), but the
+  shipped detections/sysmon/sysmonconfig-detection-lab.xml collects five pipe names and
+  those are not among them.
+  Detection posture, honestly: this is a triage surface and no filter would fix it.
+  Legitimate remote administration - sc.exe against a remote host, schtasks /s, SCCM, a
+  clustering or backup agent - produces the SAME event. Sysmon PipeEvent carries no source
+  host and no authenticating principal: User is the LOCAL process's identity (SYSTEM), not
+  the account on the far end of the SMB session. So unlike coercion_named_pipes_5145.yml
+  (id 29ac7a00-b6fe-48d8-8c65-f62a8b83808d) this rule has no machine-account filter
+  available and no principal to allowlist, which is why it ships with no filter_* block at
+  all rather than a cosmetic one. Scope it by asset instead - deploy it to the servers that
+  should never be administered remotely over SMB - or alert on volume rather than on the
+  single event, and pivot to 5145 (which does carry SubjectUserName) for the source.
+  Validate (purple): run impacket atexec / smbexec / psexec from dotfiles-Offense
+  (hacktheplanet "Lateral movement & remote execution" fold; htpx pair pth-lateral-nxc).
+  Requires Sysmon PipeEvent (EventID 18). The shipped
+  detections/sysmon/sysmonconfig-detection-lab.xml already collects atsvc and svcctl, so
+  this rule needs no config change - dotgibson/dotfiles-Defense#229 is the issue that
+  noticed they were being collected and read by nothing.
+references:
+  - https://attack.mitre.org/techniques/T1021/002/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/schtask-4698.md
+author: dotfiles-Defense
+date: 2026-08-28
+tags:
+  # T1021.002 earns the lateral-movement tag on its own evidence: the bind IS the
+  # admin-share access. T1569.002 and T1053.005 are both filed under Execution, which earns
+  # the other one - so no attack-tactic-deliberate escape is needed here, unlike
+  # service_creation_psexec_7045.yml. The Persistence and Privilege Escalation halves of
+  # T1053.005 are deliberately NOT claimed: this rule observes the remote bind, not the task
+  # that survives it, and scheduled_task_suspicious_4698.yml already holds that ground.
+  # Deliberately not writing those two tag strings out even to decline them - gen-coverage.sh
+  # matches tactic slugs over the whole file, so naming one here would tag the rule by
+  # accident.
+  - attack.lateral-movement
+  - attack.execution
+  - attack.t1021.002
+  - attack.t1569.002
+  - attack.t1053.005
+logsource:
+  category: pipe_created
+  product: windows
+detection:
+  selection:
+    EventType: 'ConnectPipe'
+    # System, not a filter_* exclusion: the remote-origin shape is what is being SELECTED.
+    # A local sc.exe or schtasks.exe binding the same pipe carries its own Image and is not
+    # matched - which is what the true-negative fixture proves.
+    Image: 'System'
+    PipeName|contains:
+      - 'svcctl'
+      - 'atsvc'
+  condition: selection
+falsepositives:
+  - Legitimate remote administration over SMB - remote service control (sc.exe against a
+    remote host, SCCM, a clustering or backup agent) and remote task scheduling
+    (schtasks /s). These are the same event and cannot be filtered here; scope by asset and
+    by volume, and pivot to 5145 for the source principal.
+  - A Sysmon build that attributes the kernel SMB path to something other than System would
+    make the selection silently unsatisfiable rather than noisy. The fix is a one-value
+    change, but verify against a real 18 before trusting silence from this rule - the
+    fixtures behind it are unverified (docker/validation/fixture-provenance.tsv).
+level: medium

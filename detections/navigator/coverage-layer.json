@@ -63,6 +63,12 @@
       "comment": "1 rule(s): passthehash_4624_fanout"
     },
     {
+      "techniqueID": "T1021.002",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): svcctl_atsvc_remote_pipe_sysmon_18"
+    },
+    {
       "techniqueID": "T1033",
       "score": 3,
       "enabled": true,
@@ -94,9 +100,9 @@
     },
     {
       "techniqueID": "T1053.005",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): scheduled_task_suspicious_4698"
+      "comment": "2 rule(s): scheduled_task_suspicious_4698, svcctl_atsvc_remote_pipe_sysmon_18"
     },
     {
       "techniqueID": "T1057",
@@ -232,9 +238,9 @@
     },
     {
       "techniqueID": "T1187",
-      "score": 2,
+      "score": 3,
       "enabled": true,
-      "comment": "2 rule(s): coercion_named_pipes_5145, unconstrained_delegation_4624"
+      "comment": "3 rule(s): coercion_efsrpc_pipe_sysmon_18, coercion_named_pipes_5145, unconstrained_delegation_4624"
     },
     {
       "techniqueID": "T1195.002",
@@ -430,9 +436,9 @@
     },
     {
       "techniqueID": "T1569.002",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): service_creation_psexec_7045"
+      "comment": "2 rule(s): service_creation_psexec_7045, svcctl_atsvc_remote_pipe_sysmon_18"
     },
     {
       "techniqueID": "T1609",

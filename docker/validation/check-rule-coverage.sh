@@ -5,7 +5,7 @@
 # WHY. run-sigma-validation.sh and run-cloud-validation.sh iterate the MANIFESTS, not the
 # corpus. A rule that is never listed is therefore never run against a fixture — it
 # compiles, it ships, and nothing has ever demonstrated it fires. The corpus is currently
-# 106/106 covered with 47/47 filtered rules carrying a true-negative fixture, which is an
+# 108/108 covered with 47/47 filtered rules carrying a true-negative fixture, which is an
 # excellent position and one held entirely by hand. This turns that discipline into an
 # invariant, at the moment it is green and so costs nothing to adopt.
 #

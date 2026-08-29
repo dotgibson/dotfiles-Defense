@@ -31,6 +31,14 @@ description: |
   29ac7a00-b6fe-48d8-8c65-f62a8b83808d) catches the same pipe set over IPC$ via 5145;
   that is the network-plane view of a remote coercion, this is the host-plane view of
   a local one. All three on one host is the privilege-escalation chain end to end.
+  The rest of the PipeEvent block is read by two sibling rules as of
+  dotgibson/dotfiles-Defense#229 - svcctl_atsvc_remote_pipe_sysmon_18.yml (id
+  e9d70412-5340-436c-9917-b3664f5d77a7) on the atsvc/svcctl names and
+  coercion_efsrpc_pipe_sysmon_18.yml (id 04ebb60d-1d9c-471e-9da8-56abcff3235c) on efsrpc.
+  Both take the CONNECT half, which is the opposite of the trade made here, and both are
+  corroboration of a rule on another plane rather than new coverage. The reasoning above
+  does not carry across to them; #229 re-derived it from scratch. lsarpc is collected and
+  deliberately left to 5145, for the reason recorded in DEFENSE-METHODOLOGY.md.
   Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate).
   Requires Sysmon PipeEvent (EventID 17). Note that the shipped
@@ -43,6 +51,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/potato-seimpersonate-4688.md
 author: dotfiles-Defense
 date: 2026-08-27
+modified: 2026-08-28
 tags:
   # Both halves of T1134.001 are claimed here, and the Stealth half is the point of the
   # rule. T1134.001 is dual-tactic in the pinned v19.2 bundle, so check-attack-tags.sh's

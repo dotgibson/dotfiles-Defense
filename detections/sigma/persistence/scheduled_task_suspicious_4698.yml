@@ -20,6 +20,12 @@ description: |
   trailing space. The space is trailing only, NOT leading - '<Arguments>-enc ...' has a
   tag, not a space, in front of the flag. DownloadString and FromBase64String are left
   bare: both are specific enough to stand alone.
+  Second plane, and only that. svcctl_atsvc_remote_pipe_sysmon_18.yml (id
+  e9d70412-5340-436c-9917-b3664f5d77a7) sees the atsvc pipe bind that PRECEDES a remotely
+  scheduled task - impacket atexec's step before this one - on Sysmon 18. It is
+  corroboration, not coverage this rule lacks: it survives an estate that never forwards
+  4698, but it says nothing about the task's ACTION, which is what this rule selects on.
+  dotgibson/dotfiles-Defense#229.
   Validate (purple): run schtasks /create (or nxc -M schtask_as) from dotfiles-Offense
   (hacktheplanet "Persistence" fold; htpx pair schtask-persist). Requires the
   Object Access > Other Object Access Events audit subcategory.
@@ -28,6 +34,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/schtask-4698.md
 author: dotfiles-Defense
 date: 2026-06-30
+modified: 2026-08-28
 tags:
   - attack.persistence
   - attack.execution

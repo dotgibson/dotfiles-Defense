@@ -1,0 +1,68 @@
+title: Authentication coercion - efsrpc named-pipe bind on the host (Sysmon 18)
+id: 04ebb60d-1d9c-471e-9da8-56abcff3235c
+status: experimental
+description: |
+  Detection posture: corroboration, not new coverage. PetitPotam-class coercion over efsrpc
+  is already caught on two other planes - coercion_named_pipes_5145.yml
+  (id 29ac7a00-b6fe-48d8-8c65-f62a8b83808d) sees the same pipe over IPC$ on 5145, and
+  detections/network/suricata/coercion.rules sees it on the wire. This is the HOST view of
+  the same moment, and it is worth having for one reason: it survives an estate where
+  detailed file-share auditing (5145) is not enabled or not forwarded, which is most of
+  them. It is also the earliest artifact of the three. Read the ledger accordingly - the
+  corpus is not blind to this without the rule.
+  The invariant is the endpoint, not the caller, and that is deliberate. Unlike its sibling
+  svcctl_atsvc_remote_pipe_sysmon_18.yml (id e9d70412-5340-436c-9917-b3664f5d77a7), this
+  rule is NOT keyed on Image. It does not need to be: efsrpc is bound over SMB by
+  essentially nothing but MS-EFSR remote operations and the coercion tools that abuse them,
+  so the pipe name carries the signal on its own. Leaving Image out also means the rule does
+  not depend on how a given Sysmon build attributes the kernel SMB path, which is the one
+  assumption its sibling does rest on.
+  Connection, not creation, and here that is load-bearing rather than a preference.
+  `category: pipe_created` resolves to Sysmon 17 and 18 under the sysmon pipeline, and lsass
+  CREATES \efsrpc once per boot - so without the EventType pin this rule would fire on every
+  reboot of every host, on lsass, forever. Coercion is always a connect.
+  lsarpc is deliberately NOT in this rule, and the omission is the argument.
+  PetitPotam's default path is \lsarpc, so this rule does not catch the default invocation;
+  coercion_named_pipes_5145.yml does, and remains the primary. The reason is that on Sysmon
+  17/18 there is nothing to filter with. That rule survives lsarpc only because 5145 carries
+  SubjectUserName and its filter_machine block drops the computer-account bulk that is
+  ordinary domain business. PipeEvent carries no authenticating principal at all - User is
+  the local process's identity, not the account on the far end of the SMB session - so a
+  DFSCoerce bind and a domain member's routine lsarpc bind are byte-identical events here.
+  An lsarpc rule on this plane would be unfilterable volume, so none ships. This is the same
+  "prefer the efsrpc/spoolss subset" trade coercion_named_pipes_5145.yml already recommends
+  in its own description, applied to the plane where it is forced rather than optional.
+  The true-negative fixture is an lsarpc bind, so the decline is recorded in a form that
+  runs. dotgibson/dotfiles-Defense#229.
+  Validate (purple): run PetitPotam with the EFSR pipe selected, or coercer, from
+  dotfiles-Offense (hacktheplanet "Poisoning & relay" fold; htpx pair coerce-petitpotam).
+  Requires Sysmon PipeEvent (EventID 18). The shipped
+  detections/sysmon/sysmonconfig-detection-lab.xml already collects efsrpc, so this rule
+  needs no config change.
+references:
+  - https://attack.mitre.org/techniques/T1187/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/coercion-5145.md
+author: dotfiles-Defense
+date: 2026-08-28
+tags:
+  - attack.credential-access
+  - attack.t1187
+logsource:
+  category: pipe_created
+  product: windows
+detection:
+  selection:
+    # ConnectPipe is mandatory, not cosmetic: lsass creates this pipe once per boot, and
+    # pipe_created resolves to both 17 and 18. See the description.
+    EventType: 'ConnectPipe'
+    PipeName|contains: 'efsrpc'
+  condition: selection
+falsepositives:
+  - Genuine remote EFS operations against the host (encrypting or recovering a file on a
+    remote share). Rare in most estates; allowlist by source host from the paired 5145
+    event, which this rule cannot see.
+  - A Sysmon config that rewrites or omits EventType on PipeEvent would make the selection
+    silently unsatisfiable rather than noisy - verify against a real 18 before trusting
+    silence from this rule. Its fixtures are unverified
+    (docker/validation/fixture-provenance.tsv).
+level: high
