@@ -1,0 +1,107 @@
+title: Token theft - process created with a SYSTEM token by a non-SYSTEM creator (4688 Target Subject)
+id: 1faa7a59-9fd5-4d14-9bf1-d94f82466acb
+status: experimental
+description: |
+  Detection posture: high. This is the rule that observes the OUTCOME of SeImpersonate
+  abuse rather than the shape around it or the mechanism underneath it. Windows 10 and
+  Server 2016 added a Target Subject block to 4688 (event version 2), and Microsoft's
+  stated reason for adding it is the invariant this rule keys on: "we will also include
+  the target principal when the creator and target do not share the same logon". A
+  process whose Target Subject is SYSTEM was therefore created with a token that is not
+  its creator's - which is what token theft IS, stated as a field.
+  Why this is not a third copy of the potato pair. potato_seimpersonate_4688.yml (id
+  9486ed6c-4c38-457f-a475-188a978eaa4a) and potato_seimpersonate_sysmon_1.yml (id
+  03e878f6-bbdc-41e1-afa6-68b2979938fe) select a service identity spawning cmd/powershell:
+  the shape BEFORE the token is stolen, and their own descriptions concede they cannot show
+  the run-as-SYSTEM result. This rule carries no Image constraint at all, so it survives
+  `-c nc.exe`, `-c whoami`, and any payload that is not a named shell - the whole class
+  those two miss. And where spoolss_pipe_impersonation_sysmon_17.yml (id
+  d5c5c185-a62f-415a-ab0f-2572f910b541) observes the mechanism on ONE coercion endpoint,
+  this sits downstream of every endpoint: PrintSpoofer, GodPotato, EfsPotato, DCOMPotato,
+  CoercedPotato and the DCOM/ServerAlive2 family all converge on CreateProcessWithTokenW /
+  CreateProcessAsUserW, and all of them populate Target Subject. That is the coverage
+  dotgibson/dotfiles-Defense#230 was after.
+  Channel: this is a Security-4688 rule wearing the generic logsource, which sigma check
+  requires wherever a generic equivalent exists. Deploy it through a windows-audit
+  pipeline, where it resolves to EventID 4688 and the fields are native. Under a sysmon
+  pipeline it does NOT fail loudly - it converts to EventID 1 with TargetUserSid and
+  SubjectUserSid passed through unmapped, and Sysmon 1 carries neither, so it compiles
+  cleanly and then matches nothing forever. Verified by conversion, not assumed. There is
+  no Sysmon twin to fall back on either: Target Subject is a 4688-only field set, and
+  Sysmon 1 has no field meaning "the token this process was created with is not its
+  creator's". ParentUser is a different claim (an identity mismatch between parent and
+  child, not the token's provenance) and is not a substitute. So a host forwarding only
+  Sysmon is not covered by this rule, and the potato pair remains its only reading there.
+  Why 4688 and not 4624/4672, which is what #230 asked for. Neither of those events is
+  written by this attack. 4624 generates when a logon SESSION is created and 4672 when
+  privileges are assigned to a new one; the pipe-impersonation majority of the family never
+  authenticates at all (ImpersonateNamedPipeClient is a kernel token attachment, not a
+  protocol), and the local-relay minority rides NTLM's local-call short circuit, which
+  hands the caller's existing token to the server context instead of calling LsaLogonUser.
+  DuplicateTokenEx preserves AuthenticationId, so the spawned SYSTEM process reuses logon
+  session 0x3e7 rather than minting one. A rule on those two events would pass its own
+  fixtures and sit inert in production. The full argument, and the decline, are recorded in
+  DEFENSE-METHODOLOGY.md.
+  filter_same_context is not a deployment-time allowlist and needs no tuning. SYSTEM
+  creating a SYSTEM process is the normal shape of services.exe, Task Scheduler, DCOMLaunch
+  and TrustedInstaller, and it is a fixed OS invariant rather than a property of your
+  estate. It is also belt-and-braces: because Target Subject is populated only when the
+  logons DIFFER, a SYSTEM-to-SYSTEM creation should carry a null target and never reach
+  the filter. The block is there so that a host or code path which populates it anyway
+  cannot make this rule noisy.
+  ONE ASSUMPTION, STATED. Whether the audit takes Creator Subject from the calling
+  process's token or from its impersonating THREAD token is not settled here. PrintSpoofer
+  -i and GodPotato impersonate before creating the process; if the audit reads the
+  impersonated thread token then SubjectUserSid arrives as S-1-5-18 and filter_same_context
+  removes the true positive. Microsoft's rationale for adding Target Subject implies the
+  process token - on the thread-token reading the two subjects would always match and the
+  field could never populate - but that is inference from the documentation, not a capture,
+  and the fixture behind this rule proves only that the rule fires on the shape we believe
+  in. The lab run below settles it, and settles the same question for the potato pair,
+  which has never been confirmed to fire on a real potato either.
+  Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
+  "Windows privilege escalation" fold; htpx pair potato-seimpersonate), then read the 4688
+  the payload produced and compare its Creator Subject against the service identity.
+  Requires Audit Process Creation (Success) and a Windows 10 / Server 2016 or later host -
+  event version 2 is where Target Subject exists.
+references:
+  - https://attack.mitre.org/techniques/T1134/001/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/potato-seimpersonate-4688.md
+author: dotfiles-Defense
+date: 2026-08-29
+tags:
+  # Both halves of T1134.001 are claimed here, and the TA0005 half is the point of the
+  # rule. T1134.001 is dual-tactic in the pinned v19.2 bundle, so check-attack-tags.sh's
+  # pairing assertion earns both with no attack-tactic-deliberate escape. Where the
+  # potato_seimpersonate_* pair declines TA0005 - correctly, per
+  # dotgibson/dotfiles-Defense#223 - because it observes the shape before the token is
+  # stolen, this rule observes the token that does not belong to the process that created
+  # it, which is the evasion itself rather than evidence of the mechanism that produced it.
+  # dotgibson/dotfiles-Defense#230 is where that was settled, and it is the second and
+  # independent piece of evidence the #223 reopen condition asked for.
+  # Deliberately NOT writing the tag string in this comment: gen-coverage.sh matches
+  # tactic slugs over the whole file, so naming it here would tag the rule by accident.
+  - attack.stealth
+  - attack.privilege-escalation
+  - attack.t1134.001
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    TargetUserSid: 'S-1-5-18'
+  filter_same_context:
+    # SYSTEM creating a SYSTEM process. A fixed OS invariant, not a deployment-time
+    # allowlist - see the description.
+    SubjectUserSid: 'S-1-5-18'
+  condition: selection and not filter_same_context
+falsepositives:
+  - Agents running as LOCAL SERVICE / NETWORK SERVICE that legitimately launch SYSTEM
+    helpers - some EDR, RMM and patch frameworks do this. Note that to do so they must hold
+    SeImpersonate or SeAssignPrimaryToken and a SYSTEM token, so they are doing structurally
+    the same thing the attack does; allowlist the specific SubjectUserName and
+    NewProcessName after confirming the publisher rather than widening the filter.
+  - A host older than Windows 10 / Server 2016 emits event version 0 or 1, which has no
+    Target Subject block at all - the selection is then silently unsatisfiable rather than
+    noisy. Verify against a real 4688 before trusting silence from this rule.
+level: high
