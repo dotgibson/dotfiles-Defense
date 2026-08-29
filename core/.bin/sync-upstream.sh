@@ -64,8 +64,10 @@ if git subtree push --prefix="$SUBTREE_PREFIX" "$CORE_REPO_URL" "$TARGET_BRANCH"
     echo "✅ Upstream synchronization complete! Core repository updated successfully."
 else
     echo "❌ Git subtree split or push failed."
-    echo "Tip: a rejected non-fast-forward usually means dotfiles-core '$TARGET_BRANCH' moved —"
-    echo "pull Core back down first (git subtree pull --prefix=$SUBTREE_PREFIX $CORE_REPO_URL $TARGET_BRANCH --squash), then retry."
+    echo "Tip: a rejected non-fast-forward usually means dotfiles-core '$TARGET_BRANCH' moved."
+    echo "Do NOT 'git subtree pull' to catch up: that moves $SUBTREE_PREFIX/ but not core.lock, and"
+    echo "core-integrity.sh then reports this repo as TAMPERED (see VENDORING.md). Take the change"
+    echo "to dotfiles-core and commit it there instead, then fan it back out with 'make sync'."
     echo "Otherwise verify your GitHub credentials/permissions for $CORE_REPO_URL"
     echo "(HTTPS authenticates via a token/credential helper; an SSH remote via your keys)."
     exit 1

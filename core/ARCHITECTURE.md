@@ -14,9 +14,9 @@ config (and they drift), or the shared config is **centralized** (and you fight
 submodules, or collapse everything into one unportable monorepo).
 
 This system centralizes — but vendors the result so a clone is self-contained.
-The shared config is authored once, in `dotfiles-core`, and physically copied
-into each machine repo via `git subtree`. There is no N-way reconciliation, no
-`git submodule update --init`, and no per-machine drift to chase after the fact.
+The shared config is authored once, in `dotfiles-core`, and physically copied into
+each machine repo. There is no N-way reconciliation, no `git submodule update
+--init`, and no per-machine drift to chase after the fact.
 
 ## The three-layer model
 
@@ -163,22 +163,33 @@ Core flows in one direction — authored here, copied out:
 Each machine repo vendors Core under `core/` once — from a **released tag, never
 `main`**. The automated fan-out pins every repo to the exact commit a release tag
 points at, so a tree vendored from `main` is not a commit any `core.lock` would
-record, and `core-integrity` reports the fresh subtree as TAMPERED:
+record, and `core-integrity` reports the fresh tree as TAMPERED.
+
+**One-time only**, to create a `core/` that does not exist yet — `git subtree add` is
+the initial vendoring and **never** the update path (`sync-core.sh` skips a repo with no
+`core/`, which is the one thing it cannot create):
 
 ```bash
-git subtree add --prefix=core https://github.com/dotgibson/dotfiles-core refs/tags/v4 --squash
+git subtree add --prefix=core https://github.com/dotgibson/dotfiles-core refs/tags/v5 --squash
 ```
 
-`refs/tags/v4` is the moving major alias — the latest release in the v4 line. Pin a
+`refs/tags/v5` is the moving major alias — the latest release in the v5 line. Pin a
 specific `vX.Y.Z` instead when you want the tree frozen at a known version.
+`scripts/new-os-repo.sh` runs this step for you and is the sanctioned greenfield path.
 
 That leaves the repo with `core/` but **no `core.lock`**, so stamp provenance from a
 Core checkout before treating the repo as vendored (`sync-core.sh` is the only
 sanctioned writer of that file):
 
 ```bash
-CORE_BRANCH=refs/tags/v4 ./scripts/sync-core.sh dotfiles-<Distro>
+git checkout v5                                    # in dotfiles-core
+CORE_BRANCH="$(git rev-parse v5^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>
 ```
+
+Both halves matter: `sync-core.sh` refuses unless Core's `HEAD` is the commit being
+vendored, and the pin must be the **peeled commit** — the release tags are annotated, so
+`refs/tags/v5` resolves to the tag object, which is never that `HEAD`. See
+`RELEASE-STRATEGY.md` §4.
 
 After a Core change, the same helper fans it out to the whole fleet:
 
@@ -187,7 +198,7 @@ After a Core change, the same helper fans it out to the whole fleet:
 ./scripts/sync-core.sh --dry-run  # preview, change nothing
 ```
 
-Because the subtree squash records the exact Core commit, a tagged clone of any
+Because `core.lock` records the exact Core commit, a tagged clone of any
 OS repo carries the precise Core it was tested with — the human-readable SemVer
 lives in `core.version` and is vendored alongside it so a machine can report
 which Core it runs.
@@ -243,7 +254,7 @@ allowlist instead — present in the repo, but never symlinked onto a machine.
 
 ## Why this model
 
-- **Clone-and-go.** Subtree vendors the actual files, so a fresh clone of any
+- **Clone-and-go.** Vendoring copies the actual files, so a fresh clone of any
   machine repo just works — no submodule flags, no recursive init. These are
   public showcase repos people browse, so the first-run experience matters.
 - **Author once, fan out.** A Core fix is written in one place and synced to

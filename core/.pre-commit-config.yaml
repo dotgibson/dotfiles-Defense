@@ -1,6 +1,6 @@
 # .pre-commit-config.yaml — author-time guardrails for dotfiles-core.
 # Mirrors the CI checks (.github/workflows/ci.yml) so drift is caught locally,
-# before it is committed and subtree-synced into the nine OS repos.
+# before it is committed and vendored into the nine OS repos.
 #
 #   one-time:  pip install pre-commit && pre-commit install
 #   manual:    pre-commit run --all-files

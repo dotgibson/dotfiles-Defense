@@ -49,7 +49,7 @@ verify-atuin-guard-autostart: ## Same three verdicts for the OTHER premise: does
 
 lint: audit ## Alias for `audit` (the audit IS the lint+test gate)
 
-sync: ## Subtree-pull Core into every OS repo (THE maintain button) — writes to sibling repos
+sync: ## Vendor Core into every OS repo (THE maintain button) — writes to sibling repos
 	@./scripts/sync-core.sh
 
 sync-dry: ## Show what `sync` would do, touching nothing

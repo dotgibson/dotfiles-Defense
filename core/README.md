@@ -85,7 +85,7 @@ role layer — each building on the one below:
 | **OS-native** | `dotfiles-{MacBook,Windows,Fedora,Arch,…}` | package manager, clipboard, paths |
 | **Role** | `dotfiles-Offense`, `dotfiles-Defense` | offensive / defensive tooling |
 
-The rationale (why subtree, how a sync fans out) lives on the [docs site][docs]; this
+The rationale (why vendoring, how a sync fans out) lives on the [docs site][docs]; this
 README is the quick tour.
 
 Like most dotfiles, this started as a personal itch. Every tweak to my terminal led to refactoring something else, and the cycle didn't stop until the whole environment finally felt like home. Once it did, I wanted the exact same setup on every machine I touch — no productivity gaps when hopping between them. That's `dotgibson`: my terminal workflow, made portable.

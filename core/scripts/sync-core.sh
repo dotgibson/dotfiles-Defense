@@ -3,17 +3,17 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # THE MAINTAIN BUTTON.
 #
-# After you change Core (here, in dotfiles-core) and push, run this to pull the
-# update into every OS repo's vendored core/ subtree. Replaces the old N-way
+# After you change Core (here, in dotfiles-core) and push, run this to vendor the
+# update into every OS repo's core/. Replaces the old N-way
 # manual reconciliation with one mechanical loop.
 #
 # Assumes:
 #   - all OS repos are cloned as siblings under one parent dir (see REPOS_ROOT)
 #   - each OS repo already did the one-time (from a RELEASED tag, never main — #588):
-#       git subtree add --prefix=core <core-remote> refs/tags/v4 --squash
+#       git subtree add --prefix=core <core-remote> refs/tags/v5 --squash
 #
 # Usage:
-#   ./scripts/sync-core.sh                # pull core into every repo found
+#   ./scripts/sync-core.sh                # vendor core into every repo found
 #   ./scripts/sync-core.sh --dry-run      # show what would happen, touch nothing
 #   ./scripts/sync-core.sh dotfiles-Fedora dotfiles-Arch   # only these
 #
@@ -55,9 +55,9 @@ CORE_REMOTE="${CORE_REMOTE:-$(git -C "$HERE" remote get-url origin 2>/dev/null |
 # correct no matter how the header moves.
 usage() {
   cat <<'EOF'
-sync-core.sh — THE maintain button: subtree-pull Core into every OS repo's core/.
+sync-core.sh — THE maintain button: vendor Core into every OS repo's core/.
 
-  ./scripts/sync-core.sh                       pull core into every repo found
+  ./scripts/sync-core.sh                       vendor core into every repo found
   ./scripts/sync-core.sh --dry-run, -n         show what would happen, touch nothing
   ./scripts/sync-core.sh dotfiles-Fedora …     only the named repos
   ./scripts/sync-core.sh -h, --help            show this help and exit
@@ -126,7 +126,7 @@ err() { fail "$@"; }
 
 # core-guard: reuse the bootstrap lib's installer so each repo we sync gets the local
 # pre-commit hook that blocks hand-edits to its vendored core/ (see blib_install_core_guard).
-# And exempt the commits THIS script makes (subtree pull + core.lock) from that hook —
+# And exempt the commits THIS script makes (core/ + core.lock) from that hook —
 # this IS the legitimate path that rewrites core/.
 # shellcheck source=lib/bootstrap-lib.sh
 source "$HERE/lib/bootstrap-lib.sh"
@@ -146,7 +146,7 @@ blib_ok() { ok "$@"; }
 
 # The exact dotfiles-core revision each OS repo will receive — surfaced so a sync
 # is traceable (which Core commit landed where; pairs with CHANGELOG.md). ls-remote
-# is the source of truth: it's the tip `subtree pull` fetches, even if the local
+# is the source of truth: it's the tip a sync would vendor, even if the local
 # checkout is behind. Falls back to the local branch SHA when offline. (The empty
 # assignment from a failed $() does NOT trip `set -e`, so the fallback runs.)
 # Resolve the revision with ONE network call: take the FULL SHA from ls-remote, then derive
@@ -293,7 +293,7 @@ if ((!DRY)) && [[ "${SYNC_SKIP_AUDIT:-0}" != 1 ]]; then
   # 1. The code must pass its own gate before it lands in 8 repos. We run the same
   #    audit CI and pre-commit run — one definition of "Core is healthy".
   echo ":: pre-fan-out audit (scripts/audit-core.sh --quiet)"
-  # Clear DOTFILES_ALLOW_CORE_EDIT (exported above for THIS script's own subtree
+  # Clear DOTFILES_ALLOW_CORE_EDIT (exported above for THIS script's own core/
   # commits) for the audit only: the behavioral suite's core-guard test commits to a
   # throwaway core/ and asserts the hook BLOCKS it, so an inherited exemption would
   # make that assertion fail — a false negative that wrongly reds an otherwise-green
@@ -322,11 +322,11 @@ if ((!DRY)) && [[ "${SYNC_SKIP_AUDIT:-0}" != 1 ]]; then
 fi
 
 # ── B6: parallel prefetch — warm each repo's object store with the Core commit in the
-# background so the (sequential, reviewable) subtree pulls below are mostly local. The
-# MERGE deliberately stays SERIAL: fanning a squash-merge into 8 working trees is the
+# background so the (sequential, reviewable) vendoring below is mostly local. The WRITE
+# deliberately stays SERIAL: replacing core/ in 8 working trees is the
 # high-stakes step an operator should watch one repo at a time — but the network
 # round-trips, the slow part, overlap here. Best-effort: a prefetch failure just means
-# that repo's pull fetches normally. Bounded by SYNC_JOBS (default 4; set 1 to disable),
+# that repo fetches normally when its turn comes. Bounded by SYNC_JOBS (default 4; set 1 to disable),
 # using BATCHED waits (no `wait -n`) so it stays bash-3.2-safe on macOS. ──
 SYNC_JOBS="${SYNC_JOBS:-4}"
 if ((!DRY)) && ((SYNC_JOBS > 1)); then
@@ -445,11 +445,11 @@ _sync_pin_workflows() { # <repo-path> <full-sha> <tag> → prints how many files
 
 # Per-REPO tally for the summary footer. The line-level PASS/SKIP/FAIL counters from
 # common.sh count function calls, not repos: the pre-flight audit ✓ plus two ok() per
-# healthy repo (subtree pull + core.lock) — so reporting $PASS as "updated" once claimed
+# healthy repo (core/ materialized + core.lock) — so reporting $PASS as "updated" once claimed
 # "updated 17" for an 8-repo fleet (1 + 2×8; the guard-install ✓ came from blib_ok and
 # wasn't even counted until the override above). These count REPOS, each landing in
-# exactly one bucket: failed if the repo printed any ✗ (dirty tree, pull or lock-commit
-# failure), else updated if its subtree pull ran, else skipped.
+# exactly one bucket: failed if the repo printed any ✗ (dirty tree, materialize or
+# lock-commit failure), else updated if its core/ was materialized, else skipped.
 # ── materialize core/ at a Core commit (replaces `git subtree pull --squash`) ──
 # WHY THIS IS NOT A MERGE ANY MORE (#587).
 #
@@ -539,7 +539,7 @@ for repo in "${TARGETS[@]}"; do
     continue
   fi
   if [[ ! -d "$path/core" ]]; then
-    skip "$repo (no core/ subtree yet — run the one-time 'git subtree add' first)"
+    skip "$repo (no core/ yet — run the one-time 'git subtree add' first; see VENDORING.md)"
     repos_skipped=$((repos_skipped + 1))
     continue
   fi
@@ -547,7 +547,7 @@ for repo in "${TARGETS[@]}"; do
     echo "would: materialize $path/core at $CORE_REMOTE ${CORE_SHA_FULL:0:12}   (ref $CORE_BRANCH)"
     continue
   fi
-  # bail if the OS repo has a dirty tree — subtree merges into a clean state only
+  # bail if the OS repo has a dirty tree — an uncommitted edit here would be destroyed
   if [[ -n "$(git -C "$path" status --porcelain)" ]]; then
     err "$repo has uncommitted changes — commit/stash first, skipping"
     repos_failed=$((repos_failed + 1))
@@ -603,7 +603,7 @@ for repo in "${TARGETS[@]}"; do
       # idempotency check below still skips a no-op re-sync (no spurious commit).
       [[ -n "$CORE_TAG" ]] && echo "core_tag=$CORE_TAG"
     } >"$path/core.lock"
-    # COMMIT it (as a follow-up to the subtree-pull commit) so the tree is clean for the
+    # COMMIT it, alongside the already-staged core/ tree, so the tree is clean for the
     # NEXT run — otherwise the dirty-tree guard above would see the uncommitted core.lock
     # and refuse to update this repo. Idempotent: a re-sync of the same SHA leaves
     # core.lock byte-identical, so there's nothing staged and we skip the commit.
@@ -616,8 +616,8 @@ for repo in "${TARGETS[@]}"; do
     # guard uses.
     _pinfail=0
     _pins="$(_sync_pin_workflows "$path" "$CORE_SHA_FULL" "$CORE_TAG")" || _pinfail=1
-    # core.lock is still committed below even on a pin failure: the subtree pull has
-    # already landed, so leaving it uncommitted would only add a dirty tree that self-blocks
+    # core.lock is still committed below even on a pin failure: core/ is already staged,
+    # so leaving it uncommitted would only add a dirty tree that self-blocks
     # the next run on top of the drift. The err() is what makes it non-silent — it flips
     # this repo into the failed bucket, so the run cannot end "updated 8" with a repo whose
     # pins never moved.
