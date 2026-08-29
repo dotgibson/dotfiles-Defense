@@ -64,5 +64,8 @@ falsepositives:
   - A Sysmon config that rewrites or omits EventType on PipeEvent would make the selection
     silently unsatisfiable rather than noisy - verify against a real 18 before trusting
     silence from this rule. Its fixtures are unverified
-    (docker/validation/fixture-provenance.tsv).
+    (docker/validation/fixture-provenance.tsv), and dotgibson/dotfiles-Defense#235 is the
+    lab run that would upgrade them. This rule is deliberately not keyed on Image, so
+    unlike its svcctl/atsvc sibling it does not also depend on how Sysmon attributes the
+    kernel SMB path - only on an 18 arriving for a remote open at all.
 level: high

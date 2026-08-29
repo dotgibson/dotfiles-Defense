@@ -87,5 +87,6 @@ falsepositives:
   - A Sysmon build that attributes the kernel SMB path to something other than System would
     make the selection silently unsatisfiable rather than noisy. The fix is a one-value
     change, but verify against a real 18 before trusting silence from this rule - the
-    fixtures behind it are unverified (docker/validation/fixture-provenance.tsv).
+    fixtures behind it are unverified (docker/validation/fixture-provenance.tsv). The lab
+    run that would settle it is dotgibson/dotfiles-Defense#235.
 level: medium
