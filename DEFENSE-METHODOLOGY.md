@@ -176,7 +176,19 @@ and the rule becomes writable.
 One caveat travels with all of this, and it is the reason both rules ship `unverified`
 fixtures: that Sysmon emits an 18 for a remote SMB pipe open at all, attributed to `System`,
 is derived from where the kernel services that open, not observed here. Step 4 of the
-lifecycle below has not been run for these two. Until it has, their silence means nothing.
+lifecycle below has not been run for these two, and it is tracked in #235. Until it has,
+their silence means nothing.
+
+Two things that tracker records rather than leaves implicit. The rules fail
+**independently**: the efsrpc one is not keyed on `Image`, so a Sysmon that attributes the
+kernel SMB path differently costs a one-value change to the atsvc/svcctl rule and nothing
+else. And no gate here can settle it — `check_near_miss` requires a true negative to carry
+the *identical* `EventData` key set as its true positive, so by construction no fixture in
+this manifest can exercise a missing-or-renamed-field case. That is the right call for the
+gate, and it is the reason the answer is a lab run rather than more CI. If the measurement
+comes back that no 18 arrives for the remote path at all, the response is to retire both
+rules and reopen #229, not to reword them — the second-plane claim above would simply be
+false.
 
 The row is narrow on purpose: it is the *registry* plane, not the endpoint. Both rules
 fire on a publish event in an npm or PyPI audit log — a package shipped by an actor that
