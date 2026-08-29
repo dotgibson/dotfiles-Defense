@@ -24,6 +24,41 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **The rest of the Sysmon PipeEvent block gets read (#229).** #225 closed one of the five
+  pipe names `detections/sysmon/sysmonconfig-detection-lab.xml` collects and left four
+  collected-and-unread — the same telemetry-ahead-of-detection hole, one size smaller. Two
+  rules close three of them:
+  `svcctl_atsvc_remote_pipe_sysmon_18` (Sysmon 18 / ConnectPipe on `\svcctl` and `\atsvc`
+  with `Image` = `System`) and `coercion_efsrpc_pipe_sysmon_18` (Sysmon 18 / ConnectPipe on
+  `\efsrpc`).
+  **This is corroboration, not new coverage, and the ledger should not be read as wider than
+  it is.** The service smbexec/psexec installs over `svcctl` is already caught by
+  `service_creation_psexec_7045`; the task atexec schedules over `atsvc` by
+  `scheduled_task_suspicious_4698`; efsrpc coercion by `coercion_named_pipes_5145` and the
+  Suricata `coercion.rules`. What the pair adds is a second, independent plane: the bind is
+  visible on the host where those audit subcategories are never forwarded, and it is the
+  request rather than the result, so it fires earlier in the chain. Only T1021.002 is a
+  genuinely new technique row, and only because nothing here previously named the
+  admin-share access itself.
+  The invariant was re-derived, not copied. #225's shape was ownership on pipe *creation*,
+  and it transfers to none of these: `svcctl`, `atsvc`, `efsrpc` and `lsarpc` are all created
+  once at boot by the OS, and every tool in scope *connects* to a pipe already there — so the
+  creation half detects nothing on those names and the new rules take the connect half, the
+  opposite trade for the opposite reason. Origin replaces ownership: a remote SMB client's
+  pipe open is serviced by the kernel SMB server, so `Image` reads `System` rather than a
+  local `sc.exe`/`schtasks.exe`, and that is what separates impacket from administration.
+  **`lsarpc` deliberately ships no rule.** Sysmon PipeEvent carries no authenticating
+  principal, so `coercion_named_pipes_5145`'s `filter_machine` — the block that makes that
+  pipe survivable on 5145 — has no counterpart here, and a coercion bind and a routine domain
+  bind arrive as byte-identical events. The decline is argued in `DEFENSE-METHODOLOGY.md` and
+  recorded in a form that runs: the efsrpc rule's true negative *is* an `lsarpc` bind. The
+  cost is stated rather than buried — PetitPotam's default endpoint is `lsarpc`, so 5145
+  stays the primary for coercion.
+  Both rules ship with `unverified` fixture provenance on purpose. That Sysmon emits an 18
+  for a remote SMB pipe open, attributed to `System`, is derived from where the kernel
+  services that open rather than observed — the purple-team run that would confirm it has not
+  been done, and until it has, the rules' silence means nothing.
+
 - **`spoolss_pipe_impersonation_sysmon_17` — the one hole where the telemetry was already
   enabled and no rule consumed it (#225).** `detections/sysmon/sysmonconfig-detection-lab.xml`
   has collected Sysmon PipeEvent 17/18 on five pipe names since it was written, with a

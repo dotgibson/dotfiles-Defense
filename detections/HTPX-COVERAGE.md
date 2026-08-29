@@ -6,7 +6,7 @@ A **gap here is not a defect.** htpx spans SaaS and CI/CD platforms this repo ha
 
 Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `detections/htpx.pin`.
 
-**102 blue entries · 95 claimed here · 22 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
+**102 blue entries · 95 claimed here · 23 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
 
 ## htpx blue entries claimed by detection content here
 
@@ -25,7 +25,7 @@ Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `dete
 | `cf-waf-disable-audit` | T1686.001 | `cloudflare_waf_rule_disabled` |
 | `cf-worker-deploy-audit` | T1648 | `cloudflare_worker_deployed` |
 | `cloud-destroy-cloudtrail` | T1485 | `aws_data_destruction` |
-| `coercion-5145` | T1187 | `coercion_named_pipes_5145`, `detections/network/suricata/coercion.rules` |
+| `coercion-5145` | T1187 | `coercion_efsrpc_pipe_sysmon_18`, `coercion_named_pipes_5145`, `detections/network/suricata/coercion.rules` |
 | `consent-grant-auditlogs` | T1528 | `entra_illicit_consent_grant` |
 | `cron-persist-auditd` | T1053.003 | `cron_persistence` |
 | `dcshadow-4742` | T1207 | `dcshadow_rogue_dc_4742` |
@@ -80,7 +80,7 @@ Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `dete
 | `rbcd-5136` | T1098 | `machine_account_creation_burst_4741`, `rbcd_allowedtoact_5136` |
 | `rdp-hijack-4688` | T1563.002 | `rdp_hijack_tscon_4688` |
 | `reverse-tunnel-detect` | T1572 | `detections/network/zeek/reverse-tunnel.zeek` |
-| `schtask-4698` | T1053.005 | `scheduled_task_suspicious_4698` |
+| `schtask-4698` | T1053.005 | `scheduled_task_suspicious_4698`, `svcctl_atsvc_remote_pipe_sysmon_18` |
 | `service-stop-7036` | T1489 | `service_stop_protected_services` |
 | `shadow-credentials-5136` | T1556 | `shadow_credentials_keycredentiallink_5136` |
 | `shadow-dump-auditd` | T1003.008 | `shadow_file_read` |
@@ -133,6 +133,7 @@ Techniques this repo detects that the corpus has no attack for — so there is n
 | T1016 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1018 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1021 | `passthehash_4624_fanout` |
+| T1021.002 | `svcctl_atsvc_remote_pipe_sysmon_18` |
 | T1033 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1046 | `ldap_recon_explicit_creds_4648` |
 | T1049 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst`, `host_recon_powershell_4104` |
@@ -148,7 +149,7 @@ Techniques this repo detects that the corpus has no attack for — so there is n
 | T1550.003 | `unconstrained_delegation_4624` |
 | T1558.005 | `ccache_theft_staging` |
 | T1560.001 | `archive_staging_utility` |
-| T1569.002 | `service_creation_psexec_7045` |
+| T1569.002 | `service_creation_psexec_7045`, `svcctl_atsvc_remote_pipe_sysmon_18` |
 | T1685.005 | `windows_event_log_cleared_104`, `windows_event_log_cleared_1102` |
 
 ## Declared holes upstream (`pair: null`)

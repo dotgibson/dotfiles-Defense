@@ -179,21 +179,22 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Offense` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 106 rules / 124 documents, organized by ATT&CK tactic
+### `sigma/` — 108 rules / 126 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
-| Rule                          | Event / source                    | ATT&CK    | Validate with (Offense fold · htpx pair)     |
-| ----------------------------- | --------------------------------- | --------- | -------------------------------------------- |
-| `kerberoasting_rc4_tgs`       | 4769 RC4 (0x17)                   | T1558.003 | Kerberos · kerberoast-getuserspns            |
-| `asrep_roast_probing_4771`    | 4771 0x18 (correlation)           | T1558.004 | Kerberos · asreproast-getnpusers             |
-| `password_spray_4625`         | 4625 (value_count correlation)    | T1110.003 | Kerberos/Poisoning · password-spray-kerbrute |
-| `dcsync_replication_4662`     | 4662 replication right            | T1003.006 | DCSync/NTDS · dcsync-secretsdump             |
-| `gpp_cpassword_sysvol_5145`   | 5145 SYSVOL prefs XML             | T1552.006 | SMB · gpp-cpassword                          |
-| `coercion_named_pipes_5145`   | 5145 IPC$ pipe (spoolss/efsrpc/…) | T1187     | Poisoning & relay · coerce-petitpotam        |
-| `dpapi_backupkey_5145`        | 5145 IPC$ `protected_storage`     | T1555     | Credential access · dpapi-backupkey          |
-| `ntds_dump_ntdsutil_vss_4688` | proc create (ntdsutil/VSS)        | T1003.003 | DCSync/NTDS · ntds-ntdsutil                  |
-| `lsass_handle_access`         | Sysmon 10 (LSASS)                 | T1003.001 | Lateral movement · lsass-dump-lsassy         |
+| Rule                             | Event / source                        | ATT&CK    | Validate with (Offense fold · htpx pair)     |
+| -------------------------------- | ------------------------------------- | --------- | -------------------------------------------- |
+| `kerberoasting_rc4_tgs`          | 4769 RC4 (0x17)                       | T1558.003 | Kerberos · kerberoast-getuserspns            |
+| `asrep_roast_probing_4771`       | 4771 0x18 (correlation)               | T1558.004 | Kerberos · asreproast-getnpusers             |
+| `password_spray_4625`            | 4625 (value_count correlation)        | T1110.003 | Kerberos/Poisoning · password-spray-kerbrute |
+| `dcsync_replication_4662`        | 4662 replication right                | T1003.006 | DCSync/NTDS · dcsync-secretsdump             |
+| `gpp_cpassword_sysvol_5145`      | 5145 SYSVOL prefs XML                 | T1552.006 | SMB · gpp-cpassword                          |
+| `coercion_named_pipes_5145`      | 5145 IPC$ pipe (spoolss/efsrpc/…)     | T1187     | Poisoning & relay · coerce-petitpotam        |
+| `coercion_efsrpc_pipe_sysmon_18` | Sysmon 18 PipeEvent (`\efsrpc` bound) | T1187     | Poisoning & relay · coerce-petitpotam        |
+| `dpapi_backupkey_5145`           | 5145 IPC$ `protected_storage`         | T1555     | Credential access · dpapi-backupkey          |
+| `ntds_dump_ntdsutil_vss_4688`    | proc create (ntdsutil/VSS)            | T1003.003 | DCSync/NTDS · ntds-ntdsutil                  |
+| `lsass_handle_access`            | Sysmon 10 (LSASS)                     | T1003.001 | Lateral movement · lsass-dump-lsassy         |
 
 **`privilege_escalation/`**
 
@@ -207,13 +208,14 @@ purple-validatable out of the box.
 
 **`lateral_movement/`**
 
-| Rule                            | Event / source                                    | ATT&CK            | Validate with                                            |
-| ------------------------------- | ------------------------------------------------- | ----------------- | -------------------------------------------------------- |
-| `wmiexec_wmiprvse_child_4688`   | proc create (WmiPrvSE child)                      | T1047             | Lateral movement · wmiexec-impacket                      |
-| `rdp_hijack_tscon_4688`         | proc create (tscon /dest:)                        | T1563.002         | Lateral movement · rdp-hijack-tscon                      |
-| `service_creation_psexec_7045`  | 7045 service install                              | T1569.002         | Lateral movement · pth-lateral-nxc                       |
-| `passthehash_4624_fanout`       | 4624 type-3 (value_count correlation)             | T1550.002 / T1021 | Lateral movement · pth-lateral-nxc                       |
-| `unconstrained_delegation_4624` | 4624 type-3 Kerberos, DC machine account → non-DC | T1187 / T1550.003 | Poisoning & relay · PURPLE-TEAM unconstrained-deleg-4624 |
+| Rule                                 | Event / source                                                             | ATT&CK                            | Validate with                                            |
+| ------------------------------------ | -------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------- |
+| `wmiexec_wmiprvse_child_4688`        | proc create (WmiPrvSE child)                                               | T1047                             | Lateral movement · wmiexec-impacket                      |
+| `rdp_hijack_tscon_4688`              | proc create (tscon /dest:)                                                 | T1563.002                         | Lateral movement · rdp-hijack-tscon                      |
+| `service_creation_psexec_7045`       | 7045 service install                                                       | T1569.002                         | Lateral movement · pth-lateral-nxc                       |
+| `svcctl_atsvc_remote_pipe_sysmon_18` | Sysmon 18 PipeEvent (`\svcctl`/`\atsvc` bound from `System`, i.e. off-box) | T1021.002 / T1569.002 / T1053.005 | Lateral movement · pth-lateral-nxc                       |
+| `passthehash_4624_fanout`            | 4624 type-3 (value_count correlation)                                      | T1550.002 / T1021                 | Lateral movement · pth-lateral-nxc                       |
+| `unconstrained_delegation_4624`      | 4624 type-3 Kerberos, DC machine account → non-DC                          | T1187 / T1550.003                 | Poisoning & relay · PURPLE-TEAM unconstrained-deleg-4624 |
 
 **`discovery/`**
 

@@ -60,6 +60,9 @@ OperationName in~ ("Add service principal credentials", "Add application credent
 // credential_access/asrep_roast_probing_4771.yml — AS-REP / Kerbrute enumeration base - Kerberos pre-auth failure 0x18 (4771)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
+// credential_access/coercion_efsrpc_pipe_sysmon_18.yml — Authentication coercion - efsrpc named-pipe bind on the host (Sysmon 18)
+EventType =~ "ConnectPipe" and PipeName contains "efsrpc"
+
 // credential_access/coercion_named_pipes_5145.yml — Authentication coercion - named-pipe access over IPC$ (5145)
 (EventID == 5145 and ShareName contains "IPC$" and (RelativeTargetName contains "spoolss" or RelativeTargetName contains "efsrpc" or RelativeTargetName contains "lsarpc" or RelativeTargetName contains "netlogon" or RelativeTargetName contains "lsass")) and (not(SubjectUserName endswith "$"))
 
@@ -188,6 +191,9 @@ CommandLine contains "/dest:rdp-tcp#"
 
 // lateral_movement/service_creation_psexec_7045.yml — Suspicious service installed (psexec-style remote exec)
 EventID == 7045 and (ImagePath contains "\\ADMIN$\\" or ImagePath contains "%COMSPEC%" or ImagePath contains "\\cmd.exe" or ImagePath contains "powershell.exe" or ImagePath contains "powershell -" or ImagePath contains "pwsh.exe" or ImagePath contains "cscript" or ImagePath contains "wscript" or ImagePath contains "rundll32" or ImagePath contains "mshta")
+
+// lateral_movement/svcctl_atsvc_remote_pipe_sysmon_18.yml — Remote service-control / task-scheduling named-pipe bind (Sysmon 18)
+EventType =~ "ConnectPipe" and Image =~ "System" and (PipeName contains "svcctl" or PipeName contains "atsvc")
 
 // lateral_movement/unconstrained_delegation_4624.yml — Unconstrained delegation abuse - DC machine account authenticating to a non-DC (4624)
 (EventID == 4624 and LogonType == 3 and AuthenticationPackageName =~ "Kerberos" and (TargetUserName in~ ("DC1$", "DC2$"))) and (not((Computer startswith "DC1" or Computer startswith "DC2")))

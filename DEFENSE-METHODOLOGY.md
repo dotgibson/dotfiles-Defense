@@ -126,6 +126,58 @@ every potato variant, including the ones that coerce over an endpoint other than
 and so leave the pipe rule silent. The decision here is about these two rules, not about
 the tactic.
 
+**The rest of the PipeEvent block, and the one name that stays unread (#229).** #225 left
+four of the five collected pipe names consumed by nothing, which is the same
+telemetry-ahead-of-detection hole it had just closed, one size smaller. Two rules close
+three of them: `detections/sigma/lateral_movement/svcctl_atsvc_remote_pipe_sysmon_18.yml`
+on `atsvc`/`svcctl`, and
+`detections/sigma/credential_access/coercion_efsrpc_pipe_sysmon_18.yml` on `efsrpc`.
+Neither widens coverage, and the ledger should not be read as though they do: T1569.002 is
+already held by `service_creation_psexec_7045`, T1053.005 by
+`scheduled_task_suspicious_4698`, and T1187 by `coercion_named_pipes_5145` together with
+`detections/network/suricata/coercion.rules`. What the pair buys is a second, independent
+plane — the bind is visible on the host, so it survives an estate that forwards neither
+7045 nor 4698 nor 5145, and it is the *request* rather than the result, so it is earlier in
+the chain. The one genuinely new technique row is T1021.002, and it is new only because
+nothing here previously named the admin-share access itself.
+
+The invariant had to be re-derived rather than copied across, and that is the part worth
+recording. #225's shape was ownership on pipe **creation** — the spooler is the only
+legitimate creator of a `spoolss` pipe, so any other creator is anomalous on its own. It
+transfers to none of the other four. `svcctl` is created once at boot by `services.exe`,
+`atsvc` by the Task Scheduler, `efsrpc` and `lsarpc` by `lsass.exe`, and every tool in scope
+**connects** to a pipe that is already there — impacket-psexec creates pipes of its own, but
+they are `RemCom_*` names the baseline does not collect. The creation half therefore detects
+nothing on these names, and the new rules take the connect half: the opposite trade to #225,
+for the opposite reason. What replaces ownership is *origin*. A remote SMB client's pipe open
+is serviced by the kernel SMB server, so `Image` reads `System` rather than the local
+`sc.exe` or `schtasks.exe` that would otherwise be binding, and "this came from off-box" is
+what separates impacket from ordinary remote administration. The efsrpc rule does not need
+even that much and is deliberately not keyed on `Image`: over SMB that pipe is bound by
+almost nothing but MS-EFSR and the tools that abuse it.
+
+**`lsarpc` ships no rule, and that is a decision rather than an omission.** It stays
+collected as hunt and pivot material. Sysmon PipeEvent carries no authenticating principal —
+`User` is the local process's identity, not the account on the far end of the SMB session —
+so `coercion_named_pipes_5145`'s `filter_machine`, the one block that keeps that pipe
+survivable there, has no counterpart on this plane. A DFSCoerce bind and a domain member's
+routine `lsarpc` bind arrive as byte-identical events, and a rule over them would be
+unfilterable volume: a noisy rule gets muted, and a muted rule is a blind spot with extra
+steps. The cost of declining is stated rather than buried — PetitPotam's *default* endpoint
+is `lsarpc`, so the new `efsrpc` rule does not see the default invocation, and 5145 remains
+the primary for coercion. This is the same "prefer the efsrpc/spoolss subset" trade
+`coercion_named_pipes_5145` already recommends in its own description, applied to a plane
+where it is forced rather than optional, and it is recorded in a form that runs: the efsrpc
+rule's true-negative fixture *is* an `lsarpc` bind. *Reopen when* the host plane gains the
+source of a bind — a Sysmon schema that carries it, or an ingestion path that joins 17/18 to
+the 5145 for the same session — at which point a principal-shaped filter becomes expressible
+and the rule becomes writable.
+
+One caveat travels with all of this, and it is the reason both rules ship `unverified`
+fixtures: that Sysmon emits an 18 for a remote SMB pipe open at all, attributed to `System`,
+is derived from where the kernel services that open, not observed here. Step 4 of the
+lifecycle below has not been run for these two. Until it has, their silence means nothing.
+
 The row is narrow on purpose: it is the *registry* plane, not the endpoint. Both rules
 fire on a publish event in an npm or PyPI audit log — a package shipped by an actor that
 is not the sanctioned CI identity, or a release uploaded with a long-lived token rather

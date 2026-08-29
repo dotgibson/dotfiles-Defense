@@ -2,21 +2,21 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**106 rules · 124 detection documents · 80 techniques · 12 tactics · 24 logsources.**
+**108 rules · 126 detection documents · 81 techniques · 12 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
 | Tactic | ID | Techniques | Rules |
 | ------ | -- | ---------: | ----: |
 | Initial Access | TA0001 | 1 | 2 |
-| Execution | TA0002 | 7 | 8 |
+| Execution | TA0002 | 8 | 9 |
 | Persistence | TA0003 | 16 | 37 |
 | Privilege Escalation | TA0004 | 9 | 12 |
 | Stealth | TA0005 | 3 | 3 |
 | Defense Impairment | TA0112 | 7 | 12 |
-| Credential Access | TA0006 | 17 | 19 |
+| Credential Access | TA0006 | 17 | 20 |
 | Discovery | TA0007 | 14 | 6 |
-| Lateral Movement | TA0008 | 9 | 7 |
+| Lateral Movement | TA0008 | 11 | 8 |
 | Collection | TA0009 | 5 | 4 |
 | Exfiltration | TA0010 | 2 | 2 |
 | Impact | TA0040 | 5 | 9 |
@@ -34,12 +34,13 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1016 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1018 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1021 | 1 | `passthehash_4624_fanout` |
+| T1021.002 | 1 | `svcctl_atsvc_remote_pipe_sysmon_18` |
 | T1033 | 3 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1046 | 1 | `ldap_recon_explicit_creds_4648` |
 | T1047 | 1 | `wmiexec_wmiprvse_child_4688` |
 | T1049 | 3 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1053.003 | 1 | `cron_persistence` |
-| T1053.005 | 1 | `scheduled_task_suspicious_4698` |
+| T1053.005 | 2 | `scheduled_task_suspicious_4698`, `svcctl_atsvc_remote_pipe_sysmon_18` |
 | T1057 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1059 | 1 | `jenkins_script_console` |
 | T1069.001 | 1 | `local_group_enum_sweep_4798_4799` |
@@ -62,7 +63,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1136.001 | 1 | `rogue_account_creation_4720` |
 | T1136.002 | 2 | `machine_account_creation_burst_4741`, `rogue_account_creation_4720` |
 | T1136.003 | 1 | `snowflake_user_created` |
-| T1187 | 2 | `coercion_named_pipes_5145`, `unconstrained_delegation_4624` |
+| T1187 | 3 | `coercion_efsrpc_pipe_sysmon_18`, `coercion_named_pipes_5145`, `unconstrained_delegation_4624` |
 | T1195.002 | 2 | `npm_malicious_package_publish`, `pypi_token_release_upload` |
 | T1207 | 1 | `dcshadow_rogue_dc_4742` |
 | T1482 | 1 | `sharphound_ldap_sweep_4662` |
@@ -95,7 +96,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1563.002 | 1 | `rdp_hijack_tscon_4688` |
 | T1567 | 1 | `slack_external_shared_channel` |
 | T1567.002 | 1 | `snowflake_data_unload` |
-| T1569.002 | 1 | `service_creation_psexec_7045` |
+| T1569.002 | 2 | `service_creation_psexec_7045`, `svcctl_atsvc_remote_pipe_sysmon_18` |
 | T1609 | 1 | `k8s_pod_exec_attach` |
 | T1610 | 1 | `k8s_privileged_pod_created` |
 | T1611 | 1 | `k8s_privileged_pod_created` |
@@ -113,7 +114,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `cloud` | `aws`, `azure`, `gcp` | 11 |
 | `cloudflare` | `cloudflare` | 3 |
 | `collection` | `windows` | 2 |
-| `credential_access` | `windows` | 10 |
+| `credential_access` | `windows` | 11 |
 | `defense_impairment` | `windows` | 3 |
 | `discovery` | `windows` | 6 |
 | `github` | `github` | 3 |
@@ -122,7 +123,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `impact` | `windows` | 8 |
 | `jenkins` | `jenkins` | 3 |
 | `kubernetes` | `kubernetes` | 3 |
-| `lateral_movement` | `windows` | 5 |
+| `lateral_movement` | `windows` | 6 |
 | `linux` | `linux` | 9 |
 | `npm` | `npm` | 3 |
 | `okta` | `okta` | 3 |
