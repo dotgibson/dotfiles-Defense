@@ -5,7 +5,7 @@
 #
 # This list is the contract. Audit scripts and the promotion checklist read it.
 # ── version stamp — the human-readable Core version, vendored so an OS repo can
-#    report WHICH Core it carries (`core-version`); the subtree squash records the
+#    report WHICH Core it carries (`core-version`); core.lock records the vendored
 #    commit, this records the SemVer. ──────────────────────────────────────────
 core.version
 # ── zsh ───────────────────────────────────────────────────────────────────────

@@ -329,7 +329,7 @@ EOF
 w "$TARGET/README.md" <<EOF
 # dotfiles-$OS
 
-The $OS machine repo. Vendors [Core](../dotfiles-core) under \`core/\` (git subtree)
+The $OS machine repo. Vendors [Core](../dotfiles-core) under \`core/\`
 and adds the $OS-native layer (\`os/$os_lc.zsh\`, package manager, paths).
 
 ## The capability declaration

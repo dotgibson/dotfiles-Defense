@@ -1,6 +1,6 @@
 name: core-integrity
 
-# Tamper check for the fleet: every OS repo's vendored core/ is a git-subtree copy of
+# Tamper check for the fleet: every OS repo's vendored core/ is a copy of
 # dotfiles-core, overwritten on the next `make sync` — so a hand-edit there is silent
 # (works until a sync clobbers it, never reaches the source of truth). The only guard
 # was a LOCAL .git/hooks/pre-commit (blib_install_core_guard), which isn't

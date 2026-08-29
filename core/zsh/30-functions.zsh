@@ -62,7 +62,7 @@ _core_install_prefix() {
 }
 
 # core-version — print the vendored Core layer's version. Lets you tell WHICH Core a
-# given OS repo carries from inside it: the subtree squash records the commit, this
+# given OS repo carries from inside it: core.lock records the vendored commit, this
 # records the human SemVer (core.version, bumped at release to match the git tag).
 core-version() {
   emulate -L zsh

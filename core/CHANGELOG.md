@@ -14,6 +14,56 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.4.2] - 2026-08-28
+
+### Fixed
+
+- **The docs still taught `git subtree` as the live mechanism (#668).** #587 replaced the
+  fan-out's `git subtree pull --squash` with a pinned fetch plus `read-tree --prefix`, but
+  the record never followed. Two Core documents contradicted each other on the repo's
+  central mechanism, and the one giving instructions was the wrong one:
+  `RELEASE-STRATEGY.md` handed the reader
+  `git subtree pull --prefix=core <core-remote> vX.Y.Z --squash` for both adopting a release
+  and rolling one OS back — precisely what `VENDORING.md` forbids, because it moves `core/`
+  but not `core.lock` and leaves `core-integrity.sh` reporting `TAMPERED`.
+
+  Both recipes are now the real incantation, run from a Core checkout, with the three
+  constraints that make it work stated for the first time: `sync-core.sh` refuses unless
+  local `HEAD` **is** the pinned commit; it reads `core_version` from the **working
+  tree**, so pinning an older tag from `main` writes a silently wrong lock; and the pin
+  must be the **peeled commit**, never `refs/tags/vX.Y.Z` — releases are annotated tags,
+  and the script resolves its pin with `git ls-remote`, which returns the _tag object_, a
+  SHA that can never equal the `HEAD` a tag checkout leaves you on. The three pre-existing
+  `CORE_BRANCH=refs/tags/v…` recipes in `ARCHITECTURE.md`, `VENDORING.md` and
+  `PORTING-MATRIX.md` carried that same latent defect and are corrected too. The claim that
+  a rollback "merges backwards, it does not un-merge" is deleted — materializing replaces
+  the tree outright, so an older pin is just an ordinary sync.
+
+  Several surfaces an operator actually reads at runtime were asserting the retired
+  mechanism: `make help`, `sync-core.sh --help`, both lines of the core-guard hook's
+  refusal message, the README `new-os-repo.sh` writes into every new OS repo, and the
+  **fan-out PR body shipped into nine repos on every release** ("Vendors the released Core
+  into `core/` via `git subtree pull --squash`"). `.bin/sync-upstream.sh` recommended the
+  forbidden command in its own error tip. All corrected, along with the now-false "the
+  subtree squash records the exact Core commit" in `ARCHITECTURE.md`, `core.manifest` and
+  `zsh/30-functions.zsh` — `core.lock` records it.
+
+  One-line mechanism claims in `CLAUDE.md`, `CONTRIBUTING.md`, `SECURITY.md`,
+  `ARCHITECTURE.md`, `README.md`, the PR and issue templates, the `doc-consistency`
+  subagent, and the non-Markdown surfaces that carried the same sentence (`ci.yml`,
+  `core-integrity.yml`, `sync-fanout.yml`, `core-integrity.sh`, `CODEOWNERS`,
+  `.gitattributes`, `.pre-commit-config.yaml`) simply drop the clause: they state the invariant that matters (`core/` is a copy; a defect
+  fans out N-way) and leave `VENDORING.md` the single owner of _how_, so no mechanism claim
+  can go stale in ten files again.
+
+  What **stays** is the one `git subtree` that is still live: the one-time `subtree add`
+  that creates a `core/` where none exists (`scripts/new-os-repo.sh` runs it, and
+  `sync-core.sh` skips a repo without one). It is now labelled as initial vendoring and
+  never the update path, and its `refs/tags/v4` is corrected to `v5`. `PORTING-MATRIX.md`
+  step 5 also stopped instructing an add that could not work: step 1 copies Fedora's
+  `core/` across, so `subtree add` there fails with _prefix 'core' already exists_ — the
+  step is a re-vendor via `sync-core.sh`.
+
 ## [v5.4.1] - 2026-08-28
 
 ### Fixed
