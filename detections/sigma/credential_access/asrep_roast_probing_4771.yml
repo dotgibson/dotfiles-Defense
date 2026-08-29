@@ -9,7 +9,7 @@ description: |
   asrep_roast_4768.yml.
 references:
   - https://attack.mitre.org/techniques/T1558/004/
-  - https://github.com/dotgibson/htpx/blob/main/entries/blue/asrep-probing-4771.md
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/password-spray-4625.md
 author: dotfiles-Defense
 date: 2026-06-30
 name: kerb_preauth_fail_4771

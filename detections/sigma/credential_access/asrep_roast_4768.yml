@@ -15,7 +15,7 @@ description: |
   "Microsoft Windows Kerberos" fold; htpx pair asreproast-getnpusers).
 references:
   - https://attack.mitre.org/techniques/T1558/004/
-  - https://github.com/dotgibson/htpx/blob/main/entries/blue/asrep-probing-4771.md
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/asrep-roast-4768.md
 author: dotfiles-Defense
 date: 2026-07-22
 tags:
