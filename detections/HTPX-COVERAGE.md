@@ -4,7 +4,7 @@ Where this repo's Sigma rules meet the [htpx](https://github.com/dotgibson/htpx)
 
 A **gap here is not a defect.** htpx spans SaaS and CI/CD platforms this repo has no rules for, by design — this report exists so the shape of that boundary is reviewable instead of assumed. A dead *claim* is a different matter and fails the build in `detections/check-htpx-pairing.sh`.
 
-Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `detections/htpx.pin`.
+Corpus: `dotgibson/htpx` at `ca74c74a0157` (v3.0.0), pinned in `detections/htpx.pin`.
 
 **102 blue entries · 95 claimed here · 23 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
 
@@ -15,7 +15,7 @@ Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `dete
 | `account-removal-4725` | T1531 | `account_access_removal_4725` |
 | `adcs-esc1-4886` | T1649 | `adcs_esc1_san_mismatch_4886` |
 | `aitm-phish-signin` | T1566.002 | `detections/siem/sentinel/entra_aitm_token_replay.yaml` |
-| `asrep-probing-4771` | T1558.004 | `asrep_roast_4768`, `asrep_roast_probing_4771` |
+| `asrep-roast-4768` | T1558.004 | `asrep_roast_4768` |
 | `aws-createaccesskey-cloudtrail` | T1098.001 | `aws_iam_access_key_created` |
 | `aws-iam-privesc-cloudtrail` | T1098.003 | `aws_iam_privesc_policy` |
 | `aws-loginprofile-cloudtrail` | T1098 | `aws_login_profile_created` |
@@ -72,7 +72,7 @@ Corpus: `dotgibson/htpx` at `b80741fdc074` (v2.10.1-6-gb80741f), pinned in `dete
 | `okta-api-token-audit` | T1098 | `okta_api_token_created` |
 | `okta-idp-audit` | T1556 | `okta_idp_created` |
 | `okta-mfa-reset-audit` | T1556.006 | `okta_mfa_factor_reset` |
-| `password-spray-4625` | T1110.003 | `password_spray_4625` |
+| `password-spray-4625` | T1110.003 | `asrep_roast_probing_4771`, `password_spray_4625` |
 | `potato-seimpersonate-4688` | T1134.001 | `potato_seimpersonate_4688`, `potato_seimpersonate_sysmon_1`, `spoolss_pipe_impersonation_sysmon_17` |
 | `pypi-publish-audit` | T1195.002 | `pypi_token_release_upload` |
 | `pypi-role-audit` | T1098 | `pypi_collaborator_added` |
