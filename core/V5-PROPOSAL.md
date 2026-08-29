@@ -326,10 +326,10 @@ them ship to nine repos.
 
 - **Retire `git subtree` from the record** (#668). #587 replaced subtree-pull with
   pinned materialization, but twelve files plus `Makefile:52` still assert it —
-  and `RELEASE-STRATEGY.md:194,327` hand the reader a literal
+  and `RELEASE-STRATEGY.md` §4 and §5 hand the reader a literal
   `git subtree pull --squash` that `VENDORING.md:154` explicitly forbids. Two Core
   documents contradict each other on the repo's central mechanism, and the one
-  giving instructions is wrong.
+  giving instructions is wrong. (Line numbers as of the proposal: `RELEASE-STRATEGY.md:194,327`.)
 - **Make `os-repos.txt` the single source** (#669). Its own header admits adding a
   target is four coordinated edits.
 - **Three stale claims** (#670, #671, #678). `VENDORING.md` describes `core.lock`

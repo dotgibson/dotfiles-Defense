@@ -4,7 +4,7 @@
 # CORE INTEGRITY CHECK — is every OS repo's vendored core/ PRISTINE, or was it
 # hand-edited?
 #
-# The rule that bites: core/ is a git-subtree copy of dotfiles-core and is
+# The rule that bites: core/ is a vendored copy of dotfiles-core and is
 # overwritten on the next `make sync`, so a hand-edit there is silent — it works
 # until a sync clobbers it, and never reaches the source of truth. The only guard
 # was blib_install_core_guard, a LOCAL .git/hooks/pre-commit. But .git/hooks is not

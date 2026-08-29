@@ -15,10 +15,14 @@ _Repo status_ at the bottom).
 3. Replace `install/packages.txt` with that distro's names (table below).
 4. In `bootstrap.sh`: swap the `dnf` block for the distro's installer and the
    `/etc/os-release` guard string.
-5. `git subtree add --prefix=core <dotfiles-core> refs/tags/v4 --squash` — a
-   **released tag, never `main`**; then stamp `core.lock` from a Core checkout with
-   `CORE_BRANCH=refs/tags/v4 ./scripts/sync-core.sh dotfiles-<Distro>`, or
-   `core-integrity` reports the fresh subtree as TAMPERED.
+5. Re-vendor Core and stamp `core.lock`, from a **Core** checkout:
+   `git checkout v5 && CORE_BRANCH="$(git rev-parse v5^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>`
+   — a **released tag, never `main`**, and the **peeled commit**, never `refs/tags/v5`
+   (the tags are annotated; see `RELEASE-STRATEGY.md` §4). Step 1 already copied Fedora's `core/` across, so there is no
+   `git subtree add` to run here (it would fail: _prefix 'core' already exists_). That
+   one-time add is only for a repo with no `core/` at all — `scripts/new-os-repo.sh`
+   does it for greenfield repos. Skip this step and `core-integrity` reports the
+   inherited tree against Fedora's lock.
 6. Update the README's "specifics" section to that distro's quirks.
 
 ## Package-manager commands

@@ -1,6 +1,6 @@
 name: ci
 
-# Core is authored once here, then vendored into all nine OS repos via git subtree.
+# Core is authored once here, then vendored into all nine OS repos.
 # A defect that lands here fans out N-way — so gate every push/PR with the same
 # audit the maintainer runs locally. CI installs the linters that a bare box may
 # lack (shellcheck/shfmt/luacheck/zsh) and then hands off entirely to
@@ -444,7 +444,7 @@ jobs:
   # Author-time hygiene gate. The .pre-commit-config.yaml hooks only fire for
   # contributors who ran `pre-commit install`; without this job a push carrying
   # trailing whitespace, a missing final newline, a stray `<<<<<<<` conflict marker,
-  # or a shebang script that isn't +x sails through green and subtree-syncs into all
+  # or a shebang script that isn't +x sails through green and vendors into all
   # 8 repos. The audit job deliberately does NOT replicate these file-hygiene hooks
   # (audit-core.sh owns manifest/lint/behavioral), so run the SAME config here —
   # author-time == CI, one source of truth, zero drift. SKIP the three hooks the
