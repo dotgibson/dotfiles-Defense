@@ -276,6 +276,9 @@ EventID:5136 AND AttributeLDAPDisplayName:msDS\-KeyCredentialLink
 // privilege_escalation/spoolss_pipe_impersonation_sysmon_17.yml — SeImpersonate privesc - non-spooler process creating a spoolss named pipe (Sysmon 17)
 (EventType:CreatePipe AND PipeName:*spoolss*) AND (NOT Image:*\\spoolsv.exe)
 
+// privilege_escalation/token_theft_process_target_subject_4688.yml — Token theft - process created with a SYSTEM token by a non-SYSTEM creator (4688 Target Subject)
+TargetUserSid:S\-1\-5\-18 AND (NOT SubjectUserSid:S\-1\-5\-18)
+
 // pypi/pypi_collaborator_added.yml — PyPI project collaborator added (durable publish backdoor)
 action:(add\ Owner* OR add\ Maintainer*)
 

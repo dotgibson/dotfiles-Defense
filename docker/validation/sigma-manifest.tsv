@@ -111,3 +111,4 @@ linux-shadow-read	none	docker/validation/sigma-fixtures/linux_shadow_read.jsonl	
 windows-log-cleared-1102	windows-audit	docker/validation/sigma-fixtures/windows_log_cleared_1102.jsonl	detections/sigma/defense_impairment/windows_event_log_cleared_1102.yml	c1df047f-8b4f-4411-bd3c-f406b55c6d47	-
 windows-log-cleared-104	windows-audit	docker/validation/sigma-fixtures/windows_log_cleared_104.jsonl	detections/sigma/defense_impairment/windows_event_log_cleared_104.yml	74f218d3-1988-4151-97ed-8173df2b6647	-
 linux-history-clearing	none	docker/validation/sigma-fixtures/linux_history_clearing.jsonl	detections/sigma/linux/history_clearing.yml	ca8e6e8e-18bd-4ffa-b20c-d781e3e77223	-
+token-theft-target-subject-4688	windows-audit	docker/validation/sigma-fixtures/token_theft_4688_tp.jsonl	detections/sigma/privilege_escalation/token_theft_process_target_subject_4688.yml	1faa7a59-9fd5-4d14-9bf1-d94f82466acb	docker/validation/sigma-fixtures/token_theft_4688_tn.jsonl
