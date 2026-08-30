@@ -256,8 +256,8 @@ reopen condition that remains is a variant obtaining its token through `LsaLogon
 than duplication — JuicyPotatoNG is the live candidate, and its tell would be a 4624 LogonType
 9, not a 4672.
 
-**The rest of the PipeEvent block, and the one name that stays unread (#229).** #225 left
-four of the five collected pipe names consumed by nothing, which is the same
+**The rest of the PipeEvent block, and the names that stay unread (#229).** #225 left
+four of the then-five collected pipe names consumed by nothing, which is the same
 telemetry-ahead-of-detection hole it had just closed, one size smaller. Two rules close
 three of them: `detections/sigma/lateral_movement/svcctl_atsvc_remote_pipe_sysmon_18.yml`
 on `atsvc`/`svcctl`, and
@@ -285,6 +285,25 @@ is serviced by the kernel SMB server, so `Image` reads `System` rather than the 
 what separates impacket from ordinary remote administration. The efsrpc rule does not need
 even that much and is deliberately not keyed on `Image`: over SMB that pipe is bound by
 almost nothing but MS-EFSR and the tools that abuse it.
+
+**A sixth name was added, and it too is unread — but for the opposite reason.** The include
+list now carries `\pipe\srvsvc`, because EfsPotato stands up `\<guid>\pipe\srvsvc` and coerces
+the Server service into connecting to it: the same ownership-on-creation shape #225 used for
+`spoolss`, on a name nothing collected, so EfsPotato was unwatched on the mechanism plane for
+exactly the reason dotgibson/dotfiles-Defense#240 gives for RoguePotato. Unlike `lsarpc` below,
+this one is unread because the rule has not been written yet rather than because it should not
+be — it is tracked as dotgibson/dotfiles-Defense#248, filed with the collection rather than
+after it, so the block does not acquire a second unconsumed name without a reason attached.
+
+Two things about that entry are deliberate. It is `\pipe\srvsvc`, not `srvsvc`: measured over
+the pinned EVTX corpus, 7 of 61 PipeEvent records match bare `srvsvc` and five are ordinary
+share enumeration arriving as `\srvsvc` from `Image=System`, while the nested form is what the
+coercion produces and no legitimate bind in that corpus takes it. Collecting the narrow form
+takes 2 of the 7 and leaves the discovery traffic out; if that traffic is wanted later it is a
+different rule and a different decision. And the name is collected for its **creation** half,
+siding with #225 rather than with the connect-half trade the three names above take — because
+the tool creates this pipe rather than binding one that already exists, which is what makes the
+creator's `Image` the evidence.
 
 **`lsarpc` ships no rule, and that is a decision rather than an omission.** It stays
 collected as hunt and pivot material. Sysmon PipeEvent carries no authenticating principal —

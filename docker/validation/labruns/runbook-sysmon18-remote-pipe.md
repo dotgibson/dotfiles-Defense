@@ -29,7 +29,7 @@ item 3.
 
 ```powershell
 # On the target, from an elevated prompt. The include list matters: it scopes the PipeEvent
-# feed to five pipe names before Sigma ever sees anything.
+# feed to six pipe names before Sigma ever sees anything.
 sysmon.exe -accepteula -i sysmonconfig-detection-lab.xml
 sysmon.exe -c            # confirm the config took, and record the reported schema version
 ```

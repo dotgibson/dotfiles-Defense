@@ -93,8 +93,8 @@
       </RegistryEvent>
     </RuleGroup>
 
-    <!-- Events 17/18: PipeEvent — an include list, so the rules only ever see the five
-         pipe names below. Which rule reads which name, and why one of them is read by
+    <!-- Events 17/18: PipeEvent — an include list, so the rules only ever see the six
+         pipe names below. Which rule reads which name, and why two of them are read by
          nothing (#225 closed the first of these, #229 the next two):
 
            spoolss  → spoolss_pipe_impersonation_sysmon_17. Event 17 / CreatePipe: a
@@ -115,8 +115,26 @@
                       pivoting to by hand once something else fires. The argument is in
                       DEFENSE-METHODOLOGY.md.
 
+           \pipe\srvsvc → read by nothing yet; the rule is tracked in
+                      dotgibson/dotfiles-Defense#248. Collected because EfsPotato stands up
+                      \<guid>\pipe\srvsvc and coerces the Server service into connecting to
+                      it — the same ownership-on-creation shape as spoolss, on a name no rule
+                      reads, so it is unwatched on the mechanism plane exactly as RoguePotato
+                      is (dotgibson/dotfiles-Defense#240).
+                      NOTE THE ENTRY IS \pipe\srvsvc, NOT srvsvc, and that is the whole
+                      point. Bare `srvsvc` would also collect the ROUTINE bind: measured over
+                      the pinned EVTX corpus, 7 of 61 PipeEvent records match `srvsvc` and
+                      five of those are ordinary share enumeration (NetShareEnum,
+                      NetSessionEnum) arriving as bare \srvsvc from Image=System. The nested
+                      \<something>\pipe\srvsvc form is what the coercion produces and no
+                      legitimate bind in that corpus takes it, so this entry collects 2 of
+                      the 7 and drops the discovery traffic. If that traffic is later wanted
+                      it is a separate decision and a separate rule (remote share discovery),
+                      not a widening of this line.
+
          Note the create/connect split above is per name, not a house style: spoolss is
-         interesting on creation and the other four only on connection. -->
+         interesting on creation, \pipe\srvsvc on creation for the same reason, and the
+         other four only on connection. -->
     <RuleGroup name="pipe-events" groupRelation="or">
       <PipeEvent onmatch="include">
         <PipeName condition="contains">spoolss</PipeName>
@@ -124,6 +142,7 @@
         <PipeName condition="contains">lsarpc</PipeName>
         <PipeName condition="contains">atsvc</PipeName>
         <PipeName condition="contains">svcctl</PipeName>
+        <PipeName condition="contains">\pipe\srvsvc</PipeName>
       </PipeEvent>
     </RuleGroup>
 

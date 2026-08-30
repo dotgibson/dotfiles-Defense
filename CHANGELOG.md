@@ -140,6 +140,25 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **`\pipe\srvsvc` joins the PipeEvent include list, and EfsPotato stops being unwatched on the
+  mechanism plane.** Measured while gathering evidence for #240: every potato in the pinned
+  `sbousseaden/EVTX-ATTACK-SAMPLES` corpus that stands up its own pipe uses the nested
+  `\<something>\pipe\<endpoint>` shape, and EfsPotato's is on `srvsvc`
+  (`\dd4c18dc-bff6-42ce-b707-62c114b84291\pipe\srvsvc`, created by `EfsPotato.exe`). That name
+  was not collected, so `detections/sysmon/sysmonconfig-detection-lab.xml` dropped the event
+  before Sigma ever saw it — the same blocking constraint #240 records for RoguePotato on
+  `epmapper`. The entry is deliberately `\pipe\srvsvc` rather than bare `srvsvc`: 7 of the 61
+  PipeEvent records in that corpus match `srvsvc` and five are ordinary share enumeration
+  (NetShareEnum, NetSessionEnum) arriving as bare `\srvsvc` from `Image=System`, so the narrow
+  form collects the 2 that are the coercion and leaves the discovery traffic out. Wanting that
+  traffic is a separate decision and a separate rule.
+  **No rule reads the new name yet**, which is the telemetry-ahead-of-detection hole #225 and
+  #229 each closed one name at a time. It is filed with the collection rather than after it, as
+  dotgibson/dotfiles-Defense#248, and the config's comment block — which tracks which rule reads
+  which name and why any name is unread — now distinguishes the two kinds of unread name:
+  `lsarpc` because a rule there would be unfilterable volume, `\pipe\srvsvc` because the rule is
+  owed. `Ledger: unchanged — collection only, no rule, no tactic or technique count moves.`
+
 - **A Sysmon-plane rule for the token swap itself, and the Stealth row widens a third time
   (follow-on to #239).** #239 established that Sysmon 1's `User` is the new process and
   `ParentUser` the creator, then used only the creator half to repair
