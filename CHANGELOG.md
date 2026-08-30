@@ -140,24 +140,33 @@ under `[Unreleased]` from here.
 
 ### Added
 
-- **`\pipe\srvsvc` joins the PipeEvent include list, and EfsPotato stops being unwatched on the
-  mechanism plane.** Measured while gathering evidence for #240: every potato in the pinned
+- **`\pipe\srvsvc` and `\pipe\epmapper` join the PipeEvent include list; EfsPotato and
+  RoguePotato stop being unwatched on the mechanism plane.** Measured while gathering evidence for #240: every potato in the pinned
   `sbousseaden/EVTX-ATTACK-SAMPLES` corpus that stands up its own pipe uses the nested
-  `\<something>\pipe\<endpoint>` shape, and EfsPotato's is on `srvsvc`
-  (`\dd4c18dc-bff6-42ce-b707-62c114b84291\pipe\srvsvc`, created by `EfsPotato.exe`). That name
-  was not collected, so `detections/sysmon/sysmonconfig-detection-lab.xml` dropped the event
-  before Sigma ever saw it — the same blocking constraint #240 records for RoguePotato on
-  `epmapper`. The entry is deliberately `\pipe\srvsvc` rather than bare `srvsvc`: 7 of the 61
-  PipeEvent records in that corpus match `srvsvc` and five are ordinary share enumeration
-  (NetShareEnum, NetSessionEnum) arriving as bare `\srvsvc` from `Image=System`, so the narrow
-  form collects the 2 that are the coercion and leaves the discovery traffic out. Wanting that
-  traffic is a separate decision and a separate rule.
-  **No rule reads the new name yet**, which is the telemetry-ahead-of-detection hole #225 and
-  #229 each closed one name at a time. It is filed with the collection rather than after it, as
-  dotgibson/dotfiles-Defense#248, and the config's comment block — which tracks which rule reads
-  which name and why any name is unread — now distinguishes the two kinds of unread name:
-  `lsarpc` because a rule there would be unfilterable volume, `\pipe\srvsvc` because the rule is
-  owed. `Ledger: unchanged — collection only, no rule, no tactic or technique count moves.`
+  `\<something>\pipe\<endpoint>` shape, and two of the three do it on names nothing collected —
+  EfsPotato on `\dd4c18dc-…\pipe\srvsvc`, RoguePotato on `\RoguePotato\pipe\epmapper`, both
+  carrying their own `Image` on the create. `detections/sysmon/sysmonconfig-detection-lab.xml`
+  dropped both events before Sigma ever saw them, which is the blocking constraint #240 records.
+  The entries are deliberately `\pipe\srvsvc` and `\pipe\epmapper` rather than the bare names,
+  and the measurement is the same shape twice: 7 of the 61 PipeEvent records match bare `srvsvc`
+  and five are ordinary share enumeration (NetShareEnum, NetSessionEnum) arriving as `\srvsvc`
+  from `Image=System`; 3 match bare `epmapper` and one is the legitimate endpoint mapper arriving
+  as `\epmapper`. The narrow forms collect 2 apiece and leave the routine traffic out. Wanting
+  that traffic is a separate decision and a separate rule.
+  Worth recording on the `epmapper` side: that legitimate record is `Image=System`, not
+  `svchost.exe`, so the `filter_legit: Image|endswith: '\svchost.exe'` #240 proposed would not
+  have filtered it. Narrowing the collection is what does the job the Image filter was expected
+  to do.
+  **No rule reads either name yet**, which is the telemetry-ahead-of-detection hole #225 and
+  #229 each closed one name at a time. Both are filed with the collection rather than after it,
+  as dotgibson/dotfiles-Defense#248, and the config's comment block — which tracks which rule
+  reads which name and why any name is unread — now distinguishes the two kinds of unread name:
+  `lsarpc` because a rule there would be unfilterable volume and that is a decision,
+  `\pipe\srvsvc` and `\pipe\epmapper` because the rule is owed. Closes
+  dotgibson/dotfiles-Defense#240, whose three open questions carry to #248 — the volume one in
+  particular, since no legitimate *create* of either name was observed and none of these captures
+  spans a boot. `Ledger: unchanged — collection only, no rule, no tactic or technique count
+  moves.`
 
 - **A Sysmon-plane rule for the token swap itself, and the Stealth row widens a third time
   (follow-on to #239).** #239 established that Sysmon 1's `User` is the new process and

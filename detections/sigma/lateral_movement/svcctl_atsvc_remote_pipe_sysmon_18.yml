@@ -27,7 +27,7 @@ description: |
   at boot by services.exe and atsvc by the Task Scheduler, and every tool named above
   CONNECTS to the pipe that is already there - so on these two names the creation half
   detects nothing at all. impacket-psexec does create pipes of its own (RemCom_*), but the
-  shipped detections/sysmon/sysmonconfig-detection-lab.xml collects six pipe names and
+  shipped detections/sysmon/sysmonconfig-detection-lab.xml collects seven pipe names and
   those are not among them.
   Detection posture, honestly: this is a triage surface and no filter would fix it.
   Legitimate remote administration - sc.exe against a remote host, schtasks /s, SCCM, a

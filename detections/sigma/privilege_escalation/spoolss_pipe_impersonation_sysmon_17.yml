@@ -52,8 +52,8 @@ description: |
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate).
   Requires Sysmon PipeEvent (EventID 17). Note that the shipped
   detections/sysmon/sysmonconfig-detection-lab.xml enables PipeEvent as an
-  onmatch="include" list of six pipe names, so on hosts running that baseline the
-  agent has already scoped the feed to those six before Sigma sees an event -
+  onmatch="include" list of seven pipe names, so on hosts running that baseline the
+  agent has already scoped the feed to those seven before Sigma sees an event -
   spoolss is one of them, and this rule needs no config change.
 references:
   - https://attack.mitre.org/techniques/T1134/001/

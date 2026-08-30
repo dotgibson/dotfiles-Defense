@@ -286,24 +286,32 @@ what separates impacket from ordinary remote administration. The efsrpc rule doe
 even that much and is deliberately not keyed on `Image`: over SMB that pipe is bound by
 almost nothing but MS-EFSR and the tools that abuse it.
 
-**A sixth name was added, and it too is unread — but for the opposite reason.** The include
-list now carries `\pipe\srvsvc`, because EfsPotato stands up `\<guid>\pipe\srvsvc` and coerces
-the Server service into connecting to it: the same ownership-on-creation shape #225 used for
-`spoolss`, on a name nothing collected, so EfsPotato was unwatched on the mechanism plane for
-exactly the reason dotgibson/dotfiles-Defense#240 gives for RoguePotato. Unlike `lsarpc` below,
-this one is unread because the rule has not been written yet rather than because it should not
-be — it is tracked as dotgibson/dotfiles-Defense#248, filed with the collection rather than
-after it, so the block does not acquire a second unconsumed name without a reason attached.
+**Two more names were added, and both are unread — but for the opposite reason to `lsarpc`.**
+The include list now carries `\pipe\srvsvc` and `\pipe\epmapper`. Every potato in the pinned
+EVTX corpus that stands up its own pipe uses the nested `\<something>\pipe\<endpoint>` shape,
+and two of the three do it on names nothing collected: EfsPotato on
+`\<guid>\pipe\srvsvc`, RoguePotato on `\RoguePotato\pipe\epmapper`. Both were therefore
+unwatched on the mechanism plane — the same ownership-on-creation shape #225 used for `spoolss`,
+on names the agent dropped before Sigma could see them. That was
+dotgibson/dotfiles-Defense#240 for RoguePotato; it is closed by collecting the name. Unlike
+`lsarpc` below, these two are unread because the rule has not been written yet rather than
+because it should not be, and both are tracked as dotgibson/dotfiles-Defense#248 — filed with
+the collection rather than after it, so the block does not acquire unconsumed names without a
+reason attached.
 
-Two things about that entry are deliberate. It is `\pipe\srvsvc`, not `srvsvc`: measured over
-the pinned EVTX corpus, 7 of 61 PipeEvent records match bare `srvsvc` and five are ordinary
-share enumeration arriving as `\srvsvc` from `Image=System`, while the nested form is what the
-coercion produces and no legitimate bind in that corpus takes it. Collecting the narrow form
-takes 2 of the 7 and leaves the discovery traffic out; if that traffic is wanted later it is a
-different rule and a different decision. And the name is collected for its **creation** half,
-siding with #225 rather than with the connect-half trade the three names above take — because
-the tool creates this pipe rather than binding one that already exists, which is what makes the
-creator's `Image` the evidence.
+Two things about those entries are deliberate. They are `\pipe\srvsvc` and `\pipe\epmapper`,
+not the bare names, and the measurement is the same shape both times: over the pinned corpus 7
+of 61 PipeEvent records match bare `srvsvc` and five are ordinary share enumeration arriving as
+`\srvsvc` from `Image=System`, while 3 match bare `epmapper` and one is the legitimate endpoint
+mapper arriving as bare `\epmapper`. The nested form is what the coercion produces and no
+legitimate bind in that corpus takes it, so the narrow entries collect 2 apiece and leave the
+routine traffic out; wanting that traffic is a different rule and a different decision. Worth
+noting on the `epmapper` side: the legitimate record is `Image=System`, not `svchost.exe`, so
+the `filter_legit` #240 proposed would not have filtered it — narrowing the collection is what
+actually does. And both names are collected for their **creation** half, siding with #225 rather
+than with the connect-half trade the three names above take, because the tool creates these
+pipes rather than binding ones that already exist, which is what makes the creator's `Image` the
+evidence.
 
 **`lsarpc` ships no rule, and that is a decision rather than an omission.** It stays
 collected as hunt and pivot material. Sysmon PipeEvent carries no authenticating principal —
