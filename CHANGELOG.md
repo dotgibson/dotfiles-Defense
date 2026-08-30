@@ -24,6 +24,15 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **`make core-check` reported fleet drift from an empty variable.** It printed
+  "gh not installed — cannot query upstream tags" and then queried anyway; `gh` failing
+  left `upstream_ver` empty, which is never equal to `local_ver`, so it announced
+  `• vendored core is 5.4.1, upstream is  — a sync from dotfiles-core is owed`. A
+  confidently wrong answer about drift, which is worse than the `127` the same defect
+  causes elsewhere. The guard and the query are now one recipe line, and an empty upstream
+  is its own branch: it reports **drift UNKNOWN, not current** and exits 1, rather than
+  guessing. Found by `_core_make_gate_hits` (dotgibson/dotfiles-core#775), not by eye.
+
 - **`make markdown` announced a skip and then ran anyway.** Each `make` recipe line runs
   in its own shell, so the guard's `exit 0` only ended that line: without `npx` it printed
   "npx not available — skipping markdown" and then ran `npx`, exiting `127`. Collapsed
