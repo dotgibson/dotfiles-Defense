@@ -24,6 +24,28 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **The potato runbook now says what it predicts, and four things in it were wrong.** #246 is
+  host-bound and stays open — every one of its three items needs a Windows host running a real
+  potato, and no second public corpus fills the gap (`OTRF/Security-Datasets` carries no potato
+  or SeImpersonate capture at all). But the runbook is what decides whether that eventual run is
+  worth anything, and it named a fixture that does not exist (`potato_sysmon1.jsonl`; it is
+  `potato_sysmon1_tp.jsonl`), specified a target OS its own tool table cannot run on —
+  JuicyPotato's DCOM route was fixed in Windows 10 1809 / Server 2019, which is why RoguePotato
+  exists, so on any build modern enough to guarantee 4688 event version 2 the row meant to settle
+  the `CreateProcessAsUser` vs `CreateProcessWithTokenW` question would silently not run — and
+  asked for no attack producing a **true negative**, so a run following it would have promoted
+  each TP to `captured` and stranded its TN at `vendor-documented`: a mixed-tier pair asserting a
+  discrimination only half of it can support. It also never stated `check_near_miss`'s
+  identical-key-set contract at the capture step, which cannot be satisfied once the host is gone.
+  The firing table is now six rows, the three open items carry pre-committed predictions (the
+  convention `2026-08-sysmon18-remote-pipe.md` reports against, so the record cannot be composed
+  to fit the log), and a `Filing the result` section states per fixture what a result can promote
+  — including that #246's own claim that closing it moves `token_theft_sysmon1_*` is wrong by
+  citation, because that TP is a synthetic host (`WEB01`) and reaches `captured` only if replaced.
+  Adds the `-`-placeholder outcome the runbook did not anticipate despite 401 of 1491 swept
+  records hitting it, the missing `evtx-to-fixture.sh` stdout redirects, and the zircolite replay
+  commands its sibling runbook already carried.
+
 - **The potato field semantics are now settled on a cross-channel join, and both fixtures are
   captured records.** Extends the corpus work in #244: the sweep now covers all 278 EVTX rather
   than the 170 matching `sysmon|proc`, which adds 42 Security 4688 records and two more potato
