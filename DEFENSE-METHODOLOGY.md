@@ -209,22 +209,35 @@ source of a bind — a Sysmon schema that carries it, or an ingestion path that 
 the 5145 for the same session — at which point a principal-shaped filter becomes expressible
 and the rule becomes writable.
 
-One caveat travels with all of this, and it is the reason both rules ship `unverified`
-fixtures: that Sysmon emits an 18 for a remote SMB pipe open at all, attributed to `System`,
-is derived from where the kernel services that open, not observed here. Step 4 of the
-lifecycle below has not been run for these two, and it is tracked in #235. Until it has,
-their silence means nothing.
+That caveat has now been partly discharged (#235). The premise — that Sysmon emits an 18 for
+a remote SMB pipe open at all, attributed to `System` — was derived from where the kernel
+services that open, and is now **observed**. Across 33 captured PipeEvent records from three
+hosts, every remote-origin bind arrives as `Image=System`, `ProcessId=4` — 16 distinct pipe
+names, including `\atsvc`, one of the two the atsvc/svcctl rule selects — while local binds in
+the same captures carry their own image (`mmc.exe`, `PsExec.exe`), which is the true-negative
+shape the fixtures assert. The shipped rule fires on that captured
+record under the same engine the gate uses. The measurement is written up in
+`docker/validation/labruns/2026-08-sysmon18-remote-pipe.md`, and the second-plane claim above
+stands.
 
-Two things that tracker records rather than leaves implicit. The rules fail
-**independently**: the efsrpc one is not keyed on `Image`, so a Sysmon that attributes the
-kernel SMB path differently costs a one-value change to the atsvc/svcctl rule and nothing
-else. And no gate here can settle it — `check_near_miss` requires a true negative to carry
-the *identical* `EventData` key set as its true positive, so by construction no fixture in
-this manifest can exercise a missing-or-renamed-field case. That is the right call for the
-gate, and it is the reason the answer is a lab run rather than more CI. If the measurement
-comes back that no 18 arrives for the remote path at all, the response is to retire both
-rules and reopen #229, not to reword them — the second-plane claim above would simply be
-false.
+Three things that record keeps honest rather than letting the green tick imply. It is a
+**third-party** capture — 2019–2020 Sysmon builds on other people's hosts, not our shipped
+`sysmonconfig-detection-lab.xml` at schemaversion 4.90 — so the fixtures moved to
+`vendor-documented`, not `captured`, and #235 stays open for the first-party run. `\svcctl`
+and `\efsrpc` were **not** directly observed; their behaviour is inferred from the shared
+NPFS path that produced sixteen differently-named remote binds identically attributed. And the
+capture corrected something no one had questioned: PipeEvent carries **no `User` field at
+all**, which every fixture here had asserted. That strengthened rather than weakened the
+argument for declining an lsarpc rule — there is no principal on this plane to filter on, not
+merely an unhelpful one — but it is exactly the class of defect the ledger exists to catch,
+found the only way it can be found.
+
+The rules still fail **independently**: the efsrpc one is not keyed on `Image`, so a Sysmon
+that attributes the kernel SMB path differently costs a one-value change to the atsvc/svcctl
+rule and nothing else. And no gate here could have settled it — `check_near_miss` requires a
+true negative to carry the *identical* `EventData` key set as its true positive, so by
+construction no fixture in this manifest can exercise a missing-or-renamed-field case. That is
+the right call for the gate, and it is why the answer was a capture rather than more CI.
 
 The row is narrow on purpose: it is the *registry* plane, not the endpoint. Both rules
 fire on a publish event in an npm or PyPI audit log — a package shipped by an actor that
