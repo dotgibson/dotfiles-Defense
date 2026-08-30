@@ -1024,3 +1024,167 @@ _core_workflow_ref_hits() { # _core_workflow_ref_hits <repo-root> <expected-majo
     ' "$f"
   done
 }
+
+# ── _core_make_gate_hits: local gates that cannot do what their name says ─────
+# _core_make_gate_hits <repo-root> — print every Makefile gate in <repo-root> that
+# announces a check it does not perform. Silence = clean. Output is `Makefile:LINE: msg`.
+#
+# WHY THIS EXISTS. dotgibson/dotfiles-core#775 swept eight OS repos by hand and found
+# ELEVEN instances of three shapes, none of which any gate had ever caught:
+#
+#   · A SKIP THAT CANNOT SKIP (5). `@command -v x || { echo "skipping"; exit 0; }` on one
+#     recipe line, the tool itself on the NEXT. make runs each recipe line in its OWN
+#     shell, so the `exit 0` ends only that line: the target prints "skipping" and then
+#     runs the missing tool anyway, exiting 127. Debian, Fedora (twice), Offense, Defense.
+#   · A CHECK THAT CANNOT FAIL (1). openSUSE's `lint-sh` ended `shellcheck …; echo "ok"`.
+#     With a semicolon the echo runs regardless AND becomes the line's exit status, so
+#     the checker printed a screenful of findings and the target reported ok, exit 0.
+#     Its two siblings used `&&` and `|| exit 1` and were correct, which is precisely why
+#     nobody looked: it resembled working code.
+#   · A BLOCKING CI LEG WITH NO LOCAL MIRROR (3). Arch, Gentoo and openSUSE shipped a
+#     .markdownlint.jsonc that only CI ever read, for a leg blocking since #592 — a
+#     required check nobody could run before pushing.
+#
+# WHY A GATE AND NOT ANOTHER NOTE. dotfiles-Debian's CHANGELOG already recorded the first
+# shape, fixed it in ONE target, and wrote "The same shape is still present in the other
+# OS repos' Makefiles." That note was correct, was never acted on, and the defect was
+# still in five repos when someone finally swept by hand. Same lesson as
+# _core_workflow_ref_hits records for the `ref: vN` majors: a comment is not a gate.
+#
+# PRIOR ART, and why this does not replace it. dotfiles-MacBook/test/check-skip-guards.sh
+# tests the FIRST shape at RUNTIME — it rebuilds a PATH without the guarded tool and runs
+# each target, which is stronger evidence than reading text. But it is one repo's script,
+# it can only judge the repo it sits in, and it needs the tool to be genuinely absent. This
+# is the static, fleet-portable complement: weaker per finding, but it can judge eight
+# repos from outside, which is what the sweep actually needed. Keep both.
+#
+# WHY TEXTUAL AND NOT `make -n`. Running the recipes would need every tool installed and
+# would EXECUTE them; the defect is in the recipe's SHAPE, readable without running
+# anything. That also lets it judge a repo it is not standing in — which it must, because
+# the callers live in eight other repositories and Core's audit can only see Core.
+#
+# SCOPE. Only `Makefile` at <repo-root>. Continuation lines are JOINED first, because every
+# rule here is about what one LOGICAL recipe line does — the broken guards spanned two
+# physical lines and the fixed ones span four. Judging physical lines inverts both answers.
+_core_make_gate_hits() { # _core_make_gate_hits <repo-root>
+  local root="${1:-.}" mk="${1:-.}/Makefile" mirror=0
+
+  [ -f "$mk" ] || return 0
+
+  # R3 needs to know whether markdownlint is reachable AT ALL, not merely whether the
+  # Makefile spells it. Core runs it from scripts/audit-core.sh §7 behind `make audit`, so
+  # a Makefile-only test would report Core — the repo that authored the rule — as the one
+  # repo missing it. Look in the repo-owned scripts too, and never inside vendored core/.
+  local _p _rc probed=0
+  for _p in "$mk" "$root/scripts" "$root/test" "$root/tests"; do
+    [ -e "$_p" ] || continue
+    # NO --exclude-dir / -I. Both are GNU extensions; busybox grep REJECTS the first, so on
+    # Alpine this probe exited non-zero, was read as "no mirror", and reported Core — the
+    # repo that authors the rule — as the one repo missing it. A false finding produced by
+    # an unsupported flag, inside the gate whose entire subject is checks that answer
+    # wrongly. Neither flag was needed: none of the paths searched is core/ or .git.
+    grep -rq 'markdownlint' "$_p" 2>/dev/null
+    _rc=$?
+    case "$_rc" in
+      0) mirror=1; probed=1; break ;;
+      1) probed=1 ;;  # searched it, genuinely absent
+      *) : ;;         # grep could not search this path — that is not evidence of absence
+    esac
+  done
+  # If NOTHING could be searched, R3 has no evidence either way, so it says nothing rather
+  # than asserting a missing mirror. Unknown and absent are different facts and only one is
+  # a defect — the same distinction scripts/os-repos.txt draws for the fan-out gates, which
+  # fail loudly rather than sweep a substituted list. Suppressing here is the safe
+  # direction: R1/R2/R4 still run, and a real missing mirror surfaces the moment a working
+  # grep is present.
+  [ "$probed" = 1 ] || mirror=1
+
+  awk -v cfg="$( [ -f "$root/.markdownlint.jsonc" ] && echo 1 || echo 0 )" -v mirror="$mirror" '
+    # tool_runs(line, tool) — does `line` INVOKE tool, as opposed to merely probing for it
+    # with `command -v tool`? The probes are erased first, so `command -v zsh` alone is not
+    # an invocation while `zsh -n "$f"` is. This is the whole difference between a guard
+    # that skips correctly and one that does not.
+    function tool_runs(line, tool,   s, q) {
+      # Quoted text is PROSE, not a command. Erasing it first is what makes this rule
+      # work at all: every one of these guards names the missing tool in its own skip
+      # message ("markdownlint-cli2 not installed: npm i -g markdownlint-cli2 …"), so a
+      # naive word match found the tool on the guard line and concluded the guard was
+      # fine. That single omission suppressed all five real findings on the first run.
+      q = sprintf("%c", 39)
+      s = line
+      gsub(/"[^"]*"/, " ", s)
+      gsub(q "[^" q "]*" q, " ", s)
+      gsub(/command[ \t]+-v[ \t]+[^ \t;|&)}]+/, " ", s)
+      gsub(/have[ \t]+[^ \t;|&)}]+/, " ", s)
+      return (s ~ ("(^|[^-_/[:alnum:]])" tool "([^-_[:alnum:]]|$)"))
+    }
+    function flush_recipe(   i, j, tool, guarded) {
+      for (i = 1; i <= ln; i++) {
+        # ── R1: a skip that cannot skip ──────────────────────────────────────
+        # Fires ONLY on the shape that actually breaks: a `command -v TOOL` probe whose
+        # `exit 0` is meant to skip TOOL, where TOOL is not on this logical line but IS on
+        # a later one. That precision matters — dotfiles-Alpine guards shellcheck and then
+        # runs shellcheck ON THE SAME LINE, so its `exit 0` skips exactly what it promises
+        # and must not be reported. A blunter "exit 0 before the last line" rule called
+        # that a defect, and would have taught the fleet to ignore this gate.
+        if (i < ln && lbody[i] ~ /(^|[^0-9a-zA-Z_])exit[ \t]+0([^0-9]|$)/ \
+            && match(lbody[i], /command[ \t]+-v[ \t]+[^ \t;|&)}]+/)) {
+          tool = substr(lbody[i], RSTART, RLENGTH)
+          sub(/^command[ \t]+-v[ \t]+/, "", tool)
+          if (!tool_runs(lbody[i], tool)) {
+            guarded = 0
+            for (j = i + 1; j <= ln; j++) { if (tool_runs(lbody[j], tool)) { guarded = j; break } }
+            if (guarded) {
+              printf "Makefile:%d: target `%s` says it skips when `%s` is missing, but the `exit 0` ends only THIS recipe line — line %d runs `%s` anyway (make gives each line its own shell)\n", \
+                lstart[i], target, tool, lstart[guarded], tool
+            }
+          }
+        }
+        # ── R2: a check that cannot fail ─────────────────────────────────────
+        # A checker whose status is dropped by a bare `;` before a success echo. The
+        # `[^;&|]*;` is load-bearing: it requires NOTHING between the checker and the
+        # semicolon, so `zsh -n "$f" || exit 1; … echo ok` and `bash -n $(F) && echo ok`
+        # — both correct, both present in this fleet — are not reported. Only the arm that
+        # genuinely throws the status away is.
+        if (lbody[i] ~ /(shellcheck|markdownlint-cli2|actionlint|luacheck)[^;&|]*;[ \t]*\\?[ \t]*(echo|printf)[^;]*(ok|OK|pass|clean)/) {
+          printf "Makefile:%d: target `%s` ends a checker with `;` before a success echo — the echo runs regardless AND becomes the line exit status, so findings print and the target still exits 0 (use `&&`)\n", \
+            lstart[i], target
+        }
+      }
+      ln = 0
+    }
+    /markdownlint-cli2/ {
+      # ── R4: a local scope narrower than the blocking gate ─────────────────
+      # The gate lints `git ls-files "*.md" ":!:core/**"` — recursive. A bare quoted glob
+      # is top-level only (plus whatever single directory is spelled out), so it silently
+      # under-covers: in three repos the .github/ templates were CI-enforced and locally
+      # invisible, and in dotfiles-MacBook — whose own ci.yml runs the very same target —
+      # nothing anywhere linted them. A make VARIABLE is trusted: it is the shape every
+      # correct repo uses, and chasing its definition here would make this a second parser.
+      if ($0 ~ /["'"'"']\*\.md["'"'"']/ && $0 !~ /\$\(/) {
+        printf "Makefile:%d: markdownlint runs on a `*.md` glob — top-level only, while the gate lints `git ls-files \"*.md\" \":!:core/**\"` recursively, so anything under .github/ is enforced and locally invisible\n", NR
+      }
+    }
+    /^\t/ {
+      body = $0
+      sub(/^\t/, "", body)
+      if (cont) { lbody[ln] = lbody[ln] " " body }
+      else      { ln++; lbody[ln] = body; lstart[ln] = NR }
+      cont = (body ~ /\\[ \t]*$/)
+      next
+    }
+    { cont = 0; if (ln) { flush_recipe() } }
+    /^[^\t#. ][^:=]*:([^=]|$)/ { target = $0; sub(/:.*/, "", target) }
+    END {
+      if (ln) { flush_recipe() }
+      # ── R3: a blocking CI leg with no local mirror ────────────────────────
+      # A .markdownlint.jsonc declares that this repo has markdown house rules. Since #592
+      # the reusable gate ENFORCES them and blocks. Carrying the config with no way to run
+      # it locally is a required check the author cannot exercise — the inverse of the two
+      # shapes above, and why three repos shipped a config that was pure decoration.
+      if (cfg == 1 && mirror == 0) {
+        print "Makefile:1: .markdownlint.jsonc exists but nothing in this repo runs markdownlint — the reusable gate has BLOCKED on it since dotgibson/dotfiles-core#592, so this is a required check with no local mirror"
+      }
+    }
+  ' "$mk"
+}
