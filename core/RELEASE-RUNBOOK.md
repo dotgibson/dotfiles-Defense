@@ -206,23 +206,26 @@ done
 What you do with the alias depends on the bump you chose in §1.0
 (policy: `RELEASE-STRATEGY.md` §"Pinning reusable workflows"):
 
-- **PATCH or MINOR** — the major number is unchanged, so `vN` stays the **same** alias
-  (`v4` today). Step 5 as written force-advances it to the new tip, and every caller pinned
-  `@v4` picks the change up automatically on its next run. **No caller edits.** This
-  auto-fan-out of guard/bootstrap fixes is the whole reason the alias moves.
-- **MAJOR** — you are minting a **new** major. In step 5, `vN` is the **new** alias (from
-  `v4` today, that is `v5`), created fresh at the merged tip (`git tag -fa v5 origin/main -m v5 &&
-  git push -f origin v5`). **Leave the previous alias frozen:** do *not* run the `vN` line
-  against `v4` — advancing it would push the breaking change onto every caller still pinned
-  `@v4`. Then bump the callers that should adopt the new major from `@v4` to `@v5` **by hand** — that fleet-wide `uses:`
-  edit is the single intentional, reviewed change a MAJOR is meant to be, and it's tracked as
-  part of rollout (§2), not this step.
+- **PATCH or MINOR** — the major number is unchanged, so `vN` stays the **same** alias. Step 5
+  as written force-advances it to the new tip, and every caller pinned `@vN` picks the change
+  up automatically on its next run. **No caller edits.** This auto-fan-out of guard/bootstrap
+  fixes is the whole reason the alias moves.
+- **MAJOR** — you are minting a **new** major, so step 5's alias is `vN+1`, created fresh at
+  the merged tip. **Leave `vN` frozen:** do *not* run the alias line against the outgoing
+  major — advancing it would push the breaking change onto every caller still pinned `@vN`.
+  Then bump the callers that should adopt the new major from `@vN` to `@vN+1` **by hand** —
+  that fleet-wide `uses:` edit is the single intentional, reviewed change a MAJOR is meant to
+  be, and it's tracked as part of rollout (§2), not this step.
+
+  The v4→v5 cut is the worked example: `git tag -fa v5 origin/main -m v5 && git push -f
+  origin v5`, with `v4` left frozen at v4.19.0 and the callers moved `@v4` → `@v5` by hand.
 
 > `make publish` handles the alias itself, safely for either case: `tag-release.sh`
-> derives it from the version (`MAJOR="v${VERSION%%.*}"`), so a `v5.0.0` cut force-moves
-> **`v5`** (creating it) and never touches `v4`. Both refs go up in one `--atomic` push, so
-> the alias cannot be left stale behind a published `vX.Y.Z`. It does **not**, however, bump
-> the fleet's callers from `@v4` to `@v5` — that hand edit is still yours on a MAJOR.
+> derives it from the version (`MAJOR="v${VERSION%%.*}"`), so a MAJOR cut force-moves the
+> **new** alias (creating it) and never touches the outgoing one. Both refs go up in one
+> `--atomic` push, so the alias cannot be left stale behind a published `vX.Y.Z`. It does
+> **not**, however, bump the fleet's callers from `@vN` to `@vN+1` — that hand edit is still
+> yours on a MAJOR.
 
 ### What happens automatically after the tag
 
@@ -253,13 +256,14 @@ never all at once (per `RELEASE-STRATEGY.md`).
 
 **If this was a MAJOR release,** the fan-out `core.lock` PRs are not the whole rollout: any
 repo whose CI pins a reusable workflow at the old `@vN` also needs its `uses:` ref bumped to
-the new major (`@v4` → `@v5`) — the deliberate caller edit from §1.1 step 5. `make fleet-drift`
+the new major — the deliberate caller edit from §1.1 step 5. `make fleet-drift`
 won't surface this: it compares each repo's recorded `core.lock` / `nvim/.core-ref` provenance
-against Core, not its workflow `uses:` pins — so finding the stragglers is a manual sweep
-(e.g. `grep -rl 'uses:.*@v4' .github/workflows` across the repos in `scripts/os-repos.txt`).
+against Core, not its workflow `uses:` pins — so finding the stragglers is a manual sweep for
+the **outgoing** major (e.g. `grep -rl 'uses:.*@v<old>' .github/workflows` across the repos in
+`scripts/os-repos.txt`).
 That sweep has a blind spot worth knowing: **`dotfiles-Windows` is not in `os-repos.txt`** (it
 vendors no `core/`), and it SHA-pins its `auto-tag-call` caller on purpose rather than tracking
-`@v4` — so it is invisible to the grep AND unmoved by the alias. Check it by hand on a major,
+the moving `@vN` alias — so it is invisible to the grep AND unmoved by the alias. Check it by hand on a major,
 and whenever an `auto-tag-call` change should reach it.
 PATCH/MINOR releases skip this entirely: the moving alias already carried them.
 
@@ -303,7 +307,7 @@ git add nvim/ starship/ ; git commit -m "sync nvim/starship from Core vX.Y.Z"
 
 After the push, `auto-tag.yml` sees the new `nvim/`/`starship/` content and PATCH-bumps
 Windows' own tag + Release (delegating to Core's reusable `auto-tag-call.yml`, SHA-pinned
-there rather than tracking `@v4` — see the callout in §1.1 step 5). It is
+there rather than tracking the moving `@vN` alias — see the callout in §1.1 step 5). It is
 idempotent (a no-op if HEAD is already tagged) and deliberately **skips** a
 `.core-ref`-marker-only change, so a timestamp-only re-sync never cuts a spurious tag.
 

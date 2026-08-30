@@ -704,3 +704,87 @@ jobs:
           echo "scanning the working tree at HEAD (not history — see the note on this job)"
           echo "policy: dotfiles-core gitleaks.toml"
           gitleaks dir . -c "$GITLEAKS_CONFIG" --no-banner --redact -v --no-color
+
+  # ── BLOCKING: Makefile gates that cannot do what their name says ────────────
+  # Every other leg here reads the caller's CODE. This one reads the caller's own LOCAL
+  # GATES, which nothing has ever checked — and dotgibson/dotfiles-core#775 swept the fleet
+  # by hand and found ELEVEN defects across eight repos in three shapes:
+  #
+  #   · A skip that cannot skip (5). `command -v x || { echo "skipping"; exit 0; }` on one
+  #     recipe line, the tool on the next. make gives each line its own shell, so the
+  #     target announces a skip and then runs the missing tool: exit 127.
+  #   · A check that cannot fail (1). `shellcheck …; echo "ok"` — the echo runs regardless
+  #     and becomes the line's exit status, so findings print and the target exits 0.
+  #   · A blocking CI leg with no local mirror (3). A .markdownlint.jsonc that only CI ever
+  #     read, for the leg above this one, which has blocked since #592.
+  #
+  # WHY IT BELONGS HERE AND NOT IN audit-core.sh. The defect is in the CALLERS. Core's
+  # audit can only see Core (it has its own half — §8d — so the shape cannot be
+  # reintroduced in the authoring repo and vendored outward). This job is the only place in
+  # the system that can read eight repos' Makefiles, and it does it the same way the
+  # markdown leg reads their .markdownlint.jsonc: check the caller out beside Core and
+  # judge it from outside.
+  #
+  # BLOCKING ON ARRIVAL, and only because the fleet was cleared FIRST. #592's markdown leg
+  # had to ship advisory for a release because seven of nine callers would have gone red
+  # before a maintainer could act; the nine #775 PRs merged while this was still in review,
+  # so that staging is unnecessary here. Measured against each repo's `main`, not a branch:
+  #
+  #   Core 0 · Alpine 0 · MacBook 0 · Arch 0 · Debian 0 · Fedora 0 · Gentoo 0
+  #   · openSUSE 0 · Offense 0 · Defense 0
+  #
+  # That measurement is the precondition, not a formality. RE-MEASURE BEFORE ADDING A RULE:
+  # a new rule that any caller fails must ship advisory the way #592 did, because callers
+  # read this file at the MOVING `@v5` tag and therefore meet it the moment auto-tag moves —
+  # red on arrival, in a repo whose author changed nothing.
+  #
+  # Stated so nobody loosens the gate to get past it, the same way §8a records its release
+  # ordering: when this reds, the fix is to clear the finding, never to soften the rule.
+  #
+  # It reuses the SHIPPED function rather than a copy — the discipline recorded on
+  # _core_tool_skip_count, where a test that re-implemented its subject stayed green while
+  # the defect it existed to catch was fully reintroduced.
+  make-gates:
+    name: Makefile gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: ${{ github.repository_owner }}/dotfiles-core
+          # Same major as the callers (`@v5`) — see the note on the shell-lint job above.
+          ref: v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: caller
+
+      - name: Makefile gates do what their help text says
+        run: |
+          # shellcheck source=/dev/null
+          . scripts/lib/common.sh
+          if ! out="$(_core_make_gate_hits caller)"; then
+            echo "::error::_core_make_gate_hits failed to run"; exit 1
+          fi
+          if [ -z "$out" ]; then
+            echo "every Makefile gate skips, fails and scopes as its help text claims"
+            exit 0
+          fi
+          # One ::error:: per finding, so each anchors to its own line in the
+          # Files-changed view rather than arriving as one wall of text in the log.
+          printf '%s\n' "$out" | while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            # Split `Makefile:LINE: message` into a real annotation so GitHub anchors it to
+            # the offending recipe in Files-changed, rather than printing the line number
+            # as part of the message text.
+            n="${line#Makefile:}"; n="${n%%:*}"
+            msg="${line#Makefile:*: }"
+            case "$n" in
+              ''|*[!0-9]*) echo "::error file=Makefile::$line" ;;
+              *)           echo "::error file=Makefile,line=$n::$msg" ;;
+            esac
+          done
+          printf '%s\n' "$out"
+          echo "see dotgibson/dotfiles-core#775 for each shape and the fix that cleared it"
+          exit 1

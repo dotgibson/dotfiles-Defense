@@ -23,7 +23,7 @@ Target for this run: **$ARGUMENTS** (empty = all open automation PRs).
   action bumps into **one `ci(deps):` PR authored by `app/renovate`** (so look for that
   author, not an `automation/*` branch), maintains the SHA pins rather than un-pinning
   them, and deliberately leaves the fleet's own `dotgibson/**` reusable-workflow refs on
-  their moving `@v4` tag. Renovate also keeps a per-repo **Dependency Dashboard** issue, and
+  their moving `@vN` tag. Renovate also keeps a per-repo **Dependency Dashboard** issue, and
   a bump parked there opens no PR — rate-limited, awaiting approval, or grouped-and-pending —
   so an empty PR queue does **not** prove an empty bump queue. **Read it:**
 

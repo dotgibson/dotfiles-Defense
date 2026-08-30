@@ -124,7 +124,7 @@ it cheaply at all, pays for a real resolve rather than the fast wrong answer.
 | difftastic¹⁰     | `difftastic`      | `difftastic`  | `difftastic`      | `dev-util/difftastic`      | asset²⁸           | asset²⁸       |
 | git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb`  | `git-absorb`      | `dev-vcs/git-absorb`       | `git-absorb`      | `git-absorb`  |
 | ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸  | `ast-grep`        | cargo²¹                    | cargo²¹           | —²⁹           |
-| uv³⁰             | `uv`              | `python-uv`   | `uv`              | `dev-python/uv`            | asset²⁸           | asset²⁸       |
+| uv³⁰             | `uv`              | `python3-uv`  | `uv`              | `dev-python/uv`            | asset²⁸           | asset²⁸       |
 | w3m              | `w3m`             | `w3m`         | `w3m`             | `www-client/w3m`           | `w3m`             | `w3m`         |
 
 ¹ openSUSE: in Tumbleweed main OSS as `tealdeer` (1.8.0). **Not in Leap 16.0 or 16.1** —
@@ -300,10 +300,10 @@ which differs per family: dnf/rpm repo (Fedora/openSUSE), apt repo (Debian/Kali)
 (Alpine — a native musl build, so it's fine on the musl outlier), the AUR `1password-cli`
 (Arch), and the GURU `app-misc/1password-cli` (Gentoo). A vendor repo, **not** the OS repo;
 the apt/rpm setup is rollback-safe (a failed install removes the added repo entry).
-¹⁴ Alpine **testing-or-unpackaged** (`duf`, `glow`, `tealdeer` — plus `ouch`, which is not in
-`testing` either, it is **unpackaged on Alpine outright**; `bootstrap.sh` says so at its cargo
-call site). The first three are musl-fine tools that live in `testing` (never promoted to
-`community` on stable, incl. 3.24), which isn't enabled by default on a stable release. bootstrap.sh builds them from source instead of force-enabling `testing`,
+¹⁴ Alpine **`testing`-only** (`duf`, `glow`, `tealdeer`, `ouch`). All four are musl-fine
+tools that live in `testing` on edge (never promoted to `community` on any stable release,
+incl. 3.24), which isn't enabled by default on a stable release. bootstrap.sh builds them
+from source instead of force-enabling `testing`,
 and the paths are **not** all the same one: `duf` + `glow` take `go install` (static,
 musl-safe), `tealdeer` takes a plain `cargo install --locked tealdeer` (it is the `tldr` row's
 `cargo³`, which is why that row does not cite this note), while `ouch` takes
@@ -738,9 +738,9 @@ cargo-installs it from the extras block. The other seven machines are opt-in.
 including macOS"; Alpine falsified the first half, and Gentoo — checked against `bootstrap.sh`
 rather than `packages.txt` alone — falsified what was left of it.) Availability, verified
 2026-08-12, Linux-repo coverage re-verified 2026-08-21 against both files, versions
-re-verified 2026-08-23 against each repo's own package pages:
+re-verified 2026-08-30 against each repo's own package pages:
 
-- **Arch `extra` and Homebrew** — 2.6.1 (Arch's package revision is `2.6.1-1`).
+- **Arch `extra` and Homebrew** — 2.7.0 (Arch's package revision is `2.7.0-1`).
 - **openSUSE Tumbleweed and nixpkgs** — 2.5.1, still current there. (These two shared a
   line with Arch and Homebrew while all four sat at 2.5.1; the split is what that line looks
   like once two of the four move and two do not.)
@@ -1032,9 +1032,17 @@ so both columns are `asset²⁸` and neither is derived from apt. The split earn
 elsewhere (`difftastic`, `git-delta`, `hexyl` — names apt has on noble and trixie and not on
 kali-rolling); `uv` is instead the cleanest illustration of the failure the ²¹ᵃ caveat above
 warns about, a cell that recorded what the archive **contains** rather than what the repo
-**installs**. openSUSE's is named `python-uv` (Tumbleweed — Leap
-was not separately audited, so verify with `zypper se python-uv` and fall back to ³ there),
-and Gentoo's is `dev-python/uv`, not a bare `uv`.
+**installs**. **openSUSE's is `python3-uv`**, and `python-uv` — what this cell used to say —
+is the _source_ package: no binary of that name is published, so `zypper in python-uv` cannot
+resolve on Tumbleweed or on Leap 16.0/16.1. The binary is Python-flavored (`python313-uv`), and
+`python3-uv` is the flavor-agnostic `Provides` that tracks whichever flavor is primary. Bare
+`uv` is a `Provides` too, but on **Tumbleweed it is ambiguous** — `python313-uv` and
+`python314-uv` both provide it, so `zypper in uv` makes you pick — whereas `python3-uv` has
+exactly one provider on all three targets. Verified against the OBS published-binary index on
+Tumbleweed (`openSUSE:Factory`, 0.12.7) and Leap 16.0/16.1 (`SUSE:SLFO:1.2`/`1.3`, 0.7.18), so
+no ³ fallback is needed there. **This is the same failure the paragraph above describes**:
+`python-uv` is the name the archive **contains**, not the one the repo **installs**. Gentoo's
+is `dev-python/uv`, not a bare `uv`.
 
 **mise also appears in this table as a _provider_, in exactly one cell: `gum` on Gentoo.**
 Charm's gum is packaged nowhere Portage can reach — not `::gentoo`, not GURU, in any category
@@ -1160,7 +1168,7 @@ provisioning gate a role layer runs against `core-doctor --json` ²⁰.
 
 Fleet position at the time of writing: **at or above the floor** on Arch, Gentoo, openSUSE
 Tumbleweed, Homebrew and Alpine edge. **Below it** on Alpine 3.22/3.23/3.24 and Fedora 43/44
-(1.8.1), Debian 13 / Ubuntu 24.04 (1.7.1), and Leap 15.x (1.6).
+(1.8.1), Alpine 3.21, Debian 13 / Ubuntu 24.04 (1.7.1), and Leap 15.x (1.6).
 
 **Do not build a guard on `jq --version`.** On the Debian family the version string is not
 evidence either way — Debian backports security fixes without bumping the version, so a
