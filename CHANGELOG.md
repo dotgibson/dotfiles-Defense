@@ -38,6 +38,34 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **The token-context half of T1134.001 closes, on a different event than #230 asked for
+  (#230).** #223 reserved the Stealth half of T1134.001 for a rule that observes the
+  impersonation rather than the shape around it, and named two candidates; #225 answered the
+  spoolss one. The other candidate was "a token-context anomaly on 4624/4672", and it is
+  declined on evidence: neither event is written by this attack. 4624 generates when a logon
+  session is created and 4672 when privileges are assigned to a new one, and no live potato
+  variant creates one — the pipe-impersonation majority never authenticates at all, the
+  local-relay minority rides NTLM's local-call short circuit instead of calling
+  `LsaLogonUser`, and `DuplicateTokenEx` preserves `AuthenticationId` so the resulting SYSTEM
+  process reuses logon session 0x3e7. Only HotPotato and GhostPotato ever produced that
+  shape, and both died with MS16-075 and CVE-2019-1384. Such a rule would have passed its own
+  true positive and its own true negative and then sat inert, which is #149 with a Windows
+  event id on it.
+  What answers it is `detections/sigma/privilege_escalation/token_theft_process_target_subject_4688.yml`,
+  on the plane where the telemetry exists. Event version 2 of 4688 carries a Target Subject
+  block that Windows populates only when the creator and target "do not share the same
+  logon", so a process whose Target Subject is SYSTEM was created with a token that is not
+  its creator's — the theft stated as a field. It carries no `Image` constraint, so unlike
+  the potato pair it survives a payload that is not a named shell; and because every variant
+  ends in `CreateProcessWithTokenW` or `CreateProcessAsUserW`, it sits downstream of the
+  DCOM-coerced variants that leave the spoolss rule silent. It takes both tactic tags on its
+  own evidence. One assumption travels with it and is written into the rule rather than
+  buried: whether the audit reads Creator Subject from the calling process's token or its
+  impersonating thread token is inference from Microsoft's documentation, not a capture.
+  Ledger: `Stealth TA0005 3 | 3 -> 3 | 4`, `Privilege Escalation TA0004 9 | 12 -> 9 | 13`,
+  `T1134.001 3 -> 4 rules`. Tactic TECHNIQUE counts do not move, exactly as #230 predicted —
+  the spoolss rule already took the row.
+
 - **The rest of the Sysmon PipeEvent block gets read (#229).** #225 closed one of the five
   pipe names `detections/sysmon/sysmonconfig-detection-lab.xml` collects and left four
   collected-and-unread — the same telemetry-ahead-of-detection hole, one size smaller. Two

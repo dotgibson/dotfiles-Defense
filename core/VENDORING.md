@@ -1,9 +1,9 @@
 # VENDORING.md — the contract, from the OS repo's side
 
 Every OS repo carries a `core/` directory that is a **vendored copy of this repo**,
-delivered by `git subtree`. This document is for the person working in
-`dotfiles-Fedora` / `dotfiles-Arch` / `dotfiles-Offense` / … who needs to know what they may
-touch, what will be overwritten, and how to get a fix upstream.
+delivered by Core's own fan-out (`scripts/sync-core.sh`). This document is for the
+person working in `dotfiles-Fedora` / `dotfiles-Arch` / `dotfiles-Offense` / … who needs
+to know what they may touch, what will be overwritten, and how to get a fix upstream.
 
 `ARCHITECTURE.md` explains _why_ the system vendors. This explains _how to live with it_.
 When a rule here drifts from `README.md` or `CONTRIBUTING.md`, those win — fix this.
@@ -426,7 +426,8 @@ Then Core releases, and the fix reaches every repo on the next fan-out.
 ## What a sync looks like from your side
 
 On a Core release, `sync-fanout.yml` opens a PR in your repo titled around
-`sync/core-vX.Y.Z`. It contains the subtree squash-merge plus the `core.lock` bump.
+`sync/core-vX.Y.Z`. It contains the released Core tree materialized into `core/`, plus
+the `core.lock` bump.
 
 **It opens PRs; it never merges them.** Review and merge yourself — the canary
 (`dotfiles-MacBook`) first, then the rest, per `RELEASE-STRATEGY.md`. Merging that PR is
@@ -438,11 +439,15 @@ If `make fleet-drift` shows you `BEHIND`, the fix is to merge that PR — not to
 
 ## One-time setup for a brand-new OS repo
 
-Use `scripts/new-os-repo.sh`, which scaffolds the layout and runs:
+Use `scripts/new-os-repo.sh`, which scaffolds the layout and runs the **one-time**
+initial vendoring — the only `git subtree` left in the flow, and never the update path:
 
 ```sh
-git subtree add --prefix=core <core-remote> refs/tags/v4 --squash
+git subtree add --prefix=core <core-remote> refs/tags/v5 --squash
 ```
+
+It is one-time because `sync-core.sh` skips a repo that has no `core/` yet: it replaces
+that directory, and creating it in the first place is the one thing it will not do.
 
 **A released tag, never `main`.** The fan-out pins each repo to the exact commit a
 release tag points at (`sync-fanout.yml` passes `CORE_BRANCH=<sha>`), so `core.lock`
@@ -455,8 +460,13 @@ hand-vendored repo as TAMPERED before it has done anything wrong.
 the only sanctioned writer of that file:
 
 ```sh
-CORE_BRANCH=refs/tags/v4 ./scripts/sync-core.sh dotfiles-<Distro>
+git checkout v5                                    # in dotfiles-core
+CORE_BRANCH="$(git rev-parse v5^{commit})" ./scripts/sync-core.sh dotfiles-<Distro>
 ```
+
+Both halves matter: the sync refuses unless Core's `HEAD` is the commit being vendored,
+and the pin must be the **peeled commit** — the release tags are annotated, so
+`refs/tags/v5` resolves to the tag object, which is never that `HEAD`.
 
 Then register the repo **here**, which is **one line** in `scripts/os-repos.txt`:
 

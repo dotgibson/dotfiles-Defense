@@ -9,7 +9,10 @@ description: |
   Confirm the SYSTEM outcome with spoolss_pipe_impersonation_sysmon_17.yml (id
   d5c5c185-a62f-415a-ab0f-2572f910b541), which detects the impersonation
   itself on Sysmon 17, and with Sysmon 1 linking the service parent to a SYSTEM
-  child.
+  child. On the Security channel, token_theft_process_target_subject_4688.yml (id
+  1faa7a59-9fd5-4d14-9bf1-d94f82466acb) reads the stolen token directly off 4688's
+  Target Subject block; there is no Sysmon equivalent of those fields, so that
+  confirmation is not available to a host forwarding only Sysmon.
   Channel: Sysmon EventID 1 carries the account in User. This is the Sysmon half of a
   per-channel pair - its Security-4688 twin (field SubjectUserName) is
   potato_seimpersonate_4688.yml (id 9486ed6c-4c38-457f-a475-188a978eaa4a). The two are
@@ -24,7 +27,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/potato-seimpersonate-4688.md
 author: dotfiles-Defense
 date: 2026-06-30
-modified: 2026-08-27
+modified: 2026-08-29
 tags:
   # T1134.001 is dual-tactic in ATT&CK v19 — TA0004 and TA0005 (Stealth) — and only the
   # TA0004 half is claimed here. That is deliberate, not an oversight

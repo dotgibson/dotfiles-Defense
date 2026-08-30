@@ -24,9 +24,9 @@ The fleet is not eight things that each version themselves. It is **one
 versioned thing (Core) vendored into thin per-OS consumers**:
 
 - **Core** (`dotfiles-core`) carries the SemVer in `core.version` (read it there
-  rather than trusting a number copied into prose). It is the single source of truth, vendored into each OS repo's
-  `core/` via `git subtree`. A defect here fans out N-way, so Core is the thing
-  that earns a version number, a tag, and a changelog.
+  rather than trusting a number copied into prose). It is the single source of truth,
+  vendored into each OS repo's `core/`. A defect here fans out N-way, so Core is the
+  thing that earns a version number, a tag, and a changelog.
 - **OS-native repos** (`dotfiles-{MacBook,Fedora,Arch,Debian,openSUSE,Alpine,Gentoo}`)
   and **Role repos** (`dotfiles-Offense`, `dotfiles-Defense`) are **not**
   independently versioned. They are stamped with the Core they carry — the
@@ -131,7 +131,7 @@ first two break at eight-OS scale.
 
 ### The model in use (recommended)
 
-A **three-layer, multi-repo model with Core vendored by `git subtree`**:
+A **three-layer, multi-repo model with Core vendored as a pinned copy**:
 
 | Layer | Lives in | Owns |
 | --- | --- | --- |
@@ -146,11 +146,11 @@ bindings → plugins → op → maint → update → os → local`); OS and Role
 appending stages (`… os offensive local` on Offense, `… os defense local` on
 Defense), never by editing Core.
 
-Why `git subtree` rather than a submodule: the vendored `core/` is present
-offline with no second clone step, its history is squashed into the OS repo, and
-the "edit upstream, then `make sync`" discipline is enforced by the audit and
-`fleet-drift.sh`. The cost — never hand-edit `core/` in an OS repo — is the same
-rule the whole system already lives by.
+Why a vendored copy rather than a submodule: the vendored `core/` is present
+offline with no second clone step, the exact Core commit behind it is recorded in
+`core.lock`, and the "edit upstream, then `make sync`" discipline is enforced by
+the audit and `fleet-drift.sh`. The cost — never hand-edit `core/` in an OS repo —
+is the same rule the whole system already lives by.
 
 ## 4. Safe deployment: testing Arch without breaking Alpine or macOS
 
@@ -176,8 +176,8 @@ in order. Core never pushes to a machine:
 
 1. It is merged and **tagged** in `dotfiles-core` (and `release.sh` + the
    `sync-core.sh` gate both require a green audit first).
-2. The target OS repo **pulls** it (`git subtree pull` / `make sync`) and
-   commits the new `core.lock`.
+2. The target OS repo **receives** it (the fan-out PR `sync-fanout.yml` opens, or
+   a `make sync` from Core) and commits the new `core.lock`.
 3. The host **re-bootstraps or re-sources** to pick up the new files.
 
 Skip any one and the host stays on what it had. An Alpine container that never
@@ -190,22 +190,38 @@ happened to be at sync time." Tighten this so each OS repo vendors a **named
 tag**:
 
 ```sh
-# in an OS repo, adopt a specific Core release rather than main's tip
-git subtree pull --prefix=core <core-remote> v<X.Y.Z> --squash
-# …then re-stamp core.lock from Core's fan-out — see the caveat below
+# from a dotfiles-core checkout — pin ONE repo to a specific Core release
+git checkout v<X.Y.Z>
+CORE_BRANCH="$(git rev-parse v<X.Y.Z>^{commit})" ./scripts/sync-core.sh dotfiles-<Repo>
 ```
 
-**Do not hand-run that in practice.** A raw subtree pull updates `core/` but not
-`core.lock`, and `core-integrity.sh` compares the vendored tree against the commit the
-lock pins — so the freshly-synced repo reports `TAMPERED` until the lock is regenerated.
-Nor should you reach for a per-repo `make core-lock`: three consumers carry an independent
-generator of a format Core owns, and all three have already drifted from it (see
-`VENDORING.md`). `sync-core.sh` is the only sanctioned writer; it commits both together,
-and `sync-fanout.yml` runs it for you on every release. The recipe above is here to show
-the *pinning model*, not as an operator step.
+The `git checkout` is **not** optional, and neither constraint behind it is visible from
+the script's usage:
 
-Now "what Alpine runs" is a frozen, named version, and rolling one OS back is
-just pulling the previous tag there — it touches no other repo. `sync-core.sh`
+- `sync-core.sh` refuses (exit 1) unless the local `HEAD` **is** the commit being
+  vendored — "the audit above validated your LOCAL tree, not what will vendor." Hence the
+  checkout; pinning from elsewhere needs `SYNC_SKIP_AUDIT=1`, which skips the very audit
+  that makes a fan-out trustworthy.
+- Pass the **peeled commit**, never `refs/tags/vX.Y.Z`. Releases are annotated tags, and
+  the script resolves its pin with `git ls-remote`, which hands back the *tag object* —
+  a SHA that is never the `HEAD` a tag checkout leaves you on, so the gate above could
+  never pass and the lock would record the tag object rather than the commit.
+  `git rev-parse v<X.Y.Z>^{commit}` is the same shape `sync-fanout.yml` passes.
+- `core_version` is read from the **working tree's** `core.version`, not from the pinned
+  commit. Pin `refs/tags/v5.3.0` while sitting on `main` and the lock records
+  `core_version=5.4.1` beside `core_sha=<the v5.3.0 commit>` — a silently wrong lock.
+  (`core_tag` is safe either way: it describes the resolved SHA.)
+
+**The normal path is not this.** Every release opens a fan-out PR in each repo
+(`sync-fanout.yml`), and adopting the release is merging that PR. Hand-run the recipe
+above only for a deliberate single-repo pin or rollback. Either way, `sync-core.sh` is the
+**only** sanctioned writer of `core.lock` — never a raw `git subtree pull`, which moves
+`core/` but not the lock and leaves `core-integrity.sh` reporting `TAMPERED` (see
+`VENDORING.md`), and never a per-repo `make core-lock`: three consumers carry an
+independent generator of a format Core owns, and all three have already drifted from it.
+
+Now "what Alpine runs" is a frozen, named version, and rolling one OS back touches no
+other repo. `sync-core.sh`
 stamps the release into each `core.lock` as a `core_tag` field (`git describe`
 of the vendored commit), so the named version is recorded automatically and
 `make fleet-drift` reports against it, not just the SHA.
@@ -322,14 +338,17 @@ make fleet-drift   # confirm no repo lags the new tag
 ### Roll one OS back
 
 ```sh
-# in the affected OS repo only — and regenerate core.lock with it (see §4's caveat),
-# or core-integrity will report the rolled-back tree as TAMPERED
-git subtree pull --prefix=core <core-remote> v<previous> --squash
+# from a dotfiles-core checkout, naming only the affected repo — see §4 for why the
+# checkout comes first and why the pin is the PEELED commit, not the tag ref;
+# core.lock is re-stamped in the same commit
+git checkout v<previous>
+CORE_BRANCH="$(git rev-parse v<previous>^{commit})" ./scripts/sync-core.sh dotfiles-<Repo>
 ```
 
-Note this does **not** reverse an already-merged newer subtree on its own: pulling an
-older tag merges *backwards*, it does not un-merge. Confirm the resulting `core/` tree
-matches the tag you intended before relying on it.
+A rollback is an ordinary sync at an older pin, and needs no un-merging: `core/` is
+materialized wholesale from the pinned tree, so the repo ends up byte-identical to that
+release whatever it was carrying before. It touches no other repo. Push the resulting
+commit, then confirm with `make core-integrity` and `make fleet-drift`.
 
 ## 6. Tooling that backs this policy
 

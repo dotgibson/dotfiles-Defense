@@ -67,11 +67,21 @@ true-positive fires, a benign true-negative near-miss stays silent. Host-plane t
 (25 Windows/Sysmon + 21 zircolite cloud + 26 evaluator cloud). Both Sigma engines run in the
 authoring environment, so every rule+fixture is verified locally before CI.
 
-**Phase 3 — fixtures from the real attacks.** *(not CI)*
+**Phase 3 — fixtures from the real attacks.** *(not CI; partially started)*
 A documented `regen-fixtures.sh` that runs the paired Offense attacks (the htpx pairs)
 against lab targets and captures the PCAP/EVTX, so fixtures are reproducible from source.
 Needs a real lab network + targets (and Windows for the host plane), so it stays a
 manually-run step, never a gate.
+
+The **reusable half now exists**: `docker/validation/evtx-to-fixture.sh` converts a captured
+EVTX into the fixture JSONL the manifests consume. That is the part worth having in the repo,
+because it is the part that is testable and does not need a range — what is still missing is
+the attack-execution wrapper around it. Its first use is recorded in
+`docker/validation/labruns/2026-08-sysmon18-remote-pipe.md`, which settled the Sysmon-18
+remote-pipe premise from a third-party capture and corrected the `EventData` key set of six
+host-plane fixtures in the process. `docker/validation/labruns/` is where run records live;
+its `README.md` states what one must contain and why a third-party capture earns
+`vendor-documented` rather than `captured`.
 
 ## What is and isn't achievable
 

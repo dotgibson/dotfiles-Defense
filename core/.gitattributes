@@ -1,7 +1,7 @@
 # .gitattributes — line-ending policy for dotfiles-core.
 # ──────────────────────────────────────────────────────────────────────────────
 # .editorconfig sets `end_of_line = lf`, but that only guides EDITORS — it does
-# not govern what git writes on checkout/commit. Core is vendored (git subtree)
+# not govern what git writes on checkout/commit. Core is vendored
 # into the OS repos, and may itself be edited on Windows, where git can introduce
 # CRLF. If a `.sh`, `bin/clip`, or `bin/clip-paste` lands on disk with CRLF, its
 # shebang becomes `…/env bash\r` and the interpreter dies with "bad interpreter:

@@ -1466,14 +1466,14 @@ blib_set_login_shell() {
   fi
 }
 
-# ── guard the vendored core/ subtree ──────────────────────────────────────────
+# ── guard the vendored core/ tree ─────────────────────────────────────────────
 # blib_install_core_guard <repo_root> — install a local pre-commit hook that refuses
-# commits touching the vendored core/ subtree. That tree is overwritten on the next
+# commits touching the vendored core/ tree. That tree is overwritten on the next
 # `make sync`, so a hand-edit there is silent drift (exactly how the nvim lockfile
 # diverged). The hook lives in .git/hooks (untracked, per-machine); sync-core.sh
 # (re)installs it on every fan-out, and a bootstrap can call it on a fresh clone.
 # Idempotent: it (re)writes OUR hook but never clobbers a pre-existing unrelated one.
-# Legitimate subtree writes are exempt via $DOTFILES_ALLOW_CORE_EDIT (set by
+# Legitimate sync writes are exempt via $DOTFILES_ALLOW_CORE_EDIT (set by
 # sync-core.sh) or the standard `git commit --no-verify`.
 blib_install_core_guard() {
   local root="${1:-.}" hooks hook hookspath marker='dotfiles-core-guard'
@@ -1504,7 +1504,7 @@ blib_install_core_guard() {
   cat >"$hook" <<'HOOK'
 #!/usr/bin/env bash
 # dotfiles-core-guard — installed by dotfiles-core; do not edit by hand.
-# Refuses commits that modify the vendored core/ subtree, which is OVERWRITTEN on the
+# Refuses commits that modify the vendored core/ tree, which is OVERWRITTEN on the
 # next `make sync` — so a hand-edit there is silent drift. Edit Core upstream in
 # dotfiles-core instead. Legitimate sync writes set DOTFILES_ALLOW_CORE_EDIT=1; or
 # bypass once with `git commit --no-verify`.
@@ -1514,11 +1514,11 @@ blib_install_core_guard() {
 staged=$(git diff --cached --name-only -- core/ 2>/dev/null) || exit 0
 [ -z "$staged" ] && exit 0
 {
-  printf 'dotfiles-core-guard: refusing to commit edits to the vendored core/ subtree:\n'
+  printf 'dotfiles-core-guard: refusing to commit edits to the vendored core/ tree:\n'
   printf '%s\n' "$staged" | sed 's/^/    /'
   printf '%s\n' \
     '' \
-    'core/ is a git-subtree copy of dotfiles-core, overwritten on the next `make sync`.' \
+    'core/ is a vendored copy of dotfiles-core, overwritten on the next `make sync`.' \
     'Fix it upstream in dotfiles-core (make audit), then `make sync` to fan it out.' \
     'Override for a real sync:  DOTFILES_ALLOW_CORE_EDIT=1 git commit …   (or: git commit --no-verify)'
 } >&2

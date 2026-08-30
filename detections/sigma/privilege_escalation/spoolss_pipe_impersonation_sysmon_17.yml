@@ -22,7 +22,14 @@ description: |
   filter_legit is NOT an environment-specific allowlist and needs no tuning before
   deployment: \spoolsv.exe is a fixed Windows invariant, not a property of your
   estate, so there is no placeholder here for an operator to populate.
-  Relationship to the rest of the corpus. The potato pair -
+  Relationship to the rest of the corpus. The outcome-plane companion is
+  token_theft_process_target_subject_4688.yml (id 1faa7a59-9fd5-4d14-9bf1-d94f82466acb),
+  added by dotgibson/dotfiles-Defense#230. It reads 4688's Target Subject block, which is
+  populated only when a process is created with a token that is not its creator's, so it
+  keys on the RESULT of the impersonation rather than on the endpoint used to obtain it -
+  and therefore covers the variants this rule cannot see, the ones that coerce over DCOM
+  or another RPC endpoint and never stand up a spoolss pipe at all. Mechanism here, effect
+  there; neither is redundant. The potato pair -
   potato_seimpersonate_4688.yml (id 9486ed6c-4c38-457f-a475-188a978eaa4a) and
   potato_seimpersonate_sysmon_1.yml (id 03e878f6-bbdc-41e1-afa6-68b2979938fe) - see a
   service identity spawning a shell, which is the shape BEFORE the token is stolen;
@@ -51,7 +58,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/potato-seimpersonate-4688.md
 author: dotfiles-Defense
 date: 2026-08-27
-modified: 2026-08-28
+modified: 2026-08-29
 tags:
   # Both halves of T1134.001 are claimed here, and the Stealth half is the point of the
   # rule. T1134.001 is dual-tactic in the pinned v19.2 bundle, so check-attack-tags.sh's
@@ -79,6 +86,8 @@ falsepositives:
   - Print-management or spooler-adjacent software that hosts its own spoolss endpoint
     out of process (rare; allowlist the specific Image after confirming the publisher).
   - A Sysmon config that rewrites or omits EventType on PipeEvent, which would make the
-    selection silently unsatisfiable rather than noisy - verify against a real 17 before
-    trusting silence from this rule.
+    selection silently unsatisfiable rather than noisy. Measured rather than feared.
+    pre-2020 Sysmon builds omit EventType from PipeEvent entirely, while captured 17s from
+    2020 carry EventType=CreatePipe as this rule expects. Confirm it is present before
+    deploying to old agents - see docker/validation/labruns/2026-08-sysmon18-remote-pipe.md.
 level: high

@@ -9,7 +9,7 @@ rule here drifts from `README.md` / `CONTRIBUTING.md`, those win — fix this.
 
 `dotfiles-core` is the **single source of truth** for the Core layer of a
 **eleven-repo dotfiles system** built on a three-layer model. Core is authored
-**once here** and vendored into each OS repo's `core/` via `git subtree` — so a
+**once here** and vendored into each OS repo's `core/` — so a
 defect here fans out N-way. Treat every change as if it ships to all of them,
 because it does.
 

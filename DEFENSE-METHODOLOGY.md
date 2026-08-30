@@ -119,12 +119,48 @@ resolves to Sysmon 17 and 18, and on a connect event the only thing the attack p
 is the spooler binding back — which the rule's own `spoolsv.exe` filter removes — so
 everything that would survive the filter there is ordinary print traffic.
 
-The **token-context half remains open** and is tracked in #230: nothing here reads
-4624/4672 for an anomalous token context, and a rule that did would be a second,
-independent piece of TA0005 evidence for the same technique — one that sits downstream of
-every potato variant, including the ones that coerce over an endpoint other than `spoolss`
-and so leave the pipe rule silent. The decision here is about these two rules, not about
-the tactic.
+**The token-context half is closed by #230, and not where #230 expected.** That half asked
+for a rule reading 4624/4672 for an anomalous token context. There is no such rule, because
+those two events are not written by this attack. 4624 generates when a logon SESSION is
+created and 4672 when privileges are assigned to a new one, and no potato variant creates a
+session: the pipe-impersonation majority never authenticates at all — `ImpersonateNamedPipeClient`
+is a kernel token attachment, not a protocol — and the local-relay minority (Rotten, Juicy,
+LocalPotato) rides NTLM's local-call short circuit, which hands the caller's existing token
+to the server context in place of calling `LsaLogonUser`. `DuplicateTokenEx` then preserves
+`AuthenticationId`, so the SYSTEM process the operator ends up with sits in logon session
+0x3e7 rather than a fresh one. The only variants that ever produced the shape #230 imagined
+are HotPotato and GhostPotato, dead since MS16-075 and CVE-2019-1384 respectively. A rule
+built on it would have passed its own true positive AND its own true negative and then sat
+inert in production, which is #149 with a Windows event id on it. Recorded here rather than
+left as a silence, because the next person to read the reopen condition would otherwise
+re-derive it.
+
+**What answers it instead is 4688, and the tag moves there.**
+`detections/sigma/privilege_escalation/token_theft_process_target_subject_4688.yml` takes the
+TA0005 half on the plane where the telemetry exists. Event version 2 of 4688 (Windows 10 and
+Server 2016 onward) added a Target Subject block, populated — in Microsoft's own words — only
+when the creator and target "do not share the same logon". A process whose Target Subject is
+SYSTEM was therefore created with a token that is not its creator's, which is the theft
+stated as a field rather than inferred from the shape around it. It is also the property #230
+actually wanted: every variant ends in `CreateProcessWithTokenW` or `CreateProcessAsUserW`, so
+this sits downstream of all of them, including the ones that coerce over an endpoint other
+than `spoolss` and so leave the pipe rule silent. One caveat travels with it and is written
+into the rule: whether the audit reads Creator Subject from the calling process's token or
+from its impersonating thread token is inference from Microsoft's documentation, not a
+capture, and a lab run settles it — the same run that would establish whether the potato pair
+has ever fired on a real potato.
+
+Two shapes were considered on the way and rejected, so they are not re-proposed. A flat 4672
+selection is noise by construction — every SYSTEM logon on the host emits one, at service
+start rather than at escalation. And a 4624-to-4672 session join cannot be built here even if
+the events existed: 4624 carries the session in `TargetLogonId` and 4672 in `SubjectLogonId`,
+Sigma's only mechanism for reconciling that is `aliases`, and the SQLite backend zircolite
+runs templates aliases into the WHERE clause, so the rule would compile to Splunk and never
+fire under the validation gate. Grouping on `Computer` instead degrades to "some 4624 and some
+4672 happened on this host", which is worse than the flat rule already rejected. The narrow
+reopen condition that remains is a variant obtaining its token through `LsaLogonUser` rather
+than duplication — JuicyPotatoNG is the live candidate, and its tell would be a 4624 LogonType
+9, not a 4672.
 
 **The rest of the PipeEvent block, and the one name that stays unread (#229).** #225 left
 four of the five collected pipe names consumed by nothing, which is the same
@@ -173,22 +209,35 @@ source of a bind — a Sysmon schema that carries it, or an ingestion path that 
 the 5145 for the same session — at which point a principal-shaped filter becomes expressible
 and the rule becomes writable.
 
-One caveat travels with all of this, and it is the reason both rules ship `unverified`
-fixtures: that Sysmon emits an 18 for a remote SMB pipe open at all, attributed to `System`,
-is derived from where the kernel services that open, not observed here. Step 4 of the
-lifecycle below has not been run for these two, and it is tracked in #235. Until it has,
-their silence means nothing.
+That caveat has now been partly discharged (#235). The premise — that Sysmon emits an 18 for
+a remote SMB pipe open at all, attributed to `System` — was derived from where the kernel
+services that open, and is now **observed**. Across 33 captured PipeEvent records from three
+hosts, every remote-origin bind arrives as `Image=System`, `ProcessId=4` — 16 distinct pipe
+names, including `\atsvc`, one of the two the atsvc/svcctl rule selects — while local binds in
+the same captures carry their own image (`mmc.exe`, `PsExec.exe`), which is the true-negative
+shape the fixtures assert. The shipped rule fires on that captured
+record under the same engine the gate uses. The measurement is written up in
+`docker/validation/labruns/2026-08-sysmon18-remote-pipe.md`, and the second-plane claim above
+stands.
 
-Two things that tracker records rather than leaves implicit. The rules fail
-**independently**: the efsrpc one is not keyed on `Image`, so a Sysmon that attributes the
-kernel SMB path differently costs a one-value change to the atsvc/svcctl rule and nothing
-else. And no gate here can settle it — `check_near_miss` requires a true negative to carry
-the *identical* `EventData` key set as its true positive, so by construction no fixture in
-this manifest can exercise a missing-or-renamed-field case. That is the right call for the
-gate, and it is the reason the answer is a lab run rather than more CI. If the measurement
-comes back that no 18 arrives for the remote path at all, the response is to retire both
-rules and reopen #229, not to reword them — the second-plane claim above would simply be
-false.
+Three things that record keeps honest rather than letting the green tick imply. It is a
+**third-party** capture — 2019–2020 Sysmon builds on other people's hosts, not our shipped
+`sysmonconfig-detection-lab.xml` at schemaversion 4.90 — so the fixtures moved to
+`vendor-documented`, not `captured`, and #235 stays open for the first-party run. `\svcctl`
+and `\efsrpc` were **not** directly observed; their behaviour is inferred from the shared
+NPFS path that produced sixteen differently-named remote binds identically attributed. And the
+capture corrected something no one had questioned: PipeEvent carries **no `User` field at
+all**, which every fixture here had asserted. That strengthened rather than weakened the
+argument for declining an lsarpc rule — there is no principal on this plane to filter on, not
+merely an unhelpful one — but it is exactly the class of defect the ledger exists to catch,
+found the only way it can be found.
+
+The rules still fail **independently**: the efsrpc one is not keyed on `Image`, so a Sysmon
+that attributes the kernel SMB path differently costs a one-value change to the atsvc/svcctl
+rule and nothing else. And no gate here could have settled it — `check_near_miss` requires a
+true negative to carry the *identical* `EventData` key set as its true positive, so by
+construction no fixture in this manifest can exercise a missing-or-renamed-field case. That is
+the right call for the gate, and it is why the answer was a capture rather than more CI.
 
 The row is narrow on purpose: it is the *registry* plane, not the endpoint. Both rules
 fire on a publish event in an npm or PyPI audit log — a package shipped by an actor that
