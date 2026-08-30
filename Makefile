@@ -60,9 +60,19 @@ shellcheck: ## shellcheck + bash -n / zsh -n, at CI's PINNED version
 	@# failure without it. Read that script's header before replacing this with a one-liner.
 	@./tests/lint-shell.sh
 
+# ONE recipe line. make runs each line in its own shell, so the guard's `exit 0` only
+# ended THAT line — this printed "npx not available — skipping markdown" and then ran npx
+# anyway, exiting 127. Joining them makes the skip a real skip (dotgibson/dotfiles-core#775).
+#
+# An unreadable pin FAILS rather than falling back to @latest. "Pinned version, same as CI"
+# is this target's whole claim; silently linting under a different version would make a
+# local pass mean nothing, which is the failure mode the rest of that sweep is about.
 markdown: ## markdownlint repo-owned docs (pinned version, same as CI)
-	@command -v npx >/dev/null 2>&1 || { echo "npx not available — skipping markdown"; exit 0; }
-	@npx --yes markdownlint-cli2@$(MARKDOWNLINT_VERSION) $(MD_FILES)
+	@if ! command -v npx >/dev/null 2>&1; then echo "npx not available — skipping markdown"; \
+	elif [ -z "$(MARKDOWNLINT_VERSION)" ]; then \
+	  echo "!! MARKDOWNLINT_VERSION unreadable from $(CORE_PINS) — refusing to lint unpinned"; exit 1; \
+	elif [ -z "$(MD_FILES)" ]; then echo "no repo-owned .md"; \
+	else npx --yes markdownlint-cli2@$(MARKDOWNLINT_VERSION) $(MD_FILES); fi
 
 ## ── detections ───────────────────────────────────────────────────────────────
 
