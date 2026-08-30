@@ -22,6 +22,20 @@ under `[Unreleased]` from here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`make markdown` announced a skip and then ran anyway.** Each `make` recipe line runs
+  in its own shell, so the guard's `exit 0` only ended that line: without `npx` it printed
+  "npx not available — skipping markdown" and then ran `npx`, exiting `127`. Collapsed
+  into one recipe line, so the skip is a real skip (dotgibson/dotfiles-core#775 — the same
+  defect in six other fleet repos). `MD_FILES` was already correct here, so only the guard
+  needed fixing, not the scope. An unreadable `MARKDOWNLINT_VERSION` now **fails** rather
+  than silently linting unpinned — "same version as CI" is this target's whole claim.
+- `.markdownlint.jsonc`'s header claimed this config was "the local README check" and that
+  "CI in this repo gates its own code, not its Markdown". Both were true when written;
+  dotgibson/dotfiles-core#592 made the markdown leg blocking and it covers all 21
+  repo-owned files, not just the README.
+
 ### Added
 
 - **The token-context half of T1134.001 closes, on a different event than #230 asked for
