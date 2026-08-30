@@ -31,9 +31,17 @@ description: |
   This is the Sysmon half of a per-channel pair - its Security-4688 twin is
   potato_seimpersonate_4688.yml (id 9486ed6c-4c38-457f-a475-188a978eaa4a), whose
   SubjectUserName is the creator and so is ParentUser's exact counterpart, which is what makes
-  the two a pair rather than two rules about one technique. The split is on purpose: a single
-  rule naming both ParentUser and SubjectUserName nulls under any single pysigma pipeline (the
-  pipeline that can't resolve one field drops the whole rule), so it silently never fires.
+  the two a pair rather than two rules about one technique. The split is on purpose, though not for the
+  reason this rule used to give. It claimed a single rule naming both fields would null under
+  any single pipeline, the pipeline dropping the whole rule. Measured with the CI pins, that is
+  false: such a rule compiles under both pipelines, the unresolvable field passed through
+  unmapped, and an OR of the two field sets fires correctly on each channel. What actually
+  makes one rule insufficient is that the logsource resolves to ONE EventID per pipeline -
+  category: process_creation becomes EventID 1 under sysmon and 4688 under windows-audit,
+  whichever of these two rules you compile - so a single rule compiled once covers a single
+  channel no matter which fields it names, and you would deploy it twice regardless. Two
+  rules, each naming only its own channel's field, is the same coverage with no dead predicate
+  evaluated against every event, and each is honest about the telemetry it needs.
   Deploy both; whichever channel your hosts forward will match.
   Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate).

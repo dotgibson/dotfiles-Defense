@@ -24,6 +24,41 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **The "a rule naming both channels' fields nulls under either pipeline" claim was false, in
+  all six places it appeared.** Repeated by the `potato_seimpersonate` pair, the T1486
+  `mass_file_encryption` pair, `host_recon_command_burst`, and twice in `detections/README.md`
+  — where it is cited as precedent — the claim was that a pysigma pipeline unable to resolve a
+  field drops the whole rule. Measured with the CI pins (`sigma-cli 3.0.2`, `pysigma 1.5.0`):
+  it does not. Such a rule compiles under both pipelines with the unresolvable field passed
+  through unmapped, and an `OR` of the two field sets fires correctly on each channel. What
+  actually makes one rule insufficient is that **the logsource resolves to one EventID per
+  pipeline** — `category: process_creation` becomes `EventID=1` under `sysmon` and `4688`
+  under `windows-audit`, whichever rule you compile — so a single compiled search covers a
+  single channel regardless of the fields it names. The per-channel split is still correct;
+  only the stated reason was wrong, and the corrected reason is now what each rule gives.
+
+- **The correlation rules' grouping rationale re-derived
+  (`host_recon_command_burst`, `service_stop_burst`).** Their reason for grouping by
+  `Computer` inherited the same false mechanism, plus a second error #239 exposed: it named
+  Security-4688 `SubjectUserName` and Sysmon-1 `User` as two spellings of one actor. They are
+  different principals — `SubjectUserName` is the creator, `User` is the new process — so the
+  fields were never counterparts. Measured behaviour is worse than the claim: `group-by`
+  fields are passed through **completely unmapped** by both pipelines (`SubjectUserName`
+  survives verbatim under `sysmon`) while detection fields *are* mapped, so an account-keyed
+  correlation would compile and then bucket every event under one null key, silently voiding
+  the threshold rather than failing visibly. `Computer` is now justified on its merits rather
+  than as a workaround: a burst is a host-level phenomenon, one operator's burst spans
+  identities (land → recon → escalate → recon, the sequence in the RottenPotato webshell
+  capture), and an account key would split it into sub-threshold buckets while handing the
+  operator a trivial evasion. Actor grouping is reachable post-#239 (`SubjectUserName` /
+  `ParentUser`) but would gate the rules on Sysmon 13+ for a reason unrelated to what they
+  detect. `service_stop_burst`, which carried no rationale at all, now states one.
+
+- **`check-fixture-provenance.sh` no longer claims every fixture is `unverified`.** Stale
+  since `aa02c28`; the ledger has carried `vendor-documented` rows since. Rewritten to
+  describe why the distribution is deliberately not gated, without a count that goes stale
+  again.
+
 - **`potato_seimpersonate_sysmon_1` was keyed on the wrong field and had never fired on a
   potato (#239).** The rule and `detections/README.md` described it as the Sysmon half of a
   per-channel pair with `potato_seimpersonate_4688`, one shape on two channels. It was not.
