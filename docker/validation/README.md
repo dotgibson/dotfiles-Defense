@@ -191,6 +191,8 @@ rule is deployable — substituting the real DC inventory is still on the operat
 property.
 
 **Resolved — the potato SeImpersonate rule now fires (split into a per-channel pair).**
+*(The diagnosis in this paragraph was wrong on one point and is corrected two paragraphs
+down; the split it produced was right. Kept as written because the note below amends it.)*
 The original `potato_seimpersonate_4688.yml` was dual-channel by design: one
 `selection_svc_identity` matched the service account in EITHER `User` (Sysmon-1) OR
 `SubjectUserName` (Security-4688). Both fields in one rule broke it under a single pysigma
@@ -211,8 +213,18 @@ successful potato those diverge, so the Sysmon rule went silent exactly when its
 fired — measured silent on all six real potato captures in the sbousseaden/EVTX-ATTACK-SAMPLES
 corpus, run through zircolite. It now keys on `ParentUser` (Sysmon 13+), which is the Sysmon
 expression of what `SubjectUserName` says, and both fixtures are now captured records rather
-than hand-written ones. The pipeline argument above is untouched — it was always the reason for
-the split, and it still is. See
+than hand-written ones.
+
+The **reason** given for the split above is also wrong, and #239 corrected it. A rule naming
+both fields does not null: measured with the CI pins, it compiles under both pipelines with the
+unresolvable field passed through unmapped (`sigma convert -t splunk -p sysmon` on such a rule
+yields `EventID=1 … ParentUser … OR SubjectUserName …`, and the windows-audit form converts
+just as cleanly). What actually makes one rule insufficient is that the logsource resolves to
+**one EventID per pipeline** — `category: process_creation` becomes EventID 1 under sysmon and
+4688 under windows-audit — so a single compiled search covers a single channel whatever fields
+it names, and you would deploy it twice regardless. Two rules, each naming only its own
+channel's field, is the same coverage with no dead predicate evaluated against every event. The
+full account is in `potato_seimpersonate_sysmon_1.yml` and `detections/README.md`. See
 [`labruns/2026-08-potato-sysmon1-user-semantics.md`](labruns/2026-08-potato-sysmon1-user-semantics.md).
 
 **Cloud / SaaS** (`pipeline=none`): 22 rules covered — AWS (IAM key, login profile), Entra

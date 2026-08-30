@@ -11,8 +11,10 @@ description: |
   service-control and process work doesn't feed the count.
   Channel: this is deliberately a generic `category: process_creation` rule so it
   matches BOTH native Security-4688 and Sysmon-1 - it names only Image and
-  CommandLine, which both channels carry (see the potato_seimpersonate_* pair for
-  what happens when a rule names a per-channel account field instead).
+  CommandLine, which both channels carry. A per-channel account field would still
+  compile under either pipeline, but would match nothing on the channel that lacks it;
+  see the potato_seimpersonate_* pair, and the corrected account of that mechanism in
+  detections/README.md.
 references:
   - https://attack.mitre.org/techniques/T1033/
   - https://attack.mitre.org/techniques/T1082/
@@ -121,11 +123,23 @@ description: |
   Counting DISTINCT command lines (not a raw execution rate) is the point: a login
   script firing the same `net use` a hundred times stays at one, while an operator
   walking `whoami /all` -> `net group "domain admins" /domain` -> `nltest /dclist:` ->
-  `systeminfo` -> `netstat -ano` trips it in under a minute. Grouping by Computer
-  rather than by account is deliberate - the actor field differs per channel
-  (Security-4688 SubjectUserName vs Sysmon-1 User) and naming either would null the
-  rule under the other channel's pipeline; the burst is a property of the host
-  anyway. Tune the threshold to your build: imaging, patch, and inventory windows are
+  `systeminfo` -> `netstat -ano` trips it in under a minute.
+  Grouping by Computer rather than by account is deliberate, and the reason is not the one
+  this rule used to give. It claimed that naming an account field in group-by would null the
+  rule under the other channel's pipeline. Measured with the CI pins, it does not: group-by
+  fields are passed through UNMAPPED by both pipelines - SubjectUserName survives verbatim
+  under sysmon, User under windows-audit - while detection fields are mapped (Image ->
+  NewProcessName). The rule would compile and then group by a field the channel does not
+  carry, landing every event in one null bucket, which is worse than nulling because it is
+  invisible. The real reasons to key on the host: a burst is a host-level phenomenon and one
+  operator's burst SPANS identities (land, recon, escalate, recon again - the sequence in the
+  RottenPotato webshell capture behind
+  docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md), so account-grouping
+  splits one burst into two sub-threshold buckets and hands the operator a trivial evasion.
+  Actor grouping is reachable since #239 established the counterparts (4688 SubjectUserName /
+  Sysmon-1 ParentUser, NOT User, which is the new process), but ParentUser needs Sysmon 13+
+  and the base rule it counts is deliberately build-agnostic.
+  Tune the threshold to your build: imaging, patch, and inventory windows are
   the baseline that shifts it.
   Validate (purple): run the discovery fold from dotfiles-Offense (hacktheplanet
   "Situational awareness" / post-exploitation recon; the seatbelt/winPEAS and manual

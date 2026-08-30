@@ -1,56 +1,65 @@
-title: Potato privesc - service identity spawning a SYSTEM shell (Sysmon 1)
+title: Potato privesc - service identity spawning an interactive shell (Sysmon 1)
 id: 03e878f6-bbdc-41e1-afa6-68b2979938fe
 status: experimental
 description: |
   Detection posture: moderate. SeImpersonate abuse (PrintSpoofer/GodPotato/Juicy)
   uses a legitimate impersonation API, and process-creation alone cannot show the
-  run-as-SYSTEM result as a token fact. This flags the shape it can see - a shell
-  created BY a service identity (app-pool / NETWORK|LOCAL SERVICE). Confirm the
-  SYSTEM outcome with spoolss_pipe_impersonation_sysmon_17.yml (id
+  run-as-SYSTEM result. This flags the shape it can see - a service identity
+  (app-pool / NETWORK|LOCAL SERVICE) spawning cmd/powershell.
+  Confirm the SYSTEM outcome with spoolss_pipe_impersonation_sysmon_17.yml (id
   d5c5c185-a62f-415a-ab0f-2572f910b541), which detects the impersonation
-  itself on Sysmon 17. On the Security channel,
-  token_theft_process_target_subject_4688.yml (id
+  itself on Sysmon 17, and with Sysmon 1 linking the service parent to a SYSTEM
+  child. On the Security channel, token_theft_process_target_subject_4688.yml (id
   1faa7a59-9fd5-4d14-9bf1-d94f82466acb) reads the stolen token directly off 4688's
-  Target Subject block; there is no Sysmon equivalent of those fields, so that
-  confirmation is not available to a host forwarding only Sysmon.
-  Channel, and why this is NOT the twin of the 4688 rule. This rule and
-  potato_seimpersonate_4688.yml (id 9486ed6c-4c38-457f-a475-188a978eaa4a) used to
-  describe themselves as one shape on two channels, keyed on User here and
-  SubjectUserName there. They are not. 4688 SubjectUserName is the CREATOR; Sysmon 1
-  User is the CREATED process, which is why Sysmon 13 added ParentUser at all. On a
-  successful potato those two diverge - that divergence IS the technique - so the old
-  User|contains 'APPPOOL' form went silent at the moment its supposed twin fired.
-  Measured, not argued: run against the six real potato captures in
-  sbousseaden/EVTX-ATTACK-SAMPLES (RottenPotato-from-webshell, RogueWinRM,
-  RoguePotato, EfsPotato, NetworkServiceExploit, PrintSpoofer), the old form was
-  silent six times out of six. See
-  docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md
-  (dotgibson/dotfiles-Defense#239). The Sysmon-plane expression of what 4688
-  SubjectUserName says is ParentUser, so that is what this rule now selects. The two
-  rules still split per channel - a single rule naming both ParentUser and
-  SubjectUserName resolves under only one pysigma pipeline - but they are two
-  different invariants covering one technique, which is a weaker and more honest
-  claim than a twin.
-  Requires Sysmon 13 or later. ParentUser does not exist before it, and the failure is
-  quiet rather than loud: verified by conversion, the rule compiles under a sysmon
-  pipeline to `EventID=1 Image IN (...) ParentUser IN (...)`, so on an older agent it
-  simply matches nothing forever. Under a windows-audit pipeline it does not fail
-  loudly either - ParentUser passes through unmapped onto EventID 4688, which does not
-  carry it. Deploy it on the sysmon pipeline, against an agent you have confirmed is 13+.
-  What it still misses, by design. The Image list means a payload that is not a named
-  shell does not match, and that is not hypothetical: of the six captures above, three
-  ran `whoami`, `nc64.exe` and `notepad.exe` as the payload.
-  token_theft_process_target_subject_4688.yml carries no Image constraint and is the
-  rule for that class, on hosts forwarding Security.
-  ONE DERIVATION, STATED. No potato capture available to us carries ParentUser - all six
-  predate Sysmon 13 - so the value this rule keys on has never been observed on a real
-  potato. What HAS been observed on all six is that the escalated process's parent is the
-  potato tool itself, running under the service identity, with no Secondary Logon
-  reparenting; ParentUser is Sysmon's rendering of exactly that parent. The step from
-  "the parent is the tool, and the tool runs as NETWORK SERVICE" to "ParentUser reads
-  NETWORK SERVICE" is a derivation from the schema, not a capture. The run record says so,
-  and the first-party confirmation is tracked in
-  docker/validation/labruns/runbook-potato-seimpersonate.md.
+  Target Subject block; there is no Sysmon equivalent of those fields, so that exact
+  confirmation is not available to a host forwarding only Sysmon. The nearest one that is,
+  and it is a close one, is token_theft_parent_child_mismatch_sysmon_1.yml (id
+  b7f135f0-c066-4b0b-ac45-3f6bb433be38), which reads the same EventID 1 this rule does and
+  fires when the child is SYSTEM and the creator is not - the outcome this rule can only
+  point at. It carries no Image constraint, so it also covers the payloads the shell list
+  below misses.
+  Channel: Sysmon EventID 1 carries the CREATOR in ParentUser, and the rule keys on that.
+  It used to key on User, which is the wrong field and was the defect
+  dotgibson/dotfiles-Defense#239 found: User is the account of the NEW process, not of the
+  account that created it. On an ordinary service-spawns-shell event the two agree, so the
+  rule looked correct; on a successful potato they diverge - which is what the technique IS -
+  and the rule went silent at the moment it was supposed to fire. That is measured, not
+  reasoned: across six real potato captures on four hosts (RogueWinRM, NetworkServiceExploit,
+  RottenPotato-from-webshell, EfsPotato, RoguePotato, PrintSpoofer) the child is
+  NT AUTHORITY\SYSTEM every time, the creator stays LOCAL SERVICE / NETWORK SERVICE /
+  IIS APPPOOL wherever the tool was run from a service context, and the User-keyed rule fired
+  on none of the six. See docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md.
+  The field semantics themselves are settled on a cross-channel join rather than on the potato
+  captures alone: one sample carries both a Sysmon 1 and a Security 4688 for the same process
+  creation, and there Sysmon's User matches 4688's TARGET (the new process) while its LogonId
+  matches TargetLogonId rather than SubjectLogonId - a numeric identifier carried independently
+  on both channels, so it cannot be read as a rendering difference.
+  Why the parent is the right thing to key on, which was not obvious. CreateProcessWithTokenW
+  needs only SeImpersonate - which is why this whole family exists - and it is serviced by the
+  Secondary Logon service in svchost.exe, so had seclogon created the process rather than the
+  tool, ParentUser would read NT AUTHORITY\SYSTEM and this rule would be inert. Measured across
+  all six captures, the escalated process's parent is the tool itself, under the service
+  identity, with no reparenting.
+  ONE DERIVATION, STATED. ParentUser has never been observed on a real potato: every one of the
+  six captures predates Sysmon 13, so the run record derives the value from the parent process's
+  own captured User in the same log. That derivation is well grounded - the parent is the tool,
+  and the tool's own identity is captured - but it is a derivation, and the first-party
+  confirmation is tracked in docker/validation/labruns/runbook-potato-seimpersonate.md.
+  This is the Sysmon half of a per-channel pair - its Security-4688 twin is
+  potato_seimpersonate_4688.yml (id 9486ed6c-4c38-457f-a475-188a978eaa4a), whose
+  SubjectUserName is the creator and so is ParentUser's exact counterpart, which is what makes
+  the two a pair rather than two rules about one technique. The split is on purpose, though not for the
+  reason this rule used to give. It claimed a single rule naming both fields would null under
+  any single pipeline, the pipeline dropping the whole rule. Measured with the CI pins, that is
+  false: such a rule compiles under both pipelines, the unresolvable field passed through
+  unmapped, and an OR of the two field sets fires correctly on each channel. What actually
+  makes one rule insufficient is that the logsource resolves to ONE EventID per pipeline -
+  category: process_creation becomes EventID 1 under sysmon and 4688 under windows-audit,
+  whichever of these two rules you compile - so a single rule compiled once covers a single
+  channel no matter which fields it names, and you would deploy it twice regardless. Two
+  rules, each naming only its own channel's field, is the same coverage with no dead predicate
+  evaluated against every event, and each is honest about the telemetry it needs.
+  Deploy both; whichever channel your hosts forward will match.
   Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate).
 references:
@@ -62,16 +71,15 @@ modified: 2026-08-30
 tags:
   # T1134.001 is dual-tactic in ATT&CK v19 — TA0004 and TA0005 (Stealth) — and only the
   # TA0004 half is claimed here. That is deliberate, not an oversight
-  # (dotgibson/dotfiles-Defense#223, reaffirmed in #225, and re-derived for the ParentUser
-  # form in #239).
-  # What this rule selects is an identity mismatch between a parent and its child: a shell
-  # created by a service identity. That is evidence consistent with the mechanism, not an
-  # observation of the evasion — and the sibling rule that DOES claim the Stealth half,
-  # token_theft_process_target_subject_4688.yml, says in its own description why ParentUser
-  # is not a substitute for a token-provenance field. Shipping this form instantiates that
-  # sentence rather than falsifying it, so the Stealth half stays where #225 and #230 put
-  # it: on spoolss_pipe_impersonation_sysmon_17.yml, which observes the pipe the
-  # impersonation cannot avoid standing up, and on the Target Subject rule.
+  # (dotgibson/dotfiles-Defense#223, reaffirmed in #225).
+  # What this rule selects is a service identity spawning a shell: the shape BEFORE the
+  # token is stolen, keyed on the creator's un-masked ParentUser. Nothing in it observes the
+  # impersonation itself, which is the part TA0005 is about — and the description above
+  # already concedes the rule cannot see the run-as-SYSTEM result. Claiming the Stealth
+  # half would add a COVERAGE.md row that THIS rule does not earn. The TA0005 half of
+  # T1134.001 is claimed instead by spoolss_pipe_impersonation_sysmon_17.yml, which
+  # observes the pipe the impersonation cannot avoid standing up - the evasion itself -
+  # dotgibson/dotfiles-Defense#225 settled that it belongs there rather than here.
   # Deliberately NOT writing the tag string in this comment: gen-coverage.sh matches
   # tactic slugs over the whole file, so naming it here would tag the rule by accident.
   - attack.privilege-escalation
@@ -85,17 +93,20 @@ detection:
       - '\cmd.exe'
       - '\powershell.exe'
       - '\pwsh.exe'
-  selection_svc_parent:
-    # The CREATOR's identity on the Sysmon plane. Sysmon 13+.
+  selection_svc_identity:
     ParentUser|contains:
       - 'APPPOOL'
       - 'NETWORK SERVICE'
       - 'LOCAL SERVICE'
-  condition: selection_shell and selection_svc_parent
+  condition: selection_shell and selection_svc_identity
 falsepositives:
   - Service accounts that legitimately shell out (scripts, monitoring) - baseline
     per host and allowlist the known parent/child pairs.
-  - An agent older than Sysmon 13 emits no ParentUser at all, which makes the selection
-    silently unsatisfiable rather than noisy. Confirm the agent version before trusting
-    silence from this rule.
+  - ParentUser requires Sysmon 13.00 or later. On an older build the field is absent entirely
+    and the selection is silently unsatisfiable rather than noisy, so this rule's silence on
+    such a host is not evidence of absence - verify against a real Sysmon 1 before trusting it.
+    This is measured rather than assumed - of 147 Sysmon-1 records swept across the pinned
+    EVTX corpus, only the one from a 2022 host carries ParentUser at all. The shipped
+    detections/sysmon/sysmonconfig-detection-lab.xml is schemaversion 4.90 (Sysmon 15.x) and
+    captures all ProcessCreate, so a lab endpoint emits it.
 level: medium

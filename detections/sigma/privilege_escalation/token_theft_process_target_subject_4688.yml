@@ -29,13 +29,20 @@ description: |
   cleanly and then matches nothing forever. Verified by conversion, not assumed. There is
   no Sysmon twin to fall back on either: Target Subject is a 4688-only field set, and
   Sysmon 1 has no field meaning "the token this process was created with is not its
-  creator's". ParentUser is a different claim (an identity mismatch between parent and
-  child, not the token's provenance) and is not a substitute. That sentence is why
-  dotgibson/dotfiles-Defense#239 repointed potato_seimpersonate_sysmon_1.yml (id
-  03e878f6-bbdc-41e1-afa6-68b2979938fe) onto ParentUser without letting it claim the
-  Stealth half: it is the Sysmon plane's best available reading, and it is still an
-  identity mismatch rather than a token's provenance. So a host forwarding only Sysmon is
-  not covered by this rule, and that weaker reading is all it gets.
+  creator's". ParentUser is a different claim - an identity mismatch between parent and
+  child that a rule must infer, not token provenance the OS asserts - and it is not a
+  substitute for THIS rule's field set. It is, however, enough to carry a rule of its own,
+  and since dotgibson/dotfiles-Defense#239 measured what Sysmon 1's User and ParentUser
+  actually mean, it does: token_theft_parent_child_mismatch_sysmon_1.yml (id
+  b7f135f0-c066-4b0b-ac45-3f6bb433be38) selects a SYSTEM process whose creator was a service
+  identity. So a host forwarding only Sysmon is still not covered by this rule, but it is no
+  longer left with only the potato pair's pre-theft shape there.
+  Deploy both where you collect both, because they fail differently. This rule is the stronger
+  claim on stronger evidence - the OS populates Target Subject rather than leaving it to be
+  derived, and S-1-5-18 is a SID that no localisation moves, where the Sysmon rule must match
+  the string SYSTEM. But the ONE ASSUMPTION below is this rule's exposure and not that one's:
+  ParentUser is resolved from the parent PROCESS's token, so a thread-token reading of Creator
+  Subject would delete this rule's true positive and leave the Sysmon rule standing.
   Why 4688 and not 4624/4672, which is what #230 asked for. Neither of those events is
   written by this attack. 4624 generates when a logon SESSION is created and 4672 when
   privileges are assigned to a new one; the pipe-impersonation majority of the family never
@@ -63,25 +70,24 @@ description: |
   and the fixture behind this rule proves only that the rule fires on the shape we believe
   in. The lab run below settles it, and settles the same question for the potato pair,
   which has never been confirmed to fire on a real potato either.
-  One route to that failure has since been ruled out, and one has not. The worry was
-  broader than the thread token: CreateProcessWithTokenW is serviced by the Secondary Logon
-  service in svchost.exe, so if seclogon created the process rather than the tool, Creator
-  Subject would be SYSTEM for a reason that has nothing to do with which token the audit
-  reads. Measured across all six real potato captures in sbousseaden/EVTX-ATTACK-SAMPLES -
-  RottenPotato, RogueWinRM, RoguePotato, EfsPotato, NetworkServiceExploit and PrintSpoofer -
-  the escalated process's parent is the tool itself, under the service identity, with no
-  reparenting. See docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md. The
-  THREAD-token reading above is untouched by that: it is a property of the audit subsystem
-  rather than of the process tree, and only a 4688 captured from a real potato settles it -
-  docker/validation/labruns/runbook-potato-seimpersonate.md.
-  What the same run DID confirm about this rule. Its fixtures' event-version-2 key set and
-  field order are identical to six captured 4688s, and the shipped rule fires on one of them
-  (a non-SYSTEM creator producing a SYSTEM-token process, zircolite v3.7.6). The
+  One route to that failure has since been ruled out, and one has not. The worry was broader
+  than the thread token: CreateProcessWithTokenW is serviced by the Secondary Logon service in
+  svchost.exe, so if seclogon created the process rather than the tool, Creator Subject would be
+  SYSTEM for a reason having nothing to do with which token the audit reads. Measured across all
+  six real potato captures in the pinned corpus, the escalated process's parent is the tool
+  itself, under the service identity, with no reparenting. The THREAD-token reading above is
+  untouched by that - it is a property of the audit subsystem rather than of the process tree.
+  What the same run DID confirm about this rule. Its fixtures' event-version-2 key set and field
+  order are identical to six captured 4688s, and the rule FIRES on one of them (zircolite
+  v3.7.6, --pipeline windows-audit): creator IEUser, target MSEDGEWIN10$ S-1-5-18, on a genuine
+  token swap. That is the first time it has fired on anything but its own fixture. The
   falsepositives note below about pre-Windows-10 hosts is measured rather than feared too:
-  captured event-version-1 4688s carry no Target Subject block at all, and this rule is
-  correctly silent on them. One observation against it - a captured 4688 can populate
-  TargetUserName, TargetDomainName and TargetLogonId while TargetUserSid reads the null SID
-  S-1-0-0, and TargetUserSid is the only one of the four this rule can see.
+  captured event-version-1 4688s from a Windows 7 host carry no Target Subject block at all -
+  nine keys, no Target*, no ParentProcessName - and this rule is correctly silent on them. One
+  observation against it: a captured 4688 can populate TargetUserName, TargetDomainName and
+  TargetLogonId while TargetUserSid reads the null SID S-1-0-0, and TargetUserSid is the only
+  one of the four this rule can see. See
+  docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md.
   Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate), then read the 4688
   the payload produced and compare its Creator Subject against the service identity.

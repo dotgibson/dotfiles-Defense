@@ -179,7 +179,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Offense` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 109 rules / 127 documents, organized by ATT&CK tactic
+### `sigma/` — 110 rules / 128 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -198,14 +198,15 @@ purple-validatable out of the box.
 
 **`privilege_escalation/`**
 
-| Rule                                                          | Event / source                                                                                                                                            | ATT&CK    | Validate with                                |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------- |
-| `adcs_esc1_san_mismatch_4886`                                 | 4886/4887 cert request                                                                                                                                    | T1649     | AD CS abuse · adcs-esc1-certipy              |
-| `potato_seimpersonate_4688` / `potato_seimpersonate_sysmon_1` | proc create, shell created BY a service identity; per-channel, keyed on the creator (Security-4688 `SubjectUserName` / Sysmon-1 `ParentUser`, Sysmon 13+) | T1134.001 | Win privesc · potato-seimpersonate           |
-| `spoolss_pipe_impersonation_sysmon_17`                        | Sysmon 17 PipeEvent (`\spoolss` created by anything but `spoolsv.exe`)                                                                                    | T1134.001 | Win privesc · potato-seimpersonate           |
-| `token_theft_process_target_subject_4688`                     | 4688 Target Subject (process created with a SYSTEM token by a non-SYSTEM creator)                                                                         | T1134.001 | Win privesc · potato-seimpersonate           |
-| `shadow_credentials_keycredentiallink_5136`                   | 5136 msDS-KeyCredentialLink                                                                                                                               | T1556     | AD attack paths · shadow-credentials-certipy |
-| `rbcd_allowedtoact_5136`                                      | 5136 msDS-AllowedToActOnBehalf…                                                                                                                           | T1098     | AD attack paths · rbcd-impacket              |
+| Rule                                                          | Event / source                                                                                    | ATT&CK    | Validate with                                |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------- |
+| `adcs_esc1_san_mismatch_4886`                                 | 4886/4887 cert request                                                                            | T1649     | AD CS abuse · adcs-esc1-certipy              |
+| `potato_seimpersonate_4688` / `potato_seimpersonate_sysmon_1` | proc create (service→shell); per-channel pair (4688 `SubjectUserName` / Sysmon-1 `ParentUser`)    | T1134.001 | Win privesc · potato-seimpersonate           |
+| `spoolss_pipe_impersonation_sysmon_17`                        | Sysmon 17 PipeEvent (`\spoolss` created by anything but `spoolsv.exe`)                            | T1134.001 | Win privesc · potato-seimpersonate           |
+| `token_theft_parent_child_mismatch_sysmon_1`                  | Sysmon 1 (SYSTEM child, service-identity `ParentUser`); no Image constraint; Sysmon 13+           | T1134.001 | Win privesc · potato-seimpersonate           |
+| `token_theft_process_target_subject_4688`                     | 4688 Target Subject (process created with a SYSTEM token by a non-SYSTEM creator)                 | T1134.001 | Win privesc · potato-seimpersonate           |
+| `shadow_credentials_keycredentiallink_5136`                   | 5136 msDS-KeyCredentialLink                                                                       | T1556     | AD attack paths · shadow-credentials-certipy |
+| `rbcd_allowedtoact_5136`                                      | 5136 msDS-AllowedToActOnBehalf…                                                                   | T1098     | AD attack paths · rbcd-impacket              |
 
 **`lateral_movement/`**
 
@@ -295,10 +296,23 @@ Two techniques carry a deliberate set of rules, covering different halves:
   FileCreate, which is **ACL-independent** and therefore covers the shares nobody put a
   SACL on, at the cost of enabling event 11. They are a per-source pair in the same sense
   as the `potato_seimpersonate` 4688/Sysmon-1 pair — genuinely different field names
-  (`ObjectName`/`ProcessName` vs `TargetFilename`/`Image`), so one rule naming both would
-  null under either pipeline. (The mechanics carry across; the framing does not. These two
-  see the same act on two sources. The potato pair, since #239, is two different invariants
-  covering one technique.)
+  (`ObjectName`/`ProcessName` vs `TargetFilename`/`Image`).
+  **Why a pair and not one rule naming both**, stated correctly: not because a combined rule
+  would null — measured, it compiles under both pipelines and an `OR` of the two field sets
+  fires correctly on each channel — but because the **logsource resolves to one EventID per
+  pipeline**, and the pipeline you compile with is what picks the channel. `category:
+  file_event` becomes `EventID=11` under `sysmon`; `process_creation` becomes `EventID=1`
+  under `sysmon` and `4688` under `windows-audit`, *whichever* of the two rules you feed it.
+  So one rule compiled once covers one channel no matter which fields it names, and you would
+  deploy it twice anyway. Two rules, each naming only its own channel's fields, is the same
+  coverage with no dead predicate evaluated against every event — and it is honest about
+  which telemetry each one needs. The `null` claim this paragraph used to make is corrected in
+  the correlation section below, where it is measured.
+  Note what the pairing itself cost to establish: the potato pair named the wrong Sysmon field
+  for two months (`User`, the child, rather than `ParentUser`, the creator) and looked like a
+  twin the whole time, because the two agree on every event except the attack. A per-channel
+  pair is only a pair once someone has checked that the two fields mean the same thing — see
+  `docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md`.
   Deploy whichever you collect; deploy both if you collect both.
 
 **`collection/`** (host-side collection — proc create 4688 / Sysmon 1, plus 4663 for the read sweep)
@@ -497,13 +511,36 @@ plane the volume of deletes *is* the signal: a wiper that only calls `DeleteObje
 would never trip a distinct-verb count, and unlike a file read there is no benign
 process that issues ten destructive API calls a minute. The two process-creation correlations
 (`host_recon_command_burst`, `service_stop_burst`) group by `Computer` rather than by
-account on purpose — the actor field differs per channel (Security-4688
-`SubjectUserName`, the creator, vs Sysmon-1 `User`, the created process) and naming either
-would null the rule under the other channel's pipeline, the same trap the
-`potato_seimpersonate` 4688/Sysmon-1 pair documents. Note those two are not even the same
-field semantically, which is what #239 established — one more reason not to key a
-correlation on either.
-Both bursts are a property of the host anyway.
+account. **This used to be explained as a workaround for a pipeline limitation, and that
+explanation was wrong on the facts.** It is worth stating what is actually true, because
+this paragraph is cited as precedent elsewhere in this file.
+
+What was claimed: that naming `SubjectUserName` or `User` in `group-by` would *null* the
+rule under the other channel's pipeline. Measured with the CI pins (`sigma-cli 3.0.2`,
+`pysigma 1.5.0`), it does not. `group-by` fields are passed through **completely unmapped** —
+`SubjectUserName` survives verbatim under the `sysmon` pipeline, `User` under
+`windows-audit` — while detection fields *are* mapped (`Image` → `NewProcessName`). Nothing
+nulls and nothing is dropped. The rule compiles cleanly and then groups by a field the
+channel does not carry, so every event lands in one null bucket and the threshold silently
+stops meaning what it says. That is worse than nulling, because nulling is visible.
+
+Why `Computer` is nonetheless right, on its own merits rather than as a fallback:
+
+- **A burst is a property of the host, and one operator's burst spans identities.** The
+  landing account runs some recon, the operator escalates, the escalated account runs more —
+  which is not hypothetical: it is the sequence captured in
+  `privesc_rotten_potato_from_webshell_metasploit_sysmon_1_8_3.evtx`, discussed in
+  `docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md`. Grouping by account
+  splits that into two sub-threshold buckets; grouping by host keeps it whole.
+- **Account-grouping hands the operator a trivial evasion** — split the sweep across two
+  identities and stay under the threshold on both. There is no equivalent move against a
+  host key short of moving hosts, which is itself the next detection.
+- **Actor is reachable but costs more than it is worth here.** Since #239 the per-channel
+  counterparts are known: 4688's creator is `SubjectUserName`, Sysmon-1's is `ParentUser`
+  (*not* `User`, which is the new process). So an actor-grouped variant could be written —
+  but `ParentUser` needs Sysmon 13+, and both base rules are deliberately build-agnostic,
+  naming only `Image` and `CommandLine`. It would gate the rule on an agent version for a
+  reason unrelated to what it detects.
 
 The `linux/`, `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,
 `gitlab/`, `vault/`, `terraform/`, `jenkins/`, `snowflake/`, `google_workspace/`,

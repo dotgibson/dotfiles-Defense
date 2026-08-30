@@ -69,8 +69,15 @@ description: |
   the ransomware kill chain in progress, not two maintenance tasks - alert-chain them
   if your backend supports it.
   Counting DISTINCT command lines makes a retry loop against one stubborn service
-  count once, while a walk through many services trips it. Tune to your build: patch
-  windows and application-deployment hosts are the baseline that shifts it.
+  count once, while a walk through many services trips it.
+  Grouping by Computer rather than by account is the same deliberate choice
+  host_recon_command_burst.yml makes, for the same measured reasons - the teardown is a
+  property of the host being stripped, not of whichever context each kill ran in, and an
+  account key would split one teardown across identities and let an operator stay under the
+  threshold by alternating them. The full derivation, including why the pipeline-nulling
+  explanation its sibling used to carry is false, is in detections/README.md.
+  Tune to your build: patch windows and application-deployment hosts are the baseline that
+  shifts it.
   Validate (purple): run the ransomware-precursor fold from dotfiles-Offense alongside
   the recovery-inhibition commands (htpx pair inhibit-recovery-vssadmin). Requires the
   Process Creation audit subcategory (4688) or Sysmon EventID 1.

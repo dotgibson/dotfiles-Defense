@@ -18,9 +18,13 @@
 #   1. every manifest-referenced fixture has a row in fixture-provenance.tsv
 #   2. every row's provenance is one of the three known values
 #
-# Deliberately NOT a check: that anything is captured or vendor-documented. Today
-# everything is `unverified`, which is the honest state — Phase 3 is not done. Failing on
-# that would be failing on the truth rather than on a regression.
+# Deliberately NOT a check: that anything is captured or vendor-documented, nor any floor on
+# how many rows have reached either tier. The distribution is a fact about how much of the
+# corpus has been measured, not a property a gate should enforce — a rule authored today
+# starts at `unverified` and that is the honest state, so failing on it would be failing on
+# the truth rather than on a regression. The run summary prints the live counts; the tiers
+# move only when a lab run in docker/validation/labruns/ earns it, and `captured` is reserved
+# for first-party capture, which nothing has yet.
 #
 # Usage: docker/validation/check-fixture-provenance.sh [repo-root]
 # Exit:  0 = every fixture accounted for;  1 = otherwise
