@@ -29,7 +29,12 @@ description: |
   single channel whatever fields it names.
   Deploy both; whichever channel your hosts forward will match.
   This rule's own behaviour on a real potato is still unconfirmed - no 4688 from one was found
-  in the pinned corpus, so #239's question about it stays open.
+  in the pinned corpus, so #239's question about it stays open. Its fixture proves only that it
+  fires on the event shape we believe in, and that shape rests on the same Creator-Subject
+  reading token_theft_process_target_subject_4688.yml flags as its one open assumption: if the
+  audit reads the impersonating THREAD token rather than the calling process's, SubjectUserName
+  arrives as SYSTEM and this rule is silent too. The run that settles both is item 2 of
+  docker/validation/labruns/runbook-potato-seimpersonate.md (dotgibson/dotfiles-Defense#246).
   Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate).
 references:
@@ -37,7 +42,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/potato-seimpersonate-4688.md
 author: dotfiles-Defense
 date: 2026-06-30
-modified: 2026-08-29
+modified: 2026-08-30
 tags:
   # T1134.001 is dual-tactic in ATT&CK v19 — TA0004 and TA0005 (Stealth) — and only the
   # TA0004 half is claimed here. That is deliberate, not an oversight

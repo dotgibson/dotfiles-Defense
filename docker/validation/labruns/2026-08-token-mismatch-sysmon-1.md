@@ -1,11 +1,11 @@
 # Does a parent/child identity mismatch on Sysmon 1 detect the potato, and what does it cost?
 
-- **Date:** 2026-08-29
+- **Date:** 2026-08-29, re-measured over the full corpus 2026-08-30
 - **Issue:** follow-on from
   [dotgibson/dotfiles-Defense#239](https://github.com/dotgibson/dotfiles-Defense/issues/239),
   which measured the field semantics this rule depends on
-- **Outcome:** the shape works — **4 of 4** real potato captures, **0** other matches across
-  147 records — and the measurement also killed the variant that looked more elegant
+- **Outcome:** the shape works — **5 of 6** real potato captures, **0** other matches across
+  **1491** records — and the measurement also killed the variant that looked more elegant
 
 ## The question
 
@@ -29,17 +29,17 @@ The same third-party capture set as
 [`2026-08-potato-sysmon1-user-semantics.md`](2026-08-potato-sysmon1-user-semantics.md), which
 carries the full provenance discussion: `sbousseaden/EVTX-ATTACK-SAMPLES` pinned at
 `4ceed2f4706daf601c212a8f91c113dd85349a2c`, parsed with `chainsaw 2.16.4`, normalised with
-`docker/validation/evtx-to-fixture.sh --event-id 1`. **170 samples swept, 12 of them carrying
-Sysmon EventID 1, 147 Sysmon-1 records in total**, of which four are potato swap events
-(RogueWinRM, NetworkServiceExploit, RottenPotato from an IIS webshell, EfsPotato — three hosts,
+`docker/validation/evtx-to-fixture.sh --event-id 1`. **All 278 EVTX swept, 1491 Sysmon-1
+records in total**, of which six are potato swap events (RogueWinRM, NetworkServiceExploit,
+RottenPotato from an IIS webshell, EfsPotato, RoguePotato, PrintSpoofer — four hosts,
 2019–2021).
 
-All four captures predate Sysmon 13, so none carries `ParentUser`. As in the #239 run it was
-derived per capture by linking each record to its parent's own Sysmon-1 record on
-`ParentProcessGuid` → `ProcessGuid`; 126 of the 147 records resolve a parent that way. That
-derivation is the load-bearing limit on everything below and is restated at the end.
+All six captures predate Sysmon 13, so none carries `ParentUser`. As in the #239 run it was
+derived by linking each record to its parent's own Sysmon-1 record on `ParentProcessGuid` →
+`ProcessGuid`; 1090 of the 1491 records resolve a parent that way. That derivation is the
+load-bearing limit on everything below and is restated at the end.
 
-## Finding 1 — the shape finds every potato in the corpus, and nothing else
+## Finding 1 — the shape finds every potato launched from a service context, and nothing else
 
 Engine: zircolite v3.7.6, pySigma 1.5.0, `--pipeline sysmon` — the same engine and pins the
 gate uses.
@@ -48,8 +48,22 @@ gate uses.
 selection:        User|contains: 'SYSTEM'
 selection_parent: ParentUser|contains: ['APPPOOL','NETWORK SERVICE','LOCAL SERVICE']
 
-  against the four potato captures      rc=0  FIRED matches=4
-  against all 147 Sysmon-1 records      rc=0  FIRED matches=4   (the same four)
+  against the six potato captures       rc=0  FIRED matches=5
+  against all 1491 Sysmon-1 records     rc=0  FIRED matches=5   (the same five)
+
+      LAPTOP-JU4M3I0E  EfsPotato.exe             -> whoami.exe     ParentUser=NT AUTHORITY\NETWORK SERVICE
+      MSEDGEWIN10      NetworkServiceExploit.exe -> cmd.exe        ParentUser=NT AUTHORITY\NETWORK SERVICE
+      MSEDGEWIN10      RogueWinRM.exe            -> cmd.exe        ParentUser=NT AUTHORITY\LOCAL SERVICE
+      MSEDGEWIN10      RoguePotato.exe           -> nc64.exe       ParentUser=NT AUTHORITY\LOCAL SERVICE
+      IEWIN7           notepad.exe               -> notepad.exe    ParentUser=IIS APPPOOL\DefaultAppPool
+
+The sixth, PrintSpoofer, is missed and should be: its operator was an already-interactive admin,
+so `ParentUser` reads `MSEDGEWIN10\IEUser` rather than a service identity. This rule's invariant
+is a SYSTEM child created by a SERVICE identity, and that capture is not one. It is the same
+record `potato_seimpersonate_sysmon_1.yml` uses as its true negative.
+
+Three payloads in that list — `whoami.exe`, `nc64.exe`, `notepad.exe` — are not named shells,
+which is the class this rule exists to catch and the potato pair's `Image` list cannot.
 ```
 
 ```text
@@ -72,16 +86,18 @@ ordinary boot and logon activity from `privesc_unquoted_svc_sysmon_1_11.evtx` �
 
 ## Finding 2 — the `Image` shell list would cost half the detections and buy nothing
 
-Three variants over the same 147 records:
+Three variants over the same 1491 records:
 
 | Selection | potato hits | other matches |
 | --- | --- | --- |
-| `User`=SYSTEM + `ParentUser`=service, **no `Image`** | **4 / 4** | 0 |
-| the same, plus the pair's `Image` shell list | 2 / 4 | 0 |
-| the shipped `potato_seimpersonate_sysmon_1` (`ParentUser` + `Image`) | 2 / 4 | 0 |
+| `User`=SYSTEM + `ParentUser`=service, **no `Image`** | **5 / 6** | 0 |
+| the same, plus the pair's `Image` shell list | 2 / 6 | 0 |
+| the shipped `potato_seimpersonate_sysmon_1` (`ParentUser` + `Image`) | 2 / 6 | 0 |
 
-The two the shell list drops are RottenPotato (`notepad.exe`) and EfsPotato (`whoami.exe`).
-It removes no noise, because there is none to remove. **So the rule ships without an `Image`
+The three the shell list drops are RottenPotato (`notepad.exe`), EfsPotato (`whoami.exe`) and
+RoguePotato (`nc64.exe`). It removes no noise, because across 1491 records there is none to
+remove. (The sixth capture, PrintSpoofer, is outside every row's reach for the separate reason
+in Finding 1: its creator is a named user, not a service identity.) **So the rule ships without an `Image`
 constraint**, which is the same argument `token_theft_process_target_subject_4688.yml` already
 makes for itself on the 4688 plane — it survives `-c nc.exe`, `-c whoami`, and any payload that
 is not a named shell.
@@ -100,8 +116,22 @@ three named identities:
   condition: selection and not filter_same_context
 ```
 
-On this corpus it is indistinguishable: the same 4 of 4, nothing else. It is still the wrong
-choice, and the reason only shows up in conversion:
+Over 147 records it looked indistinguishable. Over all 1491 it is not: it matches **8**, and
+the three beyond the shipped shape's five are instructive rather than reassuring.
+
+```text
+  MSEDGEWIN10  PPLdump.exe    -> services.exe    User=NT AUTHORITY\SYSTEM  ParentUser=MSEDGEWIN10\IEUser
+  MSEDGEWIN10  PrintSpoofer.exe -> powershell.exe User=NT AUTHORITY\SYSTEM  ParentUser=MSEDGEWIN10\IEUser
+  MSEDGEWIN10  -              -> svchost.exe     User=NT AUTHORITY\SYSTEM  ParentUser=-
+```
+
+The first two are arguably wanted — PPLdump is a real privilege-escalation tool, and
+PrintSpoofer is the potato the narrower shape misses — so on hits alone the filter form looks
+*better*. The third is the tell: `ParentUser` is `-`, Sysmon's placeholder for a parent it could
+not resolve, and `-` does not contain `SYSTEM`, so a negated filter passes it through. A rule
+whose selection is "anything not matching" inherits every unresolvable value as a match. 401 of
+the 1491 records resolve no parent at all, so that is not a corner case. It is still the wrong
+choice for the reason below as well, which only shows up in conversion:
 
 ```text
 positive form   splunk  EventID=1 User="*SYSTEM*" ParentUser IN ("*APPPOOL*", "*NETWORK SERVICE*", "*LOCAL SERVICE*")
@@ -135,7 +165,8 @@ both rather than treating one as the other's fallback.
 Windows populates 4688's Target Subject block only when creator and target "do not share the
 same logon", so the OS asserts the mismatch instead of leaving a rule to infer it, and it keys
 on the SID `S-1-5-18`, which localisation does not move. Sysmon 1 carries **no SID field** —
-verified against every one of the 147 records — so this rule must match the string `SYSTEM`,
+verified against every one of the 1491 records, whose 23 distinct `EventData` keys include no
+`*Sid` at all — so this rule must match the string `SYSTEM`,
 and a locale that translates the account name defeats it.
 
 The compensation is real. The open question on the 4688 rule (#238) is whether the audit reads
@@ -147,13 +178,15 @@ stands.
 
 ## What this run does NOT settle
 
-- **`ParentUser` was never observed on a potato.** All four potato captures predate Sysmon 13.
+- **`ParentUser` was never observed on a potato.** All six potato captures predate Sysmon 13.
   The values above were derived by GUID-linking each record to its parent's own Sysmon-1
-  record. This proves the rule selects the right *field semantics* on real process trees; it
-  does not prove it fires on an untouched captured event. The first-party run tracked by #239
-  closes that, and it closes it for this rule at the same time.
-- **The zero-false-positive result is "not yet met", not "does not occur".** The corpus is an
-  attack-sample collection. It contains no EDR, RMM or patch agent, which is precisely the
+  record; 1090 of the 1491 records resolve a parent that way, and the 401 that do not are the
+  same population that makes the negated-filter variant in Finding 3 unsafe. This proves the rule selects the right *field semantics* on real process trees; it
+  does not prove it fires on an untouched captured event. The first-party run tracked by
+  dotgibson/dotfiles-Defense#246 closes that, and it closes it for this rule at the same time.
+- **The zero-false-positive result is "not yet met", not "does not occur".** It is now measured
+  over 1491 records rather than 147, which is a stronger negative set but not a representative
+  one: the corpus is an attack-sample collection. It contains no EDR, RMM or patch agent, which is precisely the
   benign population that legitimately spawns SYSTEM helpers from a service identity. That
   false-positive class is stated in the rule and is not measured here.
 - **The locale exposure is reasoned, not measured.** Every host in the corpus is

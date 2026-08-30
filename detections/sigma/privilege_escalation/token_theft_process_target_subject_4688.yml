@@ -70,6 +70,24 @@ description: |
   and the fixture behind this rule proves only that the rule fires on the shape we believe
   in. The lab run below settles it, and settles the same question for the potato pair,
   which has never been confirmed to fire on a real potato either.
+  One route to that failure has since been ruled out, and one has not. The worry was broader
+  than the thread token: CreateProcessWithTokenW is serviced by the Secondary Logon service in
+  svchost.exe, so if seclogon created the process rather than the tool, Creator Subject would be
+  SYSTEM for a reason having nothing to do with which token the audit reads. Measured across all
+  six real potato captures in the pinned corpus, the escalated process's parent is the tool
+  itself, under the service identity, with no reparenting. The THREAD-token reading above is
+  untouched by that - it is a property of the audit subsystem rather than of the process tree.
+  What the same run DID confirm about this rule. Its fixtures' event-version-2 key set and field
+  order are identical to six captured 4688s, and the rule FIRES on one of them (zircolite
+  v3.7.6, --pipeline windows-audit): creator IEUser, target MSEDGEWIN10$ S-1-5-18, on a genuine
+  token swap. That is the first time it has fired on anything but its own fixture. The
+  falsepositives note below about pre-Windows-10 hosts is measured rather than feared too:
+  captured event-version-1 4688s from a Windows 7 host carry no Target Subject block at all -
+  nine keys, no Target*, no ParentProcessName - and this rule is correctly silent on them. One
+  observation against it: a captured 4688 can populate TargetUserName, TargetDomainName and
+  TargetLogonId while TargetUserSid reads the null SID S-1-0-0, and TargetUserSid is the only
+  one of the four this rule can see. See
+  docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md.
   Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate), then read the 4688
   the payload produced and compare its Creator Subject against the service identity.
@@ -80,6 +98,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/potato-seimpersonate-4688.md
 author: dotfiles-Defense
 date: 2026-08-29
+modified: 2026-08-30
 tags:
   # Both halves of T1134.001 are claimed here, and the TA0005 half is the point of the
   # rule. T1134.001 is dual-tactic in the pinned v19.2 bundle, so check-attack-tags.sh's

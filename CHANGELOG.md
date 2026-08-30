@@ -24,6 +24,40 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **The potato field semantics are now settled on a cross-channel join, and both fixtures are
+  captured records.** Extends the corpus work in #244: the sweep now covers all 278 EVTX rather
+  than the 170 matching `sysmon|proc`, which adds 42 Security 4688 records and two more potato
+  captures (RoguePotato, PrintSpoofer — six, not four), and the run record is one account rather
+  than two. Three things follow. The `User`-is-the-child reading no longer rests on
+  Sysmon-internal inference: the corpus holds one sample carrying
+  **both** a Sysmon 1 and a Security 4688 for the same process creation, and there Sysmon's
+  `User` matches 4688's *Target* while its `LogonId` matches `TargetLogonId` rather than
+  `SubjectLogonId` — a numeric identifier carried independently by two providers. A question a
+  `ParentUser` rule quietly depends on is now measured: `CreateProcessWithTokenW` is serviced by
+  the Secondary Logon service in `svchost.exe`, so had seclogon created the payload rather than
+  the tool, `ParentUser` would read SYSTEM and the rule would be inert — on all six captures the
+  parent is the tool, with no reparenting, which also rules out the seclogon route to the Creator
+  Subject caveat in `token_theft_process_target_subject_4688.yml`. And both potato fixtures are
+  now captured records rather than hand-authored ones: the TP is the `cmd.exe` RogueWinRM spawned
+  as SYSTEM from a LOCAL SERVICE context, the TN is a genuine PrintSpoofer run whose operator was
+  already an interactive admin, so it changes the `ParentUser` value and nothing else about the
+  event shape. `ParentUser` itself is still derived on both, and still says so
+  (dotgibson/dotfiles-Defense#239).
+
+- **`potato_security_4688.jsonl` was a three-key skeleton, and `token_theft_4688_*` were never
+  checked against a real event.** The 4688 potato fixture carried `NewProcessName`,
+  `SubjectUserName` and `SubjectUserSid` and omitted the twelve other fields every real 4688
+  carries; it is rebuilt on the captured event-version-2 key set and field order, with the Target
+  Subject block left **null on purpose** so it does not pre-judge #230. The `token_theft` 4688
+  fixtures needed no change — their key set proved identical to six captured 4688s — and that
+  rule **fired on real telemetry for the first time**, on a genuine token swap. Its
+  pre-Windows-10 falsepositives note is measured now too: captured event-version-1 4688s carry no
+  Target Subject block at all and the rule is correctly silent on them. One observation recorded
+  rather than fixed — a captured 4688 can populate `TargetUserName`/`TargetDomainName`/
+  `TargetLogonId` while `TargetUserSid` reads the null SID, and `TargetUserSid` is the only one of
+  the four that rule can see. Five provenance rows move to `vendor-documented`; none reaches
+  `captured`, because none of this is first-party.
+
 - **The "a rule naming both channels' fields nulls under either pipeline" claim was false, in
   all six places it appeared.** Repeated by the `potato_seimpersonate` pair, the T1486
   `mass_file_encryption` pair, `host_recon_command_burst`, and twice in `detections/README.md`
@@ -78,7 +112,8 @@ under `[Unreleased]` from here.
   assumed — on an older build the field is absent and the selection is silently unsatisfiable
   rather than noisy. Full measurement, and what it does not settle, in
   `docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md`. The 4688 half is
-  untouched and still unconfirmed on a real potato; #239 stays open for the first-party run.
+  untouched and still unconfirmed on a real potato; the first-party run is tracked as
+  dotgibson/dotfiles-Defense#246.
   Fixture corrected to the measured shape (it carried no `ParentUser` key at all) and renamed
   to `potato_sysmon1_tp.jsonl`, and the pair gains its first true negative.
 
@@ -104,6 +139,34 @@ under `[Unreleased]` from here.
   repo-owned files, not just the README.
 
 ### Added
+
+- **`\pipe\srvsvc` and `\pipe\epmapper` join the PipeEvent include list; EfsPotato and
+  RoguePotato stop being unwatched on the mechanism plane.** Measured while gathering evidence for #240: every potato in the pinned
+  `sbousseaden/EVTX-ATTACK-SAMPLES` corpus that stands up its own pipe uses the nested
+  `\<something>\pipe\<endpoint>` shape, and two of the three do it on names nothing collected —
+  EfsPotato on `\dd4c18dc-…\pipe\srvsvc`, RoguePotato on `\RoguePotato\pipe\epmapper`, both
+  carrying their own `Image` on the create. `detections/sysmon/sysmonconfig-detection-lab.xml`
+  dropped both events before Sigma ever saw them, which is the blocking constraint #240 records.
+  The entries are deliberately `\pipe\srvsvc` and `\pipe\epmapper` rather than the bare names,
+  and the measurement is the same shape twice: 7 of the 61 PipeEvent records match bare `srvsvc`
+  and five are ordinary share enumeration (NetShareEnum, NetSessionEnum) arriving as `\srvsvc`
+  from `Image=System`; 3 match bare `epmapper` and one is the legitimate endpoint mapper arriving
+  as `\epmapper`. The narrow forms collect 2 apiece and leave the routine traffic out. Wanting
+  that traffic is a separate decision and a separate rule.
+  Worth recording on the `epmapper` side: that legitimate record is `Image=System`, not
+  `svchost.exe`, so the `filter_legit: Image|endswith: '\svchost.exe'` #240 proposed would not
+  have filtered it. Narrowing the collection is what does the job the Image filter was expected
+  to do.
+  **No rule reads either name yet**, which is the telemetry-ahead-of-detection hole #225 and
+  #229 each closed one name at a time. Both are filed with the collection rather than after it,
+  as dotgibson/dotfiles-Defense#248, and the config's comment block — which tracks which rule
+  reads which name and why any name is unread — now distinguishes the two kinds of unread name:
+  `lsarpc` because a rule there would be unfilterable volume and that is a decision,
+  `\pipe\srvsvc` and `\pipe\epmapper` because the rule is owed. Closes
+  dotgibson/dotfiles-Defense#240, whose three open questions carry to #248 — the volume one in
+  particular, since no legitimate *create* of either name was observed and none of these captures
+  spans a boot. `Ledger: unchanged — collection only, no rule, no tactic or technique count
+  moves.`
 
 - **A Sysmon-plane rule for the token swap itself, and the Stealth row widens a third time
   (follow-on to #239).** #239 established that Sysmon 1's `User` is the new process and
