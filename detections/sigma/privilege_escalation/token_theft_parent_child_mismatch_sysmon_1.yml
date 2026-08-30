@@ -14,11 +14,15 @@ description: |
   shell - the shape BEFORE the token is stolen, keyed on the creator alone - and concedes
   it cannot show the run-as-SYSTEM result. This rule's entire selection IS that result,
   and it carries no Image constraint, so it survives a payload that is not a shell.
-  Measured on the captures behind dotgibson/dotfiles-Defense#239: against the four real
-  potato captures in the pinned corpus (RogueWinRM, NetworkServiceExploit, RottenPotato
-  from an IIS webshell, EfsPotato) this rule fires on 4 of 4, where the potato pair fires
-  on 2 - the two it misses spawn notepad.exe and whoami.exe. Across all 147 Sysmon-1
-  records swept, its only four matches are those four swaps.
+  Measured on the captures behind dotgibson/dotfiles-Defense#239, re-measured over the
+  full corpus: against the six real potato captures in the pinned corpus (RogueWinRM,
+  NetworkServiceExploit, RottenPotato from an IIS webshell, EfsPotato, RoguePotato,
+  PrintSpoofer) this rule fires on 5 of 6, where the potato pair fires on 2 - the three it
+  adds spawn notepad.exe, whoami.exe and nc64.exe, none of them a named shell. The sixth,
+  PrintSpoofer, is missed and should be: its operator was already an interactive admin, so
+  ParentUser reads a named user, and the invariant this rule states - a SYSTEM child created
+  by a SERVICE identity - does not hold there. Across all 1491 Sysmon-1 records swept, its
+  only five matches are those five swaps.
   How it relates to the 4688 rule, and why both are worth deploying.
   token_theft_process_target_subject_4688.yml (id 1faa7a59-9fd5-4d14-9bf1-d94f82466acb)
   makes the stronger claim on the stronger evidence - Windows populates 4688's Target
@@ -42,10 +46,15 @@ description: |
   spent two months keyed on the wrong one. Do not reverse them.
   A broader shape was considered and rejected: selection User|contains SYSTEM with
   filter_same_context ParentUser|contains SYSTEM, mirroring the 4688 rule's structure so
-  as to catch any non-SYSTEM creator rather than three named identities. It finds the same
-  4 of 4 on this corpus and nothing more, so it buys no coverage here - and it converts to
-  Splunk as `User="*SYSTEM*" NOT ParentUser="*SYSTEM*"`, where NOT on a missing field
-  MATCHES. On a pre-Sysmon-13 host, which emits no ParentUser at all, that form fires on
+  as to catch any non-SYSTEM creator rather than three named identities. Over 1491 records
+  it matches 8 where the shipped shape matches 5, and the three extra are the argument
+  against it rather than for it. Two are arguably wanted - PPLdump, and the PrintSpoofer
+  this shape misses - but the third carries ParentUser = `-`, Sysmon's placeholder for a
+  parent it could not resolve, which does not contain SYSTEM and so passes a negated filter.
+  401 of the 1491 records resolve no parent, so inheriting every unresolvable value as a
+  match is not a corner case. It also converts to Splunk as
+  `User="*SYSTEM*" NOT ParentUser="*SYSTEM*"`, where NOT on a missing field MATCHES. On a
+  pre-Sysmon-13 host, which emits no ParentUser at all, that form fires on
   every SYSTEM process creation on the box (50 such records in this corpus) while the
   zircolite/SQLite backend the gate runs stays silent on the same rule and the same events.
   A rule that is quiet in CI and floods one backend in production is the #149 shape with a
@@ -100,8 +109,9 @@ falsepositives:
   - ParentUser requires Sysmon 13.00 or later. On an older build the field is absent entirely
     and the selection is silently unsatisfiable rather than noisy, so this rule's silence on
     such a host is not evidence of absence - verify against a real Sysmon 1 before trusting
-    it. Of 147 Sysmon-1 records swept across the pinned EVTX corpus, only the one from a 2022
-    host carries ParentUser at all.
+    it. Of 1491 Sysmon-1 records swept across the pinned EVTX corpus, exactly four carry
+    ParentUser at all, and two of those carry the `-` placeholder for a parent Sysmon could
+    not resolve - the only clean one is from a 2022 host.
   - A non-English host may render the SYSTEM account in a translated form that
     User|contains 'SYSTEM' does not match, in which case the rule is silently unsatisfiable.
     Security-4688 has no such exposure because it keys on the SID; Sysmon 1 carries no SID

@@ -106,8 +106,10 @@ falsepositives:
   - ParentUser requires Sysmon 13.00 or later. On an older build the field is absent entirely
     and the selection is silently unsatisfiable rather than noisy, so this rule's silence on
     such a host is not evidence of absence - verify against a real Sysmon 1 before trusting it.
-    This is measured rather than assumed - of 147 Sysmon-1 records swept across the pinned
-    EVTX corpus, only the one from a 2022 host carries ParentUser at all. The shipped
+    This is measured rather than assumed - of 1491 Sysmon-1 records swept across the pinned
+    EVTX corpus, exactly four carry ParentUser at all, and two of those carry the `-`
+    placeholder for a parent Sysmon could not resolve; the only clean one is from a 2022
+    host. The shipped
     detections/sysmon/sysmonconfig-detection-lab.xml is schemaversion 4.90 (Sysmon 15.x) and
     captures all ProcessCreate, so a lab endpoint emits it.
 level: medium
