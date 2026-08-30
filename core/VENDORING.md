@@ -54,7 +54,7 @@ core_ref=v4.10.0-release      # the ref that was FOLLOWED — see below
 core_tag=v4.10.0              # only once Core carries a tag describing that commit
 ```
 
-`core_tag` names the **specific release**, never the moving `v4` major alias. Both tags point
+`core_tag` names the **specific release**, never the moving `vN` major alias. Both tags point
 at a release commit, and `git describe` used to be free to pick either — so every repo in the
 fleet once stamped `core_tag=v4`, a provenance field whose target is deliberately re-pointed on
 the next cut (#515). `sync-core.sh` now filters describe to the `vX.Y.Z` shape; when only the
@@ -118,7 +118,7 @@ workflow.
 `sync-core.sh` therefore moves the pins in the **same commit** that stamps `core.lock`. Two
 rules govern what it touches:
 
-- Only an **existing 40-hex pin** moves. A caller on the mutable `@v4` alias is left alone —
+- Only an **existing 40-hex pin** moves. A caller on the mutable `@vN` alias is left alone —
   taking the alias is a deliberate per-repo policy (most of the fleet does, and it is what
   lets a guard fix reach them with no edit), so converting one into a SHA pin would change
   that repo's update model behind its back.
@@ -158,17 +158,45 @@ together, and `sync-fanout.yml` runs it for you on every release. If you have al
 it by hand, the fix is to re-run the fan-out from Core rather than to patch the lock. See
 `RELEASE-STRATEGY.md` on the pinning model.
 
-**And do not reach for a local `make core-lock`.** Four consumers have one — `dotfiles-Arch`,
-`dotfiles-MacBook`, `dotfiles-openSUSE` and `dotfiles-Offense` — and only Offense's is a
-redirect back to the fan-out. The other three are **independent generators of a format Core
-owns**, and they have already drifted from it and from each other: Arch hardcodes
-`core_branch=main` (so regenerating a release-pinned lock silently discards which commit was
-vendored), openSUSE writes the SHA into that field, and MacBook reads the previous value
-back. None of them knows about the `core_ref` rename (#453), so running one now produces a
-lock file the fleet's own tooling and this document disagree with.
+**And do not reach for a local `make core-lock`.** `sync-core.sh` **in this repo** is the only
+writer of `core.lock` in a fan-out repo, and the reason is the paragraph above: it stamps the
+lock in the same commit that materializes `core/`, so the two agree by construction. A second
+generator cannot be kept in step with that by discipline, and the fleet has already run that
+experiment. `dotfiles-Arch`, `dotfiles-MacBook` and `dotfiles-openSUSE` each carried an
+independent generator of a format Core owns, and each had drifted from it in its own direction:
+Arch hardcoded `core_branch=main`, so regenerating a release-pinned lock silently replaced the
+vendored commit with a branch name; openSUSE resolved `core_sha` from the tag matching
+`core/core.version` rather than from the commit actually in `core/`; MacBook re-derived the sha
+by parsing the squash trailer — the lookup this file exists so nobody has to do — and carried
+the previous `core_branch` value forward, preserving a wrong one rather than correcting it. Two
+of the three also re-emitted the `Regenerate … with: make core-lock` header that #454 removed,
+reintroducing the instruction they existed to serve. None of them knew about the `core_ref`
+rename (#453).
 
-`sync-core.sh` is the **only** sanctioned writer of `core.lock`. A second generator cannot be
-kept in step with it by discipline — that is what these three demonstrate.
+All three were retired in #593, and that is the state today. Each of those repos now has a
+`make core-lock` that **writes nothing** — it prints why the generator was removed, names its
+own retired defect, and points back at `make sync` from a Core checkout. `dotfiles-Offense`'s
+runs a read-only freshness check and does the same. So the four redirects are the enforcement
+of the rule rather than four breaches of it; what they demonstrate is why the rule is worth
+having.
+
+**The one deliberate second writer is `dotfiles-Offense`.** It vendors Core on its own schedule
+rather than only on the fan-out: `make core-sync` runs that repo's own `scripts/sync-core.sh`,
+a `git subtree pull --squash` which then stamps all four fields — the operation the paragraph
+above forbids _by hand_, made safe by the half a hand-pull omits. That is sanctioned, and is
+not the thing the three retired generators were, because it writes Core's format from **what
+it actually pulled**: `core_sha` comes from the squash commit's `git-subtree-split` trailer and
+`core_version` from the tree now on disk, so the lock cannot describe a commit its own `core/`
+does not contain. The consequence worth knowing is that Offense has **two** paths into `core/`
+— the fan-out, which replaces the tree, and its own pull, which merges — and `core-integrity`
+gates both, because both stamp the lock. Any _other_ repo growing a writer is a regression to
+the state above, not a second exception.
+
+**`core_branch` is gone as of v5.** No `core.lock` in the fleet carries it; all nine are
+Core-stamped with `core_ref`. The last reader of the old name is Offense's `sync-core.sh`,
+which falls back to it and migrates it on write — dead against every lock that exists, kept
+only for one predating #453 that no repo has. A lock that somehow still says `core_branch` is
+pre-v5, and the fix is a sync, not a hand-patch.
 
 ## Number bands — where your files go
 
@@ -456,8 +484,8 @@ whatever `main` happened to be is not that commit, and `core-integrity` — whic
 validates `core/` against the commit `core.lock` records — reports a freshly
 hand-vendored repo as TAMPERED before it has done anything wrong.
 
-`subtree add` writes no `core.lock`. Stamp provenance from a Core checkout, which is
-the only sanctioned writer of that file:
+`subtree add` writes no `core.lock`. Stamp provenance from a Core checkout — for a repo
+with no lock yet that is the only thing which can write one:
 
 ```sh
 git checkout v5                                    # in dotfiles-core

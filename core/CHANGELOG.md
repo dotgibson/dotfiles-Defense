@@ -14,6 +14,219 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+### Added
+
+- **A gate for local gates that cannot do what their name says (#775).**
+  `scripts/lib/common.sh :: _core_make_gate_hits` reads a repo's `Makefile` and reports
+  three shapes, all found by hand across the fleet and none previously catchable:
+
+  - **A skip that cannot skip.** `command -v x || { echo "skipping"; exit 0; }` on one
+    recipe line, the tool on the next. `make` gives each recipe line its own shell, so the
+    `exit 0` ends only that line — the target announces a skip and then runs the missing
+    tool, exiting 127. Found in Debian, Fedora (×2), Offense (×3) and Defense (×2).
+  - **A check that cannot fail.** A checker ended with `;` before a success echo: the echo
+    runs regardless _and_ becomes the line's exit status, so findings print and the target
+    exits 0. openSUSE's `lint-sh` did this while its two siblings used `&&` and
+    `|| exit 1` — which is exactly why nobody looked at it.
+  - **A blocking CI leg with no local mirror.** A `.markdownlint.jsonc` that only CI ever
+    read, for a leg blocking since #592, plus the narrower case where the local target
+    globs `'*.md'` (top-level only) while the gate lints `git ls-files` recursively.
+
+  Rendered in two places, because the defect is in the callers and Core's audit can only
+  see Core: **§8d** of `audit-core.sh` keeps the authoring repo honest, and a new
+  **`make-gates`** leg in `lint-call.yml` judges each caller's own `Makefile`. Both drive
+  the shipped function rather than a copy — the discipline `_core_tool_skip_count`
+  records, where a test that re-implemented its subject stayed green while the defect it
+  existed to catch was fully reintroduced.
+
+  **Blocking**, and only because the fleet was cleared first. #592's markdown leg had to
+  ship advisory for a release because seven of nine callers would have gone red before a
+  maintainer could act; the nine #775 PRs merged while this was in review, so every
+  caller's `main` measures 0 and that staging is unnecessary here. The measurement is the
+  precondition, not a formality: a future rule that any caller fails must ship advisory
+  the way #592 did, because callers read `lint-call.yml` at the **moving** `@v5` tag and
+  meet a new rule the moment `auto-tag` moves — red on arrival, in a repo whose author
+  changed nothing. Recorded on the job so nobody loosens the rule to get past a red.
+
+  Three things worth recording about how it was built, because they are the reason to
+  trust it:
+
+  - **It found four defects the hand sweep missed** — Offense's `shellcheck` and `secrets`
+    (both exit 127 with the tool absent) and Defense's `core-check`, which is the worst of
+    the set: it prints its skip notice, runs `gh` anyway, and reports
+    `vendored core is 5.4.1, upstream is  — a sync from dotfiles-core is owed` from an
+    empty variable. A confidently wrong answer about fleet drift, not a crash.
+  - **The false positives shaped the rules more than the true ones.** A first draft used
+    "any `exit 0` before the last recipe line" and reported Alpine's `shell`, which guards
+    shellcheck and runs it _on the same line_ — a correct skip. It also flagged `lint-zsh`
+    and `zsh-syntax`, which handle failure with `|| exit 1` inside the loop. All three are
+    pinned as must-not-fire cases: a gate that cries wolf on working code teaches the
+    fleet to ignore it.
+  - **It was seen failing before being trusted.** The fixtures are the real pre-fix and
+    post-fix recipes copied verbatim, not synthetic approximations, and §8d was run
+    against a defect injected into Core's own `Makefile`. A guard for a historical defect
+    that is never run against that defect is the same category error it exists to fix.
+
+  The `audit-alpine` leg caught the guard doing the thing it hunts. Its markdownlint
+  reachability probe used `grep --exclude-dir` and `-I`, both GNU extensions; busybox grep
+  rejects the first, so the probe exited 2, that was read as "no mirror", and Core — the
+  repo that authors the rule — was reported as the one repo missing it. **A false finding
+  produced by an unsupported flag, in the gate whose entire subject is checks that answer
+  wrongly.** Neither flag was needed. The probe now also distinguishes "searched, absent"
+  from "could not search", and stays silent in the second case: unknown and absent are
+  different facts and only one is a defect. Pinned by a fixture that rejects those flags
+  exactly as busybox does, so a developer box catches it without an Alpine runner.
+
+  Complements, and does not replace, `dotfiles-MacBook/test/check-skip-guards.sh`, which
+  tests the first shape at _runtime_ by rebuilding a PATH without the guarded tool. That
+  is stronger evidence per finding but can only judge the repo it sits in; this is the
+  static, fleet-portable half.
+
+### Fixed
+
+- **Footnote `¹⁴` said `ouch` was "unpackaged on Alpine outright". It is in
+  `edge/testing`, and the matrix already said so one line away.** `PORTING-MATRIX.md`'s
+  `ouch` row carries `testing¹⁴` in its Alpine cell; the footnote that cell points at then
+  denied it, splitting `ouch` off from `duf`/`glow`/`tealdeer` as a fourth, distinct case.
+  Re-queried on pkgs.alpinelinux.org: **`ouch` 0.6.1-r0, `edge`/`testing`**, maintainer
+  listed, built 2025-05-28, on x86_64 and aarch64 — and absent from v3.21, v3.22, v3.23 and
+  v3.24, each queried individually. That is exactly the other three's shape
+  (`duf` 0.9.1-r9, `glow` 3.0.0-r0, `tealdeer` 1.8.0-r0, all `edge`/`testing`, none on
+  stable). The footnote now reads `testing`-only and groups all four; the table cell was
+  right and is unchanged.
+
+  **How the file came to contradict itself is the part worth recording.** This cell was
+  already corrected once, the OTHER way: an earlier `/os-package-availability` stamp set
+  Alpine's `ouch` to `testing`. Then #519 flipped `¹⁴` back, citing `dotfiles-Alpine`'s
+  `bootstrap.sh` comment ("also unpackaged on Alpine — cargo only") as its evidence — and
+  that comment was itself wrong. Two documents agreeing is not two sources; a claim about
+  what a distro packages is only ever settled by querying the distro. The `bootstrap.sh`
+  comment is corrected in the same sweep (dotgibson/dotfiles-Alpine#146), so the citation
+  and the cited now say the same true thing.
+
+  **Nothing operational changes.** `testing` is not enabled on a stable release and `ouch`
+  is on no stable branch, so `cargo install --locked ouch --no-default-features` remains
+  its real source on Alpine — as does the bzip3/bindgen reason for those flags, which is
+  unaffected and kept verbatim. The neighbouring `¹⁷` is also left alone: `jnv` returns no
+  results on edge including `testing`, so it is the genuinely-unpackaged one.
+
+- **Footnote `³⁴`'s jq security floor omitted the branch furthest below it.** The fleet
+  position named Alpine 3.22/3.23/3.24 (1.8.1) as below the recorded ≥ 1.8.2 floor but
+  skipped **Alpine 3.21, which carries 1.7.1-r0** — further below than any Alpine branch
+  listed, and a branch the fleet still supports (EOL 2026-11-01; `dotfiles-Alpine`'s
+  `install/packages.txt` reasons about it explicitly for `yazi` and `gron`). Now listed with
+  the other 1.7.1 builds. Verified alongside the rest: edge 1.8.2-r0, v3.22/v3.23/v3.24
+  1.8.1-r0, v3.21 1.7.1-r0.
+
+- **`watchexec` 2.7.0 on Arch and Homebrew — the same bullet, one release later.**
+  (`PORTING-MATRIX.md`) Footnote `²⁵`'s Arch/Homebrew bullet read 2.6.1, with `2.6.1-1` as Arch's
+  package revision. Both have moved to **2.7.0** (`2.7.0-1`), and the block's `versions
+  re-verified` stamp is now 2026-08-30. The `verified 2026-08-12` and `Linux-repo coverage
+  re-verified 2026-08-21` stamps beside it are deliberately unchanged: only versions were
+  re-checked, not availability or which Linux repos carry it.
+
+  Re-checked against each repo's own package pages, per the convention the footnote declares —
+  `formulae.brew.sh` (2.7.0, neither deprecated nor disabled) and `archlinux.org` (2.7.0-1). The
+  other four bullets hold unchanged: openSUSE Tumbleweed and nixpkgs 2.5.1, Alpine `community`
+  2.5.1-r0, GURU 2.5.0 (still the top non-`9999` ebuild), and Fedora/Debian/Kali packaging it
+  nowhere. So the two-way split #611 introduced is still the right shape, and the parenthetical
+  explaining it still reads true — Arch and Homebrew moved together again.
+
+  This is the **second** bump of this line in eight days; #611 stamped 2.6.1 on 2026-08-23. That
+  cadence is inherent to recording an exact version for a fast-moving upstream, and it is still
+  worth recording here, because the cell's whole claim is that Homebrew packages `watchexec`
+  while the MacBook `Brewfile` is the one ²¹ entry that deliberately declines it — a reader
+  checking that wants a date beside the number. That assertion is unchanged, and so is the
+  `Brewfile`: the audit that surfaced this found all 77 entries resolving under their canonical
+  names, none deprecated or disabled.
+
+  Surfaced by `/os-package-availability macbook` (dotfiles-MacBook#211).
+
+- **`VENDORING.md` described a resolved `core.lock` defect as a live hazard (#670).** It
+  warned, in the present tense, that three OS repos independently generate `core.lock` and
+  "have already drifted from it and from each other" — naming Arch's hardcoded
+  `core_branch=main`, openSUSE's SHA-in-that-field, and MacBook's read-back of the previous
+  value. #593 retired all three more than a release ago. Every one of the four `make
+  core-lock` targets in the fleet is now an echo-only redirect that writes nothing and names
+  its own retired defect in the past tense (Offense's runs a read-only freshness check and
+  points at its own pull). Telling a reader the fleet is in a state it is not in is worse
+  than silence: it also spends the credibility of the surrounding warnings, which are still
+  live.
+
+  The paragraph now states the rule that survives — Core's `sync-core.sh` is the only writer
+  of `core.lock` in a fan-out repo, because it stamps the lock in the same commit that
+  materializes `core/` — and records the four redirects as the **enforcement** of that rule
+  rather than as breaches of it. The three retired generators stay in the text as the
+  evidence for why a second writer cannot be kept in step by discipline; they are no longer
+  presented as something to go and fix.
+
+- **The same stale claim stood in a second document.** `RELEASE-STRATEGY.md` also read
+  "three consumers carry an independent generator of a format Core owns, and all three have
+  already drifted from it", so correcting `VENDORING.md` alone would have left two Core
+  documents disagreeing about the repo's own rule — the shape of defect #668 had just
+  finished clearing out. Both now say one thing.
+
+- **The runbook told you a patch cut moves `v4`, four lines after saying the fleet pins
+  `@v5` (#672).** The v5.0.0 sweep corrected `RELEASE-RUNBOOK.md:183` to "currently `@v5`"
+  and stopped there, leaving the bullet 26 lines below it saying a PATCH or MINOR keeps "the
+  **same** alias (`v4` today)" and that every caller pinned `@v4` picks the change up. Read
+  literally on the next patch cut, that force-advances the **frozen** major — the exact
+  motion `RELEASE-STRATEGY.md` §"Pinning reusable workflows" forbids, and the one §8a was
+  built to catch on the receiving end. Three more live claims had gone the same way: the
+  straggler-hunt command (`grep -rl 'uses:.*@v4'`) now matches nothing fleet-wide and so
+  reports a clean sweep by construction, and `RELEASE-RUNBOOK.md` §2/§3a plus
+  `RELEASE-STRATEGY.md`'s release-paths table each described `dotfiles-Windows` as
+  SHA-pinning "rather than tracking `@v4`" — a contrast drawn against an alias nothing
+  tracks.
+
+  **The rest went version-neutral rather than being bumped**, which is the point: an `@vN`
+  that names no major cannot go stale, so this is the last time these lines need a sweep.
+  That covers `VENDORING.md`'s two live rules, the `freshness-triage` and `modernize`
+  routines' descriptions of what the fleet pins, and — deliberately outside the docs — the
+  same claims where they are stated in code. `sync-core.sh:370` was a verbatim twin of
+  `VENDORING.md`'s sentence about the mutable alias. Fixing the prose alone would have left
+  the docs and the code contradicting each other on one rule, which is the defect #668 and
+  #670 just finished clearing.
+
+  One site took the opposite treatment, and the distinction is the rule: `sync-core.sh`'s
+  `--help` still offered `refs/tags/v4` as the tag to vendor a new repo at — a ref the
+  reader **pastes**, not a claim they read, so it is corrected to a concrete `refs/tags/v5`
+  rather than genericized. That matches its own file's header, `ARCHITECTURE.md`,
+  `VENDORING.md`, `PORTING-MATRIX.md`, and the live default in `new-os-repo.sh`. It is the
+  one instance the v5.4.2 sweep missed while correcting its sibling in `new-os-repo.sh`, and
+  it was user-facing output the whole time.
+
+  The MAJOR worked example is now `@vN` → `@vN+1`, with the concrete v4→v5 commands kept but
+  framed as the historical cut they are. This **supersedes** the v5.0.0 note above declaring
+  that block "correct as written": it was, on the day it was written, and it stopped being
+  correct the moment `v5` shipped — which is the argument for not writing a present tense
+  that has to be swept every major. `CHANGELOG.md`, the proposal docs, the #515 history, and
+  the `dotfiles-managed v4` marker chain are untouched; the marker is an architecture
+  generation asserted by `bootstrap-test.yml` and the suite, not a tag alias.
+
+### Changed
+
+- **`core_branch` is documented as gone, and the flat "only sanctioned writer" claim is
+  qualified (#670).** Two things were true but unwritten. First, `dotfiles-Offense` is a
+  real second writer: `make core-sync` runs that repo's own `scripts/sync-core.sh`, a
+  `git subtree pull --squash` that stamps all four fields, and Offense's `CONTRIBUTING.md`
+  teaches it as the update route there. It is sanctioned — unlike the three retired
+  generators it writes Core's format from what it actually pulled, taking `core_sha` from the
+  squash commit's `git-subtree-split` trailer and `core_version` from the tree on disk, so
+  the lock cannot name a commit its own `core/` does not contain — but an unqualified "only
+  sanctioned writer" read as covering it and did not. `VENDORING.md` now names it as the one
+  exception, and notes the consequence: Offense has two paths into `core/`, the fan-out which
+  replaces the tree and its own pull which merges, and `core-integrity` gates both because
+  both stamp the lock.
+
+  Second, the pre-#453 `core_branch` field survives in no `core.lock` anywhere — all nine
+  fleet locks are Core-stamped with `core_ref` — so it is now documented as gone as of v5,
+  and a lock still carrying it is pre-v5 and fixed by a sync rather than by hand. Offense's
+  reader-side fallback (`scripts/sync-core.sh:80-82,183`,
+  `test/check-core-freshness.sh:59-63`) is the last consumer of the old name and is dead
+  against every lock that exists; retiring it is a `dotfiles-Offense` change, tracked
+  separately.
+
 ## [v5.4.2] - 2026-08-28
 
 ### Fixed

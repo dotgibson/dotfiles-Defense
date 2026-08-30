@@ -132,7 +132,7 @@ fi
 #       (`-v "$PWD:/x"`, `-w /x`), so keep the tolerant name:tag[@sha256] scan: a mount path
 #       has no lowercase name:tag shape and won't be mistaken for an image.
 # No live unpinned uses in the fleet today; this keeps the pinning contract airtight before
-# an OS/role repo (which inherit the *-call.yml@v4 workflows) reaches for one.
+# an OS/role repo (which inherit the *-call.yml@vN workflows) reaches for one.
 if _yaml_bool require_container_digest_pin; then
   # (a) clean single-token surfaces
   while IFS= read -r line; do
@@ -273,7 +273,7 @@ fi
 # ── 8) every runner job declares timeout-minutes ─────────────────────────────
 # Left unset, GitHub's default is 360 minutes — six hours of a held runner and a live
 # GITHUB_TOKEN for a job that hung on a prompt, a network stall, or a step that was
-# tampered with. Core owns all six *-call.yml@v4 reusable workflows the fleet consumes,
+# tampered with. Core owns all six *-call.yml@vN reusable workflows the fleet consumes,
 # so the jobs the OS repos actually execute are defined HERE; a floor rule locks in a
 # property currently held only by convention.
 #

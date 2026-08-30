@@ -66,7 +66,7 @@ Env overrides:
   REPOS_ROOT        parent dir holding the repos   (default: parent of this repo)
   CORE_REMOTE       remote name/URL for dotfiles-core in each OS repo (default: core's origin)
   CORE_BRANCH       Core ref to vendor             (default: main; pass a released tag
-                    such as refs/tags/v4 when vendoring a repo for the first time)
+                    such as refs/tags/v5 when vendoring a repo for the first time)
   SYNC_JOBS         parallel prefetch jobs; 1 disables the warm-up (default: 4)
   SYNC_SKIP_AUDIT   set to 1 to skip the pre-fan-out audit gate (documented escape hatch)
   SYNC_SKIP_STALE   set to 1 to skip the pre-flight check that each target is up to date
@@ -367,7 +367,7 @@ fi
 # dotfiles-MacBook's test/check-pins.sh caught it on the v4.12.0 fan-out (#482). (This
 # comment used to credit a second gate, `verify-core`, which has never existed here; #454.)
 #
-# Only an EXISTING 40-hex pin is moved. A caller on the mutable `@v4` alias is left alone:
+# Only an EXISTING 40-hex pin is moved. A caller on the mutable `@vN` alias is left alone:
 # tracking the alias is a deliberate per-repo policy (7 of the 9 repos choose it, and the
 # alias is what makes a guard fix reach them without an edit), so silently converting one
 # into a SHA pin would change that repo's update model behind its back. Converting the
@@ -407,7 +407,7 @@ _sync_pin_workflows() { # <repo-path> <full-sha> <tag> → prints how many files
       continue
     fi
     # Refresh the version comment only on the lines that now carry OUR sha, so a line
-    # left on `@v4` above keeps whatever comment it had. A failure here is NOT recoverable
+    # left on `@vN` above keeps whatever comment it had. A failure here is NOT recoverable
     # by keeping the sha-only rewrite: that lands a pin whose comment still names the old
     # release, which a pin check reds independently of the sha. Discard and report.
     #

@@ -32,6 +32,8 @@
 #   7. markdown                          — markdownlint (if markdownlint-cli2 present)
 #   8. workflows                         — actionlint on .github/workflows (if present)
 #  8b. secrets                           — gitleaks working-tree scan (if present)
+#  8d. Makefile gates                    — no skip that cannot skip, no checker whose
+#                                          status is discarded, no missing local mirror
 #   9. version consistency              — pre-commit hook revs == tool-versions.env;
 #                                         core.version SemVer + CHANGELOG coherence
 #  10. behavioral                       — load-order smoke + function units (test-core.sh)
@@ -1262,6 +1264,31 @@ else
   printf '%s\n' "$_cm_out" >&2
   fail "check-modern found violations (above) — run: ./scripts/check-modern.sh"
 fi
+
+# ── 8d. Makefile gates that cannot do what their name says ────────────────────
+# ShellCheck reads this file's SYNTAX and `make -n` would read what it EXPANDS to; neither
+# answers the question this asks, which is whether a target's own claim survives the shell
+# make gives it. A guard that prints "skipping" and then runs the missing tool is valid
+# bash, expands fine, and exits 127 — the same shape as §8a's `ref: vN`, where the ref
+# resolves, the job goes green, and the wrong code runs.
+#
+# THIS IS CORE'S HALF ONLY. The defect was found in the eight OS repos
+# (dotgibson/dotfiles-core#775, eleven instances); those are judged by lint-call.yml's
+# `make-gates` leg, which runs this same function against the CALLER. This section keeps
+# the authoring repo honest, because Core has a Makefile with the same target shapes and
+# nothing would otherwise stop the pattern being reintroduced here and vendored outward.
+#
+# Always-on: no tool to be absent, so it can never skip — the exact failure mode it exists
+# to close, and the same reasoning §8a records.
+hdr "Makefile gates (skip guards, discarded statuses, missing mirrors)"
+mkg_out="$(_core_make_gate_hits .)"
+if [[ -z "$mkg_out" ]]; then
+  pass "every Makefile gate skips, fails and scopes as its help text claims"
+else
+  fail "a Makefile gate does not do what its name says — see dotgibson/dotfiles-core#775"
+  fail_detail "$mkg_out"
+fi
+unset mkg_out
 
 # ── 9. version consistency (tool-versions.env ↔ .pre-commit-config.yaml) ──────
 # scripts/tool-versions.env is the SINGLE SOURCE for the pinned dev-tool versions.
