@@ -24,6 +24,35 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **`potato_seimpersonate_sysmon_1` went silent exactly when its "twin" fired.** The rule and
+  `potato_seimpersonate_4688` described themselves as one shape on two channels, differing only
+  in the account field — `User` on Sysmon 1, `SubjectUserName` on Security 4688. Those fields do
+  not mean the same thing: `SubjectUserName` is the process *creator*, Sysmon 1 `User` is the
+  *created* process, which is why Sysmon 13 added `ParentUser` at all. On a successful potato the
+  two diverge — that divergence **is** the technique — so `User|contains: 'APPPOOL'` was false
+  precisely when the attack succeeded, while `detections/README.md` and `COVERAGE.md` reported
+  the host covered for T1134.001. Silence that reads as coverage. Not argued but measured: run
+  through zircolite v3.7.6 against the six real potato captures in the
+  sbousseaden/EVTX-ATTACK-SAMPLES corpus (RottenPotato-from-webshell, RogueWinRM, RoguePotato,
+  EfsPotato, NetworkServiceExploit, PrintSpoofer), the shipped rule was **silent six times out of
+  six**. It now selects `ParentUser`, the Sysmon expression of what `SubjectUserName` says, and
+  states its Sysmon 13+ floor rather than assuming it. The rule id, tags and per-channel split are
+  unchanged — the split was always right; only the twin claim was wrong — and the pair is now
+  described as two invariants covering one technique rather than one shape on two channels
+  (dotgibson/dotfiles-Defense#239). `Ledger: unchanged — no tactic, technique or rule count moves.`
+
+- **Both potato fixtures were hand-written from the belief that produced the rules.** The Sysmon
+  fixture asserted `User=IIS APPPOOL\DefaultAppPool` on the *escalated* process, which is the
+  shape before the token is stolen; it is replaced by a captured Sysmon 1 (the `cmd.exe` RogueWinRM
+  spawned as SYSTEM from a LOCAL SERVICE context) plus a captured true-negative that changes only
+  the `ParentUser` value. The 4688 fixture was a three-key skeleton missing twelve fields every
+  real 4688 carries; it is rebuilt on the captured event-version-2 key set and field order. The
+  `token_theft_process_target_subject_4688` fixtures needed no change — their key set proved
+  identical to six captured 4688s — and that rule **fired on real telemetry for the first time**,
+  on a genuine token swap. Five provenance rows move `unverified` → `vendor-documented`; none
+  reaches `captured`, because none of this is first-party
+  (`docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md`).
+
 - **`make core-check` reported fleet drift from an empty variable.** It printed
   "gh not installed — cannot query upstream tags" and then queried anyway; `gh` failing
   left `upstream_ver` empty, which is never equal to `local_ver`, so it announced

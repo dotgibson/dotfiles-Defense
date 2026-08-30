@@ -264,8 +264,8 @@ EventID:(4886 OR 4887)
 // privilege_escalation/potato_seimpersonate_4688.yml — Potato privesc - service identity spawning an interactive shell (Security 4688)
 (Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe)) AND (SubjectUserName:(*APPPOOL* OR *NETWORK\ SERVICE* OR *LOCAL\ SERVICE*))
 
-// privilege_escalation/potato_seimpersonate_sysmon_1.yml — Potato privesc - service identity spawning an interactive shell (Sysmon 1)
-(Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe)) AND (User:(*APPPOOL* OR *NETWORK\ SERVICE* OR *LOCAL\ SERVICE*))
+// privilege_escalation/potato_seimpersonate_sysmon_1.yml — Potato privesc - service identity spawning a SYSTEM shell (Sysmon 1)
+(Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe)) AND (ParentUser:(*APPPOOL* OR *NETWORK\ SERVICE* OR *LOCAL\ SERVICE*))
 
 // privilege_escalation/rbcd_allowedtoact_5136.yml — RBCD abuse - msDS-AllowedToActOnBehalfOfOtherIdentity write
 (EventID:5136 AND AttributeLDAPDisplayName:msDS\-AllowedToActOnBehalfOfOtherIdentity) AND (NOT SubjectUserName:svc_delegation)

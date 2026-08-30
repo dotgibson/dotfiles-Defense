@@ -52,9 +52,11 @@ pipelines. That sweep already earned its keep: it surfaced that the original
 `potato_seimpersonate_4688` didn't fire through pysigma at all — a single rule naming both
 `User` (Sysmon-1) and `SubjectUserName` (Security-4688) nulls under either pipeline, since the
 one that can't resolve a field drops the whole rule. It's now fixed by splitting into a
-per-channel pair (`potato_seimpersonate_sysmon_1` on `User`/sysmon and `potato_seimpersonate_4688`
-on `SubjectUserName`/windows-audit), both wired in and firing (see the write-up in
-[`validation/README.md`](validation/README.md)). Cloud/SaaS splits in two by whether
+per-channel pair (`potato_seimpersonate_sysmon_1` on `ParentUser`/sysmon and
+`potato_seimpersonate_4688` on `SubjectUserName`/windows-audit), both wired in and firing (see
+the write-up in [`validation/README.md`](validation/README.md)). The Sysmon half was keyed on
+`User` until #239 measured what that field actually means — the created process, not the
+creator — and found the rule silent on all six real potato captures in the corpus. Cloud/SaaS splits in two by whether
 zircolite can see the field names. 21 flat-field rules (AWS, Entra, GitHub, Google Workspace,
 Jenkins, Okta, npm, PyPI-collaborator, Slack app/share) run on zircolite via `pipeline=none`.
 The other 26 (GCP, Cloudflare, GitLab, Kubernetes, Harbor, Snowflake, Terraform, Vault, and a

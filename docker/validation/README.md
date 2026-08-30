@@ -199,10 +199,21 @@ pipeline can't resolve `User`, so in each case the unresolved branch nulled the 
 (reproduced: adding the second-channel branch → 0 matches on an event the single-channel form
 caught). The fix was a detection-content decision, so it was flagged rather than changed under
 the cloud-plane PR. It's now split into a per-channel pair — `potato_seimpersonate_sysmon_1.yml`
-(field `User`, validated on the **sysmon** pipeline) and `potato_seimpersonate_4688.yml`
+(validated on the **sysmon** pipeline) and `potato_seimpersonate_4688.yml`
 (field `SubjectUserName`, EventID 4688, validated on **windows-audit**) — with the original id
 preserved on the 4688 half so the htpx cross-link holds. Both are wired into the manifest and
 verified firing locally; deploy both and whichever channel a host forwards will match.
+
+**Amended by #239 — the split was right, the twin claim was not.** The Sysmon half was
+originally keyed on `User`, described as the same shape as the 4688 half's `SubjectUserName`.
+It is not: `SubjectUserName` is the *creator*, Sysmon 1 `User` is the *created* process. On a
+successful potato those diverge, so the Sysmon rule went silent exactly when its supposed twin
+fired — measured silent on all six real potato captures in the sbousseaden/EVTX-ATTACK-SAMPLES
+corpus, run through zircolite. It now keys on `ParentUser` (Sysmon 13+), which is the Sysmon
+expression of what `SubjectUserName` says, and both fixtures are now captured records rather
+than hand-written ones. The pipeline argument above is untouched — it was always the reason for
+the split, and it still is. See
+[`labruns/2026-08-potato-sysmon1-user-semantics.md`](labruns/2026-08-potato-sysmon1-user-semantics.md).
 
 **Cloud / SaaS** (`pipeline=none`): 22 rules covered — AWS (IAM key, login profile), Entra
 (consent, SP credential, directory-role grant), GitHub (branch-protection, credential, runner), Google Workspace

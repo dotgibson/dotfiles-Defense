@@ -69,7 +69,12 @@ Security channel and 104 only for everything else, they therefore sit on differe
 logsources (`service: security` vs `service: system`), and Sigma allows one logsource
 per rule. Deploy both — clearing Sysmon's operational channel and leaving Security alone
 is a real evasion, and it is 104 that catches it. The same forced split is why
-`detections/sigma/privilege_escalation/` carries a `potato_seimpersonate_*` pair.
+`detections/sigma/privilege_escalation/` carries a `potato_seimpersonate_*` pair — though
+only the *mechanics* carry across. 1102 and 104 are one act seen on two channels; the potato
+pair is two different invariants that happen to cover one technique, which #239 established
+and which is the weaker claim. The shared part is the pipeline trap: name a field from each
+channel in one rule and the pipeline that can't resolve one of them drops the whole rule, so
+it silently never fires.
 
 This is written down because #215 was filed on the opposite assumption — that authoring
 the Windows log-clearing rule would fill the thin `Stealth` row in
@@ -81,10 +86,13 @@ gap be ledgered instead: T1070 is already covered by
 Both rules were written; they land in different rows, and that is correct rather than a
 mistag.
 
-Stealth is three techniques and three rules, and that is an honest reading of the corpus
-rather than an artifact of tagging. Two of them — T1070 and T1070.003 — are the command-
-history and artifact-removal work described above. The third is T1134.001, and it arrived
-by the route this section reserved for it rather than by a tag: see below. The rest of
+Stealth is three techniques, and that is an honest reading of the corpus rather than an
+artifact of tagging. Two of them — T1070 and T1070.003 — are the command-history and
+artifact-removal work described above. The third is T1134.001, and it arrived by the route
+this section reserved for it rather than by a tag: see below. (The rule count under those
+three techniques has since moved from three to four — #230 added a second T1134.001 rule
+claiming the Stealth half — so `COVERAGE.md` reads `3 | 4`. The techniques are what this
+paragraph is about.) The rest of
 TA0005 is masquerading, obfuscation, process injection and LOLBAS proxy execution — a
 body of work this repo has not started, not one it has misfiled. The row being one wider
 is not the gap closing.
@@ -94,11 +102,15 @@ dual-tactic, `detections/sigma/privilege_escalation/potato_seimpersonate_4688.ym
 Sysmon-1 twin could legally claim the TA0005 half — the pairing assertion in
 `detections/check-attack-tags.sh` asserts a tactic tag is *earned* by some technique
 tagged beside it, not that every tactic is claimed, so the tag would pass and
-`detections/navigator/COVERAGE.md` would read `Stealth TA0005 | 3 | 5` instead of
-`3 | 3`. The pair does **not** claim it. What those rules select is a service identity
-spawning a shell — the shape *before* the token is stolen, keyed on the un-masked
-account field — and their own descriptions concede they cannot show the run-as-SYSTEM
-result. The evasion is the part they cannot see. Taking the row would buy two rules'
+`detections/navigator/COVERAGE.md` would read `Stealth TA0005 | 3 | 6` instead of
+`3 | 4`. The pair does **not** claim it. What those rules select is a shell created *by* a
+service identity, keyed on the creator — `SubjectUserName` on 4688, `ParentUser` on
+Sysmon 1 — and their own descriptions concede they cannot show the run-as-SYSTEM result
+as a token fact. The evasion is the part they cannot see. #239 repointed the Sysmon half
+and left the decline standing, on the sibling rule's own words: *"ParentUser is a different
+claim (an identity mismatch between parent and child, not the token's provenance) and is
+not a substitute."* Shipping a ParentUser rule instantiates that sentence rather than
+falsifying it. Taking the row would buy two rules'
 worth of apparent TA0005 coverage backed by no detection of evasion, and `/coverage-gap`
 is told to trust `COVERAGE.md` rather than recompute it, so the cost lands on the next
 person ranking holes. The precedent runs the same way —
@@ -149,6 +161,45 @@ into the rule: whether the audit reads Creator Subject from the calling process'
 from its impersonating thread token is inference from Microsoft's documentation, not a
 capture, and a lab run settles it — the same run that would establish whether the potato pair
 has ever fired on a real potato.
+
+**Partly discharged, and one premise corrected (#239).** The run is
+`docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md`, and like #235's it is a
+third-party capture rather than a first-party one. Three things came back. The **field
+semantics** are settled: Sysmon 1 `User` is the *created* process, not the creator, proved on
+the one sample in the sbousseaden/EVTX-ATTACK-SAMPLES corpus carrying both a Sysmon 1 and a Security
+4688 for the same process — Sysmon's `User` matches 4688's Target and its `LogonId` matches
+`TargetLogonId`, not `SubjectLogonId`. So `potato_seimpersonate_sysmon_1.yml` was **not** the
+4688 rule's twin, and the old `User|contains: 'APPPOOL'` form went silent exactly when its
+supposed twin fired: measured silent on all six real potato captures in the corpus. It now
+selects `ParentUser`, which needs Sysmon 13+. The **seclogon route** to #230's failure is
+ruled out — on all six captures the escalated process's parent is the potato tool itself,
+under the service identity, with no Secondary Logon reparenting — while the **thread-token
+route** is untouched, because it is a property of the audit subsystem rather than of the
+process tree. And the Target Subject rule **fired on real telemetry** for the first time, on
+a captured token swap, with its fixtures' event-version-2 key set confirmed identical to six
+captured 4688s.
+
+Three things that record keeps honest. `ParentUser` has still never been observed on a real
+potato — every potato capture in the corpus predates Sysmon 13, so the fire/silent table
+derives it from the parent process's own captured `User`, and the fixture's provenance row
+says so. `potato_seimpersonate_4688.yml` has still never been confirmed to fire on one; no
+capture carries a Security 4688 from a potato at all. And none of it is first-party, so the
+rows move to `vendor-documented` rather than `captured`. *Reopen when* a host exists:
+`docker/validation/labruns/runbook-potato-seimpersonate.md` is the runbook, and #239 stays
+open until item 1 of it is closed.
+
+**One shape was dropped, deliberately.** The old Sysmon rule also matched a shell whose *own*
+account is a service identity — an app-pool `cmd.exe` that stays app-pool. Repointing onto
+`ParentUser` removes that, and it was not re-added as a second branch. The shape is real
+telemetry and worth hunting, but it is not access-token manipulation: a shell whose token is
+`IIS APPPOOL\DefaultAppPool` has manipulated nothing, and the RottenPotato capture shows why
+the distinction matters — both halves are in the log, and the pre-escalation half is the
+web-shell foothold rather than the escalation. Keeping it under the T1134.001 tag would claim
+coverage of a technique it does not observe, which is the #223 error in miniature. It is also
+not a second branch on this rule: two invariants in one rule leave an analyst unable to tell
+which fired, and they want opposite next steps — hunt the web shell, or confirm the token
+theft. *Reopen when* the corpus grows a web-shell/foothold row it can honestly be filed
+under; it needs its own rule and its own tag, not a branch here.
 
 Two shapes were considered on the way and rejected, so they are not re-proposed. A flat 4672
 selection is noise by construction — every SYSTEM logon on the host emits one, at service

@@ -1,25 +1,56 @@
-title: Potato privesc - service identity spawning an interactive shell (Sysmon 1)
+title: Potato privesc - service identity spawning a SYSTEM shell (Sysmon 1)
 id: 03e878f6-bbdc-41e1-afa6-68b2979938fe
 status: experimental
 description: |
   Detection posture: moderate. SeImpersonate abuse (PrintSpoofer/GodPotato/Juicy)
   uses a legitimate impersonation API, and process-creation alone cannot show the
-  run-as-SYSTEM result. This flags the shape it can see - a service identity
-  (app-pool / machine account / NETWORK|LOCAL SERVICE) spawning cmd/powershell.
-  Confirm the SYSTEM outcome with spoolss_pipe_impersonation_sysmon_17.yml (id
+  run-as-SYSTEM result as a token fact. This flags the shape it can see - a shell
+  created BY a service identity (app-pool / NETWORK|LOCAL SERVICE). Confirm the
+  SYSTEM outcome with spoolss_pipe_impersonation_sysmon_17.yml (id
   d5c5c185-a62f-415a-ab0f-2572f910b541), which detects the impersonation
-  itself on Sysmon 17, and with Sysmon 1 linking the service parent to a SYSTEM
-  child. On the Security channel, token_theft_process_target_subject_4688.yml (id
+  itself on Sysmon 17. On the Security channel,
+  token_theft_process_target_subject_4688.yml (id
   1faa7a59-9fd5-4d14-9bf1-d94f82466acb) reads the stolen token directly off 4688's
   Target Subject block; there is no Sysmon equivalent of those fields, so that
   confirmation is not available to a host forwarding only Sysmon.
-  Channel: Sysmon EventID 1 carries the account in User. This is the Sysmon half of a
-  per-channel pair - its Security-4688 twin (field SubjectUserName) is
-  potato_seimpersonate_4688.yml (id 9486ed6c-4c38-457f-a475-188a978eaa4a). The two are
-  split on purpose: a single rule naming both User and SubjectUserName nulls under any
-  single pysigma pipeline (the pipeline that can't resolve one field drops the whole
-  rule), so it silently never fires. Deploy both; whichever channel your hosts forward
-  will match.
+  Channel, and why this is NOT the twin of the 4688 rule. This rule and
+  potato_seimpersonate_4688.yml (id 9486ed6c-4c38-457f-a475-188a978eaa4a) used to
+  describe themselves as one shape on two channels, keyed on User here and
+  SubjectUserName there. They are not. 4688 SubjectUserName is the CREATOR; Sysmon 1
+  User is the CREATED process, which is why Sysmon 13 added ParentUser at all. On a
+  successful potato those two diverge - that divergence IS the technique - so the old
+  User|contains 'APPPOOL' form went silent at the moment its supposed twin fired.
+  Measured, not argued: run against the six real potato captures in
+  sbousseaden/EVTX-ATTACK-SAMPLES (RottenPotato-from-webshell, RogueWinRM,
+  RoguePotato, EfsPotato, NetworkServiceExploit, PrintSpoofer), the old form was
+  silent six times out of six. See
+  docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md
+  (dotgibson/dotfiles-Defense#239). The Sysmon-plane expression of what 4688
+  SubjectUserName says is ParentUser, so that is what this rule now selects. The two
+  rules still split per channel - a single rule naming both ParentUser and
+  SubjectUserName resolves under only one pysigma pipeline - but they are two
+  different invariants covering one technique, which is a weaker and more honest
+  claim than a twin.
+  Requires Sysmon 13 or later. ParentUser does not exist before it, and the failure is
+  quiet rather than loud: verified by conversion, the rule compiles under a sysmon
+  pipeline to `EventID=1 Image IN (...) ParentUser IN (...)`, so on an older agent it
+  simply matches nothing forever. Under a windows-audit pipeline it does not fail
+  loudly either - ParentUser passes through unmapped onto EventID 4688, which does not
+  carry it. Deploy it on the sysmon pipeline, against an agent you have confirmed is 13+.
+  What it still misses, by design. The Image list means a payload that is not a named
+  shell does not match, and that is not hypothetical: of the six captures above, three
+  ran `whoami`, `nc64.exe` and `notepad.exe` as the payload.
+  token_theft_process_target_subject_4688.yml carries no Image constraint and is the
+  rule for that class, on hosts forwarding Security.
+  ONE DERIVATION, STATED. No potato capture available to us carries ParentUser - all six
+  predate Sysmon 13 - so the value this rule keys on has never been observed on a real
+  potato. What HAS been observed on all six is that the escalated process's parent is the
+  potato tool itself, running under the service identity, with no Secondary Logon
+  reparenting; ParentUser is Sysmon's rendering of exactly that parent. The step from
+  "the parent is the tool, and the tool runs as NETWORK SERVICE" to "ParentUser reads
+  NETWORK SERVICE" is a derivation from the schema, not a capture. The run record says so,
+  and the first-party confirmation is tracked in
+  docker/validation/labruns/runbook-potato-seimpersonate.md.
   Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate).
 references:
@@ -27,19 +58,20 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/potato-seimpersonate-4688.md
 author: dotfiles-Defense
 date: 2026-06-30
-modified: 2026-08-29
+modified: 2026-08-30
 tags:
   # T1134.001 is dual-tactic in ATT&CK v19 — TA0004 and TA0005 (Stealth) — and only the
   # TA0004 half is claimed here. That is deliberate, not an oversight
-  # (dotgibson/dotfiles-Defense#223, reaffirmed in #225).
-  # What this rule selects is a service identity spawning a shell: the shape BEFORE the
-  # token is stolen, keyed on the un-masked User. Nothing in it observes the
-  # impersonation itself, which is the part TA0005 is about — and the description above
-  # already concedes the rule cannot see the run-as-SYSTEM result. Claiming the Stealth
-  # half would add a COVERAGE.md row that THIS rule does not earn. The TA0005 half of
-  # T1134.001 is claimed instead by spoolss_pipe_impersonation_sysmon_17.yml, which
-  # observes the pipe the impersonation cannot avoid standing up - the evasion itself -
-  # dotgibson/dotfiles-Defense#225 settled that it belongs there rather than here.
+  # (dotgibson/dotfiles-Defense#223, reaffirmed in #225, and re-derived for the ParentUser
+  # form in #239).
+  # What this rule selects is an identity mismatch between a parent and its child: a shell
+  # created by a service identity. That is evidence consistent with the mechanism, not an
+  # observation of the evasion — and the sibling rule that DOES claim the Stealth half,
+  # token_theft_process_target_subject_4688.yml, says in its own description why ParentUser
+  # is not a substitute for a token-provenance field. Shipping this form instantiates that
+  # sentence rather than falsifying it, so the Stealth half stays where #225 and #230 put
+  # it: on spoolss_pipe_impersonation_sysmon_17.yml, which observes the pipe the
+  # impersonation cannot avoid standing up, and on the Target Subject rule.
   # Deliberately NOT writing the tag string in this comment: gen-coverage.sh matches
   # tactic slugs over the whole file, so naming it here would tag the rule by accident.
   - attack.privilege-escalation
@@ -53,13 +85,17 @@ detection:
       - '\cmd.exe'
       - '\powershell.exe'
       - '\pwsh.exe'
-  selection_svc_identity:
-    User|contains:
+  selection_svc_parent:
+    # The CREATOR's identity on the Sysmon plane. Sysmon 13+.
+    ParentUser|contains:
       - 'APPPOOL'
       - 'NETWORK SERVICE'
       - 'LOCAL SERVICE'
-  condition: selection_shell and selection_svc_identity
+  condition: selection_shell and selection_svc_parent
 falsepositives:
   - Service accounts that legitimately shell out (scripts, monitoring) - baseline
     per host and allowlist the known parent/child pairs.
+  - An agent older than Sysmon 13 emits no ParentUser at all, which makes the selection
+    silently unsatisfiable rather than noisy. Confirm the agent version before trusting
+    silence from this rule.
 level: medium
