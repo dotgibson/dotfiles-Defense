@@ -44,7 +44,8 @@ description: |
   six captures predates Sysmon 13, so the run record derives the value from the parent process's
   own captured User in the same log. That derivation is well grounded - the parent is the tool,
   and the tool's own identity is captured - but it is a derivation, and the first-party
-  confirmation is tracked in docker/validation/labruns/runbook-potato-seimpersonate.md.
+  confirmation is tracked in docker/validation/labruns/runbook-potato-seimpersonate.md
+  (dotgibson/dotfiles-Defense#246).
   This is the Sysmon half of a per-channel pair - its Security-4688 twin is
   potato_seimpersonate_4688.yml (id 9486ed6c-4c38-457f-a475-188a978eaa4a), whose
   SubjectUserName is the creator and so is ParentUser's exact counterpart, which is what makes

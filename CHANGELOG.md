@@ -112,7 +112,8 @@ under `[Unreleased]` from here.
   assumed — on an older build the field is absent and the selection is silently unsatisfiable
   rather than noisy. Full measurement, and what it does not settle, in
   `docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md`. The 4688 half is
-  untouched and still unconfirmed on a real potato; #239 stays open for the first-party run.
+  untouched and still unconfirmed on a real potato; the first-party run is tracked as
+  dotgibson/dotfiles-Defense#246.
   Fixture corrected to the measured shape (it carried no `ParentUser` key at all) and renamed
   to `potato_sysmon1_tp.jsonl`, and the pair gains its first true negative.
 

@@ -208,7 +208,7 @@ failure mode one layer down. And **none of this touches the potato 4688**: no 46
 exists in the corpus, so `potato_seimpersonate_4688.yml` is still unconfirmed on a real one, and
 the thread-token half of the Creator Subject caveat above is exactly as open as it was. *Reopen
 when* a host exists: `docker/validation/labruns/runbook-potato-seimpersonate.md` is the runbook,
-and #239 stays open until item 1 of it is closed.
+and dotgibson/dotfiles-Defense#246 is the tracker #239 was split into for it.
 
 **The Sysmon plane gets its own reading of the outcome, and the Stealth row widens a third
 time.** #239 corrected the potato pair to key on `ParentUser` and stopped there, because the

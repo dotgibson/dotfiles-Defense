@@ -182,8 +182,8 @@ stands.
   The values above were derived by GUID-linking each record to its parent's own Sysmon-1
   record; 1090 of the 1491 records resolve a parent that way, and the 401 that do not are the
   same population that makes the negated-filter variant in Finding 3 unsafe. This proves the rule selects the right *field semantics* on real process trees; it
-  does not prove it fires on an untouched captured event. The first-party run tracked by #239
-  closes that, and it closes it for this rule at the same time.
+  does not prove it fires on an untouched captured event. The first-party run tracked by
+  dotgibson/dotfiles-Defense#246 closes that, and it closes it for this rule at the same time.
 - **The zero-false-positive result is "not yet met", not "does not occur".** It is now measured
   over 1491 records rather than 147, which is a stronger negative set but not a representative
   one: the corpus is an attack-sample collection. It contains no EDR, RMM or patch agent, which is precisely the

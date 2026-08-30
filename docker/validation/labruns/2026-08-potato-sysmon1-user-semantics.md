@@ -350,8 +350,9 @@ about the rules that read that channel:
 
 ## What this run does NOT settle
 
-Honest limits. The first is load-bearing and [#239] should stay open for it;
-`docker/validation/labruns/runbook-potato-seimpersonate.md` is what closing them needs:
+Honest limits. The first is load-bearing. #239 is closed on the correction it asked for;
+these carried over to [#246], and `docker/validation/labruns/runbook-potato-seimpersonate.md`
+is what closing them needs:
 
 - **`ParentUser` was never directly observed on a potato.** All six potato captures predate
   Sysmon 13, so none carries the field. The firing run in Finding 4 was performed against those
@@ -400,4 +401,4 @@ For the cross-channel join, normalise both channels out of `tutto_malseclogon.ev
 `ProcessId` to 4688 `NewProcessId` numerically — the latter is hex, so convert rather than
 string-compare.
 
-[#239]: https://github.com/dotgibson/dotfiles-Defense/issues/239
+[#246]: https://github.com/dotgibson/dotfiles-Defense/issues/246

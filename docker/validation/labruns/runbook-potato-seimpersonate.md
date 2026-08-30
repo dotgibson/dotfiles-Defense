@@ -2,7 +2,7 @@
 
 What is left of [#239] and the open half of [#230] after
 `2026-08-potato-sysmon1-user-semantics.md` settled the field semantics from a third-party
-capture. Three things still need a real host, and none of them needs a domain.
+capture. #239 is closed on the correction; this runbook's items are tracked as [#246]. Three things still need a real host, and none of them needs a domain.
 
 Assumes **no existing lab**. Nothing in `docker/` builds a Windows host —
 `detection-lab.compose.yml` is OpenSearch + Dashboards, a log store with no ingestion path — so
@@ -98,3 +98,4 @@ before touching either rule.
 
 [#239]: https://github.com/dotgibson/dotfiles-Defense/issues/239
 [#230]: https://github.com/dotgibson/dotfiles-Defense/issues/230
+[#246]: https://github.com/dotgibson/dotfiles-Defense/issues/246
