@@ -24,11 +24,12 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
-- **A second pass over the pinned corpus settled the potato field semantics on a cross-channel
-  join, and corrected both fixtures to captured records.** The first pass (#244) swept 170
-  samples; this one swept all 278, adding 42 Security 4688 records and two more potato captures
-  (RoguePotato, PrintSpoofer — six now, not four). Three things follow. The `User`-is-the-child
-  reading no longer rests on Sysmon-internal inference: the corpus holds one sample carrying
+- **The potato field semantics are now settled on a cross-channel join, and both fixtures are
+  captured records.** Extends the corpus work in #244: the sweep now covers all 278 EVTX rather
+  than the 170 matching `sysmon|proc`, which adds 42 Security 4688 records and two more potato
+  captures (RoguePotato, PrintSpoofer — six, not four), and the run record is one account rather
+  than two. Three things follow. The `User`-is-the-child reading no longer rests on
+  Sysmon-internal inference: the corpus holds one sample carrying
   **both** a Sysmon 1 and a Security 4688 for the same process creation, and there Sysmon's
   `User` matches 4688's *Target* while its `LogonId` matches `TargetLogonId` rather than
   `SubjectLogonId` — a numeric identifier carried independently by two providers. A question a

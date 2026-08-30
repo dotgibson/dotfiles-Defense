@@ -163,8 +163,8 @@ settles this one completely. `potato_seimpersonate_sysmon_1.yml` keyed on Sysmon
 in the belief that it named the account that created the process the way Security-4688's
 `SubjectUserName` does. It does not — `User` is the **new process's** account, which the
 captures show plainly wherever a provably-SYSTEM creator produces a non-SYSTEM child
-(`winlogon.exe` → `userinit.exe` running as the logging-on user, nine such records across
-three hosts). The consequence is the bad kind of wrong: on an ordinary service-spawns-shell
+(`winlogon.exe` → `userinit.exe` running as the logging-on user — 78 such records across three
+hosts, GUID-linked to their parents, out of 1491 Sysmon-1 records swept from all 278 EVTX). The consequence is the bad kind of wrong: on an ordinary service-spawns-shell
 event the creator and the child are the same account, so the rule looked right and its fixture
 passed; on a successful potato they diverge, which is what the technique *is*. Run against
 six real potato captures on four hosts — RogueWinRM, NetworkServiceExploit, RottenPotato from
@@ -178,36 +178,35 @@ fires on the two captures whose payload is a named shell; the other four spawn `
 carries an `Image` shell list at all. Written up in
 `docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md`.
 
-Three things that record keeps honest. `ParentUser` was **never observed on a potato** — all
-six captures predate Sysmon 13, which introduced the field, so the firing run derived it by
-linking each record to its parent's own Sysmon-1 record on `ProcessGuid`; the corrected rule is
-proven to name the right field, not to have fired on an untouched captured event, and #239
-stays open for the first-party run that would close the difference. The Sysmon 13+ requirement
-is a real ingestion constraint and is now stated in the rule rather than assumed, because on an
-older build the selection is silently unsatisfiable rather than noisy — the same failure mode
-one layer down. And **none of this touches 4688**: no 4688 from a potato exists in the corpus,
-so `potato_seimpersonate_4688.yml` is still unconfirmed on a real potato, and the Creator
-Subject caveat in the paragraph above is exactly as open as it was.
+Two things the same run answered that nobody had asked. The reading does not depend on
+Sysmon-internal inference at all: one sample in the corpus carries **both** a Sysmon 1 and a
+Security 4688 for the same process creation, and there Sysmon's `User` matches 4688's *Target*
+while its `LogonId` matches `TargetLogonId` rather than `SubjectLogonId` — a numeric identifier
+carried independently by two providers, so it cannot be read as a spelling difference between
+them. And the parenting question a `ParentUser` rule quietly depends on is measured rather than
+assumed: `CreateProcessWithTokenW` is serviced by the Secondary Logon service in `svchost.exe`,
+so had seclogon created the payload rather than the tool, `ParentUser` would read SYSTEM and the
+corrected rule would be inert. On all six captures the escalated process's parent is the tool
+itself, with no reparenting — which also rules out the seclogon route to the Creator Subject
+caveat above, leaving only the thread-token route that caveat actually states.
 
-**A second pass over the same pinned corpus closed two of those limits and narrowed a third.**
-Widening the sweep from 170 samples to all 278 turned up 42 Security 4688 records, and with
-them the one sample carrying **both** channels for the same process creation. That settles the
-field semantics without relying on Sysmon-internal inference at all: there Sysmon's `User`
-matches 4688's *Target* and its `LogonId` matches `TargetLogonId` rather than `SubjectLogonId`
-— a numeric identifier carried independently by two providers, so it cannot be read as a
-spelling difference. It also answers a question a `ParentUser` rule quietly depends on and
-nobody had asked: `CreateProcessWithTokenW` is serviced by the Secondary Logon service in
-`svchost.exe`, so had seclogon created the payload rather than the tool, `ParentUser` would read
-SYSTEM and the corrected rule would be inert. On all six captures the escalated process's parent
-is the tool itself, with no reparenting — which also rules out the seclogon route to the Creator
-Subject caveat above, leaving only the thread-token route that caveat actually states. Finally
-the Security channel did yield something, though nothing about a potato:
+The Security channel yielded something too, though nothing about a potato:
 `token_theft_process_target_subject_4688.yml` **fired on real telemetry** for the first time, on
 a genuine token swap; its fixtures' event-version-2 key set proved identical to six captured
 4688s; its pre-Windows-10 falsepositives note is now measured, on captured event-version-1
 records that carry no Target Subject block at all; and one captured 4688 populates
 `TargetUserName`/`TargetDomainName`/`TargetLogonId` while `TargetUserSid` reads the null SID,
-which matters because `TargetUserSid` is the only one of the four that rule can see. *Reopen
+which matters because `TargetUserSid` is the only one of the four that rule can see.
+
+Three things that record keeps honest. `ParentUser` was **never observed on a potato** — all
+six captures predate Sysmon 13, which introduced the field, so the firing run derived it by
+linking each record to its parent's own Sysmon-1 record on `ProcessGuid`; the corrected rule is
+proven to name the right field, not to have fired on an untouched captured event. The Sysmon 13+
+requirement is a real ingestion constraint and is now stated in the rule rather than assumed,
+because on an older build the selection is silently unsatisfiable rather than noisy — the same
+failure mode one layer down. And **none of this touches the potato 4688**: no 4688 from a potato
+exists in the corpus, so `potato_seimpersonate_4688.yml` is still unconfirmed on a real one, and
+the thread-token half of the Creator Subject caveat above is exactly as open as it was. *Reopen
 when* a host exists: `docker/validation/labruns/runbook-potato-seimpersonate.md` is the runbook,
 and #239 stays open until item 1 of it is closed.
 
