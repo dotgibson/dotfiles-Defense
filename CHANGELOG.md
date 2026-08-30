@@ -24,6 +24,64 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **The "a rule naming both channels' fields nulls under either pipeline" claim was false, in
+  all six places it appeared.** Repeated by the `potato_seimpersonate` pair, the T1486
+  `mass_file_encryption` pair, `host_recon_command_burst`, and twice in `detections/README.md`
+  — where it is cited as precedent — the claim was that a pysigma pipeline unable to resolve a
+  field drops the whole rule. Measured with the CI pins (`sigma-cli 3.0.2`, `pysigma 1.5.0`):
+  it does not. Such a rule compiles under both pipelines with the unresolvable field passed
+  through unmapped, and an `OR` of the two field sets fires correctly on each channel. What
+  actually makes one rule insufficient is that **the logsource resolves to one EventID per
+  pipeline** — `category: process_creation` becomes `EventID=1` under `sysmon` and `4688`
+  under `windows-audit`, whichever rule you compile — so a single compiled search covers a
+  single channel regardless of the fields it names. The per-channel split is still correct;
+  only the stated reason was wrong, and the corrected reason is now what each rule gives.
+
+- **The correlation rules' grouping rationale re-derived
+  (`host_recon_command_burst`, `service_stop_burst`).** Their reason for grouping by
+  `Computer` inherited the same false mechanism, plus a second error #239 exposed: it named
+  Security-4688 `SubjectUserName` and Sysmon-1 `User` as two spellings of one actor. They are
+  different principals — `SubjectUserName` is the creator, `User` is the new process — so the
+  fields were never counterparts. Measured behaviour is worse than the claim: `group-by`
+  fields are passed through **completely unmapped** by both pipelines (`SubjectUserName`
+  survives verbatim under `sysmon`) while detection fields *are* mapped, so an account-keyed
+  correlation would compile and then bucket every event under one null key, silently voiding
+  the threshold rather than failing visibly. `Computer` is now justified on its merits rather
+  than as a workaround: a burst is a host-level phenomenon, one operator's burst spans
+  identities (land → recon → escalate → recon, the sequence in the RottenPotato webshell
+  capture), and an account key would split it into sub-threshold buckets while handing the
+  operator a trivial evasion. Actor grouping is reachable post-#239 (`SubjectUserName` /
+  `ParentUser`) but would gate the rules on Sysmon 13+ for a reason unrelated to what they
+  detect. `service_stop_burst`, which carried no rationale at all, now states one.
+
+- **`check-fixture-provenance.sh` no longer claims every fixture is `unverified`.** Stale
+  since `aa02c28`; the ledger has carried `vendor-documented` rows since. Rewritten to
+  describe why the distribution is deliberately not gated, without a count that goes stale
+  again.
+
+- **`potato_seimpersonate_sysmon_1` was keyed on the wrong field and had never fired on a
+  potato (#239).** The rule and `detections/README.md` described it as the Sysmon half of a
+  per-channel pair with `potato_seimpersonate_4688`, one shape on two channels. It was not.
+  4688's `SubjectUserName` is the account that *created* the process; Sysmon 1's `User` is the
+  account of the *new* process. The two agree on an ordinary service-spawns-shell event, which
+  is why the pair looked like a twin and why its fixture passed — and they diverge on a
+  successful potato, which is the entire technique. So the rule went silent at exactly the
+  moment its twin fired, and a host forwarding only Sysmon read as covered for T1134.001 in
+  both `detections/README.md` and `detections/navigator/COVERAGE.md` while seeing nothing.
+  Measured rather than argued: replayed against four real potato captures on three hosts
+  (RogueWinRM, NetworkServiceExploit, RottenPotato from an IIS webshell, EfsPotato) from the
+  pinned EVTX corpus, the shipped rule fired on none of them. The selection moves to
+  `ParentUser`, which is `SubjectUserName`'s actual counterpart, and the corrected rule fires
+  on the two captures whose payload is a named shell. The pairing claim in both rules and in
+  `detections/README.md` is now true rather than merely stated. `ParentUser` needs Sysmon
+  13.00+, which is a real ingestion constraint and is written into the rule instead of
+  assumed — on an older build the field is absent and the selection is silently unsatisfiable
+  rather than noisy. Full measurement, and what it does not settle, in
+  `docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md`. The 4688 half is
+  untouched and still unconfirmed on a real potato; #239 stays open for the first-party run.
+  Fixture corrected to the measured shape (it carried no `ParentUser` key at all) and renamed
+  to `potato_sysmon1_tp.jsonl`, and the pair gains its first true negative.
+
 - **`make core-check` reported fleet drift from an empty variable.** It printed
   "gh not installed — cannot query upstream tags" and then queried anyway; `gh` failing
   left `upstream_ver` empty, which is never equal to `local_ver`, so it announced
@@ -46,6 +104,31 @@ under `[Unreleased]` from here.
   repo-owned files, not just the README.
 
 ### Added
+
+- **A Sysmon-plane rule for the token swap itself, and the Stealth row widens a third time
+  (follow-on to #239).** #239 established that Sysmon 1's `User` is the new process and
+  `ParentUser` the creator, then used only the creator half to repair
+  `potato_seimpersonate_sysmon_1`. `token_theft_parent_child_mismatch_sysmon_1.yml` (id
+  `b7f135f0-c066-4b0b-ac45-3f6bb433be38`) uses both: a child running as SYSTEM whose creator
+  was an app-pool / NETWORK SERVICE / LOCAL SERVICE identity. That is token theft stated as two
+  fields on one event — a service identity cannot spawn SYSTEM without holding a token it did
+  not start with — so unlike the potato pair it observes the outcome rather than the shape
+  before it, and it takes the TA0005 half of T1134.001 on the reopen condition #223 wrote.
+  `Stealth TA0005` goes `3 | 4` → `3 | 5`; the technique count, which is what measures the
+  gap, does not move. It carries **no `Image` constraint** on purpose: measured against the
+  four real potato captures in the pinned corpus it fires 4/4 where the potato pair fires 2/4,
+  the difference being payloads (`notepad.exe`, `whoami.exe`) that no shell list catches, and
+  the shell list removes no noise — its only matches across all 147 Sysmon-1 records swept are
+  those four swaps. The tidier variant mirroring the 4688 rule's `filter_same_context` was
+  rejected on evidence: it compiles to Splunk as `NOT ParentUser="*SYSTEM*"`, where `NOT` on an
+  absent field matches, so on a pre-Sysmon-13 host it would fire on every SYSTEM process
+  creation while the zircolite backend the gate runs stays silent — a defect the gate is
+  structurally unable to see. Measurement in
+  `docker/validation/labruns/2026-08-token-mismatch-sysmon-1.md`, including what it does not
+  settle: `ParentUser` was still never observed on a real potato (all four captures predate
+  Sysmon 13, so it was derived by `ProcessGuid` linkage), the corpus contains no EDR or RMM
+  agent so the zero-false-positive result is "not yet met" rather than "does not occur", and
+  the locale exposure is reasoned rather than measured.
 
 - **The token-context half of T1134.001 closes, on a different event than #230 asked for
   (#230).** #223 reserved the Stealth half of T1134.001 for a rule that observes the

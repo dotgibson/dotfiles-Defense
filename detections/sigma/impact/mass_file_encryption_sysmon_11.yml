@@ -11,8 +11,12 @@ description: |
   Channel: this is the Sysmon half of a per-source pair. Its Security-4663 twin is
   mass_file_encryption_4663.yml (id 5f7afed7-23a5-4731-a3aa-855371ebf920), which reads
   ObjectName/ProcessName from object-access auditing. The two are split because they are
-  genuinely different data sources with different field names - not one rule naming
-  both, which would null under either pipeline (the trap potato_seimpersonate_* documents).
+  genuinely different data sources with different field names. Not, as this rule used to say,
+  because one rule naming both would null under either pipeline - measured, it compiles fine
+  and an OR of the two field sets fires correctly on each channel. The actual reason is that
+  the logsource resolves to one EventID per pipeline (`category: file_event` -> EventID 11
+  under sysmon), so one rule compiled once covers one source whatever fields it names; two
+  rules give the same coverage with no dead predicate. See detections/README.md.
   Deploy whichever you collect; deploy both if you collect both.
   The high-churn write paths are filtered here rather than in the correlation so the
   distinct-file count reflects the operator's sweep and not the machine's own noise.

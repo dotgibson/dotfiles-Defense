@@ -11,15 +11,38 @@ description: |
   itself on Sysmon 17, and with Sysmon 1 linking the service parent to a SYSTEM
   child. On the Security channel, token_theft_process_target_subject_4688.yml (id
   1faa7a59-9fd5-4d14-9bf1-d94f82466acb) reads the stolen token directly off 4688's
-  Target Subject block; there is no Sysmon equivalent of those fields, so that
-  confirmation is not available to a host forwarding only Sysmon.
-  Channel: Sysmon EventID 1 carries the account in User. This is the Sysmon half of a
-  per-channel pair - its Security-4688 twin (field SubjectUserName) is
-  potato_seimpersonate_4688.yml (id 9486ed6c-4c38-457f-a475-188a978eaa4a). The two are
-  split on purpose: a single rule naming both User and SubjectUserName nulls under any
-  single pysigma pipeline (the pipeline that can't resolve one field drops the whole
-  rule), so it silently never fires. Deploy both; whichever channel your hosts forward
-  will match.
+  Target Subject block; there is no Sysmon equivalent of those fields, so that exact
+  confirmation is not available to a host forwarding only Sysmon. The nearest one that is,
+  and it is a close one, is token_theft_parent_child_mismatch_sysmon_1.yml (id
+  b7f135f0-c066-4b0b-ac45-3f6bb433be38), which reads the same EventID 1 this rule does and
+  fires when the child is SYSTEM and the creator is not - the outcome this rule can only
+  point at. It carries no Image constraint, so it also covers the payloads the shell list
+  below misses.
+  Channel: Sysmon EventID 1 carries the CREATOR in ParentUser, and the rule keys on that.
+  It used to key on User, which is the wrong field and was the defect
+  dotgibson/dotfiles-Defense#239 found: User is the account of the NEW process, not of the
+  account that created it. On an ordinary service-spawns-shell event the two agree, so the
+  rule looked correct; on a successful potato they diverge - which is what the technique IS -
+  and the rule went silent at the moment it was supposed to fire. That is measured, not
+  reasoned: across four real potato captures on three hosts (RogueWinRM, NetworkServiceExploit,
+  RottenPotato-from-webshell, EfsPotato) the creator stays LOCAL SERVICE / NETWORK SERVICE /
+  IIS APPPOOL and the child is NT AUTHORITY\SYSTEM every time, and the User-keyed rule fired on
+  none of them. See docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md.
+  This is the Sysmon half of a per-channel pair - its Security-4688 twin is
+  potato_seimpersonate_4688.yml (id 9486ed6c-4c38-457f-a475-188a978eaa4a), whose
+  SubjectUserName is the creator and so is ParentUser's exact counterpart, which is what makes
+  the two a pair rather than two rules about one technique. The split is on purpose, though not for the
+  reason this rule used to give. It claimed a single rule naming both fields would null under
+  any single pipeline, the pipeline dropping the whole rule. Measured with the CI pins, that is
+  false: such a rule compiles under both pipelines, the unresolvable field passed through
+  unmapped, and an OR of the two field sets fires correctly on each channel. What actually
+  makes one rule insufficient is that the logsource resolves to ONE EventID per pipeline -
+  category: process_creation becomes EventID 1 under sysmon and 4688 under windows-audit,
+  whichever of these two rules you compile - so a single rule compiled once covers a single
+  channel no matter which fields it names, and you would deploy it twice regardless. Two
+  rules, each naming only its own channel's field, is the same coverage with no dead predicate
+  evaluated against every event, and each is honest about the telemetry it needs.
+  Deploy both; whichever channel your hosts forward will match.
   Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate).
 references:
@@ -33,7 +56,7 @@ tags:
   # TA0004 half is claimed here. That is deliberate, not an oversight
   # (dotgibson/dotfiles-Defense#223, reaffirmed in #225).
   # What this rule selects is a service identity spawning a shell: the shape BEFORE the
-  # token is stolen, keyed on the un-masked User. Nothing in it observes the
+  # token is stolen, keyed on the creator's un-masked ParentUser. Nothing in it observes the
   # impersonation itself, which is the part TA0005 is about — and the description above
   # already concedes the rule cannot see the run-as-SYSTEM result. Claiming the Stealth
   # half would add a COVERAGE.md row that THIS rule does not earn. The TA0005 half of
@@ -54,7 +77,7 @@ detection:
       - '\powershell.exe'
       - '\pwsh.exe'
   selection_svc_identity:
-    User|contains:
+    ParentUser|contains:
       - 'APPPOOL'
       - 'NETWORK SERVICE'
       - 'LOCAL SERVICE'
@@ -62,4 +85,11 @@ detection:
 falsepositives:
   - Service accounts that legitimately shell out (scripts, monitoring) - baseline
     per host and allowlist the known parent/child pairs.
+  - ParentUser requires Sysmon 13.00 or later. On an older build the field is absent entirely
+    and the selection is silently unsatisfiable rather than noisy, so this rule's silence on
+    such a host is not evidence of absence - verify against a real Sysmon 1 before trusting it.
+    This is measured rather than assumed - of 147 Sysmon-1 records swept across the pinned
+    EVTX corpus, only the one from a 2022 host carries ParentUser at all. The shipped
+    detections/sysmon/sysmonconfig-detection-lab.xml is schemaversion 4.90 (Sysmon 15.x) and
+    captures all ProcessCreate, so a lab endpoint emits it.
 level: medium
