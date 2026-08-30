@@ -24,6 +24,29 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **`potato_seimpersonate_sysmon_1` was keyed on the wrong field and had never fired on a
+  potato (#239).** The rule and `detections/README.md` described it as the Sysmon half of a
+  per-channel pair with `potato_seimpersonate_4688`, one shape on two channels. It was not.
+  4688's `SubjectUserName` is the account that *created* the process; Sysmon 1's `User` is the
+  account of the *new* process. The two agree on an ordinary service-spawns-shell event, which
+  is why the pair looked like a twin and why its fixture passed — and they diverge on a
+  successful potato, which is the entire technique. So the rule went silent at exactly the
+  moment its twin fired, and a host forwarding only Sysmon read as covered for T1134.001 in
+  both `detections/README.md` and `detections/navigator/COVERAGE.md` while seeing nothing.
+  Measured rather than argued: replayed against four real potato captures on three hosts
+  (RogueWinRM, NetworkServiceExploit, RottenPotato from an IIS webshell, EfsPotato) from the
+  pinned EVTX corpus, the shipped rule fired on none of them. The selection moves to
+  `ParentUser`, which is `SubjectUserName`'s actual counterpart, and the corrected rule fires
+  on the two captures whose payload is a named shell. The pairing claim in both rules and in
+  `detections/README.md` is now true rather than merely stated. `ParentUser` needs Sysmon
+  13.00+, which is a real ingestion constraint and is written into the rule instead of
+  assumed — on an older build the field is absent and the selection is silently unsatisfiable
+  rather than noisy. Full measurement, and what it does not settle, in
+  `docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md`. The 4688 half is
+  untouched and still unconfirmed on a real potato; #239 stays open for the first-party run.
+  Fixture corrected to the measured shape (it carried no `ParentUser` key at all) and renamed
+  to `potato_sysmon1_tp.jsonl`, and the pair gains its first true negative.
+
 - **`make core-check` reported fleet drift from an empty variable.** It printed
   "gh not installed — cannot query upstream tags" and then queried anyway; `gh` failing
   left `upstream_ver` empty, which is never equal to `local_ver`, so it announced

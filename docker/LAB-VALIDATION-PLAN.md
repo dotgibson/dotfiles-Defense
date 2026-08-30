@@ -79,9 +79,18 @@ because it is the part that is testable and does not need a range — what is st
 the attack-execution wrapper around it. Its first use is recorded in
 `docker/validation/labruns/2026-08-sysmon18-remote-pipe.md`, which settled the Sysmon-18
 remote-pipe premise from a third-party capture and corrected the `EventData` key set of six
-host-plane fixtures in the process. `docker/validation/labruns/` is where run records live;
-its `README.md` states what one must contain and why a third-party capture earns
-`vendor-documented` rather than `captured`.
+host-plane fixtures in the process. Its second is
+`docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md`, which found a shipped
+rule keyed on the wrong field — Sysmon 1's `User` is the new process, not its creator — and
+proved it by replaying four real potato captures the rule had never been run against.
+`docker/validation/labruns/` is where run records live; its `README.md` states what one must
+contain and why a third-party capture earns `vendor-documented` rather than `captured`.
+
+Both runs make the same argument for this phase existing at all: neither defect was reachable
+by any gate in `docker/validation/`. A fixture written from the belief that produced the rule
+agrees with the rule, and `check_near_miss` compares a true negative to its true positive
+rather than to the provider, so a wrong-field-semantics case passes both. Only a real event
+disagrees.
 
 ## What is and isn't achievable
 

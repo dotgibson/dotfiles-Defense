@@ -201,7 +201,7 @@ purple-validatable out of the box.
 | Rule                                                          | Event / source                                                                                    | ATT&CK    | Validate with                                |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------- |
 | `adcs_esc1_san_mismatch_4886`                                 | 4886/4887 cert request                                                                            | T1649     | AD CS abuse · adcs-esc1-certipy              |
-| `potato_seimpersonate_4688` / `potato_seimpersonate_sysmon_1` | proc create (service→shell); per-channel pair (Security-4688 `SubjectUserName` / Sysmon-1 `User`) | T1134.001 | Win privesc · potato-seimpersonate           |
+| `potato_seimpersonate_4688` / `potato_seimpersonate_sysmon_1` | proc create (service→shell); per-channel pair (4688 `SubjectUserName` / Sysmon-1 `ParentUser`)    | T1134.001 | Win privesc · potato-seimpersonate           |
 | `spoolss_pipe_impersonation_sysmon_17`                        | Sysmon 17 PipeEvent (`\spoolss` created by anything but `spoolsv.exe`)                            | T1134.001 | Win privesc · potato-seimpersonate           |
 | `token_theft_process_target_subject_4688`                     | 4688 Target Subject (process created with a SYSTEM token by a non-SYSTEM creator)                 | T1134.001 | Win privesc · potato-seimpersonate           |
 | `shadow_credentials_keycredentiallink_5136`                   | 5136 msDS-KeyCredentialLink                                                                       | T1556     | AD attack paths · shadow-credentials-certipy |
@@ -296,7 +296,12 @@ Two techniques carry a deliberate set of rules, covering different halves:
   SACL on, at the cost of enabling event 11. They are a per-source pair in the same sense
   as the `potato_seimpersonate` 4688/Sysmon-1 pair — genuinely different field names
   (`ObjectName`/`ProcessName` vs `TargetFilename`/`Image`), so one rule naming both would
-  null under either pipeline.
+  null under either pipeline. Note what that precedent cost to establish: the potato pair
+  named the wrong Sysmon field for two months (`User`, the child, rather than `ParentUser`,
+  the creator) and looked like a twin the whole time, because the two agree on every event
+  except the attack. A per-channel pair is only a pair once someone has checked that the two
+  fields mean the same thing — see
+  `docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md`.
   Deploy whichever you collect; deploy both if you collect both.
 
 **`collection/`** (host-side collection — proc create 4688 / Sysmon 1, plus 4663 for the read sweep)
@@ -498,7 +503,11 @@ process that issues ten destructive API calls a minute. The two process-creation
 account on purpose — the actor field differs per channel (Security-4688
 `SubjectUserName` vs Sysmon-1 `User`) and naming either would null the rule under the
 other channel's pipeline, the same trap the `potato_seimpersonate` 4688/Sysmon-1 pair
-documents.
+documents. Grouping by `Computer` also sidesteps a second problem the pair had to be
+corrected for: those two fields are not the same actor. Security-4688 `SubjectUserName` is
+the creator and Sysmon-1 `User` is the new process — so a burst grouped by one is not the
+same burst grouped by the other, and the host is the only key that means one thing on both
+channels.
 Both bursts are a property of the host anyway.
 
 The `linux/`, `cloud/`, `kubernetes/`, `okta/`, `github/`, `registry/`,

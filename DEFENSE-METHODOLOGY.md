@@ -150,6 +150,38 @@ from its impersonating thread token is inference from Microsoft's documentation,
 capture, and a lab run settles it — the same run that would establish whether the potato pair
 has ever fired on a real potato.
 
+**Half of that run has now happened, and the potato pair had not been firing (#239).** The
+question was narrower than the 4688 caveat above and was answered without a host, by the #165
+route the Sysmon-18 premise took: go to the published capture and see what it settles. It
+settles this one completely. `potato_seimpersonate_sysmon_1.yml` keyed on Sysmon 1's `User`,
+in the belief that it named the account that created the process the way Security-4688's
+`SubjectUserName` does. It does not — `User` is the **new process's** account, which the
+captures show plainly wherever a provably-SYSTEM creator produces a non-SYSTEM child
+(`winlogon.exe` → `userinit.exe` running as the logging-on user, nine such records across
+three hosts). The consequence is the bad kind of wrong: on an ordinary service-spawns-shell
+event the creator and the child are the same account, so the rule looked right and its fixture
+passed; on a successful potato they diverge, which is what the technique *is*. Run against
+four real potato captures on three hosts — RogueWinRM, NetworkServiceExploit, RottenPotato
+from an IIS webshell, EfsPotato — the shipped rule fired on **none** of them. What it had been
+quietly detecting all along is the webshell foothold before the swap, which is worth having
+and is not what `detections/README.md` or `detections/navigator/COVERAGE.md` said it was. The
+fix is `ParentUser`, which is `SubjectUserName`'s actual counterpart, and the corrected rule
+fires on the two captures whose payload is a named shell; the other two spawn `notepad.exe`
+and `whoami.exe` and are missed for the separate, already-documented reason that the pair
+carries an `Image` shell list at all. Written up in
+`docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md`.
+
+Three things that record keeps honest. `ParentUser` was **never observed on a potato** — all
+four captures predate Sysmon 13, which introduced the field, so the firing run derived it by
+linking each record to its parent's own Sysmon-1 record on `ProcessGuid`; the corrected rule is
+proven to name the right field, not to have fired on an untouched captured event, and #239
+stays open for the first-party run that would close the difference. The Sysmon 13+ requirement
+is a real ingestion constraint and is now stated in the rule rather than assumed, because on an
+older build the selection is silently unsatisfiable rather than noisy — the same failure mode
+one layer down. And **none of this touches 4688**: no 4688 from a potato exists in the corpus,
+so `potato_seimpersonate_4688.yml` is still unconfirmed on a real potato, and the Creator
+Subject caveat in the paragraph above is exactly as open as it was.
+
 Two shapes were considered on the way and rejected, so they are not re-proposed. A flat 4672
 selection is noise by construction — every SYSTEM logon on the host emits one, at service
 start rather than at escalation. And a 4624-to-4672 session join cannot be built here even if

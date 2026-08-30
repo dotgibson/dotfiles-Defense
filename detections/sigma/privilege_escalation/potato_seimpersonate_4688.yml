@@ -14,13 +14,19 @@ description: |
   d5c5c185-a62f-415a-ab0f-2572f910b541), which detects the impersonation
   itself on Sysmon 17, and with Sysmon 1 linking the service parent to a SYSTEM
   child.
-  Channel: native Security-4688 carries the account in SubjectUserName. This is the
-  4688 half of a per-channel pair - its Sysmon-1 twin (field User) is
-  potato_seimpersonate_sysmon_1.yml (id 03e878f6-bbdc-41e1-afa6-68b2979938fe). The
-  two are split on purpose: a single rule naming both User and SubjectUserName nulls
-  under any single pysigma pipeline (the pipeline that can't resolve one field drops
-  the whole rule), so it silently never fires. Deploy both; whichever channel your
-  hosts forward will match.
+  Channel: native Security-4688 carries the creator in SubjectUserName. This is the
+  4688 half of a per-channel pair - its Sysmon-1 twin (field ParentUser) is
+  potato_seimpersonate_sysmon_1.yml (id 03e878f6-bbdc-41e1-afa6-68b2979938fe). That twin
+  keyed on Sysmon's User until dotgibson/dotfiles-Defense#239, which measured User to be the
+  NEW process's account rather than the creator's and so not this field's counterpart at all;
+  the pair agreed on benign events and diverged on exactly the successful potato they exist to
+  catch. ParentUser is the real counterpart, and the pairing claim is only true as of that
+  correction - see docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md. The two
+  are split on purpose: a single rule naming both ParentUser and SubjectUserName nulls under
+  any single pysigma pipeline (the pipeline that can't resolve one field drops the whole rule),
+  so it silently never fires. Deploy both; whichever channel your hosts forward will match.
+  This rule's own behaviour on a real potato is still unconfirmed - no 4688 from one was found
+  in the pinned corpus, so #239's question about it stays open.
   Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate).
 references:
