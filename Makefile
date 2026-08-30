@@ -180,15 +180,29 @@ core-check: ## Is the vendored core/ behind the latest upstream Core release?
 	@# `sed 's/^v//'` is load-bearing and matches core-drift.yml exactly: core.lock stores a
 	@# BARE version (4.18.0) while the upstream tags carry the v prefix, so comparing them
 	@# raw reports a sync owed on a repo that is perfectly current.
-	@command -v gh >/dev/null 2>&1 || { echo "gh not installed — cannot query upstream tags"; exit 0; }
-	@local_ver=$$(sed -n 's/^core_version=//p' core.lock | head -n1); \
-	 upstream_ver=$$(gh api repos/dotgibson/dotfiles-core/tags --paginate --jq '.[].name' \
-	   | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sed 's/^v//' | sort -V | tail -n1); \
-	 if [ "$$local_ver" = "$$upstream_ver" ]; then \
-	   echo "✓ vendored core is current ($$local_ver)"; \
-	 else \
-	   echo "• vendored core is $$local_ver, upstream is $$upstream_ver — a sync from dotfiles-core is owed"; \
-	 fi
+	@#
+	@# The gh probe and the query are ONE recipe line. make gives each line its own shell, so
+	@# the old `exit 0` ended only ITS line and the query ran anyway — and this target fails
+	@# WORSE than the others of its kind (dotgibson/dotfiles-core#775): `gh` erroring leaves
+	@# upstream_ver EMPTY, which is never equal to local_ver, so it printed
+	@#     • vendored core is 5.4.1, upstream is  — a sync from dotfiles-core is owed
+	@# A confidently wrong answer about fleet drift, not a crash. An empty upstream is now
+	@# its own branch rather than being compared.
+	@if ! command -v gh >/dev/null 2>&1; then \
+	  echo "gh not installed — cannot query upstream tags"; \
+	else \
+	  local_ver=$$(sed -n 's/^core_version=//p' core.lock | head -n1); \
+	  upstream_ver=$$(gh api repos/dotgibson/dotfiles-core/tags --paginate --jq '.[].name' \
+	    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sed 's/^v//' | sort -V | tail -n1); \
+	  if [ -z "$$upstream_ver" ]; then \
+	    echo "!! could not read upstream tags (gh failed or returned nothing) — drift UNKNOWN, not current"; \
+	    exit 1; \
+	  elif [ "$$local_ver" = "$$upstream_ver" ]; then \
+	    echo "✓ vendored core is current ($$local_ver)"; \
+	  else \
+	    echo "• vendored core is $$local_ver, upstream is $$upstream_ver — a sync from dotfiles-core is owed"; \
+	  fi; \
+	fi
 
 ## ── maintenance ──────────────────────────────────────────────────────────────
 
