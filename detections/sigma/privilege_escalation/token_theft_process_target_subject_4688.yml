@@ -29,9 +29,20 @@ description: |
   cleanly and then matches nothing forever. Verified by conversion, not assumed. There is
   no Sysmon twin to fall back on either: Target Subject is a 4688-only field set, and
   Sysmon 1 has no field meaning "the token this process was created with is not its
-  creator's". ParentUser is a different claim (an identity mismatch between parent and
-  child, not the token's provenance) and is not a substitute. So a host forwarding only
-  Sysmon is not covered by this rule, and the potato pair remains its only reading there.
+  creator's". ParentUser is a different claim - an identity mismatch between parent and
+  child that a rule must infer, not token provenance the OS asserts - and it is not a
+  substitute for THIS rule's field set. It is, however, enough to carry a rule of its own,
+  and since dotgibson/dotfiles-Defense#239 measured what Sysmon 1's User and ParentUser
+  actually mean, it does: token_theft_parent_child_mismatch_sysmon_1.yml (id
+  b7f135f0-c066-4b0b-ac45-3f6bb433be38) selects a SYSTEM process whose creator was a service
+  identity. So a host forwarding only Sysmon is still not covered by this rule, but it is no
+  longer left with only the potato pair's pre-theft shape there.
+  Deploy both where you collect both, because they fail differently. This rule is the stronger
+  claim on stronger evidence - the OS populates Target Subject rather than leaving it to be
+  derived, and S-1-5-18 is a SID that no localisation moves, where the Sysmon rule must match
+  the string SYSTEM. But the ONE ASSUMPTION below is this rule's exposure and not that one's:
+  ParentUser is resolved from the parent PROCESS's token, so a thread-token reading of Creator
+  Subject would delete this rule's true positive and leave the Sysmon rule standing.
   Why 4688 and not 4624/4672, which is what #230 asked for. Neither of those events is
   written by this attack. 4624 generates when a logon SESSION is created and 4672 when
   privileges are assigned to a new one; the pipe-impersonation majority of the family never

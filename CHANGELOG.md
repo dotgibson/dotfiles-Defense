@@ -70,6 +70,31 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **A Sysmon-plane rule for the token swap itself, and the Stealth row widens a third time
+  (follow-on to #239).** #239 established that Sysmon 1's `User` is the new process and
+  `ParentUser` the creator, then used only the creator half to repair
+  `potato_seimpersonate_sysmon_1`. `token_theft_parent_child_mismatch_sysmon_1.yml` (id
+  `b7f135f0-c066-4b0b-ac45-3f6bb433be38`) uses both: a child running as SYSTEM whose creator
+  was an app-pool / NETWORK SERVICE / LOCAL SERVICE identity. That is token theft stated as two
+  fields on one event — a service identity cannot spawn SYSTEM without holding a token it did
+  not start with — so unlike the potato pair it observes the outcome rather than the shape
+  before it, and it takes the TA0005 half of T1134.001 on the reopen condition #223 wrote.
+  `Stealth TA0005` goes `3 | 4` → `3 | 5`; the technique count, which is what measures the
+  gap, does not move. It carries **no `Image` constraint** on purpose: measured against the
+  four real potato captures in the pinned corpus it fires 4/4 where the potato pair fires 2/4,
+  the difference being payloads (`notepad.exe`, `whoami.exe`) that no shell list catches, and
+  the shell list removes no noise — its only matches across all 147 Sysmon-1 records swept are
+  those four swaps. The tidier variant mirroring the 4688 rule's `filter_same_context` was
+  rejected on evidence: it compiles to Splunk as `NOT ParentUser="*SYSTEM*"`, where `NOT` on an
+  absent field matches, so on a pre-Sysmon-13 host it would fire on every SYSTEM process
+  creation while the zircolite backend the gate runs stays silent — a defect the gate is
+  structurally unable to see. Measurement in
+  `docker/validation/labruns/2026-08-token-mismatch-sysmon-1.md`, including what it does not
+  settle: `ParentUser` was still never observed on a real potato (all four captures predate
+  Sysmon 13, so it was derived by `ProcessGuid` linkage), the corpus contains no EDR or RMM
+  agent so the zero-false-positive result is "not yet met" rather than "does not occur", and
+  the locale exposure is reasoned rather than measured.
+
 - **The token-context half of T1134.001 closes, on a different event than #230 asked for
   (#230).** #223 reserved the Stealth half of T1134.001 for a rule that observes the
   impersonation rather than the shape around it, and named two candidates; #225 answered the
