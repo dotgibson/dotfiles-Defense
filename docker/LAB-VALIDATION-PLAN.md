@@ -86,7 +86,7 @@ remote-pipe premise from a third-party capture and corrected the `EventData` key
 host-plane fixtures in the process. Its second is
 `docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md`, which found a shipped
 rule keyed on the wrong field — Sysmon 1's `User` is the new process, not its creator — and
-proved it by replaying four real potato captures the rule had never been run against.
+proved it by replaying six real potato captures the rule had never been run against.
 `docker/validation/labruns/` is where run records live; its `README.md` states what one must
 contain and why a third-party capture earns `vendor-documented` rather than `captured`.
 

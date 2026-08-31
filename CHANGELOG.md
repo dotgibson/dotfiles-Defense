@@ -24,6 +24,29 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **The potato rules cited the pre-re-measurement figures, and one of them argued the opposite of
+  the record it cites.** `2026-08-token-mismatch-sysmon-1.md` was re-measured over the full corpus
+  on 2026-08-30 — 147 Sysmon-1 records became **1491**, and four recognised potato captures became
+  **six** — but the rules reading it were not updated with it. Seven hand-written locations still
+  said 147 / four captures / 4-of-4, across `token_theft_parent_child_mismatch_sysmon_1.yml`,
+  `potato_seimpersonate_sysmon_1.yml`, `DEFENSE-METHODOLOGY.md`, `fixture-provenance.tsv` and
+  `docker/LAB-VALIDATION-PLAN.md`. Corrected to 5 of 6 over 1491, with the sixth (PrintSpoofer)
+  named and explained rather than absorbed into a count: its operator was already an interactive
+  admin, so no service identity appears on that event and neither rule can reach it. The count of
+  payloads the pair's `Image` list drops was also stale at two — it is three (`notepad.exe`,
+  `whoami.exe`, `nc64.exe`), which is a third of the rule's own detections rather than a quarter.
+  The `ParentUser`-availability note in both rules said "only the one from a 2022 host carries
+  ParentUser"; four of the 1491 do, two of them the `-` placeholder.
+  The one that mattered beyond bookkeeping is the rejected negated-filter variant. The rule
+  defended rejecting it on the premise that it "finds the same 4 of 4 on this corpus and nothing
+  more, so it buys no coverage here" — i.e. rejected *despite* being equivalent, purely on the
+  Splunk `NOT`-on-missing-field conversion hazard. The record says the opposite: over 1491 records
+  it matches **8**, not 5, and two of the three extra are arguably wanted, so the decisive
+  objection is the third — a `ParentUser` of `-`, which does not contain SYSTEM and so passes a
+  negated filter, in a corpus where 401 of 1491 records resolve no parent at all. The rule now
+  makes both arguments instead of the weaker one. No detection logic changed; the Splunk deploy
+  form is regenerated.
+
 - **The potato runbook now says what it predicts, and four things in it were wrong.** #246 is
   host-bound and stays open — every one of its three items needs a Windows host running a real
   potato, and no second public corpus fills the gap (`OTRF/Security-Datasets` carries no potato

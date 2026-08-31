@@ -220,12 +220,14 @@ condition for: a process running as a service identity cannot cause a child to r
 without holding a token it did not start with — `CreateProcessWithTokenW` needs SeImpersonate
 plus a token, `CreateProcessAsUserW` needs SeAssignPrimaryToken plus a token, and there is no
 third door — so the rule selects the theft's result rather than the shape around it. That is
-what the potato pair cannot do and says so. Measured on the #239 captures: 4 of the 4 real
-potatoes in the corpus, against the pair's 2, and no other match in 147 Sysmon-1 records. The
-two extra are the ones whose payload is `notepad.exe` and `whoami.exe`, which is why the rule
-carries no `Image` constraint —
+what the potato pair cannot do and says so. Measured on the #239 captures: 5 of the 6 real
+potatoes in the corpus, against the pair's 2, and no other match in 1491 Sysmon-1 records. The
+three extra are the ones whose payload is `notepad.exe`, `whoami.exe` and `nc64.exe`, which is
+why the rule carries no `Image` constraint —
 `docker/validation/labruns/2026-08-token-mismatch-sysmon-1.md` records that the shell list
-would halve the detections and remove no noise.
+would cut the detections from five to two and remove no noise. The sixth potato is out of
+reach of both rules for a different reason: PrintSpoofer's operator was already an interactive
+admin, so no service identity appears on that event at all.
 
 Two things that rule is careful about, both worth keeping. It is **weaker than its 4688
 sibling and says so**: Windows populates Target Subject itself, where this rule infers the
