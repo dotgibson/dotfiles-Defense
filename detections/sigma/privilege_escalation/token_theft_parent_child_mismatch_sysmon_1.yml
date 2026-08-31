@@ -1,0 +1,119 @@
+title: Token theft - SYSTEM process created by a service identity (Sysmon 1)
+id: b7f135f0-c066-4b0b-ac45-3f6bb433be38
+status: experimental
+description: |
+  Detection posture: high. This is the Sysmon-plane rule that observes the OUTCOME of
+  SeImpersonate abuse rather than the shape around it. A process running as a service
+  identity (app-pool / NETWORK|LOCAL SERVICE) cannot cause a child to run as SYSTEM
+  unless it holds a SYSTEM token it did not start with: CreateProcessWithTokenW needs
+  SeImpersonate plus a token, CreateProcessAsUserW needs SeAssignPrimaryToken plus a
+  token, and there is no third door. So ParentUser being a service identity while User
+  is SYSTEM is token theft, stated as two fields on one event.
+  Why this is not a fourth copy of the T1134.001 set. potato_seimpersonate_sysmon_1.yml
+  (id 03e878f6-bbdc-41e1-afa6-68b2979938fe) selects a service identity spawning a named
+  shell - the shape BEFORE the token is stolen, keyed on the creator alone - and concedes
+  it cannot show the run-as-SYSTEM result. This rule's entire selection IS that result,
+  and it carries no Image constraint, so it survives a payload that is not a shell.
+  Measured on the captures behind dotgibson/dotfiles-Defense#239, re-measured over the
+  full corpus: against the six real potato captures in the pinned corpus (RogueWinRM,
+  NetworkServiceExploit, RottenPotato from an IIS webshell, EfsPotato, RoguePotato,
+  PrintSpoofer) this rule fires on 5 of 6, where the potato pair fires on 2 - the three it
+  adds spawn notepad.exe, whoami.exe and nc64.exe, none of them a named shell. The sixth,
+  PrintSpoofer, is missed and should be: its operator was already an interactive admin, so
+  ParentUser reads a named user, and the invariant this rule states - a SYSTEM child created
+  by a SERVICE identity - does not hold there. Across all 1491 Sysmon-1 records swept, its
+  only five matches are those five swaps.
+  How it relates to the 4688 rule, and why both are worth deploying.
+  token_theft_process_target_subject_4688.yml (id 1faa7a59-9fd5-4d14-9bf1-d94f82466acb)
+  makes the stronger claim on the stronger evidence - Windows populates 4688's Target
+  Subject block only when creator and target "do not share the same logon", so the OS
+  asserts the token mismatch rather than leaving a rule to infer it, and it keys on the
+  SID S-1-5-18, which no localisation moves. This rule infers the mismatch by comparing
+  two identity fields, and Sysmon 1 carries no SID, so it must match the string SYSTEM -
+  which IS localised (a German host writes NT-AUTORITAET\SYSTEM, and the substring still
+  matches, but a locale that translates the word does not). Prefer the 4688 rule where
+  you collect 4688.
+  They are not redundant, because they fail differently. The open question on the 4688
+  rule (dotgibson/dotfiles-Defense#238) is whether the audit reads Creator Subject from
+  the calling process's token or from its impersonating THREAD token; on the thread-token
+  reading SubjectUserSid arrives S-1-5-18 and that rule's filter_same_context deletes its
+  own true positive. ParentUser is resolved from the parent PROCESS's token and is
+  untouched by that question, so this rule stands exactly where the other one might fall.
+  A host forwarding both gets two independent readings of one event.
+  Channel: Sysmon EventID 1. User is the NEW process's account and ParentUser is the
+  creator's - established by measurement in
+  docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md after the potato pair
+  spent two months keyed on the wrong one. Do not reverse them.
+  A broader shape was considered and rejected: selection User|contains SYSTEM with
+  filter_same_context ParentUser|contains SYSTEM, mirroring the 4688 rule's structure so
+  as to catch any non-SYSTEM creator rather than three named identities. Over 1491 records
+  it matches 8 where the shipped shape matches 5, and the three extra are the argument
+  against it rather than for it. Two are arguably wanted - PPLdump, and the PrintSpoofer
+  this shape misses - but the third carries ParentUser = `-`, Sysmon's placeholder for a
+  parent it could not resolve, which does not contain SYSTEM and so passes a negated filter.
+  401 of the 1491 records resolve no parent, so inheriting every unresolvable value as a
+  match is not a corner case. It also converts to Splunk as
+  `User="*SYSTEM*" NOT ParentUser="*SYSTEM*"`, where NOT on a missing field MATCHES. On a
+  pre-Sysmon-13 host, which emits no ParentUser at all, that form fires on
+  every SYSTEM process creation on the box (50 such records in this corpus) while the
+  zircolite/SQLite backend the gate runs stays silent on the same rule and the same events.
+  A rule that is quiet in CI and floods one backend in production is the #149 shape with a
+  new face. The positive form below requires the field to be present and cannot do that.
+  Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
+  "Windows privilege escalation" fold; htpx pair potato-seimpersonate), then read the
+  Sysmon 1 the payload produced and compare User against ParentUser.
+  Requires Sysmon 13.00 or later - ParentUser does not exist before it.
+references:
+  - https://attack.mitre.org/techniques/T1134/001/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/potato-seimpersonate-4688.md
+author: dotfiles-Defense
+date: 2026-08-29
+tags:
+  # Both halves of T1134.001 are claimed here, and the TA0005 half is the point of the rule.
+  # T1134.001 is dual-tactic in the pinned v19.2 bundle, so check-attack-tags.sh's pairing
+  # assertion earns both with no attack-tactic-deliberate escape.
+  # dotgibson/dotfiles-Defense#223 reserved the Stealth half for "a rule that actually detects
+  # the impersonation ... or a token-context anomaly", and this is the second thing on that
+  # list, arriving on Sysmon 1 rather than on the 4624/4672 #230 imagined. Where the
+  # potato_seimpersonate_* pair declines TA0005 - correctly, because it is keyed on the
+  # creator alone and sees only the shape before the theft - this rule selects a process
+  # running under a token its creator could not have owned, which is the evasion's result
+  # rather than evidence of the mechanism that produced it. The #223 reopen condition asked
+  # for a rule earning the row on its own evidence; the measurement in
+  # docker/validation/labruns/2026-08-token-mismatch-sysmon-1.md is that evidence.
+  # Deliberately NOT writing the tag string in this comment: gen-coverage.sh matches tactic
+  # slugs over the whole file, so naming it here would tag the rule by accident.
+  - attack.stealth
+  - attack.privilege-escalation
+  - attack.t1134.001
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    User|contains: 'SYSTEM'
+  selection_parent:
+    ParentUser|contains:
+      - 'APPPOOL'
+      - 'NETWORK SERVICE'
+      - 'LOCAL SERVICE'
+  condition: selection and selection_parent
+falsepositives:
+  - Agents running as LOCAL SERVICE / NETWORK SERVICE that legitimately launch SYSTEM
+    helpers - some EDR, RMM and patch frameworks do this. To do so they must hold
+    SeImpersonate or SeAssignPrimaryToken and a SYSTEM token, so they are doing structurally
+    the same thing the attack does and no field distinguishes them; allowlist the specific
+    ParentImage and Image after confirming the publisher rather than widening the selection.
+    None appear in the corpus this rule was measured on, which contains no endpoint agent -
+    read the zero-false-positive result as "not yet met", not as "does not occur".
+  - ParentUser requires Sysmon 13.00 or later. On an older build the field is absent entirely
+    and the selection is silently unsatisfiable rather than noisy, so this rule's silence on
+    such a host is not evidence of absence - verify against a real Sysmon 1 before trusting
+    it. Of 1491 Sysmon-1 records swept across the pinned EVTX corpus, exactly four carry
+    ParentUser at all, and two of those carry the `-` placeholder for a parent Sysmon could
+    not resolve - the only clean one is from a 2022 host.
+  - A non-English host may render the SYSTEM account in a translated form that
+    User|contains 'SYSTEM' does not match, in which case the rule is silently unsatisfiable.
+    Security-4688 has no such exposure because it keys on the SID; Sysmon 1 carries no SID
+    field, which is the trade this rule makes.
+level: high

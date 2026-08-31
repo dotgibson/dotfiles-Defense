@@ -13668,6 +13668,164 @@ fi
 unset _gp_scan _gp_det _gp_hist _gp_core_ok _gpf _gph
 unset -f _gp_w _gp_is
 
+# ── Makefile gate guard (common.sh :: _core_make_gate_hits) ──────────────────
+# WHY THESE FIXTURES ARE THE REAL RECIPES, not synthetic ones. This guard exists because
+# eleven real defects shipped across eight repos and stayed green (#775). A guard for a
+# historical defect that is never RUN against that defect is the same category error it
+# exists to fix — the note on _core_workflow_ref_hits records the same reasoning — so the
+# fixtures below are the exact pre-fix and post-fix recipes, copied verbatim.
+#
+# It drives _core_make_gate_hits DIRECTLY, never a reimplementation of its loop.
+#
+# THE NEGATIVE CASES CARRY THE WEIGHT. A first draft of this guard used the blunter rule
+# "any `exit 0` before the last recipe line" and reported dotfiles-Alpine's `shell` target,
+# which guards shellcheck and then runs shellcheck ON THE SAME LINE — a correct skip. It
+# also flagged `lint-zsh` and `zsh-syntax`, which handle failure with `|| exit 1` inside
+# the loop. A gate that cries wolf on working code teaches the fleet to ignore it, so
+# every one of those shapes is pinned below as MUST-NOT-FIRE.
+hdr "Makefile gate guard (_core_make_gate_hits)"
+_mg_="$SANDBOX/makegate"
+mkdir -p "$_mg_"
+# Each case stands alone: a stale Makefile or config leaking into the next case is exactly
+# how the first draft of the ref-major tests produced three findings that were not defects.
+_mg_write() { rm -f "$_mg_/Makefile" "$_mg_/.markdownlint.jsonc"; printf '%s\n' "$1" >"$_mg_/Makefile"; }
+_mg_count() {
+  local got n=0
+  got="$(_core_make_gate_hits "$_mg_")"
+  [[ -n "$got" ]] && n="$(printf '%s\n' "$got" | wc -l | tr -d ' ')"
+  if [[ "$n" == "$2" ]]; then pass "make-gate: $1"; else fail "make-gate: $1 (got $n finding(s), want $2)"; fi
+}
+
+# ── R1, verbatim from dotfiles-Debian before #38. The guard and the tool are on separate
+# recipe lines, so the exit 0 skips nothing.
+_mg_write "markdown:
+	@command -v markdownlint-cli2 >/dev/null 2>&1 \\
+		|| { echo \"markdownlint-cli2 not installed: npm i -g markdownlint-cli2 — skipping\"; exit 0; }
+	@markdownlint-cli2 '*.md' '!core/**'
+"
+_mg_count "the real Debian pre-fix recipe reports the skip AND the narrow glob" 2
+
+# The same target after #38 — one recipe line, git ls-files. Both findings must clear.
+_mg_write "markdown:
+	@if ! command -v markdownlint-cli2 >/dev/null 2>&1; then \\
+	  echo \"markdownlint-cli2 not installed: npm i -g markdownlint-cli2 — skipping\"; \\
+	elif test -z \"\$(MD_FILES)\"; then echo \"no repo-owned .md\"; \\
+	else echo \"markdownlint-cli2 \$(MD_FILES)\"; markdownlint-cli2 \$(MD_FILES); fi
+"
+_mg_count "the same target after the fix is clean" 0
+
+# ── R1 must survive the tool being named in its own skip MESSAGE. Every one of these
+# guards does that ("markdownlint-cli2 not installed: npm i -g markdownlint-cli2"), and a
+# first draft treated the name in the message as an invocation — which silently suppressed
+# ALL FIVE real findings. Quoted text is prose, not a command.
+_mg_write "zsh-syntax:
+	@command -v zsh >/dev/null 2>&1 || { echo \"zsh not installed — skipping\"; exit 0; }
+	@for f in \$(ZSH_FILES); do echo \"zsh -n \$\$f\"; zsh -n \"\$\$f\" || exit 1; done
+"
+_mg_count "the tool named inside its own skip message is not mistaken for an invocation" 1
+
+# ── R1 MUST NOT FIRE: dotfiles-Alpine's `shell`. The guard and the guarded tool are on the
+# SAME logical line, so the exit 0 skips precisely what it promises.
+_mg_write "shell:
+	@command -v shellcheck >/dev/null 2>&1 || { echo '- shellcheck not installed — SKIP'; exit 0; }; \\
+	  echo ':: shellcheck'; shellcheck \$(SH_FILES)
+	@[ -n \"\$(SH_FILES)\" ] || exit 0; \\
+	  for f in \$(SH_FILES); do bash -n \"\$\$f\" || exit 1; done
+"
+_mg_count "a guard whose tool runs on the SAME line is not a finding" 0
+
+# ── R1 MUST NOT FIRE on exit 1: a hard failure aborts make on that line, which is what its
+# author meant. dotfiles-MacBook's brew-check escaped the original bug for exactly this
+# reason, and its check-skip-guards.sh header records why.
+_mg_write "brew-check:
+	@command -v brew >/dev/null 2>&1 || { echo \"brew missing\"; exit 1; }
+	@brew bundle check
+"
+_mg_count "an exit 1 guard is not a finding — it aborts the target as intended" 0
+
+# ── R2, verbatim from dotfiles-openSUSE's lint-sh before #139.
+_mg_write "lint-sh:
+	@if command -v shellcheck >/dev/null 2>&1; then \\
+	  echo \":: shellcheck \$(SH_FILES)\"; \\
+	  shellcheck -x \$(SH_FILES); \\
+	  echo \"   ok\"; \\
+	else \\
+	  echo \"!! shellcheck not installed — skipping\"; \\
+	fi
+"
+_mg_count "a checker whose status is discarded by \`;\` before a success echo is a finding" 1
+
+# R2 MUST NOT FIRE on either correct shape in the same file — `&&`, and `|| exit 1` inside
+# a loop followed by a success echo. Both are real fleet code; both were false positives
+# in the first draft.
+_mg_write "lint-sh:
+	@shellcheck -x \$(SH_FILES) && echo \"   ok\"
+lint-zsh:
+	@if command -v zsh >/dev/null 2>&1; then \\
+	  for f in \$(ZSH_FILES); do zsh -n \"\$\$f\" || exit 1; done; \\
+	  echo \"   ok\"; \\
+	fi
+"
+_mg_count "\`&&\` and \`|| exit 1\` before a success echo are correct, not findings" 0
+
+# ── R3: the config exists, nothing runs it. This is what Arch, Gentoo and openSUSE shipped.
+_mg_write "lint:
+	@echo nothing
+"
+printf '{}\n' >"$_mg_/.markdownlint.jsonc"
+_mg_count "a .markdownlint.jsonc with no local runner is a finding" 1
+rm -f "$_mg_/.markdownlint.jsonc"
+
+# ── R3's reachability probe must not use GNU-only grep flags, and must not read a grep
+# ERROR as "absent". The first draft used `--exclude-dir` and `-I`; busybox grep rejects
+# the former, so on Alpine the probe exited 2, was read as "no mirror", and reported CORE —
+# the repo that authors this rule — as the one repo missing it. A false finding produced by
+# an unsupported flag, in the gate whose whole subject is checks that answer wrongly.
+#
+# The fixture is a grep that rejects those flags exactly as busybox's does, so this case
+# fails on the old shape and passes on the new one WITHOUT needing an Alpine runner. The
+# audit-alpine CI leg is the real proof; this is the one that runs on a developer box.
+_mg_bb="$SANDBOX/bbgrep"
+mkdir -p "$_mg_bb"
+cat >"$_mg_bb/grep" <<'BBEOF'
+#!/bin/sh
+for a in "$@"; do
+  case "$a" in
+    --exclude-dir=*|-I) echo "grep: unrecognized option: ${a#--}" >&2; exit 2 ;;
+  esac
+done
+exec /usr/bin/grep "$@"
+BBEOF
+chmod +x "$_mg_bb/grep"
+if [[ -x /usr/bin/grep ]]; then
+  # An ABSOLUTE PATH set inside the substitution, never `$PATH` prefixed onto the call.
+  # Reading $PATH anywhere here pairs with the subshell PATH assignment ~350 lines above
+  # and shellcheck reports SC2030 there and SC2031 here — a false pair on two unrelated
+  # tests. This is the same shape as that earlier block, which is clean for the same
+  # reason: the assignment is scoped to the subshell and nothing reads PATH after it.
+  _mg_bb_out="$( PATH="$_mg_bb:/usr/bin:/bin"; _core_make_gate_hits "$HERE/.." )"
+  if [[ -z "$_mg_bb_out" ]]; then
+    pass "make-gate: Core stays clean under a grep that rejects GNU-only flags (the Alpine case)"
+  else
+    fail "make-gate: a busybox-style grep makes the mirror probe report a false finding: $_mg_bb_out"
+  fi
+  unset _mg_bb_out
+else
+  skip "make-gate: busybox-grep fixture (no /usr/bin/grep to delegate to)"
+fi
+rm -rf "$_mg_bb"
+unset _mg_bb
+
+# ── Core must satisfy the rule it authors. §8d asserts this in the audit; asserting it
+# here too means a `make test` catches it without a full audit run.
+if [[ -z "$(_core_make_gate_hits "$HERE/..")" ]]; then
+  pass "make-gate: Core's own Makefile meets the rule it sets for the fleet"
+else
+  fail "make-gate: Core's own Makefile breaks the rule §8d applies to every caller"
+fi
+unset _mg_
+unset -f _mg_write _mg_count
+
 # ── summary ───────────────────────────────────────────────────────────────────
 summary
 ((FAIL == 0)) || {

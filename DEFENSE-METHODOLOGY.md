@@ -81,21 +81,27 @@ gap be ledgered instead: T1070 is already covered by
 Both rules were written; they land in different rows, and that is correct rather than a
 mistag.
 
-Stealth is three techniques and three rules, and that is an honest reading of the corpus
-rather than an artifact of tagging. Two of them — T1070 and T1070.003 — are the command-
-history and artifact-removal work described above. The third is T1134.001, and it arrived
-by the route this section reserved for it rather than by a tag: see below. The rest of
-TA0005 is masquerading, obfuscation, process injection and LOLBAS proxy execution — a
-body of work this repo has not started, not one it has misfiled. The row being one wider
-is not the gap closing.
+Stealth is three techniques and five rules, and that is an honest reading of the corpus
+rather than an artifact of tagging. Two of the techniques — T1070 and T1070.003 — are the
+command-history and artifact-removal work described above, one rule each. The third is
+T1134.001, and it arrived by the route this section reserved for it rather than by a tag:
+see below. It now carries three rules, added one at a time and each on its own evidence —
+`spoolss_pipe_impersonation_sysmon_17` (#225) on the mechanism,
+`token_theft_process_target_subject_4688` (#230) on the token's provenance, and
+`token_theft_parent_child_mismatch_sysmon_1` (#239 follow-on) on the same outcome read from
+the other channel. The rest of TA0005 is masquerading, obfuscation, process injection and
+LOLBAS proxy execution — a body of work this repo has not started, not one it has misfiled.
+**The technique count is the one that measures the gap, and it has not moved since #225.**
+Three rules on one technique is depth, not breadth; read the row widening as one technique
+being covered from three planes rather than as TA0005 getting less thin.
 
 **The pair still declines the row, and #223 is still the reason.** Because T1134.001 is
 dual-tactic, `detections/sigma/privilege_escalation/potato_seimpersonate_4688.yml` and its
 Sysmon-1 twin could legally claim the TA0005 half — the pairing assertion in
 `detections/check-attack-tags.sh` asserts a tactic tag is *earned* by some technique
 tagged beside it, not that every tactic is claimed, so the tag would pass and
-`detections/navigator/COVERAGE.md` would read `Stealth TA0005 | 3 | 5` instead of
-`3 | 3`. The pair does **not** claim it. What those rules select is a service identity
+`detections/navigator/COVERAGE.md` would read `Stealth TA0005 | 3 | 7` instead of the
+`3 | 5` it reads today. The pair does **not** claim it. What those rules select is a service identity
 spawning a shell — the shape *before* the token is stolen, keyed on the un-masked
 account field — and their own descriptions concede they cannot show the run-as-SYSTEM
 result. The evasion is the part they cannot see. Taking the row would buy two rules'
@@ -150,6 +156,96 @@ from its impersonating thread token is inference from Microsoft's documentation,
 capture, and a lab run settles it — the same run that would establish whether the potato pair
 has ever fired on a real potato.
 
+**Half of that run has now happened, and the potato pair had not been firing (#239).** The
+question was narrower than the 4688 caveat above and was answered without a host, by the #165
+route the Sysmon-18 premise took: go to the published capture and see what it settles. It
+settles this one completely. `potato_seimpersonate_sysmon_1.yml` keyed on Sysmon 1's `User`,
+in the belief that it named the account that created the process the way Security-4688's
+`SubjectUserName` does. It does not — `User` is the **new process's** account, which the
+captures show plainly wherever a provably-SYSTEM creator produces a non-SYSTEM child
+(`winlogon.exe` → `userinit.exe` running as the logging-on user — 78 such records across three
+hosts, GUID-linked to their parents, out of 1491 Sysmon-1 records swept from all 278 EVTX). The consequence is the bad kind of wrong: on an ordinary service-spawns-shell
+event the creator and the child are the same account, so the rule looked right and its fixture
+passed; on a successful potato they diverge, which is what the technique *is*. Run against
+six real potato captures on four hosts — RogueWinRM, NetworkServiceExploit, RottenPotato from
+an IIS webshell, EfsPotato, RoguePotato and PrintSpoofer — the shipped rule fired on **none**
+of them. What it had been
+quietly detecting all along is the webshell foothold before the swap, which is worth having
+and is not what `detections/README.md` or `detections/navigator/COVERAGE.md` said it was. The
+fix is `ParentUser`, which is `SubjectUserName`'s actual counterpart, and the corrected rule
+fires on the two captures whose payload is a named shell; the other four spawn `notepad.exe`,
+`whoami.exe` and `nc64.exe`, or were run by an already-interactive admin, and are missed for the separate, already-documented reason that the pair
+carries an `Image` shell list at all. Written up in
+`docker/validation/labruns/2026-08-potato-sysmon1-user-semantics.md`.
+
+Two things the same run answered that nobody had asked. The reading does not depend on
+Sysmon-internal inference at all: one sample in the corpus carries **both** a Sysmon 1 and a
+Security 4688 for the same process creation, and there Sysmon's `User` matches 4688's *Target*
+while its `LogonId` matches `TargetLogonId` rather than `SubjectLogonId` — a numeric identifier
+carried independently by two providers, so it cannot be read as a spelling difference between
+them. And the parenting question a `ParentUser` rule quietly depends on is measured rather than
+assumed: `CreateProcessWithTokenW` is serviced by the Secondary Logon service in `svchost.exe`,
+so had seclogon created the payload rather than the tool, `ParentUser` would read SYSTEM and the
+corrected rule would be inert. On all six captures the escalated process's parent is the tool
+itself, with no reparenting — which also rules out the seclogon route to the Creator Subject
+caveat above, leaving only the thread-token route that caveat actually states.
+
+The Security channel yielded something too, though nothing about a potato:
+`token_theft_process_target_subject_4688.yml` **fired on real telemetry** for the first time, on
+a genuine token swap; its fixtures' event-version-2 key set proved identical to six captured
+4688s; its pre-Windows-10 falsepositives note is now measured, on captured event-version-1
+records that carry no Target Subject block at all; and one captured 4688 populates
+`TargetUserName`/`TargetDomainName`/`TargetLogonId` while `TargetUserSid` reads the null SID,
+which matters because `TargetUserSid` is the only one of the four that rule can see.
+
+Three things that record keeps honest. `ParentUser` was **never observed on a potato** — all
+six captures predate Sysmon 13, which introduced the field, so the firing run derived it by
+linking each record to its parent's own Sysmon-1 record on `ProcessGuid`; the corrected rule is
+proven to name the right field, not to have fired on an untouched captured event. The Sysmon 13+
+requirement is a real ingestion constraint and is now stated in the rule rather than assumed,
+because on an older build the selection is silently unsatisfiable rather than noisy — the same
+failure mode one layer down. And **none of this touches the potato 4688**: no 4688 from a potato
+exists in the corpus, so `potato_seimpersonate_4688.yml` is still unconfirmed on a real one, and
+the thread-token half of the Creator Subject caveat above is exactly as open as it was. *Reopen
+when* a host exists: `docker/validation/labruns/runbook-potato-seimpersonate.md` is the runbook,
+and dotgibson/dotfiles-Defense#246 is the tracker #239 was split into for it.
+
+**The Sysmon plane gets its own reading of the outcome, and the Stealth row widens a third
+time.** #239 corrected the potato pair to key on `ParentUser` and stopped there, because the
+other shape the same measurement unlocked — the child being SYSTEM while the creator is a
+service identity — is a new detection rather than a correction. It is now
+`detections/sigma/privilege_escalation/token_theft_parent_child_mismatch_sysmon_1.yml`, and it
+takes both tactic tags. The argument for the TA0005 half is the one #223 wrote the reopen
+condition for: a process running as a service identity cannot cause a child to run as SYSTEM
+without holding a token it did not start with — `CreateProcessWithTokenW` needs SeImpersonate
+plus a token, `CreateProcessAsUserW` needs SeAssignPrimaryToken plus a token, and there is no
+third door — so the rule selects the theft's result rather than the shape around it. That is
+what the potato pair cannot do and says so. Measured on the #239 captures: 5 of the 6 real
+potatoes in the corpus, against the pair's 2, and no other match in 1491 Sysmon-1 records. The
+three extra are the ones whose payload is `notepad.exe`, `whoami.exe` and `nc64.exe`, which is
+why the rule carries no `Image` constraint —
+`docker/validation/labruns/2026-08-token-mismatch-sysmon-1.md` records that the shell list
+would cut the detections from five to two and remove no noise. The sixth potato is out of
+reach of both rules for a different reason: PrintSpoofer's operator was already an interactive
+admin, so no service identity appears on that event at all.
+
+Two things that rule is careful about, both worth keeping. It is **weaker than its 4688
+sibling and says so**: Windows populates Target Subject itself, where this rule infers the
+mismatch by comparing two fields, and 4688 keys on the SID `S-1-5-18` where Sysmon 1 carries no
+SID at all and must match the string `SYSTEM`, which localisation can move. Prefer the 4688
+rule where you collect 4688. But they are not redundant, because the open #238 question —
+whether Creator Subject is read from the calling process's token or its impersonating thread
+token — is an exposure of the 4688 rule alone; `ParentUser` comes from the parent *process's*
+token, so this rule stands exactly where that one might fall. And the **more elegant form was
+rejected on measurement**, not taste: mirroring the 4688 rule's `filter_same_context` structure
+(`User` is SYSTEM and NOT `ParentUser` is SYSTEM) finds the same four and nothing more here,
+but it compiles to Splunk as `NOT ParentUser="*SYSTEM*"`, and Splunk's `NOT` matches an absent
+field. On a pre-Sysmon-13 host, which emits no `ParentUser`, that form fires on every SYSTEM
+process creation while the zircolite/SQLite backend the gate runs stays silent on the same
+rule and events. The gate cannot see that class of defect because the gate runs the quiet
+backend — #149 wearing a new face, and the reason the shipped rule states its selection
+positively.
+
 Two shapes were considered on the way and rejected, so they are not re-proposed. A flat 4672
 selection is noise by construction — every SYSTEM logon on the host emits one, at service
 start rather than at escalation. And a 4624-to-4672 session join cannot be built here even if
@@ -162,8 +258,8 @@ reopen condition that remains is a variant obtaining its token through `LsaLogon
 than duplication — JuicyPotatoNG is the live candidate, and its tell would be a 4624 LogonType
 9, not a 4672.
 
-**The rest of the PipeEvent block, and the one name that stays unread (#229).** #225 left
-four of the five collected pipe names consumed by nothing, which is the same
+**The rest of the PipeEvent block, and the names that stay unread (#229).** #225 left
+four of the then-five collected pipe names consumed by nothing, which is the same
 telemetry-ahead-of-detection hole it had just closed, one size smaller. Two rules close
 three of them: `detections/sigma/lateral_movement/svcctl_atsvc_remote_pipe_sysmon_18.yml`
 on `atsvc`/`svcctl`, and
@@ -191,6 +287,33 @@ is serviced by the kernel SMB server, so `Image` reads `System` rather than the 
 what separates impacket from ordinary remote administration. The efsrpc rule does not need
 even that much and is deliberately not keyed on `Image`: over SMB that pipe is bound by
 almost nothing but MS-EFSR and the tools that abuse it.
+
+**Two more names were added, and both are unread — but for the opposite reason to `lsarpc`.**
+The include list now carries `\pipe\srvsvc` and `\pipe\epmapper`. Every potato in the pinned
+EVTX corpus that stands up its own pipe uses the nested `\<something>\pipe\<endpoint>` shape,
+and two of the three do it on names nothing collected: EfsPotato on
+`\<guid>\pipe\srvsvc`, RoguePotato on `\RoguePotato\pipe\epmapper`. Both were therefore
+unwatched on the mechanism plane — the same ownership-on-creation shape #225 used for `spoolss`,
+on names the agent dropped before Sigma could see them. That was
+dotgibson/dotfiles-Defense#240 for RoguePotato; it is closed by collecting the name. Unlike
+`lsarpc` below, these two are unread because the rule has not been written yet rather than
+because it should not be, and both are tracked as dotgibson/dotfiles-Defense#248 — filed with
+the collection rather than after it, so the block does not acquire unconsumed names without a
+reason attached.
+
+Two things about those entries are deliberate. They are `\pipe\srvsvc` and `\pipe\epmapper`,
+not the bare names, and the measurement is the same shape both times: over the pinned corpus 7
+of 61 PipeEvent records match bare `srvsvc` and five are ordinary share enumeration arriving as
+`\srvsvc` from `Image=System`, while 3 match bare `epmapper` and one is the legitimate endpoint
+mapper arriving as bare `\epmapper`. The nested form is what the coercion produces and no
+legitimate bind in that corpus takes it, so the narrow entries collect 2 apiece and leave the
+routine traffic out; wanting that traffic is a different rule and a different decision. Worth
+noting on the `epmapper` side: the legitimate record is `Image=System`, not `svchost.exe`, so
+the `filter_legit` #240 proposed would not have filtered it — narrowing the collection is what
+actually does. And both names are collected for their **creation** half, siding with #225 rather
+than with the connect-half trade the three names above take, because the tool creates these
+pipes rather than binding ones that already exist, which is what makes the creator's `Image` the
+evidence.
 
 **`lsarpc` ships no rule, and that is a decision rather than an omission.** It stays
 collected as hunt and pivot material. Sysmon PipeEvent carries no authenticating principal —

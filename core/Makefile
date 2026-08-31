@@ -61,6 +61,9 @@ fleet-coverage: ## Which repo satisfies which reusable gate, and how (the covera
 fleet-drift: ## Report which OS repos (+ Windows) lag the latest RELEASED Core tag — the vendoring-drift dashboard
 	@./scripts/fleet-drift.sh
 
+fleet-protection: ## Does a RULESET actually bind main in every repo? (--migrate/--retire to fix)
+	@./scripts/fleet-protection.sh
+
 core-integrity: ## Verify every OS repo's vendored core/ is pristine (not hand-edited) vs its core.lock
 	@./scripts/core-integrity.sh
 

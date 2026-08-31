@@ -1,0 +1,71 @@
+name: fleet-protection
+
+# Does a RULESET actually bind `main` in every repo? GitHub has two protection systems
+# and they do not behave alike: CLASSIC branch protection honours `enforce_admins`, which
+# was FALSE fleet-wide, so its required checks never bound the only person pushing;
+# RULESETS bind everyone unless a `bypass_actors` entry says otherwise. Nothing compared
+# them, and a Core fan-out was pushed straight to main on two repos as a result — one with
+# no ruleset at all, one carrying an admin bypass (dotgibson/dotfiles-Alpine#146).
+#
+# Weekly (and on demand) this re-asks the question, failing red + writing a job summary
+# when any repo loses its ruleset, gains a bypass actor, or falls behind on checks.
+#
+# Read-only: it never writes a ruleset — the fix is a human running `make fleet-protection`
+# with --migrate/--retire. Rulesets are PUBLICLY readable, so the job's own GITHUB_TOKEN
+# is enough; no PAT and no App token (GITHUB-APP-AUTH.md stays untouched).
+#
+# --rulesets-only, deliberately: reading CLASSIC protection needs repo ADMIN, which
+# GITHUB_TOKEN does not have on sibling repos, and a blind probe there answers 401 — which
+# an unguarded check would read as "no classic protection here" and report as a cheerful
+# pass. Rather than grant this job admin over ten repos, it skips that half outright and
+# says so. Classic is retired fleet-wide; if it is ever reintroduced, the local run
+# (`make fleet-protection`, admin creds) is what will see it.
+
+on:
+  schedule:
+    - cron: "30 6 * * 1" # Mondays 06:30 UTC — after fleet-drift's 06:00, not alongside it
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fleet-protection
+  cancel-in-progress: true
+
+jobs:
+  protection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check that a ruleset binds main in every repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          ./scripts/fleet-protection.sh --rulesets-only 2>&1 | tee "$RUNNER_TEMP/out.txt"
+          status=${PIPESTATUS[0]}
+          {
+            echo "## fleet-protection"
+            echo
+            if [ "$status" -eq 0 ]; then
+              echo "A ruleset binds \`main\` in every repo, with no bypass actors."
+            else
+              echo "At least one repo is unprotected, bypassable, or unreadable."
+              echo
+              echo "Fix locally, with admin credentials:"
+              echo '```bash'
+              echo 'make fleet-protection                      # report'
+              echo './scripts/fleet-protection.sh --migrate    # copy classic-only checks in'
+              echo '```'
+            fi
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/out.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
