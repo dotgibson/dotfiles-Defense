@@ -1,7 +1,8 @@
 # CLAUDE.md — dotfiles-Defense
 
-Project memory for Claude Code. For the shared Core rules see `core/README.md`
-and `core/CONTRIBUTING.md`.
+Project memory for Claude Code. For the shared Core rules see dotfiles-core's
+[`README.md`](https://github.com/dotgibson/dotfiles-core/blob/main/README.md) and [`CONTRIBUTING.md`](https://github.com/dotgibson/dotfiles-core/blob/main/CONTRIBUTING.md) —
+upstream, not in `core/`, which vendors only what a machine actually runs.
 
 ## What this repo is
 
