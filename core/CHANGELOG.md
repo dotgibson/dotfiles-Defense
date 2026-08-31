@@ -14,6 +14,58 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.5.0] - 2026-08-30
+
+### Changed
+
+- **`atuin/config.toml` no longer pins `search_mode`, so a machine can finally choose it.**
+  The line asserted `"fuzzy"` — which is atuin's OWN default (`atuin default-config` ships
+  it commented out at that value), so it pinned a default rather than choosing anything.
+  What it DID do was shadow `ATUIN_SEARCH_MODE`, under the same precedence rule `[daemon]`
+  documents at length: atuin builds config as defaults → Environment → **file**, and the
+  later source wins, so any key present here beats the environment.
+
+  That blocked the one mode worth opting into. **`daemon-fuzzy`** routes interactive search
+  through the atuin daemon, and is meaningful only where that daemon runs — which Core
+  ships **off**, per machine, for the reasons already recorded in `[daemon]`. It cannot be
+  a fleet-wide assertion: even on a host that opted in, `os/alpine.zsh` deliberately leaves
+  the daemon off **inside containers**, and these repos target containers as much as hosts,
+  so a blanket `daemon-fuzzy` would apply on precisely the shells with no daemon to talk to.
+
+  **No host changes behaviour.** atuin still defaults to `"fuzzy"`, so an unset key and the
+  old assertion are the same thing everywhere — the difference is only that the override
+  now reaches. A machine running the daemon sets `ATUIN_SEARCH_MODE=daemon-fuzzy` from its
+  OS layer (`os/<os>.zsh`) or host layer (`99-local`), beside the `ATUIN_DAEMON__*` exports
+  that turned the daemon on.
+
+  This is the trap `[daemon]` already warned about, found in the block above it: _"The same
+  trap applies to any future per-machine key: if a machine is meant to override it via
+  `ATUIN_*`, it must not be written here."_ `search_mode` was written here.
+
+### Fixed
+
+- **`make publish` reported a network failure for a stale tag, and hid the evidence.**
+  `scripts/tag-release.sh` opened phase 2 with `git fetch -q --tags origin 2>/dev/null`.
+  The `vN` major alias is **force-moved to every release**, so any clone that missed one
+  carries a stale local `vN` — and a plain `git fetch --tags` REFUSES to move it
+  (`! [rejected] v5 -> v5 (would clobber existing tag)`), exits 1, and takes `publish`
+  down with it. Nothing was wrong with the network, but with stderr redirected to
+  `/dev/null` the only thing the operator saw was `could not fetch origin — publishing
+  needs the remote's view of main`, which points at exactly the wrong thing. Hit cutting
+  **v5.4.3**, on a clone whose `v4` and `v5` were both behind; the actual repair was a
+  one-line tag update.
+
+  The fetch now passes `--force` and no longer swallows stderr, so a real failure names
+  its cause (`Could not resolve host: …`) instead of wearing the generic message.
+  Forcing is correct rather than merely convenient: `vN` is a MOVING alias whose remote
+  value is authoritative by definition, so a local ref that disagrees is stale, never a
+  competing truth. Immutable `vX.Y.Z` release tags are unaffected — they never move, so
+  `--force` has nothing to overwrite there, and the tag ruleset forbids it regardless.
+
+  Verified both ways: with `v5` deliberately pointed at `v5.4.2`, the old fetch exits 1
+  and the new one exits 0 and realigns it, leaving `v5.4.2`/`v5.4.3` untouched; against
+  an unresolvable remote it still exits 1, now printing the reason.
+
 ## [v5.4.3] - 2026-08-30
 
 ### Added

@@ -1,9 +1,10 @@
 # Defense Aliases Cheat Sheet
 
 Aliases sourced from two layers: `core/` (Core) and `defense/defense.zsh` (the
-blue role layer). See `core/aliases.md` for the full Core alias reference
-(modern CLI, git, safety nets). This repo is distro-agnostic — no OS layer of
-its own; host tools come from whichever OS-native repo runs underneath.
+blue role layer). See dotfiles-core's [`aliases.md`](https://github.com/dotgibson/dotfiles-core/blob/main/aliases.md)
+for the full Core alias reference (modern CLI, git, safety nets). This repo is
+distro-agnostic — no OS layer of its own; host tools come from whichever OS-native
+repo runs underneath.
 
 ---
 

@@ -35,7 +35,23 @@
 # ── search + TUI ──────────────────────────────────────────────────────────────
 # Values match what Core already asserts for the flat zsh history, so the two
 # history surfaces behave the same way rather than drifting apart.
-search_mode = "fuzzy"  # upstream default; the fzf-shaped matching the rest of the stack uses
+# search_mode IS DELIBERATELY UNSET — the same per-machine rule as [daemon] below.
+# It was asserted here as "fuzzy", which is atuin's OWN default (`atuin default-config`
+# ships it commented out at that value), so the line pinned a default rather than
+# choosing anything. What it DID do is shadow ATUIN_SEARCH_MODE: any key present in this
+# file beats the environment (defaults → Environment → file, and the later source wins),
+# so a machine could not opt into a different mode however it tried.
+#
+# That blocked the one mode worth opting into. `daemon-fuzzy` routes interactive search
+# through the atuin daemon, and is only meaningful where that daemon actually runs — which
+# Core ships OFF, per-machine, for the reasons in [daemon]. It cannot be a fleet-wide
+# assertion: even on a host that opted in, `os/alpine.zsh` deliberately leaves the daemon
+# off inside containers, and these repos target containers as much as hosts.
+#
+# Leaving it unset costs nothing — atuin still defaults to "fuzzy", so every host behaves
+# exactly as before — and the env override can now reach it. A machine that runs the
+# daemon sets ATUIN_SEARCH_MODE=daemon-fuzzy from its OS layer (os/<os>.zsh) or host
+# layer (99-local), beside the ATUIN_DAEMON__* exports that turned the daemon on.
 filter_mode = "global" # search everything by default (Ctrl+R inside the TUI cycles scopes)
 style = "compact"      # inline, not full-screen — the TUI is a lookup, not a destination
 inline_height = 25     # rows the compact TUI may take (upstream default: 40)

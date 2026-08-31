@@ -2,7 +2,7 @@
 # Regenerated ONLY by Core's fan-out ('make sync' in dotfiles-core) — never
 # hand-edit, and never 'git subtree pull' by hand: that moves core/ but not
 # this file, and core-integrity.sh then reports TAMPERED. See VENDORING.md.
-core_version=5.4.3
-core_sha=8b4fba5f5c333e9644866fae682a5151feda81e4
-core_ref=8b4fba5f5c333e9644866fae682a5151feda81e4
-core_tag=v5.4.3
+core_version=5.5.0
+core_sha=6a81418ed7e0a045b0d5fe9a7cd4dd67d7556f50
+core_ref=6a81418ed7e0a045b0d5fe9a7cd4dd67d7556f50
+core_tag=v5.5.0
