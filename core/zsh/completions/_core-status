@@ -1,0 +1,8 @@
+#compdef core-status
+# Completion for Core's `core-status` (zsh/30-functions.zsh). It renders the provenance
+# panel — Core version + what core.lock records, the live OS/role layers, a tool summary
+# and whether core/ has been edited since it was committed. --json emits the same facts as
+# one object for a statusline or a gate to consume.
+_arguments -s \
+  '(-h --help)'{-h,--help}'[show usage and exit]' \
+  '--json[machine-readable status object on stdout]'

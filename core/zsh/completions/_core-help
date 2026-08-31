@@ -5,7 +5,7 @@
 local -a _ch_terms=(
   mkcd cdup extract mkbak fcd serve please fif fbr
   up update-check gsync maint-install maint-run maint-log maint-status maint-uninstall
-  core-doctor core-version opsecret openv optoken opssh
+  core-doctor core-version core-status core-whatsnew opsecret openv optoken opssh
   navigation files search git keybindings updates maintenance
 )
 _arguments '1:filter:($_ch_terms)'

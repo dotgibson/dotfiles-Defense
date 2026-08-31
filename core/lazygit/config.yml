@@ -12,18 +12,19 @@ gui:
     'main': red
     'master': red
   theme:
+    # core:theme:gen lazygit-theme
     activeBorderColor:
       - "#ff9e64"
       - "bold"
     inactiveBorderColor:
-      - "#27a1b9"
+      - "#29a4bd"
     searchingActiveBorderColor:
       - "#ff9e64"
       - "bold"
     optionsTextColor:
       - "#7aa2f7"
     selectedLineBgColor:
-      - "#283457"
+      - "#2e3c64"
     cherryPickedCommitFgColor:
       - "#7aa2f7"
     cherryPickedCommitBgColor:
@@ -36,3 +37,4 @@ gui:
       - "#db4b4b"
     defaultFgColor:
       - "#c0caf5"
+    # core:theme:end lazygit-theme

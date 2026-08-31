@@ -178,7 +178,9 @@ if [[ -n ${HAVE_STARSHIP:-} ]]; then
   # which clears tmux's prompt flag on it, and scrollback is exactly what previous-prompt
   # jumps THROUGH — so without this every past prompt loses its jump target the moment its
   # command finished. Empty (and inert) wherever 00-tools stood the marks down.
+  # core:theme:gen transient-prompt-chars
   typeset -g TRANSIENT_PROMPT_TRANSIENT_PROMPT="${_CORE_OSC133_MARK:-}"'%(?.%F{#9ece6a}.%F{#f7768e})❖%f '
+  # core:theme:end transient-prompt-chars
   typeset -g TRANSIENT_PROMPT_TRANSIENT_RPROMPT=''
   _zplugin_load olets zsh-transient-prompt transient-prompt.plugin.zsh
 fi
@@ -211,6 +213,7 @@ _defer_or_now zsh-users zsh-history-substring-search
 # theming — z-sy-h uses ZSH_HIGHLIGHT_HIGHLIGHTERS + ZSH_HIGHLIGHT_STYLES instead.)
 typeset -ga ZSH_HIGHLIGHT_HIGHLIGHTERS=(main brackets)
 typeset -gA ZSH_HIGHLIGHT_STYLES
+# core:theme:gen zsyntax-styles
 ZSH_HIGHLIGHT_STYLES[command]='fg=#9ece6a'              # green  — valid command
 ZSH_HIGHLIGHT_STYLES[builtin]='fg=#9ece6a'              # green
 ZSH_HIGHLIGHT_STYLES[function]='fg=#9ece6a'             # green
@@ -220,6 +223,7 @@ ZSH_HIGHLIGHT_STYLES[path]='fg=#7aa2f7'                 # blue   — existing pa
 ZSH_HIGHLIGHT_STYLES[single-quoted-argument]='fg=#e0af68' # yellow
 ZSH_HIGHLIGHT_STYLES[double-quoted-argument]='fg=#e0af68' # yellow
 ZSH_HIGHLIGHT_STYLES[comment]='fg=#565f89'              # muted comment
+# core:theme:end zsyntax-styles
 
 # ── carapace: multi-shell completion engine (feeds fzf-tab). After compinit. ──
 if [[ -n ${HAVE_CARAPACE:-} ]]; then

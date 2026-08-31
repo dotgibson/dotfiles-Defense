@@ -46,10 +46,14 @@ ux_palette() {
     # approximation — the same "degrade, don't assume" tiering zsh/05-ui.zsh applies, now
     # mirrored here so bootstrap.sh's accent (the first thing seen on a new box) matches
     # the steady-state prompt instead of flat 16-colour (U5).
+    # The two tiers themselves are GENERATED from theme/palette.toml; the
+    # dispatch above is not. make gen-theme.
+    # core:theme:gen ux-accent-tiers
     case "${COLORTERM:-}" in
     24bit | truecolor) UX_ACCENT=$'\e[1;38;2;122;162;247m' UX_MUTED=$'\e[38;2;86;95;137m' ;;
     *) UX_ACCENT=$'\e[1;38;5;111m' UX_MUTED=$'\e[38;5;103m' ;;
     esac
+    # core:theme:end ux-accent-tiers
   else
     UX_GRN='' UX_YEL='' UX_RED='' UX_BLU='' UX_DIM='' UX_RST=''
     UX_ACCENT='' UX_MUTED=''

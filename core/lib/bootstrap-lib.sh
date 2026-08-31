@@ -728,7 +728,7 @@ blib_link_os_layer() {
   if blib_want zsh && [[ -f "$dotfiles/os/$os.zsh" ]]; then
     blib_say "symlinking $os OS-native layer"
     # v4: the OS layer is the numbered fragment 80-os.zsh (band 70-84). The loader globs
-    # it by NN prefix; it always loads (>=70), independent of CORE_PROFILE.
+    # it by NN prefix and sources it in order, like every other fragment.
     blib_link "$dotfiles/os/$os.zsh" "$config/zsh/80-os.zsh"
   fi
   # v5: the capability DECLARATION (#663) — the OS layer's package-manager verbs,
@@ -925,11 +925,6 @@ export NOTES_DIR="${NOTES_DIR:-$HOME/Notes}"
 : "${ZDOTDIR:=$XDG_CONFIG_HOME/zsh}"
 export ZDOTDIR
 ZSH_CFG="$ZDOTDIR"
-
-# CORE_PROFILE (minimal | standard | full) gates which Core fragments (bands 00-69) load;
-# OS/role/host fragments (>=70) always load. Leave it to the loader to resolve — set it in
-# the environment (wins), or drop a one-liner in "$ZSH_CFG/profile"; unset ⇒ full (today's
-# behaviour). Do NOT pre-set it here, or the $ZSH_CFG/profile file could never take effect.
 
 if [[ -r "$ZSH_CFG/loader.zsh" ]]; then
   source "$ZSH_CFG/loader.zsh"

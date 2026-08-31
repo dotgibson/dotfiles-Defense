@@ -505,8 +505,9 @@ fi
 #     anywhere, so none of this can collide with zsh-vi-mode.
 #
 # (2) The SEPARATOR RULE (Pass 2, P12): a thin full-width rule above each prompt that
-#     FOLLOWED a command, colored by its exit status — dim (#414868) on success, red
-#     (#f7768e) on failure. Scan the left edge for red to find what broke. STARSHIP-ONLY
+#     FOLLOWED a command, colored by its exit status — the muted rule tone on success,
+#     the error tone on failure (role_rule / role_err in theme/palette.toml; the line
+#     itself is generated). Scan the left edge for red to find what broke. STARSHIP-ONLY
 #     (it is a prompt cosmetic), where the marks must work on a bare box and over SSH —
 #     so the hooks live OUTSIDE the HAVE_STARSHIP gate and only the rule stays inside it.
 #     One code path, two independently-gated outputs.
@@ -574,7 +575,9 @@ if [[ -n ${HAVE_STARSHIP:-} || -n ${_CORE_OSC133:-} ]]; then
       [[ -n ${_CORE_OSC133:-} ]] && print -rn -- $'\e]133;D;'"$ec"$'\e\\'
       if [[ -n ${HAVE_STARSHIP:-} ]]; then
         local w=${COLUMNS:-80} col
+        # core:theme:gen sep-rule-colors
         if (( ec == 0 )); then col='%F{#414868}'; else col='%F{#f7768e}'; fi
+        # core:theme:end sep-rule-colors
         print -rP -- "${col}${(l:w::─:)}%f"
       fi
     fi
@@ -620,11 +623,14 @@ fi
 # already drifted (one suppressed the generator's stderr in its fallback arm, the others did
 # not, and two carried only half the block).
 #
-# HERE, at band 00, and NOT with the gh/uv/ty completions in 45-plugins.zsh. Two decisions,
-# not preferences: this registers a HOOK, not a compdef, so it has no dependency on
-# 10-options.zsh's compinit; and band 00 loads under EVERY CORE_PROFILE while band 45 does
-# not (zsh/loader.zsh ceils `minimal` at 30). Filed under 45 it would silently stop .envrc
-# files loading on every minimal host — a broken feature, not a missing convenience.
+# HERE, at band 00, and NOT with the gh/uv/ty completions in 45-plugins.zsh. Not a
+# preference: this registers a HOOK, not a compdef, so it gains nothing from waiting for
+# 10-options.zsh's compinit, and it belongs beside the three hook inits above — one file
+# that owns "the shell's per-directory hooks", which is the whole content of #449. It had a
+# louder reason until v5: band 45 was profile-gated (the loader ceilinged `minimal` at 30),
+# so filing it there stopped .envrc files loading outright on every lean host. #677 deleted
+# CORE_PROFILE, so that half is gone — the placement is unchanged, the argument is not, and
+# scripts/test-core.sh says so where it asserts this.
 #
 # LAST of the four inits, also on purpose. direnv PREPENDS _direnv_hook to precmd_functions
 # AND chpwd_functions, and mise's activation prepends its own hook the same way — so
@@ -656,10 +662,7 @@ _cache_eval direnv direnv hook zsh
 # compinit has run — no longer applies: generation writes a file, and the completion system
 # picks it up on its own. The compdef that IS still needed, to keep these in front of
 # carapace's bridged versions, stays at band 45 where carapace is; see the note there.
-#
-# A side effect worth having: band 45 is profile-gated (loader.zsh ceils `minimal` at 30),
-# so gh/uv/ty completions did not exist at all under the minimal and standard profiles.
-# Generated at band 00 and registered by compinit at band 10, they now do.
+
 _cache_completion gh gh completion -s zsh
 _cache_completion uv uv generate-shell-completion zsh
 _cache_completion ty ty generate-shell-completion zsh
@@ -767,8 +770,8 @@ _cache_completion ty ty generate-shell-completion zsh
 # first runs at the first precmd, by which point every fragment has been sourced, so in a normal
 # shell EPOCHSECONDS is already there and costs this file nothing. Loading zsh/datetime here
 # instead would be a module load on every interactive shell to buy an answer that is already free.
-# Where it is genuinely absent — CORE_PROFILE=minimal stops after 30-functions, and the unit tests
-# source this file alone — ${EPOCHSECONDS:-SECONDS} falls back to $SECONDS (seconds since this
+# Where it is genuinely absent — the unit tests source this file alone, with no fragment 60 to
+# load the module — ${EPOCHSECONDS:-SECONDS} falls back to $SECONDS (seconds since this
 # shell started, a builtin parameter, no module). Both are fork-free integers that only go up,
 # which is all a throttle needs; the guard's gate handles the fact that they share no epoch.
 #

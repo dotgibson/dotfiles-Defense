@@ -28,9 +28,9 @@
 # KEY=value shape, so the file is equally readable from bash (maint/dotfiles-maint.sh
 # is not zsh) with a one-line `sed`.
 #
-# WHY BAND 02. It must precede every consumer; the earliest is 30-functions. Band 02
-# sits inside the Core band (00-69), so EVERY profile loads it — `minimal`'s ceiling is
-# 30 — which matters because a lean profile must not silently lose the dispatch table.
+# WHY BAND 02. It must precede every consumer; the earliest is 30-functions. Band 02 is as
+# early as it can go while still following 00-tools, which is what makes the declaration
+# available to everything downstream that reads $_CORE_CAP — the dispatch table included.
 # It is deliberately NOT folded into 00-tools.zsh: that file is the single init point
 # for TOOL DETECTION, and a capability declaration is a different concern.
 #
