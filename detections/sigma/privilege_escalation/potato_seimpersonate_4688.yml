@@ -15,10 +15,12 @@ description: |
   1faa7a59-9fd5-4d14-9bf1-d94f82466acb), which reads the Target Subject block on this
   same event and so shows the stolen token directly rather than the shape around it -
   a host already forwarding for this rule needs no new ingestion to deploy it - or with
-  spoolss_pipe_impersonation_sysmon_17.yml (id
-  d5c5c185-a62f-415a-ab0f-2572f910b541), which detects the impersonation
-  itself on Sysmon 17, and with Sysmon 1 linking the service parent to a SYSTEM
-  child.
+  the mechanism-plane rules, which detect the impersonation itself on Sysmon 17 -
+  spoolss_pipe_impersonation_sysmon_17.yml (id d5c5c185-a62f-415a-ab0f-2572f910b541) on
+  the spoolss endpoint, and srvsvc_epmapper_pipe_impersonation_sysmon_17.yml (id
+  563f2958-0d44-4138-884f-14d338d37cd9) on the nested srvsvc/epmapper pipes EfsPotato and
+  RoguePotato stand up, which leave the spoolss rule silent - and with Sysmon 1 linking
+  the service parent to a SYSTEM child.
   Channel: native Security-4688 carries the creator in SubjectUserName. This is the
   4688 half of a per-channel pair - its Sysmon-1 twin (field ParentUser) is
   potato_seimpersonate_sysmon_1.yml (id 03e878f6-bbdc-41e1-afa6-68b2979938fe). That twin

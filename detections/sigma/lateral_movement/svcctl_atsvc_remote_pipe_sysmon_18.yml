@@ -28,7 +28,13 @@ description: |
   CONNECTS to the pipe that is already there - so on these two names the creation half
   detects nothing at all. impacket-psexec does create pipes of its own (RemCom_*), but the
   shipped detections/sysmon/sysmonconfig-detection-lab.xml collects seven pipe names and
-  those are not among them.
+  those are not among them. There is now a THIRD create/connect trade in the block, made
+  on different grounds again: srvsvc_epmapper_pipe_impersonation_sysmon_17.yml (id
+  563f2958-0d44-4138-884f-14d338d37cd9, dotgibson/dotfiles-Defense#248) pins CreatePipe on
+  the nested \<x>\pipe\srvsvc and \<x>\pipe\epmapper names because the potato that
+  stands those pipes up carries its own Image on the create, while the connect is the
+  coerced service arriving as System. So the block holds three distinct reasons for the
+  same-looking pin, and none of them transfers - re-derive it per name.
   Detection posture, honestly: this is a triage surface and no filter would fix it.
   Legitimate remote administration - sc.exe against a remote host, schtasks /s, SCCM, a
   clustering or backup agent - produces the SAME event. Sysmon PipeEvent carries no source
@@ -51,6 +57,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/schtask-4698.md
 author: dotfiles-Defense
 date: 2026-08-28
+modified: 2026-08-30
 tags:
   # T1021.002 earns the lateral-movement tag on its own evidence: the bind IS the
   # admin-share access. T1569.002 and T1053.005 are both filed under Execution, which earns

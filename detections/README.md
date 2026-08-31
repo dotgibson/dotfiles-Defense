@@ -179,7 +179,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Offense` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 110 rules / 128 documents, organized by ATT&CK tactic
+### `sigma/` — 111 rules / 129 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -203,6 +203,7 @@ purple-validatable out of the box.
 | `adcs_esc1_san_mismatch_4886`                                 | 4886/4887 cert request                                                                            | T1649     | AD CS abuse · adcs-esc1-certipy              |
 | `potato_seimpersonate_4688` / `potato_seimpersonate_sysmon_1` | proc create (service→shell); per-channel pair (4688 `SubjectUserName` / Sysmon-1 `ParentUser`)    | T1134.001 | Win privesc · potato-seimpersonate           |
 | `spoolss_pipe_impersonation_sysmon_17`                        | Sysmon 17 PipeEvent (`\spoolss` created by anything but `spoolsv.exe`)                            | T1134.001 | Win privesc · potato-seimpersonate           |
+| `srvsvc_epmapper_pipe_impersonation_sysmon_17`                | Sysmon 17 PipeEvent (nested `\<x>\pipe\srvsvc` / `\<x>\pipe\epmapper` created locally)            | T1134.001 | Win privesc · potato-seimpersonate           |
 | `token_theft_parent_child_mismatch_sysmon_1`                  | Sysmon 1 (SYSTEM child, service-identity `ParentUser`); no Image constraint; Sysmon 13+           | T1134.001 | Win privesc · potato-seimpersonate           |
 | `token_theft_process_target_subject_4688`                     | 4688 Target Subject (process created with a SYSTEM token by a non-SYSTEM creator)                 | T1134.001 | Win privesc · potato-seimpersonate           |
 | `shadow_credentials_keycredentiallink_5136`                   | 5136 msDS-KeyCredentialLink                                                                       | T1556     | AD attack paths · shadow-credentials-certipy |

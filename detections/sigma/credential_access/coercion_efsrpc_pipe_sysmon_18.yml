@@ -21,6 +21,13 @@ description: |
   `category: pipe_created` resolves to Sysmon 17 and 18 under the sysmon pipeline, and lsass
   CREATES \efsrpc once per boot - so without the EventType pin this rule would fire on every
   reboot of every host, on lsass, forever. Coercion is always a connect.
+  Note the same pin means something different two rules over.
+  srvsvc_epmapper_pipe_impersonation_sysmon_17.yml (id
+  563f2958-0d44-4138-884f-14d338d37cd9, dotgibson/dotfiles-Defense#248) pins CreatePipe
+  rather than ConnectPipe, and NOT because the noise runs the other way - it pins for
+  attribution, since the potato creating the nested pipe carries its own Image while the
+  connect arrives as System. Here the pin is load-bearing against volume; there it is
+  load-bearing against misattribution. Do not read either across.
   lsarpc is deliberately NOT in this rule, and the omission is the argument.
   PetitPotam's default path is \lsarpc, so this rule does not catch the default invocation;
   coercion_named_pipes_5145.yml does, and remains the primary. The reason is that on Sysmon
@@ -49,6 +56,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/coercion-5145.md
 author: dotfiles-Defense
 date: 2026-08-28
+modified: 2026-08-30
 tags:
   - attack.credential-access
   - attack.t1187

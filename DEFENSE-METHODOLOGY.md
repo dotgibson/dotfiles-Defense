@@ -81,27 +81,31 @@ gap be ledgered instead: T1070 is already covered by
 Both rules were written; they land in different rows, and that is correct rather than a
 mistag.
 
-Stealth is three techniques and five rules, and that is an honest reading of the corpus
+Stealth is three techniques and six rules, and that is an honest reading of the corpus
 rather than an artifact of tagging. Two of the techniques — T1070 and T1070.003 — are the
 command-history and artifact-removal work described above, one rule each. The third is
 T1134.001, and it arrived by the route this section reserved for it rather than by a tag:
-see below. It now carries three rules, added one at a time and each on its own evidence —
+see below. It now carries four rules, added one at a time and each on its own evidence —
 `spoolss_pipe_impersonation_sysmon_17` (#225) on the mechanism,
-`token_theft_process_target_subject_4688` (#230) on the token's provenance, and
+`token_theft_process_target_subject_4688` (#230) on the token's provenance,
 `token_theft_parent_child_mismatch_sysmon_1` (#239 follow-on) on the same outcome read from
-the other channel. The rest of TA0005 is masquerading, obfuscation, process injection and
-LOLBAS proxy execution — a body of work this repo has not started, not one it has misfiled.
+the other channel, and `srvsvc_epmapper_pipe_impersonation_sysmon_17` (#248) on the same
+mechanism as the first, for the two endpoints it cannot see. The rest of TA0005 is
+masquerading, obfuscation, process injection and LOLBAS proxy execution — a body of work
+this repo has not started, not one it has misfiled.
 **The technique count is the one that measures the gap, and it has not moved since #225.**
-Three rules on one technique is depth, not breadth; read the row widening as one technique
-being covered from three planes rather than as TA0005 getting less thin.
+Four rules on one technique is depth, not breadth; read the row widening as one technique
+being covered from three planes — mechanism, token provenance, outcome — rather than as
+TA0005 getting less thin. #248 widened it again without moving the technique count, which is
+the reading this paragraph exists to protect.
 
 **The pair still declines the row, and #223 is still the reason.** Because T1134.001 is
 dual-tactic, `detections/sigma/privilege_escalation/potato_seimpersonate_4688.yml` and its
 Sysmon-1 twin could legally claim the TA0005 half — the pairing assertion in
 `detections/check-attack-tags.sh` asserts a tactic tag is *earned* by some technique
 tagged beside it, not that every tactic is claimed, so the tag would pass and
-`detections/navigator/COVERAGE.md` would read `Stealth TA0005 | 3 | 7` instead of the
-`3 | 5` it reads today. The pair does **not** claim it. What those rules select is a service identity
+`detections/navigator/COVERAGE.md` would read `Stealth TA0005 | 3 | 8` instead of the
+`3 | 6` it reads today. The pair does **not** claim it. What those rules select is a service identity
 spawning a shell — the shape *before* the token is stolen, keyed on the un-masked
 account field — and their own descriptions concede they cannot show the run-as-SYSTEM
 result. The evasion is the part they cannot see. Taking the row would buy two rules'
@@ -288,32 +292,64 @@ what separates impacket from ordinary remote administration. The efsrpc rule doe
 even that much and is deliberately not keyed on `Image`: over SMB that pipe is bound by
 almost nothing but MS-EFSR and the tools that abuse it.
 
-**Two more names were added, and both are unread — but for the opposite reason to `lsarpc`.**
-The include list now carries `\pipe\srvsvc` and `\pipe\epmapper`. Every potato in the pinned
-EVTX corpus that stands up its own pipe uses the nested `\<something>\pipe\<endpoint>` shape,
-and two of the three do it on names nothing collected: EfsPotato on
-`\<guid>\pipe\srvsvc`, RoguePotato on `\RoguePotato\pipe\epmapper`. Both were therefore
-unwatched on the mechanism plane — the same ownership-on-creation shape #225 used for `spoolss`,
-on names the agent dropped before Sigma could see them. That was
-dotgibson/dotfiles-Defense#240 for RoguePotato; it is closed by collecting the name. Unlike
-`lsarpc` below, these two are unread because the rule has not been written yet rather than
-because it should not be, and both are tracked as dotgibson/dotfiles-Defense#248 — filed with
-the collection rather than after it, so the block does not acquire unconsumed names without a
-reason attached.
+**Two more names were added, and #248 gave them their rule.** The include list carries
+`\pipe\srvsvc` and `\pipe\epmapper`, read by
+`detections/sigma/privilege_escalation/srvsvc_epmapper_pipe_impersonation_sysmon_17.yml`. Every
+potato in the pinned EVTX corpus that stands up its own pipe uses the nested
+`\<something>\pipe\<endpoint>` shape, and two of the three do it on names nothing collected:
+EfsPotato on `\<guid>\pipe\srvsvc`, RoguePotato on `\RoguePotato\pipe\epmapper`. Both were
+therefore unwatched on the mechanism plane — the same ownership-on-creation shape #225 used for
+`spoolss`, on names the agent dropped before Sigma could see them. That was #240 for RoguePotato,
+closed by collecting the name; #248 is the rule, filed *with* the collection rather than after it
+so the block never acquired an unconsumed name without a tracker attached. Unlike `lsarpc` below,
+these two were never unread on principle — only unwritten.
 
-Two things about those entries are deliberate. They are `\pipe\srvsvc` and `\pipe\epmapper`,
-not the bare names, and the measurement is the same shape both times: over the pinned corpus 7
-of 61 PipeEvent records match bare `srvsvc` and five are ordinary share enumeration arriving as
-`\srvsvc` from `Image=System`, while 3 match bare `epmapper` and one is the legitimate endpoint
-mapper arriving as bare `\epmapper`. The nested form is what the coercion produces and no
-legitimate bind in that corpus takes it, so the narrow entries collect 2 apiece and leave the
-routine traffic out; wanting that traffic is a different rule and a different decision. Worth
-noting on the `epmapper` side: the legitimate record is `Image=System`, not `svchost.exe`, so
-the `filter_legit` #240 proposed would not have filtered it — narrowing the collection is what
-actually does. And both names are collected for their **creation** half, siding with #225 rather
-than with the connect-half trade the three names above take, because the tool creates these
-pipes rather than binding ones that already exist, which is what makes the creator's `Image` the
-evidence.
+The three questions #240 left open were re-derived rather than inherited, and the record is
+`docker/validation/labruns/2026-08-srvsvc-epmapper-pipe-creation.md`, which re-ran the sweep from
+scratch because the original figures lived only in a config comment. Over the pinned corpus's 61
+PipeEvent records:
+
+- **Creation, not connection**, and for a third distinct reason — neither #225's nor #229's.
+  Every nested pipe in the corpus produces exactly one 17 and one 18, tens of milliseconds apart.
+  The 17 carries the *tool's* `Image`; the 18 is the coerced service binding back as
+  `Image=System`, `ProcessId=4`, naming the victim. Dropping the `EventType` pin takes the rule
+  from 2 matches to 4 and adds no attack it did not already see, only a misattributed second copy
+  of each. The pin buys deduplication and attribution and costs no coverage. Contrast
+  `coercion_efsrpc_pipe_sysmon_18`, where the pin is load-bearing against *noise* because lsass
+  creates `\efsrpc` every boot — a hazard that does not exist here, since the legitimate creates
+  are of the bare names and the rule does not select those.
+- **One rule, not two.** The two names share every column that decides a split: the same
+  invariant, the same `EventType` pin, no `Image` key, the same technique and both its tactics,
+  the same (empty) false-positive story. That is the `svcctl`/`atsvc` case, not the `efsrpc` one,
+  where the split existed because the invariant genuinely differed.
+- **The generic `\<x>\pipe\<y>` shape was rejected**, and the decisive objection is measured
+  rather than argued. On the create half it matches 3 of 61 and all three are attacks — but the
+  third is PrintSpoofer's nested `spoolss` pipe, which `spoolss_pipe_impersonation_sysmon_17`
+  already fires on, so its marginal coverage over this corpus is **zero**. Two further objections
+  stand alone: it needs *unfiltered* PipeEvent collection, so on a host running this baseline it
+  would see only the seven collected names and buy nothing — a much larger ingestion decision than
+  a rule may make on the config's behalf — and 3-of-3 is drawn from a corpus that is overwhelmingly
+  attack telemetry, so it says nothing about how often a working desktop creates a nested pipe.
+  It also still misses GodPotato, which hooks `combase`'s RPC dispatch table and can name its pipe
+  anything. *Reopen when* PipeEvent collection is widened past an include list — at which point the
+  generic form should **replace** that rule rather than sit beside it, and its own volume must be
+  measured first.
+
+Two things about the entries themselves are deliberate. They are `\pipe\srvsvc` and
+`\pipe\epmapper`, not the bare names: of the 61 records, 7 match `srvsvc` and 3 match `epmapper`,
+and the six benign ones are all EventID 18 binds — five bare `\srvsvc` (four from `Image=System`,
+one from `wmiprvse.exe`) across share enumeration, session enumeration and remote named-pipe
+discovery, plus the one legitimate bare `\epmapper`. None takes the nested form, so the narrow
+entries collect 2 apiece and leave the routine traffic out; wanting that traffic is a different
+rule and a different decision. And the legitimate `\epmapper` record is `Image=System`, not
+`svchost.exe`, so the `filter_legit` #240 proposed would not have filtered it — narrowing the
+collection is what actually does, which is why the rule ships with no `filter_*` block at all.
+
+What is **not** settled is volume on a live host. No legitimate *create* of either name appears
+anywhere in the corpus, which is consistent with once-per-boot creation by the Server service and
+`rpcss` but is absence of evidence — none of these captures spans a boot, and 61 records from an
+attack-sample collection are not a baseline. #248 closes on the rule; that question carries
+to #235, alongside the `lsarpc` volume count below.
 
 **`lsarpc` ships no rule, and that is a decision rather than an omission.** It stays
 collected as hunt and pivot material. Sysmon PipeEvent carries no authenticating principal —

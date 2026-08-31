@@ -119,12 +119,13 @@ oversized-query-name / echo-reply variants.
 
 ## Host / Sigma plane — coverage & findings
 
-Covered (81 rows, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
+Covered (84 rows, `sigma-manifest.tsv`): the Windows-security and Sysmon corpus across
 every shape — Kerberoast, AS-REP, DCSync, GPP cpassword, coercion, DPAPI, LSASS access,
 NTDS dump, rogue-account / machine-account / scheduled-task / WMI-subscription persistence,
 DCShadow, RBCD, shadow-credentials, ADCS ESC1, RDP-hijack, PsExec, WMIexec, the potato
-SeImpersonate pair and the spoolss-pipe rule that detects the impersonation those two
-can only infer, the atsvc/svcctl and efsrpc pipe-bind rules that corroborate 7045/4698/5145
+SeImpersonate pair, the spoolss-pipe rule that detects the impersonation those two
+can only infer and its srvsvc/epmapper sibling that catches the two nested-pipe potatoes
+spoolss cannot see, the atsvc/svcctl and efsrpc pipe-bind rules that corroborate 7045/4698/5145
 on the host plane, the full ransomware chain (recovery-inhibition, service-stop burst,
 protected-service stop, data destruction, BitLocker abuse, mass encryption),
 unconstrained-delegation abuse, host-side collection (the 4663 read sweep and the archive
@@ -142,7 +143,7 @@ This plane used to be true-positive only, which meant a row could prove a rule *
 never that it *doesn't*: an exclusion that silently stopped matching would keep the gate
 green while the rule quietly went noisy. `sigma-manifest.tsv` now carries a sixth column,
 the TN fixture (`-` for none), and **every rule with a `filter_*` block has one**. The
-runner reports the count (`81/81 passed (38 with a true-negative)`), and rules that grow a
+runner reports the count (`84/84 passed (42 with a true-negative)`), and rules that grow a
 filter but no TN are named in an advisory at the end of the run — the same
 discoverable-checklist idea as [`deploy-required.sh`](../../detections/sigma/deploy-required.sh).
 

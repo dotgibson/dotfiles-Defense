@@ -40,13 +40,20 @@ description: |
   29ac7a00-b6fe-48d8-8c65-f62a8b83808d) catches the same pipe set over IPC$ via 5145;
   that is the network-plane view of a remote coercion, this is the host-plane view of
   a local one. All three on one host is the privilege-escalation chain end to end.
-  The rest of the PipeEvent block is read by two sibling rules as of
-  dotgibson/dotfiles-Defense#229 - svcctl_atsvc_remote_pipe_sysmon_18.yml (id
-  e9d70412-5340-436c-9917-b3664f5d77a7) on the atsvc/svcctl names and
-  coercion_efsrpc_pipe_sysmon_18.yml (id 04ebb60d-1d9c-471e-9da8-56abcff3235c) on efsrpc.
-  Both take the CONNECT half, which is the opposite of the trade made here, and both are
-  corroboration of a rule on another plane rather than new coverage. The reasoning above
-  does not carry across to them; #229 re-derived it from scratch. lsarpc is collected and
+  The rest of the PipeEvent block is read by three sibling rules.
+  svcctl_atsvc_remote_pipe_sysmon_18.yml (id e9d70412-5340-436c-9917-b3664f5d77a7) on the
+  atsvc/svcctl names and coercion_efsrpc_pipe_sysmon_18.yml (id
+  04ebb60d-1d9c-471e-9da8-56abcff3235c) on efsrpc arrived with
+  dotgibson/dotfiles-Defense#229. Both take the CONNECT half, which is the opposite of the
+  trade made here, and both are corroboration of a rule on another plane rather than new
+  coverage. The reasoning above does not carry across to them; #229 re-derived it from
+  scratch. The third is srvsvc_epmapper_pipe_impersonation_sysmon_17.yml (id
+  563f2958-0d44-4138-884f-14d338d37cd9), added by dotgibson/dotfiles-Defense#248, and it is
+  the one nearest this rule: same create half, same ownership invariant, on the nested
+  \<x>\pipe\srvsvc and \<x>\pipe\epmapper that EfsPotato and RoguePotato stand up. It
+  does NOT overlap this rule - the selection below already matches PrintSpoofer's nested
+  \<guid>\pipe\spoolss, verified against the corpus record, so spoolss is deliberately
+  absent from that rule's name list rather than duplicated into it. lsarpc is collected and
   deliberately left to 5145, for the reason recorded in DEFENSE-METHODOLOGY.md.
   Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate).

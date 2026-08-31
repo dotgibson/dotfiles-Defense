@@ -208,9 +208,9 @@
     },
     {
       "techniqueID": "T1134.001",
-      "score": 5,
+      "score": 6,
       "enabled": true,
-      "comment": "5 rule(s): potato_seimpersonate_4688, potato_seimpersonate_sysmon_1, spoolss_pipe_impersonation_sysmon_17, token_theft_parent_child_mismatch_sysmon_1, token_theft_process_target_subject_4688"
+      "comment": "6 rule(s): potato_seimpersonate_4688, potato_seimpersonate_sysmon_1, spoolss_pipe_impersonation_sysmon_17, srvsvc_epmapper_pipe_impersonation_sysmon_17, token_theft_parent_child_mismatch_sysmon_1, token_theft_process_target_subject_4688"
     },
     {
       "techniqueID": "T1135",

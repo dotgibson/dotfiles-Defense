@@ -94,8 +94,9 @@
     </RuleGroup>
 
     <!-- Events 17/18: PipeEvent — an include list, so the rules only ever see the seven
-         pipe names below. Which rule reads which name, and why three of them are read by
-         nothing (#225 closed the first of these, #229 the next two):
+         pipe names below. Which rule reads which name, and why ONE of them is read by
+         nothing (#225 closed the first, #229 the next two, #248 the last two - so the only
+         unread name left is unread by decision rather than by debt):
 
            spoolss  → spoolss_pipe_impersonation_sysmon_17. Event 17 / CreatePipe: a
                       spoolss pipe created by anything other than the spooler. Also
@@ -115,42 +116,40 @@
                       pivoting to by hand once something else fires. The argument is in
                       DEFENSE-METHODOLOGY.md.
 
-           \pipe\srvsvc → read by nothing yet; the rule is tracked in
-                      dotgibson/dotfiles-Defense#248. Collected because EfsPotato stands up
-                      \<guid>\pipe\srvsvc and coerces the Server service into connecting to
-                      it — the same ownership-on-creation shape as spoolss, on a name no rule
-                      reads, so it is unwatched on the mechanism plane exactly as RoguePotato
-                      is (dotgibson/dotfiles-Defense#240).
-                      NOTE THE ENTRY IS \pipe\srvsvc, NOT srvsvc, and that is the whole
-                      point. Bare `srvsvc` would also collect the ROUTINE bind: measured over
-                      the pinned EVTX corpus, 7 of 61 PipeEvent records match `srvsvc` and
-                      five of those are ordinary share enumeration (NetShareEnum,
-                      NetSessionEnum) arriving as bare \srvsvc from Image=System. The nested
-                      \<something>\pipe\srvsvc form is what the coercion produces and no
-                      legitimate bind in that corpus takes it, so this entry collects 2 of
-                      the 7 and drops the discovery traffic. If that traffic is later wanted
-                      it is a separate decision and a separate rule (remote share discovery),
-                      not a widening of this line.
-           \pipe\epmapper → read by nothing yet; same tracker,
-                      dotgibson/dotfiles-Defense#248. Collected for the same reason and on the
-                      same evidence: RoguePotato stands up \RoguePotato\pipe\epmapper and
-                      resolves the OXID through a remote listener on 135, so neither the
-                      spooler rule nor anything on the local coercion path sees it. This was
-                      dotgibson/dotfiles-Defense#240, closed by collecting the name.
-                      Narrow for the same reason as \pipe\srvsvc, and the measurement is the
-                      same shape: 3 of 61 PipeEvent records in the pinned corpus match bare
-                      `epmapper`, and one of them is the LEGITIMATE endpoint mapper arriving as
-                      bare \epmapper. Note that legitimate record is Image=System, not
-                      svchost.exe — so an Image-based filter_legit written for it would not
-                      have worked anyway. \pipe\epmapper collects the other 2 and never sees it.
-                      One caveat that stays open: no legitimate \epmapper CREATE was observed
-                      at all, which is consistent with once-per-boot from rpcss but is absence
-                      of evidence — none of those captures spans a boot. Volume on a live host
-                      is unmeasured, and #248 carries it.
+           \pipe\srvsvc → srvsvc_epmapper_pipe_impersonation_sysmon_17. Event 17 /
+           \pipe\epmapper  CreatePipe: a pipe whose name NESTS one of these endpoints, created
+                      by a local process. EfsPotato stands up \<guid>\pipe\srvsvc and
+                      RoguePotato \RoguePotato\pipe\epmapper, each coercing the service into
+                      connecting back to it - the same ownership-on-creation shape as spoolss,
+                      on two names nothing read until dotgibson/dotfiles-Defense#248. The names
+                      were collected first (dotgibson/dotfiles-Defense#240) and the rule filed
+                      with the collection, so the block never held an unconsumed name without a
+                      tracker attached.
+                      NOTE THE ENTRIES ARE \pipe\srvsvc AND \pipe\epmapper, NOT the bare
+                      names, and that is the whole point. Bare `srvsvc` would also collect the
+                      ROUTINE bind. Re-measured over the pinned EVTX corpus in
+                      docker/validation/labruns/2026-08-srvsvc-epmapper-pipe-creation.md: of 61
+                      PipeEvent records, 7 match `srvsvc` and 3 match `epmapper`. The five bare
+                      \srvsvc records are all EventID 18 binds - four from Image=System, one
+                      from wmiprvse.exe - arising from share enumeration, session enumeration
+                      and remote named-pipe discovery; the one bare \epmapper is the legitimate
+                      endpoint mapper, also an 18, also Image=System. None of the six takes the
+                      nested form, so the narrow entries collect 2 apiece and drop the routine
+                      traffic. If that traffic is later wanted it is a separate decision and a
+                      separate rule (remote share discovery), not a widening of these lines.
+                      Note the legitimate \epmapper record is Image=System, NOT svchost.exe, so
+                      the Image-based filter_legit #240 proposed would not have filtered it -
+                      narrowing the collection is what does that job.
+                      One caveat stays open: no legitimate CREATE of either name was observed at
+                      all, which is consistent with once-per-boot from rpcss and the Server
+                      service but is absence of evidence - none of these captures spans a boot.
+                      Volume on a live host is unmeasured, and dotgibson/dotfiles-Defense#235
+                      carries it (see labruns/runbook-sysmon18-remote-pipe.md).
 
-         Note the create/connect split above is per name, not a house style: spoolss is
-         interesting on creation, \pipe\srvsvc and \pipe\epmapper on creation for the same
-         reason, and the other four only on connection. -->
+         Note the create/connect split above is per name, not a house style: spoolss,
+         \pipe\srvsvc and \pipe\epmapper are interesting on creation, because the tool STANDS
+         UP those pipes and the create is the half carrying its Image; the other names only on
+         connection, because every tool in scope binds a pipe that is already there. -->
     <RuleGroup name="pipe-events" groupRelation="or">
       <PipeEvent onmatch="include">
         <PipeName condition="contains">spoolss</PipeName>

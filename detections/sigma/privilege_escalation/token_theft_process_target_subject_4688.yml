@@ -15,8 +15,11 @@ description: |
   the shape BEFORE the token is stolen, and their own descriptions concede they cannot show
   the run-as-SYSTEM result. This rule carries no Image constraint at all, so it survives
   `-c nc.exe`, `-c whoami`, and any payload that is not a named shell - the whole class
-  those two miss. And where spoolss_pipe_impersonation_sysmon_17.yml (id
-  d5c5c185-a62f-415a-ab0f-2572f910b541) observes the mechanism on ONE coercion endpoint,
+  those two miss. And where the mechanism-plane rules -
+  spoolss_pipe_impersonation_sysmon_17.yml (id d5c5c185-a62f-415a-ab0f-2572f910b541) and,
+  since dotgibson/dotfiles-Defense#248, srvsvc_epmapper_pipe_impersonation_sysmon_17.yml
+  (id 563f2958-0d44-4138-884f-14d338d37cd9) - observe the mechanism on three named
+  coercion endpoints between them,
   this sits downstream of every endpoint: PrintSpoofer, GodPotato, EfsPotato, DCOMPotato,
   CoercedPotato and the DCOM/ServerAlive2 family all converge on CreateProcessWithTokenW /
   CreateProcessAsUserW, and all of them populate Target Subject. That is the coverage
