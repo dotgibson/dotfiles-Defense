@@ -14,6 +14,8 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v5.4.3] - 2026-08-30
+
 ### Added
 
 - **A gate for local gates that cannot do what their name says (#775).**
