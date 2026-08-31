@@ -276,6 +276,9 @@ EventID:5136 AND AttributeLDAPDisplayName:msDS\-KeyCredentialLink
 // privilege_escalation/spoolss_pipe_impersonation_sysmon_17.yml — SeImpersonate privesc - non-spooler process creating a spoolss named pipe (Sysmon 17)
 (EventType:CreatePipe AND PipeName:*spoolss*) AND (NOT Image:*\\spoolsv.exe)
 
+// privilege_escalation/srvsvc_epmapper_pipe_impersonation_sysmon_17.yml — SeImpersonate privesc - nested srvsvc/epmapper named pipe created locally (Sysmon 17)
+EventType:CreatePipe AND (PipeName:(*\\pipe\\srvsvc* OR *\\pipe\\epmapper*))
+
 // privilege_escalation/token_theft_parent_child_mismatch_sysmon_1.yml — Token theft - SYSTEM process created by a service identity (Sysmon 1)
 User:*SYSTEM* AND (ParentUser:(*APPPOOL* OR *NETWORK\ SERVICE* OR *LOCAL\ SERVICE*))
 

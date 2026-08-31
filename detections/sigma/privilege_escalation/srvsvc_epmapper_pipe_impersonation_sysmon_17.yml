@@ -1,0 +1,157 @@
+title: SeImpersonate privesc - nested srvsvc/epmapper named pipe created locally (Sysmon 17)
+id: 563f2958-0d44-4138-884f-14d338d37cd9
+status: experimental
+description: |
+  Detection posture: high, and it is the invariant
+  spoolss_pipe_impersonation_sysmon_17.yml (id d5c5c185-a62f-415a-ab0f-2572f910b541)
+  states on a different endpoint - ownership on creation - applied to the two names the
+  baseline was collecting and nothing was reading. EfsPotato and RoguePotato do not bind
+  the Server service's or the RPC endpoint mapper's own pipe. They stand up their OWN
+  pipe, named for that endpoint one path segment deeper, and coerce the service into
+  connecting to it so the coerced SYSTEM context can be impersonated. The invariant is
+  therefore ownership, not content: no legitimate process creates a pipe whose name
+  NESTS one of these endpoints. That is a shape rather than an IOC - it does not depend
+  on the tool's filename, and two of the three potatoes in the pinned corpus randomise
+  the prefix as a GUID, so it survives the prefix changing on every run too.
+  Measured, not assumed. Over the pinned sbousseaden/EVTX-ATTACK-SAMPLES corpus
+  @4ceed2f4706daf601c212a8f91c113dd85349a2c, 61 PipeEvent records, this selection matches
+  2 - EfsPotato's \dd4c18dc-...\pipe\srvsvc under c:\temp\EfsPotato.exe and RoguePotato's
+  \RoguePotato\pipe\epmapper under RoguePotato.exe - and nothing else. See
+  docker/validation/labruns/2026-08-srvsvc-epmapper-pipe-creation.md, which re-ran the
+  sweep from scratch rather than inheriting the figures the collection change recorded.
+  Creation, not connection - and for a THIRD distinct reason, so do not read either
+  sibling's argument across. `category: pipe_created` resolves to Sysmon 17 and 18 under
+  the sysmon pipeline. coercion_efsrpc_pipe_sysmon_18.yml (id
+  04ebb60d-1d9c-471e-9da8-56abcff3235c) pins ConnectPipe because lsass creates \efsrpc
+  once per boot and an unpinned rule would fire on every reboot forever; that hazard does
+  not exist here, because the legitimate creates are of the BARE names and this rule does
+  not select those. The pin here is about which half carries the attribution. Every nested
+  pipe in the corpus produces exactly one 17 and one 18, tens of milliseconds apart: the
+  17 carries the TOOL's Image, while the 18 is the coerced service binding back and
+  arrives Image=System ProcessId=4, naming the victim rather than the attacker. Dropping
+  the pin takes the match count from 2 to 4 and adds no attack the rule did not already
+  see - it adds a second, misattributed copy of each one. So the pin buys deduplication
+  and attribution, and costs no coverage. Its cost is stated in falsepositives and is
+  measured rather than feared.
+  No filter_* block, and the omission is the argument. There is nothing here to exclude.
+  The legitimate Server service and endpoint mapper pipes are the bare \srvsvc and
+  \epmapper, which do not contain the selection strings, so the narrowing does the work an
+  exclusion would. dotgibson/dotfiles-Defense#240 proposed
+  `filter_legit: Image|endswith: '\svchost.exe'` for the endpoint mapper and the
+  measurement killed it: the one legitimate \epmapper record in the corpus is
+  Image=System, not svchost.exe, so that block would have excluded nothing while reading
+  as though it did. Shipping a cosmetic filter here would be that same defect written a
+  second time. Leaving Image out entirely also means the rule does not depend on how a
+  given Sysmon build attributes anything - the property coercion_efsrpc_pipe_sysmon_18.yml
+  is deliberately built to have and its svcctl/atsvc sibling is not.
+  spoolss is deliberately NOT in the list below, and that is not an oversight.
+  spoolss_pipe_impersonation_sysmon_17.yml selects `PipeName|contains: 'spoolss'`, which
+  already matches PrintSpoofer's nested \<guid>\pipe\spoolss - verified against the corpus
+  record, on which that rule fires. Adding spoolss here would double-alert one attack.
+  A broader shape was considered and rejected: the bare structural form. Sysmon renders a
+  pipe name with one leading backslash and no \Device\NamedPipe\ prefix, so "this name is
+  nested" is expressible as `PipeName|contains: '\pipe\'` with no regex and no backend
+  risk. The objection is not expressibility, and it is not the false-positive rate either
+  - over the pinned corpus that form matches 3 of 61 on the create half and all three are
+  attacks. It is that the third of those three is PrintSpoofer's nested spoolss pipe,
+  which the spoolss rule ALREADY holds, so the generic form's marginal coverage over this
+  corpus is ZERO: every record it adds is already caught. Two further objections stand on
+  their own. It cannot be deployed on the baseline this repo ships -
+  detections/sysmon/sysmonconfig-detection-lab.xml scopes PipeEvent to an onmatch="include"
+  list, so on a host running it the generic form sees only those names and buys nothing;
+  getting its coverage means collecting ALL PipeEvent unfiltered, a materially larger
+  ingestion decision that a rule may not make on the config's behalf, and one the capture
+  argues against pricing casually - a single ordinary remote enumeration produced 18 binds
+  across 14 pipe names in 160ms. And 3-of-3 is drawn from a corpus that is overwhelmingly
+  attack telemetry, so it says nothing about how often a working desktop creates a nested
+  pipe, where browser and IPC-framework pipes take exactly this shape. It also does not
+  close what would justify the change: GodPotato hooks combase's RPC dispatch table and
+  can name its pipe anything, so the structural form misses it too. Reopen when PipeEvent
+  collection is widened past an include list, at which point the generic form should
+  REPLACE this rule rather than sit beside it, and its own volume must be measured first.
+  Relationship to the rest of the corpus. This holds no new ATT&CK ground - #225 already
+  took both halves of T1134.001 for the mechanism plane, so the ledger moves by rules and
+  not by techniques. What it adds is the two endpoints that rule cannot see: EfsPotato and
+  RoguePotato leave spoolss_pipe_impersonation_sysmon_17.yml silent. The outcome-plane
+  companions are token_theft_process_target_subject_4688.yml (id
+  1faa7a59-9fd5-4d14-9bf1-d94f82466acb) and token_theft_parent_child_mismatch_sysmon_1.yml
+  (id b7f135f0-c066-4b0b-ac45-3f6bb433be38), which key on the RESULT of the impersonation
+  and so cover the variants that stand up no recognisable pipe at all, GodPotato among
+  them. Mechanism here, effect there; neither is redundant. The potato pair -
+  potato_seimpersonate_4688.yml (id 9486ed6c-4c38-457f-a475-188a978eaa4a) and
+  potato_seimpersonate_sysmon_1.yml (id 03e878f6-bbdc-41e1-afa6-68b2979938fe) - sees a
+  shell created BY a service identity, which is the shape before the token is stolen, and
+  points at this class of rule for the confirmation it cannot give. On the wire,
+  coercion_named_pipes_5145.yml (id 29ac7a00-b6fe-48d8-8c65-f62a8b83808d) is the
+  remote-coercion view. The remaining PipeEvent names are read by
+  svcctl_atsvc_remote_pipe_sysmon_18.yml (id e9d70412-5340-436c-9917-b3664f5d77a7) and
+  coercion_efsrpc_pipe_sysmon_18.yml, both on the CONNECT half; lsarpc is collected and
+  deliberately unread, for the reason recorded in DEFENSE-METHODOLOGY.md. With this rule
+  every name the shipped config collects is either read or declined in writing.
+  Validate (purple): run EfsPotato and RoguePotato from dotfiles-Offense (hacktheplanet
+  "Windows privilege escalation" fold; htpx pair potato-seimpersonate), then read the
+  Sysmon 17 each produced and confirm the PipeName nests the endpoint and the Image is the
+  tool's.
+  Requires Sysmon PipeEvent (EventID 17). The shipped
+  detections/sysmon/sysmonconfig-detection-lab.xml collects \pipe\srvsvc and \pipe\epmapper
+  as of dotgibson/dotfiles-Defense#240, so this rule needs no config change -
+  dotgibson/dotfiles-Defense#248 is the tracker filed WITH that collection so the block
+  never held an unconsumed name without a reason attached.
+references:
+  - https://attack.mitre.org/techniques/T1134/001/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/potato-seimpersonate-4688.md
+author: dotfiles-Defense
+date: 2026-08-30
+tags:
+  # The same claim spoolss_pipe_impersonation_sysmon_17.yml makes and on the same grounds:
+  # T1134.001 is dual-tactic in the pinned v19.2 bundle, so check-attack-tags.sh's pairing
+  # assertion earns both tags with no attack-tactic-deliberate escape. The Stealth half is
+  # earned rather than inherited - this rule observes the pipe the impersonation cannot
+  # avoid standing up, which is the evasion itself, not the shape around it. Neither
+  # tactic ROW is new; dotgibson/dotfiles-Defense#225 took them, and the technique count
+  # does not move. The potato pair still declines TA0005, correctly, per #223.
+  - attack.stealth
+  - attack.privilege-escalation
+  - attack.t1134.001
+logsource:
+  category: pipe_created
+  product: windows
+detection:
+  selection:
+    # CreatePipe selects the half carrying the TOOL's Image rather than the coerced
+    # service's. The reason differs from both siblings' - see the description.
+    EventType: 'CreatePipe'
+    # The interior \pipe\ is the whole discriminator: the routine binds are the bare
+    # \srvsvc and \epmapper and are NOT matched. spoolss is absent on purpose; its own
+    # rule already covers the nested form.
+    PipeName|contains:
+      - '\pipe\srvsvc'
+      - '\pipe\epmapper'
+  condition: selection
+falsepositives:
+  - Software that legitimately hosts a nested named pipe under one of these endpoint
+    names. None appears in the pinned corpus and none is known; if one appears, allowlist
+    the specific Image after confirming the publisher rather than widening the pipe-name
+    match.
+  - Volume on a live host is UNMEASURED, in both directions. No legitimate create of
+    either name - bare or nested - appears in the pinned corpus, which is consistent with
+    once-per-boot creation by the Server service and rpcss but is absence of evidence -
+    none of those captures spans a boot, and 61 PipeEvent records from an attack-sample
+    collection are not a baseline. That a legitimate create would carry the bare name and
+    so fall outside this selection is inference, not measurement.
+    dotgibson/dotfiles-Defense#235 tracks the first-party run that would settle it, and
+    docker/validation/labruns/runbook-sysmon18-remote-pipe.md is how to collect it.
+  - A Sysmon config that rewrites or omits EventType on PipeEvent would make the selection
+    silently unsatisfiable rather than noisy. Measured rather than feared, and now quantified.
+    8 of the 61 PipeEvent records in the pinned corpus carry no EventType
+    field at all, on 2019-era builds across three hosts. All six nested records do carry
+    it. Confirm EventType is present in a real 17 before deploying to old agents; the
+    shipped baseline is schemaversion 4.90 and is well past that boundary. See
+    docker/validation/labruns/2026-08-sysmon18-remote-pipe.md.
+  - This rule has not been run against a first-party capture. It DOES fire under the
+    validation engine on the real EfsPotato and RoguePotato create records - its fixtures
+    are those records transcribed from the pinned corpus, not an approximation of them -
+    and it stays silent when only the interior \pipe\ segment is removed. That is strong
+    evidence about what Sysmon emits and no evidence about our shipped config on our host,
+    so do not read its silence in production as proof of absence until #235 lands.
+level: high

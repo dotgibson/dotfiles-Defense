@@ -185,6 +185,76 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **`\pipe\srvsvc` and `\pipe\epmapper` are read at last; EfsPotato and RoguePotato are watched on
+  the mechanism plane.** `srvsvc_epmapper_pipe_impersonation_sysmon_17.yml` (id
+  `563f2958-0d44-4138-884f-14d338d37cd9`) selects `EventType: CreatePipe` on a `PipeName` whose name
+  NESTS either endpoint, closing the telemetry-ahead-of-detection hole #225 closed for `spoolss` and
+  #229 for `atsvc`/`svcctl`/`efsrpc`. Two names, **one rule**: they share the invariant, the
+  `EventType` pin, the absence of an `Image` key, the technique and both its tactics, and the
+  false-positive story, which is the `svcctl`/`atsvc` case rather than the `efsrpc` one, where the
+  split existed because the invariant genuinely differed. With this, every name the shipped config
+  collects is either read or declined in writing.
+  **The three questions #240 carried were re-derived, not inherited**, and the sweep was re-run from
+  scratch because the original figures lived only in a config comment — a rule resting on a number
+  recorded nowhere a reader could check is the circularity `fixture-provenance.tsv` exists to make
+  visible. `docker/validation/labruns/2026-08-srvsvc-epmapper-pipe-creation.md` is the record: all
+  278 EVTX of `sbousseaden/EVTX-ATTACK-SAMPLES` @`4ceed2f4`, `chainsaw 2.16.4`, **61 PipeEvent
+  records** — the figure reproduces exactly.
+  *Creation, not connection*, and for a **third** distinct reason, so neither sibling's argument
+  carries across. Every nested pipe in the corpus produces exactly one 17 and one 18, tens of
+  milliseconds apart: the 17 carries the tool's own `Image`, the 18 is the coerced service binding
+  back as `Image=System` `ProcessId=4`, naming the victim. Dropping the pin takes the rule from 2
+  matches to 4 and adds no attack it did not already see — only a misattributed second copy of each.
+  So the pin buys deduplication and attribution and costs no coverage, where
+  `coercion_efsrpc_pipe_sysmon_18`'s identical-looking pin is load-bearing against *volume* because
+  lsass creates `\efsrpc` every boot. Both siblings now say so in their own descriptions.
+  *The generic `\<x>\pipe\<y>` shape is rejected*, and the decisive objection turned out to be
+  measured rather than argued. It is expressible without regex (`PipeName|contains: '\pipe\'`,
+  since Sysmon renders one leading backslash and no `\Device\NamedPipe\` prefix) and on the create
+  half it matches 3 of 61, all attacks — but the third is PrintSpoofer's nested `spoolss` pipe,
+  which `spoolss_pipe_impersonation_sysmon_17` **already fires on**, so its marginal coverage over
+  this corpus is **zero**. The ingestion objection stands separately: it needs unfiltered PipeEvent
+  collection, so under the shipped `onmatch="include"` baseline it would see only the seven collected
+  names — a much larger decision than a rule may make on the config's behalf. And 3-of-3 measures an
+  attack-sample corpus, not an estate. It still misses GodPotato. Reopen condition recorded in the
+  rule: if collection is ever widened past an include list, the generic form should *replace* this
+  rule rather than sit beside it. For the same reason `spoolss` is deliberately absent from the name
+  list — that rule's `contains: 'spoolss'` already matches the nested form, verified against the
+  record, so adding it here would double-alert one attack.
+  *No `filter_*` block, and the omission is the argument.* The legitimate creators make the **bare**
+  `\srvsvc` and `\epmapper`, which the selection does not contain, so the narrowing does the work an
+  exclusion would. #240's proposed `filter_legit: Image|endswith: '\svchost.exe'` is confirmed dead:
+  the one legitimate `\epmapper` record is `Image=System`. A cosmetic filter would be that defect
+  written twice. Consequently no `check-splunk-precedence.sh` row is needed — the compiled Splunk
+  form is `EventType="CreatePipe" PipeName IN ("*\\pipe\\srvsvc*", "*\\pipe\\epmapper*")`, an OR
+  list with no `NOT` beside it.
+  **The fixtures are a provenance first for this repo.** `srvsvc_epmapper_pipe_17_tp.jsonl` is the
+  two real create records transcribed **verbatim** from the corpus — the first pipe fixtures here
+  whose *values*, not merely whose key set, come from the provider. They stay `vendor-documented`,
+  not `captured`: `labruns/README.md` reserves that for first-party capture, and these are 2020–2021
+  third-party builds. A true negative ships despite the rule having no `filter_*` — not required by
+  any gate, but the `\pipe\` narrowing is the rule's entire thesis and nothing else would prove it
+  discriminates; it changes exactly one value per line, `PipeName` nested to bare, holding `Image` at
+  the TP's so the nesting is isolated as the sole discriminator.
+  **Validation**: sigma efficacy 84/84 passed (42 with a true-negative), run against the pinned
+  zircolite v3.7.6 — the new row fires on the transcribed EfsPotato and RoguePotato records and
+  stays silent on the near-miss.
+  **Two claims this repo was making are corrected.** The bare-`srvsvc` traffic was described as
+  "five … ordinary share enumeration … from `Image=System`" — four of the five are `Image=System`
+  and the fifth is `wmiprvse.exe`, and they come from three different capture types plus a kekeo
+  capture. And "3 of 61 records" for the nested shape counts *pipes*; it is 6 records over 3 pipes.
+  The load-bearing half — that no legitimate bind takes the nested form — holds exactly. Drive-by:
+  `docker/validation/README.md` said 81 manifest rows / 38 true negatives against a real 84 / 42, and
+  `runbook-sysmon18-remote-pipe.md` said "two things still need a host" while listing three.
+  **What is not settled**: volume on a live host, in either direction. No legitimate *create* of
+  either name appears anywhere in the corpus and none of the captures spans a boot, so the claim that
+  a legitimate create would carry the bare name is inference. That half carries to #235, whose
+  runbook gains it as item 4 with a pre-committed prediction and EfsPotato/RoguePotato rows in its
+  firing table. Closes dotgibson/dotfiles-Defense#248.
+  `Ledger: corpus 110 -> 111 rules, 128 -> 129 documents, techniques unchanged at 81. Privilege
+  Escalation TA0004 9 | 14 -> 9 | 15, Stealth TA0005 3 | 5 -> 3 | 6, T1134.001 5 -> 6 rules. No new
+  technique or tactic row, and no new Splunk precedence allowlist row.`
+
 - **`\pipe\srvsvc` and `\pipe\epmapper` join the PipeEvent include list; EfsPotato and
   RoguePotato stop being unwatched on the mechanism plane.** Measured while gathering evidence for #240: every potato in the pinned
   `sbousseaden/EVTX-ATTACK-SAMPLES` corpus that stands up its own pipe uses the nested
