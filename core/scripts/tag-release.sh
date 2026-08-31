@@ -117,10 +117,23 @@ MAJOR="v${VERSION%%.*}"
 # ── PHASE 2 — publish the tags for a release that has ALREADY landed on main ──
 if [[ "$MODE" == publish ]]; then
   hdr "publish $TAG (tag origin/main)"
-  git fetch -q --tags origin 2>/dev/null || {
+  # --force, and the stderr is NOT swallowed. The vN major alias is force-moved to every
+  # release (see the push below), so any clone that missed a release has a stale local vN
+  # — and a plain `git fetch --tags` REFUSES to move it ("would clobber existing tag"),
+  # exits 1, and takes publish down with it. That is not a fetch failure, but with the
+  # error redirected to /dev/null it reported as one: "could not fetch origin" sent the
+  # operator to look at the network while a one-line tag update was all that was needed.
+  # Observed cutting v5.4.3, on a clone whose v4 and v5 were both behind.
+  #
+  # Forcing is correct rather than merely convenient: vN is a MOVING alias whose remote
+  # value is authoritative by definition, so a local ref that disagrees is stale, never
+  # a competing truth. Immutable vX.Y.Z release tags are unaffected — they never move,
+  # so --force never has anything to overwrite there, and the ruleset forbids it anyway.
+  if ! fetch_err="$(git fetch -q --force --tags origin 2>&1)"; then
     fail "tag-release.sh: could not fetch origin — publishing needs the remote's view of main"
+    [[ -n "$fetch_err" ]] && printf '%s\n' "$fetch_err" >&2
     exit 1
-  }
+  fi
   git rev-parse -q --verify origin/main >/dev/null || {
     fail "tag-release.sh: no origin/main to tag"
     exit 1

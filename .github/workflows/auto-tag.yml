@@ -28,4 +28,4 @@ jobs:
     # points at today" decides what executes with push access to this repo. dotfiles-Windows
     # already pins this same caller for this same reason (RELEASE-STRATEGY.md, auto-tag row).
     # Renovate bumps the SHA; the trailing comment is the human-readable version.
-    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@8b4fba5f5c333e9644866fae682a5151feda81e4 # v5.4.3
+    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@6a81418ed7e0a045b0d5fe9a7cd4dd67d7556f50 # v5.5.0
