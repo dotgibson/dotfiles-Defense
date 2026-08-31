@@ -7,7 +7,9 @@ _core() {
     'help:scannable cheat sheet of Core (optional filter word)'
     'doctor:report detected tools + active integrations on this box'
     'version:print the vendored Core layer version'
+    'status:is this box current — version, provenance, live layers, core/ integrity'
     'update:apply package updates (interactive; -y where safe, -n to list)'
+    'whatsnew:what changed in Core since this box last looked'
   )
   if (( CURRENT == 2 )); then
     _describe -t commands 'core subcommand' subs
@@ -20,6 +22,8 @@ _core() {
   help) _core-help 2>/dev/null || _files ;;
   doctor) _core-doctor 2>/dev/null ;;
   version) _core-version 2>/dev/null ;;
+  status) _core-status 2>/dev/null ;;
+  whatsnew) _core-whatsnew 2>/dev/null ;;
   esac
 }
 _core "$@"

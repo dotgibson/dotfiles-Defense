@@ -1,4 +1,0 @@
-# CODEOWNERS — Core fans out to all eight OS repos, so every change
-# here warrants the maintainer's review. A single catch-all owner is deliberate:
-# this is a personal-but-public showcase system with one author.
-* @gerrrt

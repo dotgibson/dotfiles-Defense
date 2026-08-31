@@ -15,8 +15,11 @@ core.version
 #         -> 30-functions -> 35-fzf -> 40-bindings -> 45-plugins -> 50-op
 #         -> 55-maint -> 60-update  (then the OS layer at 80-os, role at 85-*, host at 99-local)
 # The NN prefix — not a hand-listed name array — is the contract now. Bands: Core 00-69,
-# OS-native 70-84, Role 85-94, host-local 95-99. CORE_PROFILE gates only Core (00-69);
-# fragments >=70 always load. Order matters: tools inits atuin (defines its widget) and
+# OS-native 70-84, Role 85-94, host-local 95-99 — a reservation convention between the
+# layers, which the loader does NOT enforce (it sources every fragment it globs, in NN
+# order; #677 deleted the CORE_PROFILE ceiling that used to skip some). Bands still matter
+# because a flat $ZSH_CFG holds one 22-foo.zsh: a number an OS repo takes, Core cannot.
+# Order matters: tools inits atuin (defines its widget) and
 # fzf defines its zle widgets BEFORE plugins loads zsh-vi-mode, which fires the binding
 # hook; options runs compinit BEFORE plugins (fzf-tab + carapace need it). git loads AFTER
 # aliases so its comprehensive git set is the single source of truth (20-aliases.zsh
@@ -24,7 +27,7 @@ core.version
 # `gdft`, are noted in that file).
 # loader.zsh is the shared fragment-loader an OS .zshrc sources (B12); it is NOT itself a
 # numbered fragment (no NN- prefix) — it DRIVES the glob, so it is never sourced by it.
-zsh/loader.zsh         # canonical glob+sort+profile+byte-compile+source loop, vendored so OS .zshrc files stop duplicating it
+zsh/loader.zsh         # canonical glob+sort+byte-compile+source loop, vendored so OS .zshrc files stop duplicating it
 zsh/00-tools.zsh       # detection + the single init point (zoxide/starship/atuin/mise/direnv) + the Core→OS API (_cache_eval, _core_is_wsl)
 zsh/02-capabilities.zsh # reads the OS layer's os.capabilities declaration into _CORE_CAP (the OS repo authors that file; it is NOT Core, so it is not listed here)
 zsh/05-ui.zsh          # terminal-UX primitives (_core_err/warn/ok/hint/confirm/spin) — gum-aware
@@ -50,7 +53,9 @@ zsh/completions/_cdup
 zsh/completions/_core
 zsh/completions/_core-doctor
 zsh/completions/_core-help
+zsh/completions/_core-status
 zsh/completions/_core-version
+zsh/completions/_core-whatsnew
 zsh/completions/_extract
 zsh/completions/_fbr
 zsh/completions/_fcd

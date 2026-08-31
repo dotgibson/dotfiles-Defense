@@ -508,7 +508,7 @@ EOF
 # an unknown id returns non-zero and the caller prints the generic pointer instead.
 _core_owned_block_owner() { # _core_owned_block_owner <rule-id>
   case "$1" in
-  direnv-hook) echo "core/zsh/00-tools.zsh (band 00 — loads under every CORE_PROFILE)" ;;
+  direnv-hook) echo "core/zsh/00-tools.zsh (band 00, beside the other per-directory hook inits)" ;;
   gh-completion | uv-completion | ty-completion) echo "core/zsh/00-tools.zsh (band 00, generated into an fpath dir; compdef re-assert in 45-plugins.zsh after carapace)" ;;
   wsl-detect) echo "core/zsh/00-tools.zsh :: _core_is_wsl" ;;
   *) return 1 ;;
@@ -797,6 +797,70 @@ _core_claude_ref_hits() { # _core_claude_ref_hits <file>
     printf '%s:%s\n' "$n" "$p"
   done <<EOF
 $(grep -nIo "${bt}\.claude/[^${bt}]*${bt}" "$f" 2>/dev/null)
+EOF
+}
+
+# ── _core_vendor_ref_hits: does a vendored script reach a file nobody vendors? ──
+# _core_vendor_ref_hits <file> — print `LINE:PATH` for every repo-root-relative path
+# <file> resolves at RUNTIME. Silence = it reaches nothing outside itself. Consumed by
+# audit-core.sh §1e, which walks the closure from core.vendor's `# entry` roots and
+# decides whether each reached path is actually vendored.
+#
+# EXTRACTION ONLY, same split as _core_claude_ref_hits above and for the same reason:
+# judging "is this path in the vendored set" needs the two list files, so a scanner that
+# did it could not be driven against test-core.sh's fixtures.
+#
+# WHY THIS EXISTS. #676 stopped vendoring the whole repo, so a script that DOES ship can
+# now `source` a sibling that does NOT. Nothing else would catch it: §1's reverse drift
+# reads `git ls-files` and sees a tracked, accounted-for file either way; core-integrity
+# compares tree hashes and a consistently-wrong subset hashes consistently. The failure
+# surfaces on a box, at runtime, as `no such file or directory` — in a consumer repo's CI,
+# one fan-out later, pointing at Core.
+#
+# TWO SHAPES, both anchored on something that means "from the repo root":
+#   `# shellcheck source=<path>`  — this tree puts one above every `source` line, and it is
+#       already repo-root-relative by convention, which makes it the highest-signal and
+#       lowest-guess form available. It is a directive, so it cannot drift from the source
+#       line under it without shellcheck itself complaining.
+#   `"$HERE/<path>"`             — $HERE is the repo root in every gate script here
+#       (`cd "${BASH_SOURCE[0]%/*}/.."`), so what follows the slash is a repo path.
+#
+# SKIPPED, deliberately, and this is the honest part of the gate:
+#   - anything with a `$` after the anchor — `$HERE/$f` is a variable, not a path;
+#   - globs and trailing `/` — a pattern describes a set, and resolving it would mean
+#     inventing a semantics the code does not have (the _core_claude_ref_hits argument);
+#   - COMPUTED paths with no directive, e.g. common.sh's
+#     `_CORE_OS_REPOS_FILE="$(cd -P "${BASH_SOURCE[0]%/*}/..")/os-repos.txt"`. Those are
+#     invisible here by construction. They are covered by being listed BY HAND in
+#     core.vendor with their consumer named — the same posture §1b takes toward .claude/.
+#   - Lua `require`s and YAML `uses:`. nvim/ ships wholesale so the first cannot break;
+#     the second is why .github/actions/setup-core-tools/action.yml is hand-listed.
+#
+# A gate that claimed to see all of that would be worse than one that says what it misses.
+_core_vendor_ref_hits() { # _core_vendor_ref_hits <file>
+  local f="${1:-}" line n p
+  [ -f "$f" ] || return 0
+  # Both greps are ANCHORED, and the $HERE one drops comment lines, because this scanner is
+  # itself a tracked shell file that DOCUMENTS the two shapes it looks for. Unanchored, it
+  # reported its own prose as references — a scanner that cannot read its own source without
+  # tripping is one nobody trusts the output of.
+  #
+  # Heredoc, not a pipe: a grep that matches nothing exits 1, and under audit-core.sh's
+  # pipefail that would make "this file reaches nothing" read as a scanner failure.
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    n="${line%%:*}"; p="${line#*:}"
+    case "$p" in
+      *'$'* | *'*'* | *'?'* | *'`'* | *'..'* | */ | '') continue ;;
+    esac
+    printf '%s:%s\n' "$n" "$p"
+  done <<EOF
+$( { grep -nIE '^[[:space:]]*# shellcheck source=[^ ]+$' "$f" 2>/dev/null |
+       sed 's/:[[:space:]]*# shellcheck source=/:/'
+     grep -nIE '\$\{?HERE\}?/[A-Za-z0-9_./-]+' "$f" 2>/dev/null |
+       grep -vE '^[0-9]+:[[:space:]]*#' |
+       sed -E 's/^([0-9]+):.*\$\{?HERE\}?\/([A-Za-z0-9_./-]+).*$/\1:\2/'
+   } )
 EOF
 }
 

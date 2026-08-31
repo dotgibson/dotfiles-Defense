@@ -40,6 +40,7 @@ zmodload -F zsh/datetime p:EPOCHSECONDS 2>/dev/null
 # (ui precedes update). The COLORTERM branch below is a STANDALONE fallback for the
 # unit tests, which source this module alone: it reproduces the same truecolor-hex vs
 # 256-colour choice so a 16/256-colour TTY never gets a raw 24-bit escape.
+# core:theme:gen pkgup-accent-tiers
 if [[ -n ${_CORE_ACCENT_SPEC:-} ]]; then
   typeset -g _PKGUP_ACCENT=$_CORE_ACCENT_SPEC _PKGUP_MUTED=$_CORE_MUTED_SPEC
 elif [[ "${COLORTERM:-}" == (24bit|truecolor) ]]; then
@@ -47,6 +48,7 @@ elif [[ "${COLORTERM:-}" == (24bit|truecolor) ]]; then
 else
   typeset -g _PKGUP_ACCENT=75 _PKGUP_MUTED=244
 fi
+# core:theme:end pkgup-accent-tiers
 
 # privilege helper: sudo, else doas (Alpine), else run bare
 _pkgup_priv() {
@@ -292,11 +294,11 @@ _pkgup_fallback() {
 # all" is a different question from "what is this key", and only the latter has to route
 # through _core_cap so that absent and declared-empty stay indistinguishable.
 #
-# THE $+functions GUARD IS NOT DEFENSIVE PADDING. zsh/02-capabilities.zsh is band 02 and
-# every CORE_PROFILE loads it, so in a real shell _core_cap is always there — but this
-# module is also sourced ALONE by the unit suite, the same situation the colour ladder at
-# the top of this file already has a standalone arm for. Degrade to the built-ins rather
-# than error out of a lone source.
+# THE $+functions GUARD IS NOT DEFENSIVE PADDING. zsh/02-capabilities.zsh is band 02, far
+# ahead of this file, so in a real shell _core_cap is always there — but this module is also
+# sourced ALONE by the unit suite, the same situation the colour ladder at the top of this
+# file already has a standalone arm for. Degrade to the built-ins rather than error out of a
+# lone source.
 _pkgup_verb() {
   emulate -L zsh
   if ((${+functions[_core_cap]})) && ((${#_CORE_CAP})); then
@@ -578,6 +580,68 @@ _core_welcome() {
 # smoke test) gets nothing — and only when not disabled.
 : "${CORE_WELCOME:=1}"
 if ((CORE_WELCOME)) && [[ -t 1 ]]; then _core_welcome; fi
+
+# ── Version-bump nudge: once per Core version, point at `core whatsnew` (#680) ────────
+# The nudge above is about PACKAGES; this one is about CORE ITSELF. A host that syncs
+# 5.4.0 → 5.5.0 receives hundreds of changed files and is told nothing, which is the gap
+# `core whatsnew` closes — but a verb nobody knows exists closes nothing, so a bump
+# announces itself ONCE and then stays quiet until the next one.
+#
+# STANDALONE-SOURCE SAFE. The state helpers and the version-file global live in band 30 and
+# this is band 60, so they are present in a real shell (the loader sorts by NN prefix) but
+# NOT when the unit suite sources this file alone. Guard on the FUNCTION rather than assume
+# it — the $+functions pattern this file already uses for _pkgup_mgr. The := fallbacks below
+# serve that same standalone case, exactly as _PKGUP_ACCENT's do.
+: "${CORE_WHATSNEW_NUDGE:=1}"
+: "${_CORE_VERSION_FILE:=${${(%):-%x}:A:h:h}/core.version}"
+: "${_CORE_WHATSNEW_STATE:=${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles-core/whatsnew}"
+
+_core_whatsnew_nudge() {
+  emulate -L zsh
+  ((${+functions[_core_whatsnew_state_read]})) || return 0
+  [[ -r "$_CORE_VERSION_FILE" ]] || return 0
+  local cur
+  cur="$(<"$_CORE_VERSION_FILE")"
+  cur="${cur//[[:space:]]/}"
+  _core_whatsnew_ver_ok "$cur" || return 0
+
+  local ws_seen='' ws_announced='' ws_from=''
+  _core_whatsnew_state_read
+
+  # NO STATE AT ALL — a fresh box, or one upgrading from a Core that predates this feature.
+  # SEED and stay silent: there is no honest "from" version to name, and a brand-new box has
+  # just been greeted by _core_welcome above. This branch is what makes the suppression
+  # STRUCTURAL rather than dependent on print order — do not "simplify" it away.
+  if [[ -z "$ws_announced" ]]; then
+    _core_whatsnew_state_write "${ws_seen:-$cur}" "$cur" "$ws_from"
+    return 0
+  fi
+  [[ "$ws_announced" == "$cur" ]] && return 0
+  # Already caught up in another shell — record it and stay quiet.
+  if [[ "$ws_seen" == "$cur" ]]; then
+    _core_whatsnew_state_write "$ws_seen" "$cur" "$ws_from"
+    return 0
+  fi
+  # PERSIST BEFORE PRINTING, and bail on a failed write — the _core_welcome rule above: a
+  # state dir we cannot write to must not make this re-announce on every shell, forever.
+  # `seen` is carried through UNCHANGED: announcing is not reading, and collapsing the two
+  # is what would make a multi-hop "moved X → Y" understate the jump.
+  _core_whatsnew_state_write "$ws_seen" "$cur" "$ws_from" || return 0
+
+  local from="${ws_seen:-$ws_announced}"
+  if [[ -z ${NO_COLOR:-} ]]; then
+    # Single quotes, not backticks — print -P command-substitutes backticks under
+    # PROMPT_SUBST and would RUN `core whatsnew`. $from/$cur are safe to interpolate into a
+    # prompt string only because _core_whatsnew_ver_ok allowlists their charset; a stray %
+    # would otherwise be a prompt escape.
+    print -P "%F{$_PKGUP_ACCENT}✨ Core moved ${from} → ${cur}%f %F{$_PKGUP_MUTED}— run 'core whatsnew' to see what changed%f"
+  else
+    print -r -- "✨ Core moved ${from} → ${cur} — run 'core whatsnew' to see what changed"
+  fi
+}
+# TTY gate at the CALL SITE, like _core_welcome above: the function stays pure
+# compare+stamp+print logic the unit suite can drive with captured stdout.
+if ((CORE_WHATSNEW_NUDGE)) && [[ -t 1 ]]; then _core_whatsnew_nudge; fi
 
 # ══════════════════════════════════════════════════════════════════════════════
 # up — apply updates. INTERACTIVE by design, and now a DISPATCHER: the verb is Core's

@@ -138,9 +138,17 @@ e git "git mine" "commits authored by you"
 e git "git aliases" "list every git alias"
 
 # ── render ────────────────────────────────────────────────────────────────────
+# core:theme:gen cheat-sgr
 GC=$'\033[38;2;122;162;247m' # tokyonight blue (group)
 DIM=$'\033[38;2;86;95;137m'  # comment (description)
+# core:theme:end cheat-sgr
 RST=$'\033[0m'
+
+# Hoisted out of the fzf invocation below: a marker cannot sit inside a continued
+# command, so the --color comma-list gets its own assignment. GENERATED.
+# core:theme:gen cheat-fzf-colors
+_CHEAT_FZF_COLORS='border:#7aa2f7,prompt:#7dcfff,header:#565f89'
+# core:theme:end cheat-fzf-colors
 
 format() { # emits:  <ansi pretty>\t<copy-token>
   printf '%s\n' "${rows[@]}" | awk -F'\t' -v gc="$GC" -v dim="$DIM" -v rst="$RST" '
@@ -171,7 +179,7 @@ sel=$(format | fzf --ansi --delimiter=$'\t' --with-nth=1 \
   --no-sort --layout=reverse --border=rounded \
   --prompt='cheat ❯ ' \
   --header='Enter: copy to clipboard   ·   Esc: close' \
-  --color='border:#7aa2f7,prompt:#7dcfff,header:#565f89')
+  --color="$_CHEAT_FZF_COLORS")
 [ -n "$sel" ] || exit 0
 # A failed copy has to reach the user through tmux, not through stderr: this runs under
 # `display-popup -E`, which tears the popup down the instant the command exits, so

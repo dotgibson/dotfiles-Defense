@@ -1,8 +1,0 @@
-# Force a template choice — a blank issue on the keystone repo usually means it
-# belonged in an OS repo or dotfiles-Offense instead. The two templates above route
-# that decision via the three-layer test.
-blank_issues_enabled: false
-contact_links:
-  - name: Security report
-    url: https://github.com/security/advisories
-    about: "Do not file security issues publicly — use private vulnerability reporting (see SECURITY.md)."

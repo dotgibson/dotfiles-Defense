@@ -16,11 +16,13 @@
 
 set -u
 
-# tokyonight-storm palette — keep in sync with tmux.conf @tn_* / tmux-netinfo.sh
+# tokyonight palette — GENERATED from theme/palette.toml (make gen-theme).
+# core:theme:gen battery-palette
 BGDA="#1f2335"
 GREEN="#9ece6a"
 YELLOW="#e0af68"
 RED="#f7768e"
+# core:theme:end battery-palette
 CAP_L="" # @cap_l rounded left cap
 CAP_R="" # @cap_r rounded right cap
 

@@ -7,22 +7,33 @@
 # fzf core
 # =========================================================
 export FZF_DEFAULT_COMMAND='fd --type f --hidden --strip-cwd-prefix --exclude .git'
-export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
-export FZF_ALT_C_COMMAND='fd --type d --hidden --strip-cwd-prefix --exclude .git'
 
-# --color is an EXPLICIT tokyonight-storm palette (matches starship.toml + the
-# tmux bar), not the terminal default: this keeps fzf on-theme even when we SSH
-# into an unthemed box or run under a terminal whose palette isn't tokyonight.
+# Layout: hand-authored. Nothing here is a colour, so the generator does not own
+# it — see the palette half below.
 export FZF_DEFAULT_OPTS='
   --height=60%
   --layout=reverse
   --border=rounded
   --prompt="❯  "
   --pointer="➔ "
-  --preview-window=right:65%:wrap:border-left
-  --color=border:#27a1b9
+  --preview-window=right:65%:wrap:border-left'
+
+# --color is an EXPLICIT palette (not the terminal default), so fzf stays
+# on-theme when we SSH into an unthemed box or run under a terminal whose palette
+# isn't tokyonight. GENERATED from theme/palette.toml — `make gen-theme`.
+#
+# Appended rather than embedded because a `# core:theme:gen` line INSIDE the
+# single-quoted string above is an argument fzf rejects, not a comment.
+#
+# PARITY: `--color=query:<fg>:regular` is load-bearing for a cross-repo gate —
+# scripts/parity-check.sh greps that token here AND in dotfiles-Windows'
+# powershell/core/10-tools.ps1, which is hand-maintained. A style change is a
+# two-repo change; parity-check.sh will name the hex pwsh is missing.
+# core:theme:gen fzf-colors
+FZF_DEFAULT_OPTS="$FZF_DEFAULT_OPTS
+  --color=border:#29a4bd
   --color=fg:#c0caf5
-  --color=gutter:#16161e
+  --color=gutter:#1d202f
   --color=header:#ff9e64
   --color=hl:#2ac3de
   --color=hl+:#2ac3de
@@ -31,15 +42,10 @@ export FZF_DEFAULT_OPTS='
   --color=pointer:#ff007c
   --color=prompt:#2ac3de
   --color=query:#c0caf5:regular
-  --color=scrollbar:#27a1b9
+  --color=scrollbar:#29a4bd
   --color=separator:#ff9e64
-  --color=spinner:#ff007c
-'
-
-export FZF_CTRL_R_OPTS='
-  --prompt="History ❯ "
-  --sort
-'
+  --color=spinner:#ff007c"
+# core:theme:end fzf-colors
 
 # Previews run in a subshell with the literal command string baked in, so the binary
 # name must be RESOLVED here — not assumed. 00-tools.zsh (loaded before this file) sets
@@ -65,8 +71,6 @@ if [[ -n ${HAVE_EZA:-} ]]; then
 else
   export _FZF_DIR_PREVIEW='ls -la {}'
 fi
-export FZF_CTRL_T_OPTS="--preview '$_FZF_PREVIEW_CMD'"
-export FZF_ALT_C_OPTS="--preview '$_FZF_DIR_PREVIEW'"
 
 # =========================================================
 # Widget: Ctrl+T — file picker (no hidden files)

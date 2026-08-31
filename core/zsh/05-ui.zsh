@@ -29,6 +29,10 @@ typeset -g _CORE_C_DIM=$'\e[2;37m' _CORE_C_RST=$'\e[0m'
 # 256-colour approximation — the same "degrade, don't assume" rule as NO_COLOR. This
 # replaces the per-module COLORTERM blocks that 60-update.zsh and 30-functions.zsh each
 # hand-rolled (they now consume these), so the accent has one definition, not three.
+# The two tiers themselves are GENERATED from theme/palette.toml; the claim above
+# — that this is the ONE place $COLORTERM is interpreted — still holds, because
+# the DISPATCH is authored here. Only the colours come from the palette.
+# core:theme:gen ui-accent-tiers
 if [[ "${COLORTERM:-}" == (24bit|truecolor) ]]; then
   typeset -g _CORE_C_ACCENT=$'\e[1;38;2;122;162;247m' _CORE_C_MUTED=$'\e[38;2;86;95;137m'
   typeset -g _CORE_ACCENT_SPEC='#7aa2f7' _CORE_MUTED_SPEC='#565f89'
@@ -36,6 +40,7 @@ else
   typeset -g _CORE_C_ACCENT=$'\e[1;38;5;111m' _CORE_C_MUTED=$'\e[38;5;103m'
   typeset -g _CORE_ACCENT_SPEC=75 _CORE_MUTED_SPEC=244
 fi
+# core:theme:end ui-accent-tiers
 
 # Glyphs + spinner frames degrade to ASCII when the locale is NOT UTF-8 (no *utf8*/*utf-8*
 # in LC_ALL/LC_CTYPE/LANG). A C/POSIX-locale terminal — a fresh server, a rescue shell, a

@@ -1,0 +1,9 @@
+#compdef core-whatsnew
+# Completion for Core's `core-whatsnew` (zsh/30-functions.zsh). It renders the release notes
+# between the version this box last read and the one it runs now, from the vendored
+# CHANGELOG.recent.md digest (core.vendor). --full swaps the bullet LEADS for the full prose;
+# --all ignores the read mark and renders every release the digest carries.
+_arguments -s \
+  '(-h --help)'{-h,--help}'[show usage and exit]' \
+  '--full[render the full prose, not just the bullet leads]' \
+  '--all[render every release in the vendored notes, not just what is new to you]'

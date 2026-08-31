@@ -16,10 +16,12 @@
 # Deliberately NO `set -e`: a status helper must never hard-fail and blank itself.
 # ──────────────────────────────────────────────────────────────────────────────
 
-# tokyonight-storm palette (kept in sync with starship.toml + tmux.conf @tn_*)
+# tokyonight palette — GENERATED from theme/palette.toml (make gen-theme).
+# core:theme:gen netinfo-palette
 ORANGE="#ff9e64"
 GREEN="#9ece6a"
 BGDA="#1f2335"
+# core:theme:end netinfo-palette
 
 # left/right rounded caps make a floating pill on the transparent bar
 CAP_L=""

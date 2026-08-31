@@ -62,6 +62,8 @@ continuation_prompt = "[∙](fg:color_comment)" # the > > on multi-line input
 palette = 'tokyonight_storm'
 
 [palettes.tokyonight_storm]
+# GENERATED from theme/palette.toml — edit there, then `make gen-theme`.
+# core:theme:gen starship-palette
 # ── accents — now used as TEXT, not as fills ──────────────────────────────────
 color_fg0 = '#c0caf5'     # fg (brightest text)
 color_fg_dark = '#a9b1d6' # softer text (quiet segments)
@@ -76,6 +78,7 @@ color_comment = '#565f89' # muted / de-emphasized
 # ── surfaces — the two dark segment fills (subtle stepped depth) ──────────────
 color_srf1 = '#24283b' # storm bg, slightly raised above the terminal
 color_srf2 = '#1f2335' # bg_dark, a touch deeper
+# core:theme:end starship-palette
 
 [os]
 disabled = false
