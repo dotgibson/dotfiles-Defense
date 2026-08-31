@@ -25,7 +25,8 @@ name: fresh-bootstrap
 # override.
 #
 # The fix is the one Core already landed for `audit-alpine`/`audit-arch` (see
-# core/CHANGELOG.md, "Docs-only PRs were permanently unmergeable"): the job runs
+# https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md,
+# "Docs-only PRs were permanently unmergeable"): the job runs
 # UNCONDITIONALLY and gates its STEPS instead, so it reports success on a change it cannot
 # be affected by, at the cost of one runner boot. Note Core's variant had the same bug via a
 # job-level `if:` producing a `skipped` conclusion, which a ruleset also refuses — a skip
