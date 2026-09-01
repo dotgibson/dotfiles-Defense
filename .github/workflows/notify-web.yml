@@ -5,8 +5,8 @@
 # Setup (G2): the fleet GitHub App (the FLEET_APP_ID org variable + FLEET_APP_PRIVATE_KEY
 # secret) mints a short-lived dotfiles-web-scoped App token for the dispatch. That is the
 # ONLY auth — the legacy WEBHOOK_SECRET PAT was deleted when G2 finished, so this caller no
-# longer passes it (dotfiles-core #683/#819). Without the App key the reusable job warns
-# and skips.
+# longer passes it (dotgibson/dotfiles-core#683, dotgibson/dotfiles-core#819). Without the
+# App key the reusable job warns and skips.
 # Full runbook: dotgibson/dotfiles-core -> GITHUB-APP-AUTH.md.
 name: Refresh showcase
 
@@ -25,8 +25,9 @@ jobs:
       # Least privilege: pass ONLY the secrets the reusable needs, not `inherit`. The
       # reusable mints a short-lived dotfiles-web-scoped GitHub App token from this key plus
       # the FLEET_APP_ID variable. WEBHOOK_SECRET is deliberately NOT passed: that PAT was
-      # deleted when G2 finished, so the fallback it fed was dead code. Core still declares
-      # the input (dropping it is a caller-visible break) and removes it on the next MAJOR
-      # once every caller has stopped passing it — dotfiles-core #683/#819. Setup runbook:
+      # deleted when G2 finished, so the fallback it fed was dead code. Core still DECLARES
+      # it — under `on.workflow_call.secrets`, not `inputs` — because dropping it is a
+      # caller-visible break; it goes on the next MAJOR once every caller has stopped
+      # passing it. See dotgibson/dotfiles-core#683 and dotgibson/dotfiles-core#819. Runbook:
       # dotgibson/dotfiles-core -> GITHUB-APP-AUTH.md.
       FLEET_APP_PRIVATE_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY }} # App auth (G2)
