@@ -267,11 +267,35 @@ _priv_decl() {
 # error — the exact shape of dotfiles-Fedora's "maint-run never completes". Handing every
 # step an EOF turns each of those into a fast, logged failure that the ✗ path reports and
 # continues past, which is the behaviour this runner already promises.
+#
+# A FOREGROUND run (maint-run) MIRRORS each step's output to the terminal; the scheduled run
+# has no tty and keeps writing to $LOG alone, so the unattended job behaves exactly as before.
+# The tty arm is not a nicety. Without it `maint-run` prints "▶ mise upgrade" and then shows
+# NOTHING until the step ends — and on musl mise compiles node/python/ruby from source
+# (`all_compile` is ITS default there, every prebuilt runtime being glibc-linked), so that is a
+# dead terminal for TENS OF MINUTES against a MAINT_MISE_TIMEOUT ceiling of 45 of them PER STEP.
+# An operator cannot distinguish that from a wedged run, so they interrupt it; mise throws the
+# partial build away, nothing is installed, and the NEXT run starts the same compile over. The
+# invisibility is the defect, and the interrupt is only its symptom — dotfiles-Alpine sat in
+# exactly that loop, re-building node 24.20.0 from scratch every day and never finishing it.
 step() {
-  local label="$1"
+  local label="$1" rc
   shift
   log "▶ ${label}"
-  if "$@" </dev/null >>"$LOG" 2>&1; then log "  ✓ ${label}"; else log "  ✗ ${label} (rc=$?) — continuing"; fi
+  # stdout is a PIPE in the tty arm and a FILE in the other — never a terminal in either. So a
+  # step that colourizes on `isatty` still sees false and the log keeps the same clean text it
+  # always had; mirroring buys visibility without inviting escape sequences into $LOG.
+  if [[ -t 1 ]]; then
+    "$@" </dev/null 2>&1 | tee -a "$LOG"
+    # The COMMAND's status, never tee's. `pipefail` (set at the top) reports the LAST non-zero
+    # stage, which would blame the step for a tee that died on a full disk; PIPESTATUS[0] names
+    # the one status this line is about.
+    rc=${PIPESTATUS[0]}
+  else
+    "$@" </dev/null >>"$LOG" 2>&1
+    rc=$?
+  fi
+  if ((rc == 0)); then log "  ✓ ${label}"; else log "  ✗ ${label} (rc=${rc}) — continuing"; fi
 }
 
 log "═══════════ dotfiles-maint start ($(uname -s) $(hostname 2>/dev/null)) ═══════════"
@@ -318,7 +342,12 @@ if have mise; then
   # registry, a mise that died on a broken config — and all of them belong in the same third
   # state rather than masquerading as good news. rc is logged so the daily log can tell them
   # apart after the fact (124/143 = the timeout fired; anything else = mise itself failed).
-  bump="$(_to "$MAINT_MISE_TIMEOUT" mise outdated --bump --no-header 2>/dev/null)"
+  # </dev/null for the reason step() states at length: this probe is NOT a step() call, so it
+  # is the one command in the run that inherits the caller's stdin. Under `maint-run` that is a
+  # terminal, while its stderr goes to /dev/null — so a mise that decides to PROMPT here (an
+  # untrusted config path, a credential) asks a question NOBODY CAN SEE and blocks on the tty
+  # until MAINT_MISE_TIMEOUT expires. EOF turns that into the fast rc!=0 the gate below reports.
+  bump="$(_to "$MAINT_MISE_TIMEOUT" mise outdated --bump --no-header </dev/null 2>/dev/null)"
   bump_rc=$?
   if ((bump_rc != 0)); then
     log "mise: bump check UNAVAILABLE (rc=${bump_rc} — mise failed, or the probe exceeded ${MAINT_MISE_TIMEOUT}s) — nudge stays silent"
