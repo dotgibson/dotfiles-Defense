@@ -5,10 +5,144 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v6.0.0 … v5.2.0), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v6.0.1 … v5.3.0), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v6.0.1] - 2026-09-01
+
+### Added
+
+- **`make audit` runs the cross-shell parity contract (§9f, #682).** `parity-check.sh`
+  ran only on `make parity-check` and a weekly cron, so a false or unenforced `PARITY.md`
+  row merged clean and sat until Monday — which is how the contract promised an `Alt+C`
+  dir-jump binding for years with the gate green the whole time. Its most valuable
+  assertion is Core-only (the coverage half reads `PARITY.md` and the `CHECKS` array,
+  both in this repo), so it belongs on the blocking path; the cross-repo half self-skips
+  without a sibling `dotfiles-Windows`, exactly like §9c, and the pass line says which
+  half actually ran rather than claiming "zsh + pwsh" on a box that opened no pwsh file.
+  Not scope-guarded, for §9d's reason: `PARITY.md` is a `*.md` file and inert to
+  `ci-classify.sh`, so the very push that adds an unenforced row arrives as `--scope none`.
+  The unassertable half is reported through a new `skip_note` class (`scripts/lib/common.sh`):
+  a plain `skip` counts as a missing TOOL, so `--strict` would have failed a
+  fully-provisioned box purely because the contract was being honest about a PSReadLine
+  default — and would have disagreed with `parity-check.sh --strict`, which accepts the same
+  reported default. A gate punished for reporting honestly teaches the next author to stop
+  reporting.
+
+### Fixed
+
+- **`scripts/parity-check.sh` proves its one-to-one claim instead of asserting it (#682).**
+  The script's own comment said it "mirrors PARITY.md's `aligned` rows one-to-one — every
+  aligned row has a check here", and `PARITY.md`'s Enforcement section repeated it. Both
+  were false: **21 aligned rows, 18 checks.** Three rows had no check at all
+  (**History search**, **Word nav**, and one row covering five functions) and two were only
+  half-checked, which is worse than none because the row renders green while half of it is
+  fiction — **Dir jump** claimed `Alt+Z` _and_ `Alt+C` while the needle tested only
+  `Alt+Z`, and **Fuzzy git** claimed `gaf`/`grf`/`grsf` while the needle tested only
+  `gaf`. Honest coverage was **16 of 21**. (#682 reported 17 checks, four unchecked rows
+  and 15 of 21 — one release stale: #679 had just added **Theme**'s check. The shape of
+  the defect was identical either way.) Every check now carries the row-key of the table
+  row it enforces, and the script parses `PARITY.md` to assert the mapping in both
+  directions: an `aligned` row with no needle fails, and so does a needle whose row was
+  renamed or deleted. (Reclassifying a row does _not_ orphan its check — every status
+  populates the known set, and `deliberate`/`gap` rows may keep one, as `cheat` now does.)
+  A slug collision fails too, since one row's check would otherwise silently certify
+  another's. Several checks may share a row-key, which is what lets the five utility
+  functions, the three fuzzy-git verbs and the two word-nav directions each get a needle
+  instead of one standing in for the set. Coverage is row-level, not claim-level — a row
+  that grows a second trigger is still not forced to grow a second needle, and
+  `parity-check.sh` says so rather than overclaiming a second time. Verified the only way
+  a gate can be — negatively, in `test-core.sh`: an uncovered row, an orphaned row-key, a
+  slug collision, a misspelled status and a reclassified-but-still-checked row each produce
+  the right verdict and exit code. The status check matters more than it looks: a typo like
+  `aligend` left the row in the known set (so its check was not orphaned) while dropping it
+  out of the required set, retiring a contract row from enforcement with the gate green.
+  So does the parser's column anchoring: a Markdown-legal row indented one space parsed as
+  nothing at all, so a new `aligned` row could sit there unenforced while the gate reported
+  full coverage. Up to three leading spaces is now a row (CommonMark's limit); four or more
+  is still an indented code block, and both directions are pinned.
+
+  Two needles also proved less than their rows claimed. `Ctrl+R` on pwsh is bound **twice**
+  on purpose — PSFzf's lazy stub, then a re-assertion after atuin's init seizes the chord —
+  and the two lines are identical but for whitespace, so a presence needle was satisfied by
+  either and deleting the re-assertion left the row green while atuin kept `Ctrl+R`. Needles
+  may now demand a minimum match count (`count:2:`), which is the only thing that separates
+  those two. And key-anchoring the **Session picker** row had dropped its pwsh _behaviour_
+  needle, so `Ctrl+G` bound to anything satisfied it; the chord and the target now get a
+  needle each under the shared row-key, rather than one replacing the other.
+
+  Two needles proved less than their rows claimed in a subtler way still. `count:2:` shows
+  both `Ctrl+R` bindings exist but says nothing about **where**, and the re-assertion only
+  means anything _below_ `atuin init` — atuin ignores `ATUIN_NOBIND` on pwsh and seizes the
+  chord on init. Hoisting both bindings above the anchor satisfied the count while breaking
+  the advertised behaviour at runtime, so needles may now also demand position
+  (`after:atuin init:`), which is the one property a count cannot express. And the word-nav
+  needles matched the `vicmd` bindings four lines below the `viins` ones, so deleting the
+  contractual insert-mode binding left the row green; every keybinding needle now pins its
+  keymap (`-M viins '…'`) rather than matching whichever copy survives.
+
+  Two more needles matched something adjacent to their claim rather than the claim.
+  `Invoke-DotfilesSessionizer` appears in `10-tools.ps1`'s `provides:` header and its own
+  function definition as well as in the `Ctrl+G` handler, so the Session picker's target
+  needle proved the function _existed_ and never that the chord invoked it — deleting the
+  handler body left both its checks green. It now needles the insertion expression. And pwsh
+  restores `Ctrl+R` on **two** runtime paths after atuin — the lazy path re-binds the
+  `-Chord` stub, the already-loaded path calls `Set-PsFzfOption` — so deleting the
+  already-loaded branch left the `-Chord` count at two and the position check passing while
+  atuin kept `Ctrl+R` on that path. Both paths are needled now, each for existence _and_
+  position — the already-loaded branch only means anything below `atuin init` too, so
+  hoisting it keeps the count at two and still fails.
+
+- **Three `aligned` rows in `PARITY.md` were claiming more than they could show (#682).**
+  Found by doing the work above, since a contract nothing checks is a contract nothing
+  corrects. The three fail differently: one capability did not exist, one existed on both
+  shells but did different things, and one exists on pwsh only as a framework default.
+  **`Alt+C` never existed on either side** — the issue assumed pwsh had it via
+  PSFzf and zsh had drifted, but zsh never binds `^[c` and never sources fzf's own
+  key-bindings (there is no `eval "$(fzf --zsh)"` anywhere in `zsh/` or `lib/`), and
+  `dotfiles-Windows` sets only PSFzf's `-PSReadlineChordProvider` and
+  `-PSReadlineChordReverseHistory` — `-PSReadlineChordSetLocation` is opt-in and appears
+  nowhere in that repo. Not a divergence and not a `gap`; the claim is simply gone, and
+  the surviving `Alt+Z` needle is now key-anchored (`'^[z' _fzf_zoxide_jump`) like the
+  Ctrl+T row, because the bare widget name it used before passed even if the key moved —
+  as does **Session picker**'s, which had the same shape and was missed in the first pass.
+  **`cheat` is `deliberate`, not `aligned`** — zsh's is `alias cheat='core-help'`, Core's
+  own command index, while pwsh's queries cht.sh; same trigger, different source, and the
+  `alias cheat=` needle passed regardless of target. **Word nav** stays `aligned` but is
+  explicit that its pwsh half is a PSReadLine _default_, not configuration: nothing in
+  `dotfiles-Windows` binds Ctrl+Arrow, so that half reports as a skip carrying the reason
+  rather than a needle that cannot fail.
+
+- **`maint-run` no longer looks wedged while a step is working.** `step()` sent every
+  command's stdout and stderr to `$LOG` alone, while `log()` teed the `▶`/`✓`/`✗` lines to
+  the terminal. A foreground `maint-run` therefore printed `▶ mise upgrade` and then showed
+  **nothing at all** until the step ended. That is survivable when a step takes seconds; it
+  is not on musl, where mise's `all_compile` default (every prebuilt runtime being
+  glibc-linked) means `mise upgrade` COMPILES node/python/ruby from source — tens of minutes
+  of dead terminal, against a `MAINT_MISE_TIMEOUT` ceiling of 45 of them **per step**, three
+  mise steps deep. Nothing on screen separates "compiling V8" from "hung", so the operator
+  interrupts it; mise discards the partial build, nothing is installed, and the next run
+  starts the identical compile over. dotfiles-Alpine sat in that loop, rebuilding node
+  24.20.0 from scratch daily and never finishing it.
+
+  `step()` now MIRRORS the step to the terminal when stdout is a tty (`tee -a "$LOG"`), and
+  keeps the exact log-only path when it is not — so **the scheduled run is unchanged** and
+  only the interactive one gains output. Three properties are preserved deliberately:
+  `</dev/null` still hands every step an EOF (the guard the comment above `step()` explains);
+  the reported rc is `${PIPESTATUS[0]}`, the command's own status, not `tee`'s, because
+  `pipefail` would otherwise blame the step for a `tee` that died on a full disk; and stdout
+  is a pipe in the new arm and a file in the old — never a terminal — so a step that
+  colourizes on `isatty` still sees false and `$LOG` keeps the same clean text.
+
+- **The `mise outdated --bump` probe can no longer block on an invisible prompt.** It is the
+  one command in the run that is not a `step()` call, so it alone inherited the caller's
+  stdin — a terminal, under `maint-run` — while its stderr went to `/dev/null`. A mise that
+  decided to prompt there (an untrusted config path, a credential) asked a question nobody
+  could see and blocked until `MAINT_MISE_TIMEOUT` expired. It now takes `</dev/null` like
+  every other command in the file, which turns that into the fast non-zero rc the
+  "bump check UNAVAILABLE" gate directly below it already knows how to report.
 
 ## [v6.0.0] - 2026-08-31
 
@@ -872,107 +1006,3 @@ repo-meta and stays upstream:
   what "expected" means underneath it. They are independent by construction —
   `_core_doctor_stale` runs on both the opt-in and the missing branch — and there is now a
   test pinning that, so a future edit cannot quietly stop checking a reclassified tool.
-
-## [v5.2.0] - 2026-08-27
-
-### Changed
-
-- **`up` is a dispatcher now, not a seven-package-manager driver (#664).** `zsh/60-update.zsh`
-  was the largest concentration of OS knowledge in Core — five `case` statements that knew how
-  seven archives count and apply updates, including a `grep -qi tumbleweed /etc/os-release` to
-  choose `zypper dup` over `zypper up`. `ARCHITECTURE.md` named it one of two deliberate
-  exceptions to Core's own rule and defended it as "one verb with N backends". The defence of
-  the **verb** was right and still stands; one verb with N backends is what a dispatch table is
-  for, and #663 landed the table.
-
-  What runs is now resolved through `_pkgup_verb` from the OS layer's `os.capabilities`
-  declaration. The seven per-manager parse heuristics collapsed into one pipeline — run the
-  declared count verb, keep lines matching `PKG_PENDING_MATCH`, print field
-  `PKG_PENDING_FIELD` split on `PKG_PENDING_FS` — and the apply `case` into four resolved
-  verbs and one `&&` chain. `_pkgup_mgr` stays: probing with `command -v` is the shape
-  `PORTABILITY.md` asks for, and the token it returns is the label every message interpolates.
-
-  **`ARCHITECTURE.md`'s "two deliberate exceptions" is now one**, and `PORTABILITY.md`'s
-  companion section with it. Note that the issue expected an `audit-core.sh` §5c exception to
-  be removed here and **there was never one to remove** — §5c excepts `zsh/55-maint.zsh` (the
-  `LaunchAgents` segment only) and `*.example`, nothing else. `PORTABILITY.md` already said so:
-  this file was excepted _architecturally, not at the gate_.
-
-- **Core still carries built-in defaults, and they are a stopgap with a demolition date.**
-  #667 — which authors the nine declarations — is **blocked by this change**, so on the day
-  this lands no box in the fleet has one and the built-ins are what every host actually runs.
-  They live in one `typeset -gA` at the top of `zsh/60-update.zsh`, in the declaration's own
-  `KEY=value` shape, so each row is the transcription source for the repo that will replace
-  it and a declaration that behaves differently from its row is a visible diff. #667 deletes
-  the block.
-
-- **A declaration is authoritative — all or nothing, never merged per key.** Per-key fallback
-  is the obvious shape and it is wrong, because in this schema an **omission is a statement**:
-  no `PKG_ASSUME_YES` means _never auto-confirm_, and no `PKG_UPGRADE_PARTIAL` means `up -i`
-  _refuses, this archive updates as a whole_. Merging Core's built-in row into a real
-  declaration answers both of those with a default — handing an auto-confirm flag to a repo
-  that deliberately withheld one, and letting `up -i` through into the partial upgrade a repo
-  deliberately refused. A missing **required** verb is a broken declaration, and the thing
-  that catches it is `scripts/check-capabilities.sh`, a gate you run — not a silent
-  substitution on a box you are SSH'd into.
-
-### Added
-
-- **Nine optional keys, and one required key redefined (#664).** `PKG_UPGRADE` is now the
-  **interactive** upgrade verb — `up` without a flag must still let the manager print its
-  transaction summary and ask, which is what it has always done — and auto-confirm moved to
-  the new `PKG_ASSUME_YES`. New optional keys: `PKG_ASSUME_YES`, `PKG_UPGRADE_PRE`,
-  `PKG_CLEANUP`, `PKG_UPGRADE_PARTIAL`, `PKG_COUNT_REFRESH`, `PKG_COUNT_EXIT_TRUSTED`,
-  `PKG_PENDING_MATCH`, `PKG_PENDING_FIELD`, `PKG_PENDING_FS`. Every one is optional and
-  every default reproduces
-  what the box did before, so #667's authoring burden stays small and a declaration written
-  against the v5 schema keeps validating. `--packages` no longer checks the `PKG_PENDING_*`
-  values as if they were binaries, and `PKG_PENDING_FIELD` is gated as a positive integer —
-  a typo there does not fail at runtime, it reads a different column and reports confident
-  nonsense.
-
-- **`PORTING-MATRIX.md` §"Package-manager commands" gained its macOS and Fedora columns**, and
-  a `count-pending` row. #667 is told to transcribe declarations from that table, and it was
-  two managers short — missing exactly the reference implementation (`dotfiles-MacBook`) and
-  the template the other Linux repos stamp from (`dotfiles-Fedora`), so the two most-copied
-  repos had nothing to copy.
-
-- **`PKG_COUNT_EXIT_TRUSTED`, which is what carries #756 through the refactor.** Gentoo's
-  count is a real Portage resolve, and a resolve that **fails** must report the `-1` unknown
-  sentinel rather than `0` — a box whose Portage cannot resolve is not a box with nothing to
-  do. That distinction cannot be inferred generically, because most archives overload the
-  exit status of their count verb in the opposite direction: `dnf check-update` exits **100
-  when updates exist**, and `pacman -Qu` and `checkupdates` exit non-zero when there are
-  **none**. So Core ignores the status by default and counts lines; an archive whose verb
-  means what it says declares this key. Gentoo is the only one that does.
-
-- **Tests for the dispatch, and two parse arms that never had any.** `brew` and `emerge` had
-  no `_pkgup_count`/`_pkgup_list` coverage at all — the section header claimed four managers
-  and the file has seven — including, now, Gentoo's Portage resolve, its `[nomerge]`
-  filtering and atom stripping, and the failed-resolve sentinel. Both directions of the
-  exit-status question are pinned: a failed resolve reports `-1`, and dnf's exit 100 does
-  **not**. Plus the declared path end to end: a declared verb overriding the built-in row, the
-  assume-yes token appended and _not_ appended, `PKG_UPGRADE_PRE` aborting the upgrade when it
-  fails, `up -i`'s refusal driven by omission, a declared `sudo` mapped onto `doas` on a box
-  that has only `doas`, and a `;` in a declared value staying an argument rather than becoming
-  a command separator.
-
-### Fixed
-
-- **A declared privilege prefix names the intent, not the tool.** A declaration says
-  `sudo zypper dup`, but Alpine has `doas` and not `sudo`, and a container has neither.
-  `_pkgup_run` strips the prefix and hands the rest to `_pkgup_priv`, the existing ladder, so
-  the same declaration is correct on all three. A value with no prefix (`brew upgrade`) runs
-  bare, which for Homebrew is the only correct answer.
-
-### Behaviour deltas
-
-Two, both toward safety, both deliberate — everything else a host types is unchanged:
-
-- **A failing `PKG_UPGRADE_PRE` now aborts the upgrade.** Debian's `apt-get update` used to
-  run un-chained, so a failed index refresh still proceeded to `full-upgrade`; apk, emerge and
-  brew all chained theirs with `&&`. One rule now, and it is the safer three's: an upgrade
-  computed against an index that could not be refreshed is how a box half-applies.
-- **`up -i` on macOS now runs `brew update` first.** The partial path previously skipped it
-  while the full path did not. It costs a network round-trip and removes the case where you
-  hand-pick from a stale outdated list.
