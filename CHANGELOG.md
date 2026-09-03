@@ -258,6 +258,31 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **The canonical fleet `make` verbs: `check`, `dry-run`, `packages-check` and
+  `core-verify` (dotgibson/dotfiles-core#691).** Nine repos had nine dialects — "dry run"
+  was `dry-run` in four repos and `bootstrap-dry` in four, "verify core" had five
+  spellings, and only `help` was common to every Makefile, so a contributor moving between
+  repos re-learned the verbs each time and no gate noticed. `dotfiles-core`'s
+  `scripts/make-vocabulary.txt` now declares the seven names once and its
+  `make fleet-vocabulary` register reports, per repo, which resolve. This repo answered
+  three.
+  - `dry-run` is the canonical name for `bootstrap-dry`; the recipe is unchanged and the
+    old spelling remains as a two-line alias.
+  - `check` is new: `lint`, then a hermetic `--links-only` bootstrap into a throwaway
+    `HOME`, asserting the symlink graph Core's loader expects plus the DEFENSE role layer
+    on top of it. Like everything else here it runs anywhere — a role bootstrap wires
+    symlinks, installs nothing, and needs no privileges.
+  - `core-verify` is new, and closes a real gap rather than a naming one:
+    `core-integrity.yml` ran the vendored-subtree check in CI and **nothing ran it
+    locally**. It delegates to Core's own `scripts/core-integrity.sh` from a `CORE_REPO`
+    checkout, the same invocation CI uses. It is not `core-check`, which asks whether a
+    *newer* Core exists; both targets' help text now says which question they answer.
+  - `packages-check` is a deliberate **stub**, which is the vocabulary's rule for a verb a
+    repo genuinely lacks — so the name means the same thing everywhere, including "nothing
+    to do here". This repo installs no packages: it is distro-agnostic, `install/tools.lst`
+    is a probe list rather than a manifest, and package resolution belongs to the OS-native
+    layer underneath. The stub says exactly that and exits 0.
+
 - **Seven rules that named a benign false positive in prose now carry the filter block to
   suppress it.** Each documented the noise and left the reader to hand-edit the rule:
   `shadow_credentials_keycredentiallink_5136` (`filter_whfb` — the rule prescribed a Windows
