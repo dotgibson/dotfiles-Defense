@@ -1,1 +1,1 @@
-{"Event": {"System": {"Channel": "github"}, "EventData": {"action": "self_hosted_runner.created"}}}
+{"Event": {"System": {"Channel": "github"}, "EventData": {"action": "self_hosted_runner.created", "actor": "mallory"}}}

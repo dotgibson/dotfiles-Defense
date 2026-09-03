@@ -32,9 +32,21 @@ detection:
     TargetServerName:
       - '-'
       - 'localhost'
+  filter_sweep_principals:
+    # DEPLOY-REQUIRED: replace with the principals that legitimately fan explicit-
+    # credential logons across many hosts - vulnerability scanners, monitoring
+    # collectors, orchestration and jump-host service accounts. The sibling discovery
+    # rules carry this list; this one did not, so the correlation below paged on the
+    # scanner. Until filled this excludes only the example. Run
+    # detections/sigma/deploy-required.sh to find this.
+    SubjectUserName:
+      - 'svc_vulnscan'   # example — replace
   condition: selection and not 1 of filter_*
 falsepositives:
   - A single admin using runas against one host (defeated by the distinct-target count below).
+  - Scanners and orchestration accounts that legitimately sweep (allowlist them in
+    filter_sweep_principals; the correlation's threshold is not a substitute, they
+    clear it every cycle).
 level: informational
 ---
 title: LDAP / host recon by explicit-credential fan-out (4648)

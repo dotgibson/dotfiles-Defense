@@ -1,1 +1,1 @@
-{"verb": "create", "objectRef": {"resource": "pods"}, "requestObject": {"spec": {"hostPID": false, "containers": [{"name": "c", "securityContext": {"privileged": false}}]}}}
+{"verb": "create", "objectRef": {"resource": "pods"}, "requestObject": {"spec": {"hostPID": false, "hostIPC": false, "containers": [{"name": "c", "securityContext": {"privileged": false}}], "volumes": [{"name": "data", "hostPath": {"path": "/opt/appdata"}}]}}}

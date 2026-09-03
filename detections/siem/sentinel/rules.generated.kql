@@ -22,7 +22,7 @@ eventSource =~ "iam.amazonaws.com" and (eventName in~ ("CreateLoginProfile", "Up
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // cloud/entra_directory_role_grant.yml — Entra directory role assigned (tenant privilege escalation)
-OperationName in~ ("Add member to role", "Add eligible member to role", "Add member to role in PIM requested (permanent)", "Add member to role completed (PIM activation)", "Add member to role requested (PIM activation)")
+(OperationName in~ ("Add member to role", "Add eligible member to role", "Add member to role in PIM requested (permanent)", "Add member to role completed (PIM activation)", "Add member to role requested (PIM activation)")) and (not(Identity =~ "svc-iga-provisioning"))
 
 // cloud/entra_illicit_consent_grant.yml — Entra consent grant to a third-party app (illicit-consent triage)
 (OperationName in~ ("Consent to application", "Add delegated permission grant", "Add OAuth2PermissionGrant")) and (TargetResources contains "Mail.Read" or TargetResources contains "Mail.ReadWrite" or TargetResources contains "Mail.Send" or TargetResources contains "offline_access" or TargetResources contains "Files.Read.All" or TargetResources contains "Files.ReadWrite.All" or TargetResources contains "Sites.Read.All" or TargetResources contains "Directory.Read.All" or TargetResources contains "full_access_as_user") and (not(TargetResources contains "00000000-0000-0000-0000-000000000000"))
@@ -37,7 +37,7 @@ OperationName in~ ("Add service principal credentials", "Add application credent
 ['gcp.audit.method_name'] endswith ".SetIamPolicy" and (not(['gcp.audit.principal_email'] =~ "iam-terraform@example.iam.gserviceaccount.com"))
 
 // cloud/gcp_service_account_key_created.yml — GCP user-managed service-account key created
-['gcp.audit.method_name'] =~ "google.iam.admin.v1.CreateServiceAccountKey"
+(['gcp.audit.method_name'] in~ ("google.iam.admin.v1.CreateServiceAccountKey", "google.iam.admin.v1.UploadServiceAccountKey")) and (not(['gcp.audit.principal_email'] =~ "iam-terraform@example.iam.gserviceaccount.com"))
 
 // cloudflare/cloudflare_api_token_created.yml — Cloudflare API token created (durable control-plane backdoor)
 ['resource.type'] =~ "api_token" and ['action.type'] =~ "create"
@@ -117,11 +117,11 @@ EventID == 1102
 // github/github_branch_protection_tamper.yml — GitHub branch-protection tampered (unreviewed merge)
 action in~ ("protected_branch.destroy", "protected_branch.policy_override")
 
-// github/github_credential_backdoor.yml — GitHub deploy-key or PAT credential backdoor
-action in~ ("repo.create_deploy_key", "personal_access_token.access_granted")
+// github/github_credential_backdoor.yml — GitHub deploy-key, PAT, or App-install credential backdoor
+action in~ ("repo.create_deploy_key", "personal_access_token.access_granted", "integration_installation.create")
 
 // github/github_self_hosted_runner_registered.yml — GitHub self-hosted runner registered (job/secret capture)
-action =~ "self_hosted_runner.created"
+action =~ "self_hosted_runner.created" and (not(actor =~ "svc-runner-provisioner"))
 
 // gitlab/gitlab_protected_branch_tamper.yml — GitLab protected-branch tampered (unreviewed merge)
 event_type =~ "protected_branch_removed"
@@ -130,7 +130,7 @@ event_type =~ "protected_branch_removed"
 event_type =~ "set_runner_associated_projects"
 
 // gitlab/gitlab_token_backdoor.yml — GitLab access/deploy token created (durable-access backdoor)
-event_type in~ ("project_access_token_created", "personal_access_token_created", "deploy_token_created")
+event_type in~ ("project_access_token_created", "group_access_token_created", "personal_access_token_created", "deploy_token_created", "group_deploy_token_created")
 
 // google_workspace/gws_admin_role_grant.yml — Google Workspace admin/super-admin role granted (tenant persistence)
 eventName in~ ("GRANT_DELEGATED_ADMIN_PRIVILEGES", "ASSIGN_ROLE")
@@ -145,7 +145,7 @@ eventName =~ "authorize" and (scope contains "mail.google.com" or scope contains
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // impact/bitlocker_abuse_encryption.yml — Data encrypted for impact - BitLocker driven from the command line
-(Image endswith "\\manage-bde.exe" and (CommandLine contains "-on" or CommandLine contains "-protectors -add" or CommandLine contains "-forcerecovery")) or ((Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and (CommandLine contains "Enable-BitLocker" or CommandLine contains "Add-BitLockerKeyProtector"))
+((Image endswith "\\manage-bde.exe" and (CommandLine contains "-on" or CommandLine contains "-protectors -add" or CommandLine contains "-forcerecovery")) or ((Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and (CommandLine contains "Enable-BitLocker" or CommandLine contains "Add-BitLockerKeyProtector"))) and (not(ParentImage endswith "\\TSManager.exe"))
 
 // impact/data_destruction_wipe.yml — Data destruction - free-space wipe / secure delete / volume clean
 (Image endswith "\\cipher.exe" and CommandLine contains "/w") or (Image endswith "\\sdelete.exe" or Image endswith "\\sdelete64.exe") or (Image endswith "\\fsutil.exe" and CommandLine contains "setzerodata") or (Image endswith "\\diskpart.exe" and CommandLine contains "clean")
@@ -181,7 +181,7 @@ uri contains "/scriptText" or uri contains "/script"
 (verb =~ "create" and ['objectRef.resource'] =~ "pods" and (['objectRef.subresource'] in~ ("exec", "attach"))) and (not(['user.username'] startswith "system:serviceaccount:"))
 
 // kubernetes/k8s_privileged_pod_created.yml — Kubernetes privileged / host-namespace pod created (node escape)
-(verb =~ "create" and ['objectRef.resource'] =~ "pods") and (['requestObject.spec.containers.securityContext.privileged'] == true or ['requestObject.spec.hostPID'] == true or ['requestObject.spec.volumes.hostPath.path'] =~ "/")
+(verb =~ "create" and ['objectRef.resource'] =~ "pods") and (['requestObject.spec.containers.securityContext.privileged'] == true or ['requestObject.spec.hostPID'] == true or ['requestObject.spec.hostIPC'] == true or ['requestObject.spec.volumes.hostPath.path'] =~ "/" or (['requestObject.spec.volumes.hostPath.path'] startswith "/proc" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/run" or ['requestObject.spec.volumes.hostPath.path'] startswith "/run" or ['requestObject.spec.volumes.hostPath.path'] startswith "/etc" or ['requestObject.spec.volumes.hostPath.path'] startswith "/root" or ['requestObject.spec.volumes.hostPath.path'] startswith "/dev" or ['requestObject.spec.volumes.hostPath.path'] startswith "/sys" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/lib/kubelet" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/lib/docker" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/lib/containerd"))
 
 // lateral_movement/passthehash_4624_fanout.yml — Network-logon base - successful type-3 logon (4624)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -244,7 +244,7 @@ eventType =~ "system.api_token.create"
 eventType in~ ("system.idp.lifecycle.create", "system.idp.lifecycle.activate")
 
 // okta/okta_mfa_factor_reset.yml — Okta MFA factor reset or deactivated (account-takeover prep)
-eventType in~ ("user.mfa.factor.reset_all", "user.mfa.factor.deactivate", "system.mfa.factor.deactivate")
+eventType in~ ("user.mfa.factor.reset_all", "user.mfa.factor.deactivate", "user.mfa.factor.suspend", "system.mfa.factor.deactivate")
 
 // persistence/machine_account_creation_burst_4741.yml — Computer-account-created base (4741)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -271,7 +271,7 @@ EventID in~ ("4886", "4887")
 (EventID == 5136 and AttributeLDAPDisplayName =~ "msDS-AllowedToActOnBehalfOfOtherIdentity") and (not(SubjectUserName =~ "svc_delegation"))
 
 // privilege_escalation/shadow_credentials_keycredentiallink_5136.yml — Shadow Credentials - msDS-KeyCredentialLink write
-EventID == 5136 and AttributeLDAPDisplayName =~ "msDS-KeyCredentialLink"
+(EventID == 5136 and AttributeLDAPDisplayName =~ "msDS-KeyCredentialLink") and (not(SubjectUserName startswith "MSOL_"))
 
 // privilege_escalation/spoolss_pipe_impersonation_sysmon_17.yml — SeImpersonate privesc - non-spooler process creating a spoolss named pipe (Sysmon 17)
 (EventType =~ "CreatePipe" and PipeName contains "spoolss") and (not(Image endswith "\\spoolsv.exe"))
@@ -301,7 +301,7 @@ action startswith "add" and action contains "trusted publisher"
 (operation =~ "push" and resource_type =~ "artifact") and (not(operator =~ "robot$ci-pipeline"))
 
 // registry/harbor_robot_account_created.yml — Harbor robot account created (durable registry credential)
-operation =~ "create" and resource_type =~ "robot"
+(operation =~ "create" and resource_type =~ "robot") and (not(operator =~ "svc-terraform-harbor"))
 
 // slack/slack_2fa_enforcement_disabled.yml — Slack workspace 2FA enforcement setting changed
 action =~ "pref.two_factor_auth_changed"
@@ -316,7 +316,7 @@ action in~ ("shared_channel_invite_sent", "shared_channel_invite_accepted")
 query_type =~ "UNLOAD" and (not(((query_text contains "@%" or query_text contains "@~") or query_text contains "MY_SANCTIONED_STAGE")))
 
 // snowflake/snowflake_network_policy_change.yml — Snowflake network policy changed (IP allowlist tamper)
-(query_text contains "NETWORK POLICY" or query_text contains "NETWORK_POLICY") and (not(query_text startswith "SHOW"))
+(query_text contains "NETWORK POLICY" or query_text contains "NETWORK_POLICY") and (not((query_text startswith "SHOW" or query_text startswith "DESC")))
 
 // snowflake/snowflake_user_created.yml — Snowflake user created or ACCOUNTADMIN granted (tenant persistence)
 query_type =~ "CREATE_USER" or (query_type =~ "GRANT" and (query_text contains "ACCOUNTADMIN" or query_text contains "SECURITYADMIN"))
@@ -330,8 +330,8 @@ query_type =~ "CREATE_USER" or (query_type =~ "GRANT" and (query_text contains "
 // terraform/tfc_variable_injection.yml — Terraform Cloud workspace variable created or updated (run hijack)
 (['resource.type'] =~ "variable" and (['resource.action'] in~ ("create", "update"))) and (not(['auth.description'] =~ "ci-deploy@example.com"))
 
-// vault/vault_approle_backdoor.yml — HashiCorp Vault AppRole / auth method created (persistence)
-(type =~ "request" and (['request.operation'] in~ ("create", "update"))) and (['request.path'] startswith "auth/approle/role/" or ['request.path'] startswith "sys/auth/")
+// vault/vault_approle_backdoor.yml — HashiCorp Vault auth role / AppRole / auth method created (persistence)
+(type =~ "request" and (['request.operation'] in~ ("create", "update"))) and (((['request.path'] contains "auth/" and ['request.path'] contains "/role/") or (['request.path'] contains "auth/" and ['request.path'] contains "/roles/")) or ['request.path'] startswith "sys/auth/")
 
 // vault/vault_audit_device_disabled.yml — HashiCorp Vault audit device disabled (blind the SIEM)
 type =~ "request" and ['request.operation'] =~ "delete" and ['request.path'] startswith "sys/audit/"

@@ -17,6 +17,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/gh-runner-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
+modified: 2026-09-02
 tags:
   - attack.persistence
   - attack.t1543
@@ -26,8 +27,17 @@ logsource:
 detection:
   selection:
     action: 'self_hosted_runner.created'
-  condition: selection
+  filter_runner_provisioning:
+    # DEPLOY-REQUIRED: replace with the actor(s) that legitimately register runners -
+    # the runner-provisioning service account or the autoscaler's app identity. Until
+    # filled this excludes only the example, so every sanctioned pool scale-out alerts
+    # alongside the rogue registration. Run detections/sigma/deploy-required.sh to
+    # find this.
+    actor:
+      - 'svc-runner-provisioner'   # example — replace
+  condition: selection and not filter_runner_provisioning
 falsepositives:
-  - Provisioning a sanctioned runner pool - allowlist the expected actors and repos
-    and review registrations outside change control.
+  - Provisioning a sanctioned runner pool - allowlist the provisioning actor in
+    filter_runner_provisioning and review registrations by anyone else, on public
+    repos, or outside change control.
 level: medium

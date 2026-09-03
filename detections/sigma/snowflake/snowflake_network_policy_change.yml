@@ -7,7 +7,11 @@ description: |
   NETWORK_POLICY). A network policy is Snowflake's IP allowlist; opening it (a wide
   ALLOWED_IP_LIST like 0.0.0.0/0) or dropping the enforced one lets stolen credentials work
   from anywhere - the control gap behind the 2024 credential-stuffing (T1686.001). These are
-  rare and high-impact, so any change warrants review; read-only SHOW is excluded.
+  rare and high-impact, so any change warrants review; the read-only statements (SHOW,
+  DESCRIBE / DESC) are excluded. GRANT ... ON NETWORK POLICY is deliberately NOT
+  excluded: it changes nothing about the allowlist, but a GRANT OWNERSHIP on the
+  enforced policy is the step before an attacker can ALTER it, and it is rare enough to
+  be worth seeing.
   Validate (purple): open/drop a network policy from dotfiles-Offense (htpx pair
   snowflake-network-policy).
 references:
@@ -15,6 +19,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/snowflake-network-policy-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
+modified: 2026-09-02
 tags:
   - attack.defense-impairment
   - attack.t1686.001
@@ -26,9 +31,11 @@ detection:
     query_text|contains:
       - 'NETWORK POLICY'
       - 'NETWORK_POLICY'
-  filter_show:
-    query_text|startswith: 'SHOW'
-  condition: selection and not filter_show
+  filter_readonly:
+    query_text|startswith:
+      - 'SHOW'
+      - 'DESC'   # DESC and DESCRIBE
+  condition: selection and not filter_readonly
 falsepositives:
   - Legitimate network-policy administration during a change window - reconcile against
     change control and alert on wide ALLOWED_IP_LIST values or drops of the enforced policy.

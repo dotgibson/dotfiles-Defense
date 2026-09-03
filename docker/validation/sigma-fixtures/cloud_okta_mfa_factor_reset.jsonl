@@ -1,1 +1,2 @@
 {"Event": {"System": {"Channel": "okta"}, "EventData": {"eventType": "user.mfa.factor.reset_all"}}}
+{"Event": {"System": {"Channel": "okta"}, "EventData": {"eventType": "user.mfa.factor.suspend"}}}

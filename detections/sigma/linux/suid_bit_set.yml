@@ -7,21 +7,38 @@ description: |
   privilege escalation in one step - a copy of a shell with the setuid bit set is a
   root shell available to any user, at any time, with no credential and no sudoers
   entry, and it survives reboot as an ordinary file.
-  The bit test lives in the auditd rule, not here: the -F a1&04000 predicate below
-  means the kernel only records the chmods that actually set setuid, so this rule keys
+  The bit test lives in the auditd rule, not here: the mode-argument predicates below
+  mean the kernel only records the chmods that actually set setuid, so this rule keys
   on that decision rather than trying to re-derive the mode from a hex argument. What
   Sigma adds is the allowlist - package managers set setuid bits legitimately on every
   install that ships one (passwd, sudo, ping and friends).
+  The mode is NOT the same argument for every syscall in the family, and the rule as
+  first shipped got that wrong. chmod(path, mode) and fchmod(fd, mode) carry the mode in
+  a1, but fchmodat(dirfd, path, mode, flags) carries it in a2 - a1 is the pathname
+  pointer. One line testing a1 across all three therefore ANDed a pointer against 04000
+  for every fchmodat, which is the call coreutils and glibc's -at paths actually make,
+  and the only path-based chmod that exists on arm64 (that architecture has no chmod
+  syscall at all, so a -S chmod line refuses to load there - drop chmod from the first
+  pair on arm64 hosts). A `chmod u+s` from the shell was recorded or missed depending
+  on where the path string happened to sit in memory. The rules are now split by
+  argument position:
   Requires the auditd syscall rules that set the key (load with `augenrules --load`):
-    -a always,exit -F arch=b64 -S chmod,fchmod,fchmodat -F a1&04000 -k suid_change
-    -a always,exit -F arch=b64 -S chmod,fchmod,fchmodat -F a1&02000 -k suid_change
+    -a always,exit -F arch=b64 -S chmod,fchmod -F a1&04000 -k suid_change
+    -a always,exit -F arch=b64 -S chmod,fchmod -F a1&02000 -k suid_change
+    -a always,exit -F arch=b64 -S fchmodat -F a2&04000 -k suid_change
+    -a always,exit -F arch=b64 -S fchmodat -F a2&02000 -k suid_change
+  fchmodat2 (Linux 6.6+) takes the mode in a2 as well; add it to the fchmodat pair once
+  your auditd userspace knows the name, since an unknown syscall name fails the whole
+  ruleset load.
   Validate (purple): plant a SUID shell from dotfiles-Offense (htpx pair
-  suid-abuse-privesc).
+  suid-abuse-privesc). Confirm on BOTH an x86-64 and an arm64 lab host: `chmod u+s`
+  from the shell must land on the key on each.
 references:
   - https://attack.mitre.org/techniques/T1548/001/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/suid-abuse-auditd.md
 author: dotfiles-Defense
 date: 2026-08-26
+modified: 2026-09-02
 tags:
   - attack.privilege-escalation
   - attack.t1548.001

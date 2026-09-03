@@ -16,6 +16,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/harbor-robot-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
+modified: 2026-09-02
 tags:
   - attack.persistence
   - attack.t1098
@@ -26,8 +27,17 @@ detection:
   selection:
     operation: 'create'
     resource_type: 'robot'
-  condition: selection
+  filter_provisioning:
+    # DEPLOY-REQUIRED: replace with the operator(s) that legitimately mint robot
+    # accounts - the Terraform / GitOps identity that provisions per-project robots.
+    # Until filled this excludes only the example, so routine robot provisioning
+    # alerts alongside the backdoor. `operator` is the actor field the other Harbor
+    # rules here key on. Run detections/sigma/deploy-required.sh to find this.
+    operator:
+      - 'svc-terraform-harbor'   # example — replace
+  condition: selection and not filter_provisioning
 falsepositives:
-  - Onboarding a sanctioned CI integration - allowlist the expected admin actors and
-    review robots created outside change windows or scoped across all projects.
+  - Onboarding a sanctioned CI integration - allowlist the provisioning operator in
+    filter_provisioning and review robots created outside change windows or scoped
+    across all projects.
 level: medium

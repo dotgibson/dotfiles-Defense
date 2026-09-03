@@ -27,6 +27,7 @@ references:
   - https://attack.mitre.org/techniques/T1490/
 author: dotfiles-Defense
 date: 2026-08-05
+modified: 2026-09-02
 tags:
   - attack.impact
   - attack.t1486
@@ -51,10 +52,20 @@ detection:
     CommandLine|contains:
       - 'Enable-BitLocker'
       - 'Add-BitLockerKeyProtector'
-  condition: 1 of selection_*
+  filter_provisioning:
+    # DEPLOY-REQUIRED: replace with the parent process of your imaging / provisioning
+    # path - the task-sequence engine that runs manage-bde during an OS deployment.
+    # Until filled this excludes only the example, so every image build that enables
+    # BitLocker is a high alert. Keyed on ParentImage rather than host so an operator
+    # running manage-bde by hand on an imaging server still alerts. Run
+    # detections/sigma/deploy-required.sh to find this.
+    ParentImage|endswith:
+      - '\TSManager.exe'   # example — the MECM task-sequence engine; replace
+  condition: 1 of selection_* and not filter_provisioning
 falsepositives:
   - Hands-on encryption of a new build by an administrator before it is enrolled -
     triage on the account and whether the recovery key was escrowed to AD/Entra.
-  - Imaging / provisioning hosts that run manage-bde as part of the build (allowlist
-    the host and the parent process).
+  - Imaging / provisioning hosts that run manage-bde as part of the build - allowlist
+    the task-sequence parent in filter_provisioning; what remains is manage-bde driven
+    from a shell or a script rather than the build.
 level: high

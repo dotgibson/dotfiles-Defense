@@ -1,1 +1,1 @@
-{"Event": {"System": {"Channel": "azure"}, "EventData": {"OperationName": "Add member to role"}}}
+{"Event": {"System": {"Channel": "azure"}, "EventData": {"OperationName": "Add member to role", "Identity": "attacker@corp.example"}}}

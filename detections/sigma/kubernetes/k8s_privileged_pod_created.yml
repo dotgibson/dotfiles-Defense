@@ -3,11 +3,21 @@ id: 6a238c53-75db-45a7-8896-b6573b4ef9e0
 status: experimental
 description: |
   Detects creation of a pod that can escape to the node: a privileged container,
-  host PID namespace sharing, or a hostPath mount of the root filesystem. These are
-  the building blocks of the classic "privileged pod -> nsenter into PID 1" container
-  breakout (the three the detection below actually matches). Almost nothing in a
-  hardened cluster legitimately requests privileged/hostPID; gate them with admission
-  control (PSA restricted) and alert on the rest.
+  host PID or IPC namespace sharing, or a hostPath mount of the root filesystem or of
+  a path that hands over the node by other means. These are the building blocks of the
+  classic "privileged pod -> nsenter into PID 1" container breakout (the branches the
+  detection below actually matches). Almost nothing in a hardened cluster legitimately
+  requests privileged/hostPID/hostIPC; gate them with admission control (PSA
+  restricted) and alert on the rest.
+  The hostPath branch matched only the literal '/' when first shipped, which a mount
+  of /var/run/docker.sock, /run/containerd, /proc, /etc, /root or /var/lib/kubelet
+  walks straight past - each is a node takeover on its own (a runtime socket is root
+  on the node; /etc and /root are cron, sudoers and authorized_keys; /proc is every
+  process's memory and /proc/sysrq-trigger). It now matches the root mount exactly and
+  those prefixes. hostNetwork is deliberately NOT a branch: it is not an escape by
+  itself, and it is exactly the CNI / node-agent request the falsepositives already
+  name, so adding it would trade a real signal for the loudest sanctioned volume in
+  the cluster.
   Validate (purple): run the privileged-pod/nsenter breakout from dotfiles-Offense
   (htpx pair k8s-privileged-pod). Requires the kube-apiserver audit policy logging
   pod create at RequestResponse level (so requestObject is present).
@@ -23,15 +33,17 @@ description: |
       a LITERAL dotted column name. It does not walk the array, so the privileged and
       hostPath branches will NOT fire without a pipeline that expands them first
       (`mv-expand` the container/volume arrays, or project the fields out at ingest).
-  Confirm on your backend before trusting this rule. `escape_hostpid` keys on
-  `requestObject.spec.hostPID`, a genuine scalar, and is unaffected — so the rule can appear to work
-  while the two branches it is named for are silently dead.
+  Confirm on your backend before trusting this rule. `escape_hostpid` and
+  `escape_hostipc` key on `requestObject.spec.hostPID` / `.hostIPC`, genuine scalars,
+  and are unaffected — so the rule can appear to work while the branches it is named
+  for are silently dead.
 references:
   - https://attack.mitre.org/techniques/T1610/
   - https://attack.mitre.org/techniques/T1611/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/k8s-privileged-pod-audit.md
 author: dotfiles-Defense
 date: 2026-06-30
+modified: 2026-09-02
 tags:
   - attack.privilege-escalation
   - attack.t1610
@@ -47,8 +59,22 @@ detection:
     requestObject.spec.containers.securityContext.privileged: true
   escape_hostpid:
     requestObject.spec.hostPID: true
-  escape_hostpath:
+  escape_hostipc:
+    requestObject.spec.hostIPC: true
+  escape_hostpath_root:
     requestObject.spec.volumes.hostPath.path: '/'
+  escape_hostpath_prefix:
+    requestObject.spec.volumes.hostPath.path|startswith:
+      - '/proc'
+      - '/var/run'
+      - '/run'
+      - '/etc'
+      - '/root'
+      - '/dev'
+      - '/sys'
+      - '/var/lib/kubelet'
+      - '/var/lib/docker'
+      - '/var/lib/containerd'
   condition: selection_create and 1 of escape_*
 falsepositives:
   - Sanctioned infrastructure pods (CNI, CSI, monitoring agents) that require

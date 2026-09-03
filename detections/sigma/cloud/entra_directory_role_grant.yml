@@ -23,6 +23,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/entra-role-assign-audit.md
 author: dotfiles-Defense
 date: 2026-08-05
+modified: 2026-09-02
 tags:
   - attack.privilege-escalation
   - attack.persistence
@@ -38,9 +39,20 @@ detection:
       - 'Add member to role in PIM requested (permanent)'
       - 'Add member to role completed (PIM activation)'
       - 'Add member to role requested (PIM activation)'
-  condition: selection
+  filter_iga:
+    # DEPLOY-REQUIRED: replace with the identity-governance / lifecycle automation
+    # that legitimately assigns directory roles (the IGA service principal, an
+    # entitlement-management workflow). Do NOT put the PIM service itself here - the
+    # PIM operations above are selected on purpose. Until filled this excludes only
+    # the example, so IGA-driven grants alert with the rest. `Identity` is the
+    # AuditLogs actor display-name column. Run detections/sigma/deploy-required.sh to
+    # find this.
+    Identity:
+      - 'svc-iga-provisioning'   # example — replace
+  condition: selection and not filter_iga
 falsepositives:
-  - Sanctioned role administration and PIM activations by identity admins (reconcile
-    against the IdM workflow; alert on tenant-admin roles and on grants by actors who
-    don't normally administer roles).
+  - Sanctioned role administration and PIM activations by identity admins (allowlist
+    the IGA automation in filter_iga, reconcile the rest against the IdM workflow;
+    alert on tenant-admin roles and on grants by actors who don't normally administer
+    roles).
 level: medium

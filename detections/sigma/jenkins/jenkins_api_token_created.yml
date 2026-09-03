@@ -8,6 +8,13 @@ description: |
   account's password reset, so one minted by an unexpected actor - or against a
   privileged/service account, or during an incident - is the persistence tell (T1098).
   Reconcile new tokens against known CI integrations and prefer short-lived tokens.
+  No filter block, deliberately, though the false positive below is real: the Audit
+  Trail line this rule reads is a request URI, and the corpus has no verified actor
+  field for Jenkins to allowlist on. Inventing one would produce a filter that passes
+  its own fixture and silently matches nothing in production - the hazard
+  docker/validation/fixture-provenance.tsv exists to make visible. Add the filter when
+  the field is confirmed against a real Audit Trail export, keying on whatever your
+  format string actually emits.
   Validate (purple): mint an API token via generateNewToken from dotfiles-Offense (htpx pair
   jenkins-api-token).
 references:
@@ -15,6 +22,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/jenkins-api-token-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
+modified: 2026-09-02
 tags:
   - attack.persistence
   - attack.t1098

@@ -1,21 +1,29 @@
-title: HashiCorp Vault AppRole / auth method created (persistence)
+title: HashiCorp Vault auth role / AppRole / auth method created (persistence)
 id: fd142d2e-ae67-4e72-940a-2fc108663977
 status: experimental
 description: |
-  Detects creation of a Vault AppRole or enabling of an auth method in the audit device
-  log: request.operation create/update on auth/approle/role/<name>, or update on
-  sys/auth/<type>. An attacker mints a machine identity bound to a powerful policy with a
-  non-expiring secret-id - a long-lived, non-interactive credential that keeps issuing
-  tokens after the compromised operator's token is revoked (T1098). These are rare,
-  admin-level changes, so one by an unexpected token - especially a role bound to root/a
-  broad policy - warrants review.
+  Detects a durable machine identity being minted in Vault, or an auth method being
+  enabled, in the audit device log: request.operation create/update on a role under
+  any auth backend (auth/<backend>/role/<name>, and auth/token/roles/<name> for the
+  token backend's plural spelling), or update on sys/auth/<type>. AppRole is the
+  textbook case - a role bound to a powerful policy with a non-expiring secret-id is a
+  long-lived, non-interactive credential that keeps issuing tokens after the
+  compromised operator's token is revoked (T1098) - but a role under an already-enabled
+  jwt, oidc, kubernetes, aws or cert backend is the same outcome one path over: a
+  trust relationship the attacker controls the other end of, minted without touching
+  sys/auth at all. The rule matched only the approle path when first shipped; it now
+  matches the role path under every backend. These are rare, admin-level changes, so
+  one by an unexpected token - especially a role bound to root/a broad policy -
+  warrants review.
   Validate (purple): create a rogue AppRole from dotfiles-Offense (htpx pair
-  vault-approle-backdoor).
+  vault-approle-backdoor); write a role under a second enabled backend on the lab
+  Vault and confirm it lands too.
 references:
   - https://attack.mitre.org/techniques/T1098/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/vault-approle-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
+modified: 2026-09-02
 tags:
   - attack.persistence
   - attack.t1098
@@ -28,11 +36,13 @@ detection:
     request.operation:
       - 'create'
       - 'update'
-  paths:
-    request.path|startswith:
-      - 'auth/approle/role/'
-      - 'sys/auth/'
-  condition: selection and paths
+  paths_role:
+    request.path:
+      - 'auth/*/role/*'
+      - 'auth/*/roles/*'
+  paths_method:
+    request.path|startswith: 'sys/auth/'
+  condition: selection and 1 of paths_*
 falsepositives:
   - Provisioning sanctioned automation - allowlist the expected admin tokens and review
     roles bound to root/broad policies or given non-expiring secret-id TTLs.

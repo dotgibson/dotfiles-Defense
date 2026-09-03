@@ -5,10 +5,18 @@ description: |
   Detects MFA factors being reset or deactivated on an Okta user - the
   Scattered-Spider / help-desk-social-engineering move: clear a victim's factors so
   the attacker can enroll their own and own the account. The Okta System Log event
-  (user.mfa.factor.reset_all / *.deactivate) is the invariant. Routine during real
-  help-desk resets, so the signal is correlation: a reset NOT preceded by a verified
-  support ticket, or one immediately followed by a new-factor enrollment + sign-in
-  from a new device/geo.
+  (user.mfa.factor.reset_all / *.deactivate / *.suspend) is the invariant. Routine
+  during real help-desk resets, so the signal is correlation: a reset NOT preceded by a
+  verified support ticket, or one immediately followed by a new-factor enrollment +
+  sign-in from a new device/geo.
+  Which event types, and why these: reset_all is the reset-everything button;
+  deactivate is a single factor removed - Okta's own catalog describes it as "resets a
+  factor", and it is what a single-factor reset (the DELETE on one factor) emits, so
+  there is no separate singular reset event type to add and a review that proposes
+  "user.mfa.factor.reset" is naming an event that does not exist; suspend is the
+  factor put out of use "usually as a result of suspected compromise" - the factor
+  stays enrolled but stops working, which for the account-takeover play is as good as
+  gone and was the one lifecycle event this rule did not select when first shipped.
   Validate (purple): run the reset_factors admin-API call from dotfiles-Offense (htpx
   pair okta-mfa-reset).
 references:
@@ -16,6 +24,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/okta-mfa-reset-audit.md
 author: dotfiles-Defense
 date: 2026-06-30
+modified: 2026-09-02
 tags:
   - attack.credential-access
   - attack.persistence
@@ -28,6 +37,7 @@ detection:
     eventType:
       - 'user.mfa.factor.reset_all'
       - 'user.mfa.factor.deactivate'
+      - 'user.mfa.factor.suspend'
       - 'system.mfa.factor.deactivate'
   condition: selection
 falsepositives:
