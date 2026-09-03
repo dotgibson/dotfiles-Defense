@@ -38,7 +38,7 @@ jobs:
     name: zeek detections fire on synthetic PCAPs
     runs-on: ubuntu-latest
     container:
-      image: zeek/zeek:lts@sha256:c7dfad9ab8296b2994d113222e77a22ebc9c8963b2b1200b798484ac923bc94f
+      image: zeek/zeek:lts@sha256:73e80e9cd23ff71fd28d158e9a9af5c7b2b0ef5d4036af61521827531347c0e3
     steps:
       # The engine image is minimal; git is needed for checkout, python+scapy for fixtures.
       # This step runs before checkout on purpose — it only needs the container, not the repo.
