@@ -1,4 +1,6 @@
 #compdef maint-install
-# Completion for Core's `maint-install` (zsh/maint.zsh): the daily run time as HH:MM
+# Completion for Core's `maint-install` (zsh/55-maint.zsh): the daily run time as HH:MM
 # (24-hour). Offer a few sensible default times as hints while still accepting any HH:MM.
-_arguments '1:run time (HH:MM, 24h):(02:00 09:00 13:00 18:00 22:00)'
+# The colon in "HH:MM" is escaped — `_arguments` splits a spec on bare colons, so the
+# unescaped form parsed "MM, 24h)" as the action and threw a parse error on every <tab>.
+_arguments '1:run time (HH\:MM, 24h):(02:00 09:00 13:00 18:00 22:00)'

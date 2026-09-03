@@ -470,11 +470,18 @@ _core_status_json() {
 #   core doctor [-v]      → core-doctor
 #   core version          → core-version
 #   core update [-y|-n]   → up
+#   core update check     → update-check
 #   core whatsnew [--full] → core-whatsnew
 #   core status [--json]  → core-status
-# The subcommand list is the single source the completion (_core) and the
-# unknown-subcommand did-you-mean both read, so they can't drift.
-typeset -ga _CORE_SUBCMDS=(help doctor version status update whatsnew)
+#   core maint <verb>     → maint-install|run|log|status|uninstall  (bare `core maint` lists them)
+#   core sync             → gsync
+# The subcommand lists are the single source the completion (_core), the
+# unknown-subcommand did-you-mean and the usage lines all read, so they can't drift —
+# and scripts/test-core.sh asserts _core's describe arrays mirror them.
+typeset -ga _CORE_SUBCMDS=(help doctor version status update whatsnew maint sync)
+# The maint family's sub-verbs (#684) — the same single-source role for `core maint`:
+# its guard, did-you-mean, usage and _core's second-level describe all read this.
+typeset -ga _CORE_MAINT_SUBCMDS=(install run log status uninstall)
 core() {
   emulate -L zsh
   local sub="${1:-}"
@@ -493,11 +500,68 @@ core() {
     # loaded" alone sends the reader hunting a broken function instead of a missing file.
     # (Until v5 this arm printed a CORE_PROFILE readout; #677 deleted the profile, and with
     # it the only reason a healthy host could ever land here.)
-    if (( $+functions[up] )); then
+    # `core update check` (#684) is the nudge refresher, `update-check` — same fragment,
+    # same guard. Only the literal word `check` in $1 is intercepted; every other argument
+    # still goes to `up`, so `core update -y` is unchanged and up's own parser rejects junk.
+    if [[ "${1:-}" == check ]]; then
+      shift
+      if (( $+functions[update-check] )); then
+        update-check "$@"
+      else
+        _core_err "core update check: the nudge refresher (\`update-check\`) is not loaded in this shell"
+        _core_hint "it comes from 60-update.zsh — check that \$ZSH_CFG carries that fragment"
+        return 1
+      fi
+    elif (( $+functions[up] )); then
       up "$@"
     else
       _core_err "core update: the updater (\`up\`) is not loaded in this shell"
       _core_hint "it comes from 60-update.zsh — check that \$ZSH_CFG carries that fragment"
+      return 1
+    fi
+    ;;
+  maint)
+    # The second hyphenated family (#684). maint-* is band 55 — the same ceiling argument
+    # as `up`, the same fragment-naming guard. Bare `core maint` (or help/-h/--help, the
+    # same aliases the top level takes) lists the sub-verbs as HELP (stdout, 0) — U6's
+    # spirit for a namespace; an unknown sub-verb is an error with a did-you-mean over
+    # $_CORE_MAINT_SUBCMDS, exactly like the top level.
+    local msub="${1:-}"
+    (($#)) && shift
+    if [[ "$msub" == (""|-h|--help|help) ]]; then
+      _core_help "core maint <${(j:|:)_CORE_MAINT_SUBCMDS}>" \
+        "install [HH:MM]  schedule the daily safe-update job (24h, default 13:00)" \
+        "run              run the daily maintenance job now, in the foreground" \
+        "log [N|-f]       show the last N maintenance-log lines (default 50), or follow" \
+        "status           when the job next runs / is it enabled" \
+        "uninstall        remove the scheduled maintenance job"
+      return 0
+    fi
+    if (( ${_CORE_MAINT_SUBCMDS[(Ie)$msub]} )); then
+      if (( $+functions[maint-$msub] )); then
+        "maint-${msub}" "$@"
+      else
+        _core_err "core maint ${msub}: \`maint-${msub}\` is not loaded in this shell"
+        _core_hint "it comes from 55-maint.zsh — check that \$ZSH_CFG carries that fragment"
+        return 1
+      fi
+    else
+      _core_err "core maint: unknown subcommand: ${msub}"
+      local _msug
+      _msug="$(_core_suggest "$msub" "${_CORE_MAINT_SUBCMDS[@]}")"
+      [[ -n "$_msug" ]] && _core_hint "did you mean core maint ${_msug}?"
+      _core_usage "core maint <${(j:|:)_CORE_MAINT_SUBCMDS}>"
+      return 1
+    fi
+    ;;
+  sync)
+    # gsync is a FUNCTION in 20-aliases.zsh — band 20, so in a real shell it loaded before
+    # this file; a trimmed $ZSH_CFG or the unit harness is not a real shell. Same guard.
+    if (( $+functions[gsync] )); then
+      gsync "$@"
+    else
+      _core_err "core sync: the upstream pusher (\`gsync\`) is not loaded in this shell"
+      _core_hint "it comes from 20-aliases.zsh — check that \$ZSH_CFG carries that fragment"
       return 1
     fi
     ;;
@@ -2308,7 +2372,7 @@ _core_help_render() {
   # requirement — they always work.
   local -a rows=(
     "§navigation & files"
-    "mkcd <dir>|make a directory and cd into it"
+    "mkcd <dir>|make a directory (and parents) and cd into it"
     "cdup [n]|climb n directories (default 1)"
     "extract <archive>|unpack any archive (tar/zip/7z/rar/…)"
     "mkbak <file>|timestamped .bak copy before you edit"
@@ -2408,9 +2472,9 @@ _core_help_render() {
     return 0
   fi
   print -r -- "${dc}  1Password: opsecret · openv · optoken · opssh    health: core-doctor · version: core-version${de}"
-  print -r -- "${dc}  front door: core <help|doctor|version|status|update|whatsnew>  (run \`core\` for this sheet anytime)${de}"
+  print -r -- "${dc}  front door: core <help|doctor|version|status|update [check]|maint|sync|whatsnew>  (run \`core\` for this sheet anytime)${de}"
 }
-alias cheat='core-help'
+alias cheat='core-help'  # the built-in command index (core help)
 
 # ── command-not-found handler (U1) ────────────────────────────────────────────
 # A mistyped command otherwise gets zsh's terse default (or, on Debian, the distro's
@@ -2428,7 +2492,7 @@ if [[ $- == *i* ]] && ((CORE_CNF_ENABLED)); then
     _core_err "command not found: ${cmd}"
     # Did-you-mean against Core's own verbs — where typos land most often.
     local -a _verbs=(
-      core mkcd cdup extract mkbak fcd serve genpw fif fbr up update-check
+      core mkcd cdup extract mkbak fcd serve genpw fif fbr up update-check gsync
       maint-install maint-run maint-log maint-status maint-uninstall
       core-help core-doctor core-version core-status core-whatsnew
       opsecret openv optoken opssh

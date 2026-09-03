@@ -1,29 +1,70 @@
 #compdef core
-# Completion for Core's `core` umbrella front door (zsh/functions.zsh). The
-# subcommand list mirrors $_CORE_SUBCMDS — keep them in step (the audit's
-# core-help coverage gate keeps the verbs themselves honest).
+# Completion for Core's `core` umbrella front door (zsh/30-functions.zsh). The two
+# describe arrays mirror $_CORE_SUBCMDS and $_CORE_MAINT_SUBCMDS — keep them in step:
+# scripts/test-core.sh asserts the mirror, and its core-help coverage gate keeps the
+# verbs themselves honest.
 _core() {
   local -a subs=(
     'help:scannable cheat sheet of Core (optional filter word)'
     'doctor:report detected tools + active integrations on this box'
     'version:print the vendored Core layer version'
     'status:is this box current — version, provenance, live layers, core/ integrity'
-    'update:apply package updates (interactive; -y where safe, -n to list)'
+    'update:apply package updates (-y where safe, -n to list), or `check` to refresh the nudge'
     'whatsnew:what changed in Core since this box last looked'
+    'maint:the scheduled maintenance job (install|run|log|status|uninstall)'
+    'sync:push this repo'"'"'s vendored core/ subtree back upstream (gsync)'
   )
+  local -a maint_subs=(
+    'install:schedule the daily safe-update job (optional HH:MM, 24h)'
+    'run:run the daily maintenance job now, in the foreground'
+    'log:show the last N maintenance-log lines, or -f to follow'
+    'status:when the job next runs / is it enabled'
+    'uninstall:remove the scheduled maintenance job'
+  )
+  local ret=1
   if (( CURRENT == 2 )); then
     _describe -t commands 'core subcommand' subs
     return
   fi
-  # Delegate the sub-verb's own args to its existing completion, so
-  # `core update -<tab>` offers up's flags, `core help <tab>` its filter, etc.
+  # Delegate the sub-verb's own args to its existing completion, so `core update -<tab>`
+  # offers up's flags, `core maint log <tab>` maint-log's, etc. Every twin's #compdef
+  # expects ITSELF at words[1], so drop `core` (and the family word under maint) and
+  # move CURRENT back by the same amount — without that, _maint-install's `1:run time`
+  # slot is already "filled" by the word `maint` and <tab> offers nothing.
   case "${words[2]}" in
-  update) _up ;;
-  help) _core-help 2>/dev/null || _files ;;
-  doctor) _core-doctor 2>/dev/null ;;
-  version) _core-version 2>/dev/null ;;
-  status) _core-status 2>/dev/null ;;
-  whatsnew) _core-whatsnew 2>/dev/null ;;
+  update)
+    if [[ "${words[3]}" == check && $CURRENT -gt 3 ]]; then
+      shift 2 words; (( CURRENT -= 2 ))
+      _update-check
+      return
+    fi
+    if (( CURRENT == 3 )); then
+      local -a upd=('check:refresh the cached "updates available" nudge now (update-check)')
+      _describe -t commands 'core update subcommand' upd && ret=0
+    fi
+    shift words; (( CURRENT-- ))
+    _up && ret=0
+    return ret
+    ;;
+  maint)
+    if (( CURRENT == 3 )); then
+      _describe -t commands 'core maint subcommand' maint_subs
+      return
+    fi
+    shift 2 words; (( CURRENT -= 2 ))
+    case "${words[1]}" in
+    install) _maint-install ;;
+    log) _maint-log ;;
+    run | status | uninstall) _maint-noargs ;;
+    *) _message 'unknown core maint subcommand' ;;
+    esac
+    ;;
+  sync) shift words; (( CURRENT-- )); _gsync ;;
+  help) shift words; (( CURRENT-- )); _core-help 2>/dev/null || _files ;;
+  doctor) shift words; (( CURRENT-- )); _core-doctor 2>/dev/null ;;
+  version) shift words; (( CURRENT-- )); _core-version 2>/dev/null ;;
+  status) shift words; (( CURRENT-- )); _core-status 2>/dev/null ;;
+  whatsnew) shift words; (( CURRENT-- )); _core-whatsnew 2>/dev/null ;;
   esac
 }
 _core "$@"
