@@ -233,8 +233,12 @@ docker/validation/check-rule-coverage.sh
 docker/validation/check-fixture-provenance.sh
 ```
 
-Manifest rows 38, 39, 40 and 115 are the ones this run touches. A failure here while the host is
-still up is a re-capture. The same failure after teardown is a re-build.
+The manifest rows this run touches are `potato-seimpersonate-sysmon-1`,
+`token-theft-parent-child-sysmon-1`, `potato-seimpersonate-4688` and
+`token-theft-target-subject-4688`. Name them, never number them: an earlier draft of this runbook
+cited line numbers, and by the time you are reading it they pointed at other detections' rows.
+A failure here while the host is still up is a re-capture. The same failure after teardown is a
+re-build.
 
 ## Reading it
 
@@ -289,14 +293,18 @@ still hand-authored or still third-party does not earn the tier, and #246's phra
 this "does the same for `token_theft_sysmon1_*`" is wrong on exactly that point: that TP is a
 synthetic host (`Computer: WEB01`) modelled on the corpus, not a capture.
 
-| Fixture | Provenance row | Reaches `captured` when replaced with |
+Find each ledger row by grepping its fixture path — `grep -n 'sigma-fixtures/<name>.jsonl'
+docker/validation/fixture-provenance.tsv`. The path is the row's only stable key; rows are inserted
+above these regularly, so any line number written down here is wrong by the time it is read.
+
+| Fixture | Tier today | Reaches `captured` when replaced with |
 | --- | --- | --- |
-| `potato_sysmon1_tp.jsonl` | 166 | row A (or B) — the escalated process's Sysmon 1 |
-| `potato_sysmon1_tn.jsonl` | 167 | row C — the interactive-admin capture, same key set |
-| `potato_security_4688.jsonl` | 165 | row A's 4688. Today its identity block is *constructed*, and its Target Subject block is deliberately null pending exactly this measurement |
-| `token_theft_sysmon1_tp.jsonl` | 168 | row D — the non-shell payload. Synthetic today |
-| `token_theft_sysmon1_tn.jsonl` | 169 | row E. `unverified` today, hand-authored from its TP |
-| `token_theft_4688_{tp,tn}.jsonl` | 190, 189 | TP: row A's 4688, and only if the fourth expectation held. TN: see below — probably nothing this run can produce |
+| `potato_sysmon1_tp.jsonl` | `vendor-documented` | row A (or B) — the escalated process's Sysmon 1 |
+| `potato_sysmon1_tn.jsonl` | `vendor-documented` | row C — the interactive-admin capture, same key set |
+| `potato_security_4688.jsonl` | `vendor-documented` | row A's 4688. Today its identity block is *constructed*, and its Target Subject block is deliberately null pending exactly this measurement |
+| `token_theft_sysmon1_tp.jsonl` | `vendor-documented` | row D — the non-shell payload. Synthetic today |
+| `token_theft_sysmon1_tn.jsonl` | `unverified` | row E. Hand-authored from its TP |
+| `token_theft_4688_{tp,tn}.jsonl` | `vendor-documented` | TP: row A's 4688, and only if the fourth expectation held. TN: see below — probably nothing this run can produce |
 
 **The 4688 true negative probably cannot be captured, and that is a result rather than a gap.**
 `token_theft_4688_tn.jsonl` is silent today because `filter_same_context` catches it: it carries
@@ -319,8 +327,9 @@ for l in open(sys.argv[1]):
         print(d.get("SubjectLogonId"), d.get("TargetLogonId"), d.get("NewProcessName"))' security-run.jsonl
 ```
 
-If a record comes back, it is the promotable TN. If none does — the likely outcome — leave row 189
-where it is and say in the record that the shape was looked for and not found. The mixed tier is
+If a record comes back, it is the promotable TN. If none does — the likely outcome — leave
+`token_theft_4688_tn.jsonl`'s ledger row where it is and say in the record that the shape was
+looked for and not found. The mixed tier is
 acceptable here and not on the Sysmon pair, for a reason worth stating: row C's true negative is a
 real event this run can reproduce, and this one is a counterfactual the OS is not supposed to emit.
 
@@ -393,15 +402,16 @@ clause from its note and cite the new run record instead. These would be the rep
 
 ### Manifest consequences
 
-`docker/validation/sigma-manifest.tsv` row 40 (`potato-seimpersonate-4688`) carries `-` in the TN
+The `potato-seimpersonate-4688` row of `docker/validation/sigma-manifest.tsv` carries `-` in the TN
 column, and the rule has no `filter_*` block, so `check-rule-coverage.sh` does not require a true
 negative. It is still worth adding one, and **row E's 4688** is the one to use: same app-pool
 `Subject*` block, `NewProcessName` of `whoami.exe`, so it changes exactly one value against row A's
 4688 and `check_near_miss` will accept it. Adding it is three edits rather than one — the fixture,
-row 40's sixth column, and a new row in `fixture-provenance.tsv` — because the provenance gate fails
-on a manifest-referenced fixture with no ledger row, and `check_near_miss` starts applying to this
-pair the moment the `-` goes away. Rows 38, 39 and 115 already name both fixtures and need no
-structural change — only the fixtures behind them are replaced.
+that manifest row's sixth column, and a new row in `fixture-provenance.tsv` — because the provenance
+gate fails on a manifest-referenced fixture with no ledger row, and `check_near_miss` starts applying
+to this pair the moment the `-` goes away. `potato-seimpersonate-sysmon-1`,
+`token-theft-parent-child-sysmon-1` and `token-theft-target-subject-4688` already name both fixtures
+and need no structural change — only the fixtures behind them are replaced.
 
 [#230]: https://github.com/dotgibson/dotfiles-Defense/issues/230
 [#238]: https://github.com/dotgibson/dotfiles-Defense/issues/238
