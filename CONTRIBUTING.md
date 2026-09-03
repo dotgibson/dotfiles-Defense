@@ -28,7 +28,11 @@ and `core-integrity.yml` will report the tree as TAMPERED before that even happe
 
 Note the direction: Core is pushed *into* this repo by `make sync` **in dotfiles-core**.
 There is no pull from this side, which is why there is no `make core-sync` here.
-`make core-verify` answers whether a sync is owed (the older `make core-check` is kept as an alias).
+`make core-check` answers whether a sync is owed — is there a **newer** Core upstream?
+`make core-verify` answers the different question the fleet vocabulary names: is **this**
+`core/` the tree `core.lock` pins? It delegates to `dotfiles-core`'s own
+`scripts/core-integrity.sh`, so it needs a checkout of that repo — a sibling clone by
+default, or `make core-verify CORE_REPO=/path/to/dotfiles-core`.
 
 ## 3. Environment data never enters this repo
 

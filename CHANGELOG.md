@@ -24,6 +24,22 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **`core-verify` asks the integrity question again, and `core-check` gets the freshness
+  one back (dotgibson/dotfiles-core#691).** Adopting the fleet vocabulary pointed the
+  canonical `core-verify` at this repo's upstream-tag query and demoted `core-check` to an
+  alias of it. Those are two different questions: freshness is *is there a NEWER Core
+  upstream?*, integrity is *is THIS `core/` the tree `core.lock` pins?* — and Core's
+  `scripts/make-vocabulary.txt` defines the canonical verb as the second. So the register
+  read green on a target answering something else, while this repo still had **no local
+  integrity check at all**: `core-integrity.yml` ran one in CI and nothing ran one here.
+  `core-check` is a real target again, with help text naming its question, and
+  `core-verify` delegates to Core's own `scripts/core-integrity.sh` from a `CORE_REPO`
+  checkout — the same invocation CI uses, and the only implementation that knows how the
+  fan-out filters the vendored subtree. It probes with `-f` plus `bash …` rather than
+  `-x`, so a checkout that lost the exec bit does not fail it spuriously. Verified both
+  ways against a sibling clone at core v6.1.0: `core-verify` reports `pristine`,
+  `core-check` reports `current`.
+
 - **The SUID tripwire tested the wrong argument for the one chmod that matters, and the history
   rule watched a syscall that could never be recorded.** Both are documented auditd rules rather
   than Sigma logic, which is why neither fixture nor gate could see them. `suid_bit_set` shipped

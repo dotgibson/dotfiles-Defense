@@ -36,6 +36,11 @@
           packages-check lab-smoke core-verify core-check hooks
 .PHONY: $(.PHONY)
 
+# A dotfiles-core CHECKOUT — core-verify delegates the vendored-tree comparison to Core's
+# own scripts/core-integrity.sh there, the same script CI runs. Defaults to a sibling
+# clone, the layout sync-core.sh assumes.
+CORE_REPO ?= $(CURDIR)/../dotfiles-core
+
 # Pinned tool versions come from the vendored Core, so local runs match CI exactly.
 CORE_PINS := core/scripts/tool-versions.env
 MARKDOWNLINT_VERSION := $(shell sed -n 's/^MARKDOWNLINT_VERSION=//p' $(CORE_PINS) 2>/dev/null)
@@ -203,7 +208,15 @@ lab-smoke: ## Bring the validation lab up and smoke-test it (needs docker, slow)
 
 ## ── vendored core/ (subtree of dotfiles-core) ────────────────────────────────
 
-core-verify: ## Is the vendored core/ behind the latest upstream Core release?
+# TWO DIFFERENT QUESTIONS, and the names have to keep them apart — this pair got crossed
+# when the fleet vocabulary landed (dotgibson/dotfiles-core#691). `core-check` asks whether
+# core/ is BEHIND upstream (freshness — is a sync owed?). `core-verify` asks whether core/
+# IS the tree core.lock pins (integrity — has anything drifted or been hand-edited?). The
+# vocabulary defines the canonical verb as the SECOND one, so pointing it at the freshness
+# query made the register read green on a target answering a different question — while
+# this repo still had no local integrity check at all: core-integrity.yml ran one in CI and
+# nothing ran one here.
+core-check: ## Is the vendored core/ behind the latest upstream Core release? (freshness, not integrity)
 	@# No core-sync counterpart, and that is not an omission: Core is pushed INTO this repo
 	@# by dotfiles-core's own `scripts/sync-core.sh` (`make sync` there), which opens the
 	@# bump PR. There is nothing to pull from this side. This target answers the question
@@ -238,7 +251,16 @@ core-verify: ## Is the vendored core/ behind the latest upstream Core release?
 
 # The historical spelling, kept as an alias so `make core-check` still works. No `## ` help
 # text, deliberately — the one entry in `make help` is core-verify.
-core-check: core-verify
+# It must be driven from a dotfiles-core CHECKOUT, not from the vendored copy under core/:
+# the check resolves the pinned commit's tree in Core's object store, and a filtered subtree
+# materialization brings the tree, not the lineage. Same invocation core-integrity-call.yml
+# uses:  make core-verify CORE_REPO=/path/to/dotfiles-core
+core-verify: ## Verify the vendored core/ is pristine vs core.lock (integrity; needs CORE_REPO)
+	@[ -f "$(CORE_REPO)/scripts/core-integrity.sh" ] || { \
+	  echo "need a dotfiles-core checkout at CORE_REPO=$(CORE_REPO)"; \
+	  echo "(the verifier is Core-owned and not vendored into core/; clone it beside this repo,"; \
+	  echo " or pass CORE_REPO=/path — a git worktree always needs the override)"; exit 1; }
+	@bash "$(CORE_REPO)/scripts/core-integrity.sh" --self "$(CURDIR)"
 
 ## ── maintenance ──────────────────────────────────────────────────────────────
 
