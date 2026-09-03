@@ -16,12 +16,24 @@
 # dotfiles-core's own `make sync`, and this repo vendors no htpx companion). They are
 # deliberately absent rather than stubbed.
 #
+# ONE deliberate exception to "runs a real script": the fleet `make` vocabulary
+# (dotgibson/dotfiles-core#691) requires the canonical names — check, dry-run, packages-check,
+# core-verify — to RESOLVE in every repo that vendors Core, so a verb that genuinely does not
+# apply here is a documented two-line stub, not an absence. `packages-check` is that stub:
+# this repo is distro-agnostic and ships no OS package list. The other three are real —
+# `check` aggregates the offline gates, `dry-run` and `core-verify` are the canonical spellings
+# of `bootstrap-dry` and `core-check`, which stay as aliases.
+#
 # Run `make` with no target for the list.
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-.PHONY := help lint shellcheck markdown test sigma sigma-lint sigma-compile drift \
-          methodology validation-gates attack-tags htpx htpx-report bootstrap-dry \
-          lab-smoke core-check hooks
+# The four canonical fleet verbs (check, dry-run, packages-check, core-verify) sit next to
+# this repo's own names; the historical spellings (bootstrap-dry, core-check) are kept as
+# aliases so nothing that already calls them breaks. See dotgibson/dotfiles-core#691 and
+# VENDORING.md § "The `make` vocabulary, and the test floor" in Core.
+.PHONY := help lint shellcheck markdown check test sigma sigma-lint sigma-compile drift \
+          methodology validation-gates attack-tags htpx htpx-report dry-run bootstrap-dry \
+          packages-check lab-smoke core-verify core-check hooks
 .PHONY: $(.PHONY)
 
 # Pinned tool versions come from the vendored Core, so local runs match CI exactly.
@@ -47,6 +59,16 @@ SIGMA_MISSING := neither 'sigma' nor 'sigma-cli' on PATH — CI installs the pin
 help: ## Show this help
 	@grep -hE '^[a-z][a-z0-9_-]*:.*?## ' $(MAKEFILE_LIST) \
 	  | sort | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+
+## ── the fleet check verb ─────────────────────────────────────────────────────
+
+# `check` is the fleet's canonical "verify this repo" verb (dotgibson/dotfiles-core#691).
+# Here it is the aggregate of every gate that needs neither the network nor a container —
+# the offline CI reproduction in one word. The network gates (attack-tags, htpx) and the
+# container gate (lab-smoke) stay out on purpose, for the reasons their own targets give:
+# folding them in would make `make check` fail on a train, which is how a useful gate gets
+# commented out.
+check: lint sigma test ## The full offline gate: lint + the offline sigma gates + behavioural tests
 
 ## ── static gates ─────────────────────────────────────────────────────────────
 
@@ -163,15 +185,25 @@ test: ## Run the repo's behavioural checks
 	@./tests/test-defense.sh
 	@echo "✓ tests pass"
 
-bootstrap-dry: ## Preview the full bootstrap plan, changing nothing
+dry-run: ## Preview the full bootstrap plan, changing nothing
 	@./bootstrap.sh --dry-run
+
+# The historical spelling, kept as an alias so `make bootstrap-dry` still works. No `## `
+# help text, deliberately — one entry for this in `make help` is enough, and it is dry-run.
+bootstrap-dry: dry-run
+
+packages-check: ## Not applicable — this repo is distro-agnostic and ships no OS package list
+	@# A stub, not an omission: the fleet vocabulary (dotgibson/dotfiles-core#691) requires the
+	@# canonical name to RESOLVE in every repo, so `make packages-check` answers everywhere. Host
+	@# tools come from the OS-native layer; this Role layer installs nothing to package-check.
+	@echo "packages-check: not applicable to this repo (no OS package list)"
 
 lab-smoke: ## Bring the validation lab up and smoke-test it (needs docker, slow)
 	@./docker/validation/lab-smoke.sh
 
 ## ── vendored core/ (subtree of dotfiles-core) ────────────────────────────────
 
-core-check: ## Is the vendored core/ behind the latest upstream Core release?
+core-verify: ## Is the vendored core/ behind the latest upstream Core release?
 	@# No core-sync counterpart, and that is not an omission: Core is pushed INTO this repo
 	@# by dotfiles-core's own `scripts/sync-core.sh` (`make sync` there), which opens the
 	@# bump PR. There is nothing to pull from this side. This target answers the question
@@ -203,6 +235,10 @@ core-check: ## Is the vendored core/ behind the latest upstream Core release?
 	    echo "• vendored core is $$local_ver, upstream is $$upstream_ver — a sync from dotfiles-core is owed"; \
 	  fi; \
 	fi
+
+# The historical spelling, kept as an alias so `make core-check` still works. No `## ` help
+# text, deliberately — the one entry in `make help` is core-verify.
+core-check: core-verify
 
 ## ── maintenance ──────────────────────────────────────────────────────────────
 
