@@ -28,8 +28,11 @@ and `core-integrity.yml` will report the tree as TAMPERED before that even happe
 
 Note the direction: Core is pushed *into* this repo by `make sync` **in dotfiles-core**.
 There is no pull from this side, which is why there is no `make core-sync` here.
-`make core-check` answers whether a sync is owed; `make core-verify` answers the
-different question of whether the `core/` you have *is* the tree `core.lock` pins.
+`make core-check` answers whether a sync is owed — is there a **newer** Core upstream?
+`make core-verify` answers the different question the fleet vocabulary names: is **this**
+`core/` the tree `core.lock` pins? It delegates to `dotfiles-core`'s own
+`scripts/core-integrity.sh`, so it needs a checkout of that repo — a sibling clone by
+default, or `make core-verify CORE_REPO=/path/to/dotfiles-core`.
 
 ## 3. Environment data never enters this repo
 
@@ -50,19 +53,10 @@ make test
 
 Everything CI checks has a local target. `make help` lists them; the ones worth knowing:
 
-`help`, `lint`, `check`, `dry-run`, `packages-check`, `core-verify` and `test` are the
-fleet's canonical verbs, declared once in `dotfiles-core`'s `scripts/make-vocabulary.txt`
-so a target means the same thing in every repo
-([dotgibson/dotfiles-core#691](https://github.com/dotgibson/dotfiles-core/issues/691)).
-`bootstrap-dry` is kept as an alias of `dry-run`, and `packages-check` is a stub here —
-this repo installs nothing, and it says so rather than being silently absent.
-
 | Target | What it answers |
 | --- | --- |
 | `make lint` | shellcheck (at CI's **pinned** version) + markdownlint |
-| `make check` | `lint` + a hermetic `--links-only` run against a throwaway `HOME` |
 | `make test` | the behavioural suite |
-| `make core-verify` | is the vendored `core/` the tree `core.lock` pins? (integrity) |
 | `make drift` | are the generated artifacts in step with the rules? |
 | `make methodology` | does `DEFENSE-METHODOLOGY.md` still describe the rules that exist? |
 | `make validation-gates` | does every rule have validation coverage, every fixture provenance? |

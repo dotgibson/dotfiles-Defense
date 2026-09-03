@@ -16,12 +16,24 @@
 # dotfiles-core's own `make sync`, and this repo vendors no htpx companion). They are
 # deliberately absent rather than stubbed.
 #
+# ONE deliberate exception to "runs a real script": the fleet `make` vocabulary
+# (dotgibson/dotfiles-core#691) requires the canonical names — check, dry-run, packages-check,
+# core-verify — to RESOLVE in every repo that vendors Core, so a verb that genuinely does not
+# apply here is a documented two-line stub, not an absence. `packages-check` is that stub:
+# this repo is distro-agnostic and ships no OS package list. The other three are real —
+# `check` aggregates the offline gates, `dry-run` and `core-verify` are the canonical spellings
+# of `bootstrap-dry` and `core-check`, which stay as aliases.
+#
 # Run `make` with no target for the list.
 # ──────────────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
-.PHONY := help lint check shellcheck markdown test sigma sigma-lint sigma-compile drift \
+# The four canonical fleet verbs (check, dry-run, packages-check, core-verify) sit next to
+# this repo's own names; the historical spellings (bootstrap-dry, core-check) are kept as
+# aliases so nothing that already calls them breaks. See dotgibson/dotfiles-core#691 and
+# VENDORING.md § "The `make` vocabulary, and the test floor" in Core.
+.PHONY := help lint shellcheck markdown check test sigma sigma-lint sigma-compile drift \
           methodology validation-gates attack-tags htpx htpx-report dry-run bootstrap-dry \
-          packages-check lab-smoke core-check core-verify hooks
+          packages-check lab-smoke core-verify core-check hooks
 .PHONY: $(.PHONY)
 
 # A dotfiles-core CHECKOUT — core-verify delegates the vendored-tree comparison to Core's
@@ -52,6 +64,16 @@ SIGMA_MISSING := neither 'sigma' nor 'sigma-cli' on PATH — CI installs the pin
 help: ## Show this help
 	@grep -hE '^[a-z][a-z0-9_-]*:.*?## ' $(MAKEFILE_LIST) \
 	  | sort | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+
+## ── the fleet check verb ─────────────────────────────────────────────────────
+
+# `check` is the fleet's canonical "verify this repo" verb (dotgibson/dotfiles-core#691).
+# Here it is the aggregate of every gate that needs neither the network nor a container —
+# the offline CI reproduction in one word. The network gates (attack-tags, htpx) and the
+# container gate (lab-smoke) stay out on purpose, for the reasons their own targets give:
+# folding them in would make `make check` fail on a train, which is how a useful gate gets
+# commented out.
+check: lint sigma test ## The full offline gate: lint + the offline sigma gates + behavioural tests
 
 ## ── static gates ─────────────────────────────────────────────────────────────
 
@@ -168,71 +190,32 @@ test: ## Run the repo's behavioural checks
 	@./tests/test-defense.sh
 	@echo "✓ tests pass"
 
-## ── the canonical fleet verbs (dotgibson/dotfiles-core#691) ──────────────────
-# `dry-run`, `check`, `packages-check` and `core-verify` are four of the seven names every
-# repo that vendors Core must answer to (Core's scripts/make-vocabulary.txt; `make
-# fleet-vocabulary` there renders the register that checks it). Before that list, "dry run"
-# was `dry-run` in four repos and `bootstrap-dry` in four, "verify core" had five spellings,
-# and only `help` was common to every Makefile — a contributor re-learned the verbs in each
-# repo and no gate noticed. The requirement is that the CANONICAL name exists, not that a
-# historical one dies, so `bootstrap-dry` stays as an alias.
-
 dry-run: ## Preview the full bootstrap plan, changing nothing
 	@./bootstrap.sh --dry-run
 
-bootstrap-dry: dry-run ## (alias) the pre-#691 spelling of dry-run
+# The historical spelling, kept as an alias so `make bootstrap-dry` still works. No `## `
+# help text, deliberately — one entry for this in `make help` is enough, and it is dry-run.
+bootstrap-dry: dry-run
 
-check: lint ## lint + a hermetic --links-only run against a throwaway HOME
-	@# `lint` proves the repo-owned shell and markdown parse and `test` proves the detection
-	@# machinery behaves; this proves the installer still wires the symlink graph Core's
-	@# loader expects, plus the DEFENSE role layer on top of it. Like the rest of this repo
-	@# it runs anywhere: a role bootstrap wires symlinks, installs nothing, and needs no
-	@# privileges and no particular distro.
-	@#
-	@# tpm is pre-created because blib_link_core clones the tmux plugin manager into it on a
-	@# first run; this asserts symlinks, not network.
-	@tmp=$$(mktemp -d); \
-	mkdir -p "$$tmp/.config/tmux/plugins/tpm"; \
-	echo ":: bootstrap --links-only into $$tmp"; \
-	HOME="$$tmp" ./bootstrap.sh --links-only >/dev/null || { echo "bootstrap failed"; rm -rf "$$tmp"; exit 1; }; \
-	rc=0; \
-	for l in .config/zsh/loader.zsh .config/starship.toml .config/lazygit/config.yml \
-	         .config/nvim .config/tmux/tmux.conf .config/defense/templates \
-	         .vimrc .gitconfig; do \
-	  test -L "$$tmp/$$l" || { echo "MISSING symlink: $$l"; rc=1; }; \
-	done; \
-	test -e "$$tmp/.config/zsh/loader.zsh" || { echo "loader.zsh is dangling"; rc=1; }; \
-	test -f "$$tmp/.config/sesh/sesh.toml" || { echo "sesh.toml not seeded"; rc=1; }; \
-	test -L "$$tmp/.config/sesh/sesh.toml" && { echo "sesh.toml must be a copy, not a link"; rc=1; }; \
-	grep -q "dotfiles-managed v4" "$$tmp/.zshrc" || { echo "~/.zshrc not managed"; rc=1; }; \
-	grep -q "source .*loader.zsh" "$$tmp/.zshrc" || { echo "~/.zshrc does not source the loader"; rc=1; }; \
-	rm -rf "$$tmp"; \
-	test $$rc -eq 0 && printf '\033[32m✓\033[0m symlink graph OK\n' || exit 1
-
-# A STUB, deliberately — and stubbed rather than left absent, which is the vocabulary's
-# rule for a verb a repo genuinely lacks: `make packages-check` then means the same thing
-# in every repo, including "nothing to do here". This repo installs NO packages. It is
-# distro-agnostic (install/README.md: "the OS-native layer you run owns package
-# installation, and the heavy stack runs in docker/"), and install/tools.lst is a PROBE
-# list, not a manifest — bootstrap only ever reports what is missing. Resolving those names
-# against a package manager would be asking the wrong repo's question: the answer differs
-# per distro and belongs to whichever OS repo is underneath.
-packages-check: ## Not applicable: this repo installs no packages (see install/README.md)
-	@echo "packages-check: not applicable to this repo — it installs nothing."
-	@echo "  install/tools.lst is a probe list, not a package manifest; ./bootstrap.sh reports"
-	@echo "  which of those tools are missing. Package resolution belongs to the OS-native"
-	@echo "  layer underneath this one — run 'make packages-check' there."
+packages-check: ## Not applicable — this repo is distro-agnostic and ships no OS package list
+	@# A stub, not an omission: the fleet vocabulary (dotgibson/dotfiles-core#691) requires the
+	@# canonical name to RESOLVE in every repo, so `make packages-check` answers everywhere. Host
+	@# tools come from the OS-native layer; this Role layer installs nothing to package-check.
+	@echo "packages-check: not applicable to this repo (no OS package list)"
 
 lab-smoke: ## Bring the validation lab up and smoke-test it (needs docker, slow)
 	@./docker/validation/lab-smoke.sh
 
 ## ── vendored core/ (subtree of dotfiles-core) ────────────────────────────────
 
-# TWO DIFFERENT QUESTIONS, and the names keep them apart. `core-check` asks whether core/
-# is BEHIND upstream (freshness — is a sync owed?). `core-verify` asks whether core/ IS the
-# tree core.lock pins (integrity — has anything drifted or been hand-edited?). Only the
-# second is the fleet's canonical verb, and this repo had no local answer to it at all:
-# core-integrity.yml ran it in CI and nothing ran it here.
+# TWO DIFFERENT QUESTIONS, and the names have to keep them apart — this pair got crossed
+# when the fleet vocabulary landed (dotgibson/dotfiles-core#691). `core-check` asks whether
+# core/ is BEHIND upstream (freshness — is a sync owed?). `core-verify` asks whether core/
+# IS the tree core.lock pins (integrity — has anything drifted or been hand-edited?). The
+# vocabulary defines the canonical verb as the SECOND one, so pointing it at the freshness
+# query made the register read green on a target answering a different question — while
+# this repo still had no local integrity check at all: core-integrity.yml ran one in CI and
+# nothing ran one here.
 core-check: ## Is the vendored core/ behind the latest upstream Core release? (freshness, not integrity)
 	@# No core-sync counterpart, and that is not an omission: Core is pushed INTO this repo
 	@# by dotfiles-core's own `scripts/sync-core.sh` (`make sync` there), which opens the
@@ -266,14 +249,18 @@ core-check: ## Is the vendored core/ behind the latest upstream Core release? (f
 	  fi; \
 	fi
 
+# The historical spelling, kept as an alias so `make core-check` still works. No `## ` help
+# text, deliberately — the one entry in `make help` is core-verify.
 # It must be driven from a dotfiles-core CHECKOUT, not from the vendored copy under core/:
-# the check resolves the pinned commit's tree in Core's object store, and a filtered
-# subtree materialization brings the tree, not the lineage. Same invocation CI uses:
-#   make core-verify CORE_REPO=/path/to/dotfiles-core
-core-verify: ## Verify the vendored core/ is pristine vs core.lock (needs CORE_REPO)
-	@[ -x "$(CORE_REPO)/scripts/core-integrity.sh" ] || { \
-	  echo "need a dotfiles-core checkout at CORE_REPO=$(CORE_REPO)"; exit 1; }
-	@"$(CORE_REPO)/scripts/core-integrity.sh" --self "$(CURDIR)"
+# the check resolves the pinned commit's tree in Core's object store, and a filtered subtree
+# materialization brings the tree, not the lineage. Same invocation core-integrity-call.yml
+# uses:  make core-verify CORE_REPO=/path/to/dotfiles-core
+core-verify: ## Verify the vendored core/ is pristine vs core.lock (integrity; needs CORE_REPO)
+	@[ -f "$(CORE_REPO)/scripts/core-integrity.sh" ] || { \
+	  echo "need a dotfiles-core checkout at CORE_REPO=$(CORE_REPO)"; \
+	  echo "(the verifier is Core-owned and not vendored into core/; clone it beside this repo,"; \
+	  echo " or pass CORE_REPO=/path — a git worktree always needs the override)"; exit 1; }
+	@bash "$(CORE_REPO)/scripts/core-integrity.sh" --self "$(CURDIR)"
 
 ## ── maintenance ──────────────────────────────────────────────────────────────
 
