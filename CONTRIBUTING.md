@@ -28,7 +28,7 @@ and `core-integrity.yml` will report the tree as TAMPERED before that even happe
 
 Note the direction: Core is pushed *into* this repo by `make sync` **in dotfiles-core**.
 There is no pull from this side, which is why there is no `make core-sync` here.
-`make core-check` answers whether a sync is owed.
+`make core-verify` answers whether a sync is owed (the older `make core-check` is kept as an alias).
 
 ## 3. Environment data never enters this repo
 
