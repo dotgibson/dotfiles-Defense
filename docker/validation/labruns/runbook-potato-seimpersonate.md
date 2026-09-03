@@ -293,9 +293,12 @@ still hand-authored or still third-party does not earn the tier, and #246's phra
 this "does the same for `token_theft_sysmon1_*`" is wrong on exactly that point: that TP is a
 synthetic host (`Computer: WEB01`) modelled on the corpus, not a capture.
 
-Find each ledger row by grepping its fixture path — `grep -n 'sigma-fixtures/<name>.jsonl'
-docker/validation/fixture-provenance.tsv`. The path is the row's only stable key; rows are inserted
-above these regularly, so any line number written down here is wrong by the time it is read.
+Find each ledger row by grepping its fixture path. The path is the row's only stable key; rows are
+inserted above these regularly, so any line number written down here is wrong by the time it is read.
+
+```bash
+grep -n 'sigma-fixtures/<name>.jsonl' docker/validation/fixture-provenance.tsv
+```
 
 | Fixture | Tier today | Reaches `captured` when replaced with |
 | --- | --- | --- |
