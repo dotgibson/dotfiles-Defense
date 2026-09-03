@@ -24,6 +24,33 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **The SUID tripwire tested the wrong argument for the one chmod that matters, and the history
+  rule watched a syscall that could never be recorded.** Both are documented auditd rules rather
+  than Sigma logic, which is why neither fixture nor gate could see them. `suid_bit_set` shipped
+  `-S chmod,fchmod,fchmodat -F a1&04000`, but the mode is `a1` only for `chmod(path, mode)` and
+  `fchmod(fd, mode)`; `fchmodat(dirfd, path, mode, flags)` carries it in `a2`, so for every
+  `fchmodat` the kernel ANDed a **pathname pointer** against 04000 and recorded or dropped the
+  event depending on where the string happened to sit in memory. That is not a corner case:
+  `fchmodat` is what coreutils and glibc's `-at` paths call, and it is the only path-based chmod
+  that exists on **arm64**, which has no `chmod` syscall at all — so on an arm64 host the whole
+  rule rested on the broken predicate. Now split by argument position, four lines instead of two,
+  with the arm64 load failure and `fchmodat2` both written down. `history_clearing` had the twin
+  defect one layer along: it listed `ftruncate`, which takes a descriptor and emits no PATH
+  record, so under `-F dir=` it was never recorded — dead in the list rather than merely noisy —
+  while `: > ~/.bash_history`, the canonical clear, is an `open` with `O_TRUNC` and was not in the
+  list at all. Replaced with `open`/`openat` O_TRUNC lines (flags in `a1` and `a2` respectively,
+  the same split), and coreutils `truncate -s0` is now named as genuinely unreached from the file
+  plane rather than silently missed. Neither rule's Sigma changed; both descriptions now predict
+  what a lab run must show, including the `truncate -s0` non-result.
+
+- **Three auditd rules assumed an ingestion model nothing stated.** `ssh_authorized_keys_write`,
+  `ssh_private_key_read` and `history_clearing` match `key` (SYSCALL record) and `name` (PATH
+  record) in one selection, which only works where the pipeline coalesces the records of one
+  auditd event into a single document — auditbeat/Elastic and the Splunk auditd TA do, a raw
+  line parser does not, and there the three are inert while the key-only rules beside them keep
+  working. Stated in each rule and in `detections/README.md`, alongside a note that syscall
+  argument positions are per syscall rather than per family.
+
 - **The potato rules cited the pre-re-measurement figures, and one of them argued the opposite of
   the record it cites.** `2026-08-token-mismatch-sysmon-1.md` was re-measured over the full corpus
   on 2026-08-30 — 147 Sysmon-1 records became **1491**, and four recognised potato captures became
@@ -183,7 +210,72 @@ under `[Unreleased]` from here.
   dotgibson/dotfiles-core#592 made the markdown leg blocking and it covers all 21
   repo-owned files, not just the README.
 
+### Changed
+
+- **Five rules matched one spelling of an action that has more than one.** Each was evadable by
+  a caller who reached the same outcome through the sibling API, and the corpus review (#261)
+  found them together. `gcp_service_account_key_created` selected only
+  `CreateServiceAccountKey`, missing `UploadServiceAccountKey` — the caller brings their own
+  public key, so the private half never transits Google at all, which is the version an attacker
+  prefers. `okta_mfa_factor_reset` did not select `user.mfa.factor.suspend`, Okta's own
+  suspected-compromise action, which takes a factor out of use without deactivating it. (The
+  review also proposed a singular `user.mfa.factor.reset`; Okta defines no such event type, a
+  single-factor reset emits `deactivate`, and the rule now records that so it is not re-raised.)
+  `github_credential_backdoor` did not see `integration_installation.create` — installing a
+  GitHub App mints an installation token for as long as the install stands, the quietest durable
+  credential of the three the rule now covers. `gitlab_token_backdoor` was missing the two
+  group-scoped token events, the widest blast radius of the set. `vault_approle_backdoor` matched
+  `auth/approle/role/` literally, so a role minted under an already-enabled jwt, kubernetes, aws
+  or token backend — the same durable machine identity, one path over — walked past it; it now
+  matches the role path under every backend.
+
+- **The Kubernetes escape rule's hostPath branch matched only the literal `/`.** A mount of
+  `/var/run/docker.sock`, `/run/containerd`, `/proc`, `/etc`, `/root` or `/var/lib/kubelet` is a
+  node takeover on its own and produced no alert. Now the root mount plus a prefix list, with
+  `hostIPC` added as a scalar branch beside `hostPID`. `hostNetwork` was considered and declined
+  in the rule: it is not an escape by itself and it is precisely the CNI/node-agent request the
+  rule's own false positives name. The documented array-traversal caveat is unchanged and still
+  governs the two array-keyed branches.
+
+- **`snowflake_network_policy_change` fired on statements that read a policy.** It excluded
+  `SHOW` but not `DESCRIBE`/`DESC`. `filter_show` is now `filter_readonly` and covers both.
+  `GRANT ... ON NETWORK POLICY` stays selected on purpose — it changes no allowlist, but a
+  `GRANT OWNERSHIP` on the enforced policy is the step before an attacker can alter it.
+
+- **Four proposals from the same review were declined, in the rules themselves.** A decline that
+  lives only in an issue gets re-proposed next cycle. `sudo_root_shell` keeps `comm` and its
+  interpreter list: `exe` resolves symlinks, so an `exe|endswith` list silently loses hosts where
+  `/bin/sh` is dash or `python3` is `python3.14`, and dropping the list turns a detection into a
+  log of every command run through sudo — the GTFOBins escapes it is accused of missing exec a
+  listed shell as a child and are caught there. `k8s_clusteradmin_binding` does not gain
+  `verb: [escalate, bind]`: those are RBAC authorization verbs, never the verb of an audit event,
+  so the selection would match nothing while reading as coverage. `jenkins_job_backdoor` does not
+  add `config.xml`: the Audit Trail plugin's default pattern does not log it, and the logged line
+  carries no HTTP method, so the branch could not separate the malicious POST from the routine
+  GET. `jenkins_api_token_created` keeps no filter block: this corpus has no verified Jenkins
+  actor field, and inventing one produces a filter that passes its own fixture and matches
+  nothing in production — the hazard `fixture-provenance.tsv` exists to expose.
+
 ### Added
+
+- **Seven rules that named a benign false positive in prose now carry the filter block to
+  suppress it.** Each documented the noise and left the reader to hand-edit the rule:
+  `shadow_credentials_keycredentiallink_5136` (`filter_whfb` — the rule prescribed a Windows
+  Hello allowlist its detection never implemented, so in any WHfB tenant this `high` rule fired
+  on every legitimate key enrollment; the on-prem key-trust self-write, where Subject equals the
+  object, is named as needing a SIEM-side comparison Sigma cannot express),
+  `gcp_service_account_key_created` (`filter_iac`, for parity with its GCP siblings),
+  `harbor_robot_account_created` (`filter_provisioning`), `entra_directory_role_grant`
+  (`filter_iga` — PIM/IGA automation, with a note NOT to allowlist the PIM service whose
+  operations the rule deliberately selects), `bitlocker_abuse_encryption` (`filter_provisioning`
+  on the imaging task-sequence parent), `ldap_recon_explicit_creds_4648`
+  (`filter_sweep_principals`, present in its sibling discovery rules but not here — the
+  correlation's threshold is no substitute, a scanner clears it every cycle), and
+  `github_self_hosted_runner_registered` (`filter_runner_provisioning`). Every one is a
+  `DEPLOY-REQUIRED` stub with a true-negative fixture proving the exclusion works, so the
+  validation advisory that listed rules with a filter and no true negative is now empty. The
+  BitLocker rule's generated Splunk form mixes a top-level OR with the new NOT; the binding was
+  traced and recorded in `splunk-precedence-allowlist.tsv` rather than left to precedence.
 
 - **`\pipe\srvsvc` and `\pipe\epmapper` are read at last; EfsPotato and RoguePotato are watched on
   the mechanism plane.** `srvsvc_epmapper_pipe_impersonation_sysmon_17.yml` (id

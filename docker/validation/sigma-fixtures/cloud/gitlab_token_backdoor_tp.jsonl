@@ -1,1 +1,3 @@
 {"event_type": "personal_access_token_created"}
+{"event_type": "group_access_token_created"}
+{"event_type": "group_deploy_token_created"}

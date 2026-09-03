@@ -10,6 +10,13 @@ description: |
   system-config submits (also /configSubmit) don't trip it. Job changes are routine, so
   triage on an unexpected actor, a sensitive job, edits outside config-as-code
   (JCasC / pipeline-in-SCM), or a change immediately followed by a build.
+  POST /job/<name>/config.xml - uploading job XML directly, the stealthiest path - is
+  deliberately NOT a branch. The Audit Trail plugin's default URL pattern does not log
+  config.xml at all, so the branch would match nothing on a default install; and the
+  logged line carries no HTTP method, so on an install whose pattern was widened it
+  could not tell the malicious POST from the far more common GET that every backup,
+  export and config-as-code sync performs. Widen the plugin pattern and add a rule
+  keyed on a field that carries the method if your deployment gives you one.
   Validate (purple): create a job via /createItem from dotfiles-Offense (htpx pair
   jenkins-job-backdoor).
 references:
@@ -17,6 +24,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/jenkins-job-backdoor-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
+modified: 2026-09-02
 tags:
   - attack.execution
   - attack.lateral-movement

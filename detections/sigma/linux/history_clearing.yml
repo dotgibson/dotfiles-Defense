@@ -12,9 +12,24 @@ description: |
   rule works: a plain `-w ~/.bash_history -p wa` watch fires on every logout, because a
   normal shell exit APPENDS to the history file - the write is the routine case, not the
   suspicious one. What separates clearing from ordinary use is HOW the file is written:
-  unlink (rm, shred), truncate (`: > ~/.bash_history`, `truncate -s0`), or rename over
-  it. Those never happen in the course of using a shell normally, so the audit rule
-  below selects on the syscalls and this rule keys on the audit key it sets.
+  unlink (rm, shred), truncate-by-path, open with O_TRUNC (`: > ~/.bash_history`), or
+  rename over it. Those never happen in the course of using a shell normally, so the
+  audit rule below selects on the syscalls and this rule keys on the audit key it sets.
+  The truncate branch was wrong as first shipped, in two ways worth recording. It
+  listed ftruncate, which takes a file descriptor and produces no PATH record - so a
+  `-F dir=` rule, which matches on PATH records, never recorded it at all; the syscall
+  was dead in the list, not merely noisy. And it did not list open/openat, which is
+  what `: > file` actually is: an open with O_TRUNC (01000 octal), no truncate syscall
+  involved. That flag sits in a1 for open(path, flags, mode) and in a2 for
+  openat(dirfd, path, flags, mode), so it takes one line per syscall, the same
+  argument-position split suid_bit_set.yml makes for fchmodat. What stays unreached
+  from the file plane is coreutils `truncate -s0`: it opens the file without O_TRUNC
+  and then calls ftruncate on the descriptor, so neither line sees it. It is a process
+  with the history path in its argv, which is the process-creation plane's to catch.
+  Both the SYSCALL and the PATH record are needed by this rule (`key` lives on the
+  first, `name` on the second), so it assumes an ingestion that coalesces the multi-
+  record auditd event into one document - auditbeat/Elastic and the Splunk auditd TA
+  do; a raw per-line parser leaves it inert. See the auditd note in detections/README.md.
   Note what this does NOT reach, so the coverage is not read as wider than it is:
   `history -c` and `unset HISTFILE` are bash builtins that touch no file and spawn no
   process, so they produce no auditd record at all. They are only visible later, as the
@@ -23,18 +38,29 @@ description: |
   arranges for it never to be written.
   `_history` rather than `.bash_history` so `.zsh_history` and the other shells' files
   are covered by the same selection.
-  Requires an auditd syscall rule that sets the key (load with `augenrules --load`):
-    -a always,exit -F arch=b64 -S unlink,unlinkat,truncate,ftruncate,rename,renameat -F dir=/home -F key=hist_tamper
-    -a always,exit -F arch=b64 -S unlink,unlinkat,truncate,ftruncate,rename,renameat -F dir=/root -F key=hist_tamper
+  Requires auditd syscall rules that set the key (load with `augenrules --load`):
+    -a always,exit -F arch=b64 -S unlink,unlinkat,truncate,rename,renameat -F dir=/home -F key=hist_tamper
+    -a always,exit -F arch=b64 -S open -F a1&01000 -F dir=/home -F key=hist_tamper
+    -a always,exit -F arch=b64 -S openat -F a2&01000 -F dir=/home -F key=hist_tamper
+    -a always,exit -F arch=b64 -S unlink,unlinkat,truncate,rename,renameat -F dir=/root -F key=hist_tamper
+    -a always,exit -F arch=b64 -S open -F a1&01000 -F dir=/root -F key=hist_tamper
+    -a always,exit -F arch=b64 -S openat -F a2&01000 -F dir=/root -F key=hist_tamper
   Scope the dir= to the home layout your estate actually uses rather than assuming
   /home, the same adjustment ssh_authorized_keys_write.yml calls for on its watch.
-  Validate (purple): `shred -u ~/.bash_history` or `truncate -s0 ~/.bash_history` on a
-  lab host with the rule loaded. The htpx corpus has no entry for this one - its Linux
-  entries are credential-access and persistence, not anti-forensics.
+  The O_TRUNC lines see every truncating open under the directory, not just history
+  files - editors saving in place, `>` redirections in scripts - and it is this rule's
+  `name|contains '_history'` that narrows them, so expect the key itself to be busier
+  than the alert.
+  Validate (purple): `shred -u ~/.bash_history` and `: > ~/.bash_history` on a lab host
+  with the rules loaded; both must land on the key. `truncate -s0 ~/.bash_history` must
+  NOT, and that is the expected result, not a failure - see above. The htpx corpus has
+  no entry for this one - its Linux entries are credential-access and persistence, not
+  anti-forensics.
 references:
   - https://attack.mitre.org/techniques/T1070/003/
 author: dotfiles-Defense
 date: 2026-08-26
+modified: 2026-09-02
 tags:
   - attack.stealth
   - attack.t1070.003

@@ -22,7 +22,7 @@ eventSource:iam.amazonaws.com AND (eventName:(CreateLoginProfile OR UpdateLoginP
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // cloud/entra_directory_role_grant.yml — Entra directory role assigned (tenant privilege escalation)
-OperationName:(Add\ member\ to\ role OR Add\ eligible\ member\ to\ role OR Add\ member\ to\ role\ in\ PIM\ requested\ \(permanent\) OR Add\ member\ to\ role\ completed\ \(PIM\ activation\) OR Add\ member\ to\ role\ requested\ \(PIM\ activation\))
+(OperationName:(Add\ member\ to\ role OR Add\ eligible\ member\ to\ role OR Add\ member\ to\ role\ in\ PIM\ requested\ \(permanent\) OR Add\ member\ to\ role\ completed\ \(PIM\ activation\) OR Add\ member\ to\ role\ requested\ \(PIM\ activation\))) AND (NOT Identity:svc\-iga\-provisioning)
 
 // cloud/entra_illicit_consent_grant.yml — Entra consent grant to a third-party app (illicit-consent triage)
 (OperationName:(Consent\ to\ application OR Add\ delegated\ permission\ grant OR Add\ OAuth2PermissionGrant)) AND (TargetResources:(*Mail.Read* OR *Mail.ReadWrite* OR *Mail.Send* OR *offline_access* OR *Files.Read.All* OR *Files.ReadWrite.All* OR *Sites.Read.All* OR *Directory.Read.All* OR *full_access_as_user*)) AND (NOT TargetResources:*00000000\-0000\-0000\-0000\-000000000000*)
@@ -37,7 +37,7 @@ OperationName:(Add\ service\ principal\ credentials OR Add\ application\ credent
 gcp.audit.method_name:*.SetIamPolicy AND (NOT gcp.audit.principal_email:iam\-terraform@example.iam.gserviceaccount.com)
 
 // cloud/gcp_service_account_key_created.yml — GCP user-managed service-account key created
-gcp.audit.method_name:google.iam.admin.v1.CreateServiceAccountKey
+(gcp.audit.method_name:(google.iam.admin.v1.CreateServiceAccountKey OR google.iam.admin.v1.UploadServiceAccountKey)) AND (NOT gcp.audit.principal_email:iam\-terraform@example.iam.gserviceaccount.com)
 
 // cloudflare/cloudflare_api_token_created.yml — Cloudflare API token created (durable control-plane backdoor)
 resource.type:api_token AND action.type:create
@@ -117,11 +117,11 @@ EventID:1102
 // github/github_branch_protection_tamper.yml — GitHub branch-protection tampered (unreviewed merge)
 action:(protected_branch.destroy OR protected_branch.policy_override)
 
-// github/github_credential_backdoor.yml — GitHub deploy-key or PAT credential backdoor
-action:(repo.create_deploy_key OR personal_access_token.access_granted)
+// github/github_credential_backdoor.yml — GitHub deploy-key, PAT, or App-install credential backdoor
+action:(repo.create_deploy_key OR personal_access_token.access_granted OR integration_installation.create)
 
 // github/github_self_hosted_runner_registered.yml — GitHub self-hosted runner registered (job/secret capture)
-action:self_hosted_runner.created
+action:self_hosted_runner.created AND (NOT actor:svc\-runner\-provisioner)
 
 // gitlab/gitlab_protected_branch_tamper.yml — GitLab protected-branch tampered (unreviewed merge)
 event_type:protected_branch_removed
@@ -130,7 +130,7 @@ event_type:protected_branch_removed
 event_type:set_runner_associated_projects
 
 // gitlab/gitlab_token_backdoor.yml — GitLab access/deploy token created (durable-access backdoor)
-event_type:(project_access_token_created OR personal_access_token_created OR deploy_token_created)
+event_type:(project_access_token_created OR group_access_token_created OR personal_access_token_created OR deploy_token_created OR group_deploy_token_created)
 
 // google_workspace/gws_admin_role_grant.yml — Google Workspace admin/super-admin role granted (tenant persistence)
 eventName:(GRANT_DELEGATED_ADMIN_PRIVILEGES OR ASSIGN_ROLE)
@@ -145,7 +145,7 @@ eventName:authorize AND (scope:(*mail.google.com* OR *auth\/gmail* OR *auth\/dri
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // impact/bitlocker_abuse_encryption.yml — Data encrypted for impact - BitLocker driven from the command line
-(Image:*\\manage\-bde.exe AND (CommandLine:(*\-on* OR *\-protectors\ \-add* OR *\-forcerecovery*))) OR ((Image:(*\\powershell.exe OR *\\pwsh.exe)) AND (CommandLine:(*Enable\-BitLocker* OR *Add\-BitLockerKeyProtector*)))
+((Image:*\\manage\-bde.exe AND (CommandLine:(*\-on* OR *\-protectors\ \-add* OR *\-forcerecovery*))) OR ((Image:(*\\powershell.exe OR *\\pwsh.exe)) AND (CommandLine:(*Enable\-BitLocker* OR *Add\-BitLockerKeyProtector*)))) AND (NOT ParentImage:*\\TSManager.exe)
 
 // impact/data_destruction_wipe.yml — Data destruction - free-space wipe / secure delete / volume clean
 (Image:*\\cipher.exe AND CommandLine:*\/w*) OR (Image:(*\\sdelete.exe OR *\\sdelete64.exe)) OR (Image:*\\fsutil.exe AND CommandLine:*setzerodata*) OR (Image:*\\diskpart.exe AND CommandLine:*clean*)
@@ -181,7 +181,7 @@ uri:(*\/scriptText* OR *\/script*)
 (verb:create AND objectRef.resource:pods AND (objectRef.subresource:(exec OR attach))) AND (NOT user.username:system\:serviceaccount\:*)
 
 // kubernetes/k8s_privileged_pod_created.yml — Kubernetes privileged / host-namespace pod created (node escape)
-(verb:create AND objectRef.resource:pods) AND (requestObject.spec.containers.securityContext.privileged:true OR requestObject.spec.hostPID:true OR requestObject.spec.volumes.hostPath.path:\/)
+(verb:create AND objectRef.resource:pods) AND (requestObject.spec.containers.securityContext.privileged:true OR requestObject.spec.hostPID:true OR requestObject.spec.hostIPC:true OR requestObject.spec.volumes.hostPath.path:\/ OR (requestObject.spec.volumes.hostPath.path:(\/proc* OR \/var\/run* OR \/run* OR \/etc* OR \/root* OR \/dev* OR \/sys* OR \/var\/lib\/kubelet* OR \/var\/lib\/docker* OR \/var\/lib\/containerd*)))
 
 // lateral_movement/passthehash_4624_fanout.yml — Network-logon base - successful type-3 logon (4624)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -244,7 +244,7 @@ eventType:system.api_token.create
 eventType:(system.idp.lifecycle.create OR system.idp.lifecycle.activate)
 
 // okta/okta_mfa_factor_reset.yml — Okta MFA factor reset or deactivated (account-takeover prep)
-eventType:(user.mfa.factor.reset_all OR user.mfa.factor.deactivate OR system.mfa.factor.deactivate)
+eventType:(user.mfa.factor.reset_all OR user.mfa.factor.deactivate OR user.mfa.factor.suspend OR system.mfa.factor.deactivate)
 
 // persistence/machine_account_creation_burst_4741.yml — Computer-account-created base (4741)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -271,7 +271,7 @@ EventID:(4886 OR 4887)
 (EventID:5136 AND AttributeLDAPDisplayName:msDS\-AllowedToActOnBehalfOfOtherIdentity) AND (NOT SubjectUserName:svc_delegation)
 
 // privilege_escalation/shadow_credentials_keycredentiallink_5136.yml — Shadow Credentials - msDS-KeyCredentialLink write
-EventID:5136 AND AttributeLDAPDisplayName:msDS\-KeyCredentialLink
+(EventID:5136 AND AttributeLDAPDisplayName:msDS\-KeyCredentialLink) AND (NOT SubjectUserName:MSOL_*)
 
 // privilege_escalation/spoolss_pipe_impersonation_sysmon_17.yml — SeImpersonate privesc - non-spooler process creating a spoolss named pipe (Sysmon 17)
 (EventType:CreatePipe AND PipeName:*spoolss*) AND (NOT Image:*\\spoolsv.exe)
@@ -301,7 +301,7 @@ action:add* AND action:*trusted\ publisher*
 (operation:push AND resource_type:artifact) AND (NOT operator:robot$ci\-pipeline)
 
 // registry/harbor_robot_account_created.yml — Harbor robot account created (durable registry credential)
-operation:create AND resource_type:robot
+(operation:create AND resource_type:robot) AND (NOT operator:svc\-terraform\-harbor)
 
 // slack/slack_2fa_enforcement_disabled.yml — Slack workspace 2FA enforcement setting changed
 action:pref.two_factor_auth_changed
@@ -316,7 +316,7 @@ action:(shared_channel_invite_sent OR shared_channel_invite_accepted)
 query_type:UNLOAD AND (NOT ((query_text:(*@%* OR *@\~*)) OR query_text:*MY_SANCTIONED_STAGE*))
 
 // snowflake/snowflake_network_policy_change.yml — Snowflake network policy changed (IP allowlist tamper)
-(query_text:(*NETWORK\ POLICY* OR *NETWORK_POLICY*)) AND (NOT query_text:SHOW*)
+(query_text:(*NETWORK\ POLICY* OR *NETWORK_POLICY*)) AND (NOT (query_text:(SHOW* OR DESC*)))
 
 // snowflake/snowflake_user_created.yml — Snowflake user created or ACCOUNTADMIN granted (tenant persistence)
 query_type:CREATE_USER OR (query_type:GRANT AND (query_text:(*ACCOUNTADMIN* OR *SECURITYADMIN*)))
@@ -330,8 +330,8 @@ resource.type:authentication_token AND resource.action:create
 // terraform/tfc_variable_injection.yml — Terraform Cloud workspace variable created or updated (run hijack)
 (resource.type:variable AND (resource.action:(create OR update))) AND (NOT auth.description:ci\-deploy@example.com)
 
-// vault/vault_approle_backdoor.yml — HashiCorp Vault AppRole / auth method created (persistence)
-(type:request AND (request.operation:(create OR update))) AND (request.path:(auth\/approle\/role\/* OR sys\/auth\/*))
+// vault/vault_approle_backdoor.yml — HashiCorp Vault auth role / AppRole / auth method created (persistence)
+(type:request AND (request.operation:(create OR update))) AND ((request.path:(auth\/*\/role\/* OR auth\/*\/roles\/*)) OR request.path:sys\/auth\/*)
 
 // vault/vault_audit_device_disabled.yml — HashiCorp Vault audit device disabled (blind the SIEM)
 type:request AND request.operation:delete AND request.path:sys\/audit\/*

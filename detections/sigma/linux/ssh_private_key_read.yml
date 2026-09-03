@@ -19,6 +19,10 @@ description: |
     -w /home -p r -k ssh_key_read
     -w /root/.ssh/ -p r -k ssh_key_read
   Read watches are expensive; scope the path to your home layout before deploying.
+  `key` and `comm` are on the auditd SYSCALL record and `name` on the PATH record, so
+  this rule assumes an ingestion that coalesces the multi-record auditd event into one
+  document (auditbeat/Elastic, the Splunk auditd TA); a raw per-line parser leaves it
+  inert. See the auditd note in detections/README.md.
   Validate (purple): harvest private keys from dotfiles-Offense (htpx pair
   ssh-key-theft-credaccess).
 references:
@@ -26,6 +30,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/ssh-key-theft-auditd.md
 author: dotfiles-Defense
 date: 2026-08-26
+modified: 2026-09-02
 tags:
   - attack.credential-access
   - attack.t1552.004

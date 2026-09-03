@@ -1,1 +1,4 @@
 {"type": "request", "request": {"operation": "update", "path": "auth/approle/role/ci-backdoor"}}
+{"type": "request", "request": {"operation": "create", "path": "auth/kubernetes/role/attacker"}}
+{"type": "request", "request": {"operation": "update", "path": "auth/token/roles/persist"}}
+{"type": "request", "request": {"operation": "update", "path": "sys/auth/jwt"}}

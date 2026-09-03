@@ -16,6 +16,22 @@ description: |
   `sudo -i` looks exactly like this. That is why the allowlist below is the deploy
   step and why the rule is medium: the signal is a root shell traced to someone who is
   not on your admin list, not the existence of root shells.
+  Why comm and a shell list, and not exe: on an execve SYSCALL record auditd fills
+  comm and exe from the process AFTER the exec, so both name the binary that was run,
+  not the caller - either can pin the target. exe is the resolved path, and that is
+  the reason it is not used here: /bin/sh resolves to dash or bash depending on the
+  distro, python3 to python3.11 or python3.14, so an exe|endswith list of interpreter
+  names silently loses hosts whose symlinks point somewhere the list does not name.
+  comm carries the name as invoked and is stable across those.
+  The shell list is what makes the rule a detection rather than a log of your change
+  calendar: the audit rule behind it records EVERY execve with euid 0 under a real
+  login uid, which on an admin's host is every command they run through sudo. A
+  GTFOBins escape that spawns a shell - vim's :!/bin/sh, less's !sh, awk's system(),
+  find -exec - execs a listed interpreter as a child and is caught by that child's
+  own record. What the list does not reach is the sudo'd tool that never spawns a
+  shell and reads or writes a file directly. That is a real gap and a different
+  technique (the file is the invariant, not the shell); it is not an argument for
+  dropping the list, which would trade this rule for a firehose.
   Requires an auditd syscall rule that sets the key (load with `augenrules --load`):
     -a always,exit -F arch=b64 -S execve -F euid=0 -F auid>=1000 -F auid!=unset -k sudo_abuse
   Validate (purple): escape to a root shell through a sudo-allowed binary from
@@ -25,6 +41,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/sudo-abuse-auditd.md
 author: dotfiles-Defense
 date: 2026-08-26
+modified: 2026-09-02
 tags:
   - attack.privilege-escalation
   - attack.t1548.003

@@ -16,6 +16,10 @@ description: |
     -w /root/.ssh/ -p wa -k ssh_authkeys
   A bare -w /home is broad; if the volume is unworkable, narrow to the .ssh
   subdirectories your provisioning actually creates and accept the coverage that costs.
+  `key` is on the auditd SYSCALL record and `name` on the PATH record, so this rule
+  assumes an ingestion that coalesces the multi-record auditd event into one document
+  (auditbeat/Elastic, the Splunk auditd TA); a raw per-line parser leaves it inert. See
+  the auditd note in detections/README.md.
   Validate (purple): append an attacker key to authorized_keys from dotfiles-Offense
   (htpx pair ssh-authkeys-persist).
 references:
@@ -23,6 +27,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/ssh-authkeys-auditd.md
 author: dotfiles-Defense
 date: 2026-08-26
+modified: 2026-09-02
 tags:
   - attack.persistence
   - attack.t1098.004

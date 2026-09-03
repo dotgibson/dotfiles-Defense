@@ -1,0 +1,1 @@
+{"verb": "create", "objectRef": {"resource": "pods"}, "requestObject": {"spec": {"hostPID": false, "hostIPC": false, "containers": [{"name": "c", "securityContext": {"privileged": false}}], "volumes": [{"name": "sock", "hostPath": {"path": "/var/run/docker.sock"}}]}}}

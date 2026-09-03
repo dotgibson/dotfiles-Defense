@@ -8,6 +8,15 @@ description: |
   The roleRef to cluster-admin is the invariant. The rule covers create, update, and
   patch, so the title says "created or modified". Almost nothing should mint or edit
   cluster-admin bindings outside controlled platform automation.
+  A custom ClusterRole carrying the same power under another name evades the roleRef
+  match, and the fix for that is NOT to add verb: escalate or bind. Those are RBAC
+  authorization verbs - the permission the API server checks when a subject grants
+  rights it does not itself hold - and they never appear as the `verb` of an audit
+  event, which carries the HTTP-derived verb (create/update/patch). A selection on
+  them would match nothing while reading as coverage. The honest answer for custom
+  god-roles is a rule keyed on the ClusterRole's rules (a create/update of a role
+  granting * on *), which needs the policy to log requestObject for clusterroles too;
+  it is not shipped here.
   Requires the kube-apiserver audit policy to log requestObject (Request or
   RequestResponse level) - roleRef.name lives in the request body, so at Metadata
   level this rule will not match even though audit events exist.
@@ -19,6 +28,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/k8s-rolebinding-audit.md
 author: dotfiles-Defense
 date: 2026-06-30
+modified: 2026-09-02
 tags:
   - attack.privilege-escalation
   - attack.persistence
