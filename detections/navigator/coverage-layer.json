@@ -315,6 +315,12 @@
       "comment": "1 rule(s): account_access_removal_4725"
     },
     {
+      "techniqueID": "T1537",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): aws_snapshot_share_external"
+    },
+    {
       "techniqueID": "T1543",
       "score": 3,
       "enabled": true,

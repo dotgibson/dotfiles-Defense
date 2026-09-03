@@ -258,6 +258,68 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **T1537 Transfer Data to Cloud Account — `detections/sigma/cloud/aws_snapshot_share_external.yml`
+  (#262).** The corpus had no detection for exfil that never crosses an egress boundary. An
+  attacker snapshots a volume, grants restore rights to an account they control, and copies it
+  from there; the bytes move inside AWS's own address space over AWS's own APIs, so the wire
+  plane, DLP, and `aws_s3_bulk_exfil`'s object-read volume signal all stay quiet. Both existing
+  Exfiltration rules key on crossing an external boundary — `slack_external_shared_channel` on an
+  invite out, `snowflake_data_unload` on `COPY INTO` an external location — and T1537 is
+  definitionally the case that does not, so this is the one exfil family that had no
+  representative at all rather than thin coverage of a covered one.
+
+  It is the inverse of the two CloudTrail rules beside it. `ModifySnapshotAttribute`,
+  `ModifyImageAttribute` and the RDS pair are MANAGEMENT events, in every trail by default, where
+  `aws_s3_bulk_exfil` and `aws_data_destruction` both go half-blind without S3 data-event logging.
+  So it needs no new telemetry — which is why it was authorable at all, and what separates it from
+  every entry in the declined ledger, each of which is blocked on telemetry the estate lacks.
+
+  Two tiers, because only one needs tuning. A grant to `group: all` is public, fires with no
+  allowlist, and is correct on day one; a grant to a named account is a finding only once
+  `filter_own_accounts` holds your own account IDs. The condition puts the public arm OUTSIDE the
+  filter deliberately, which is recorded in `detections/siem/splunk-precedence-allowlist.tsv`
+  because the compiled SPL relies on search-command precedence to bind it — traced, not assumed.
+
+  Keyed on the `.add.` path rather than the bare verb, which scopes out two non-events at once:
+  `ModifySnapshotAttribute` also sets a description, and the `remove` half of the same call is the
+  attacker's cleanup. Both are proven inert by the true-negative fixture, alongside a share to an
+  allowlisted account. Its blind spot is stated in the rule: the attacker's `CopySnapshot` runs in
+  THEIR account and never reaches the victim's trail — the same geometry that keeps `CopyObject`
+  out of the S3 rule — and a share -> copy -> un-share sequence leaves a clean permission list, so
+  a posture sweep over currently-shared snapshots is not a substitute for the event stream.
+
+- **Two backend-typing fixes on the T1537 rule, and the gate divergence they exposed
+  (review feedback on #268).** The allowlist's AWS account IDs were unquoted, which is the
+  convention every `EventID` in this corpus follows — but an account ID is a STRING that
+  happens to be all digits, so the Sentinel form compiled `== 111122223333` against a string
+  field and the allowlist silently suppressed nothing. Splunk and Lucene are untyped and
+  were unaffected, which is what made it easy to miss. They are quoted now, and the
+  `number_as_string` validator that objects is excluded for this one rule id in
+  `detections/sigma-validation-config.yml` rather than corpus-wide, so a genuinely
+  mis-typed `EventID` elsewhere still fails.
+
+  The `'*'` wildcard standing in for "field is present" was the second: it compiles to
+  `startswith ""` in KQL, a tautology for any string and wrong against `valuesToAdd`, which
+  CloudTrail emits as a JSON array. `|exists: true` gives each backend its real existence
+  test — `isnotempty()`, `_exists_:`, `=*`. `docker/validation/sigma_eval.py` gained
+  `SigmaExists` support to match, since it raised rather than guessing.
+
+  Both were invisible to the rule's own true-negative fixture, because that fixture runs
+  through the Python evaluator and not through a backend — precisely the hazard
+  `fixture-provenance.tsv`'s header describes, reached from a new direction.
+
+  `detections/check-attack-tags.sh` ran `sigma check` with NO config, so it enabled every
+  validator and honoured no exclusions. A per-rule exclusion therefore passed the hermetic
+  lint and failed here, reported as an ATT&CK-tag error it was not. It now reuses
+  `sigma-validation-config.yml` with only the `-attacktag` line stripped — that line exists
+  to keep the hermetic lint off the network, and this gate has the pinned bundle injected
+  already. Verified the tag validator still fires by tagging a rule `attack.t9999`.
+
+- **`detections/htpx.pin` -> v3.1.0 (`7ea71779365c`).** Carries the
+  `aws-snapshot-share-exfil` <-> `aws-snapshot-share-cloudtrail` pair the rule above names.
+  Authored red-first upstream (dotgibson/htpx#115) so the purple loop closed before the rule
+  existed, rather than shipping the corpus's only unpaired rule.
+
 - **Seven rules that named a benign false positive in prose now carry the filter block to
   suppress it.** Each documented the noise and left the reader to hand-edit the rule:
   `shadow_credentials_keycredentiallink_5136` (`filter_whfb` — the rule prescribed a Windows

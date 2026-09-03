@@ -4,9 +4,9 @@ Where this repo's Sigma rules meet the [htpx](https://github.com/dotgibson/htpx)
 
 A **gap here is not a defect.** htpx spans SaaS and CI/CD platforms this repo has no rules for, by design — this report exists so the shape of that boundary is reviewable instead of assumed. A dead *claim* is a different matter and fails the build in `detections/check-htpx-pairing.sh`.
 
-Corpus: `dotgibson/htpx` at `ca74c74a0157` (v3.0.0), pinned in `detections/htpx.pin`.
+Corpus: `dotgibson/htpx` at `7ea71779365c` (v3.1.0), pinned in `detections/htpx.pin`.
 
-**102 blue entries · 95 claimed here · 23 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
+**103 blue entries · 96 claimed here · 23 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
 
 ## htpx blue entries claimed by detection content here
 
@@ -20,6 +20,7 @@ Corpus: `dotgibson/htpx` at `ca74c74a0157` (v3.0.0), pinned in `detections/htpx.
 | `aws-iam-privesc-cloudtrail` | T1098.003 | `aws_iam_privesc_policy` |
 | `aws-loginprofile-cloudtrail` | T1098 | `aws_login_profile_created` |
 | `aws-s3-exfil-cloudtrail` | T1530 | `aws_s3_bulk_exfil` |
+| `aws-snapshot-share-cloudtrail` | T1537 | `aws_snapshot_share_external` |
 | `bloodhound-collect-4662` | T1069.002, T1087.002, T1482 | `sharphound_ldap_sweep_4662` |
 | `cf-api-token-audit` | T1098 | `cloudflare_api_token_created` |
 | `cf-waf-disable-audit` | T1686.001 | `cloudflare_waf_rule_disabled` |

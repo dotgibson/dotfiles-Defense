@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**111 rules · 129 detection documents · 81 techniques · 12 tactics · 24 logsources.**
+**112 rules · 130 detection documents · 82 techniques · 12 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
@@ -18,7 +18,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Discovery | TA0007 | 14 | 6 |
 | Lateral Movement | TA0008 | 11 | 8 |
 | Collection | TA0009 | 5 | 4 |
-| Exfiltration | TA0010 | 2 | 2 |
+| Exfiltration | TA0010 | 3 | 3 |
 | Impact | TA0040 | 5 | 9 |
 
 ## By technique
@@ -76,6 +76,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1528 | 2 | `entra_illicit_consent_grant`, `gws_illicit_oauth_grant` |
 | T1530 | 1 | `aws_s3_bulk_exfil` |
 | T1531 | 1 | `account_access_removal_4725` |
+| T1537 | 1 | `aws_snapshot_share_external` |
 | T1543 | 3 | `github_self_hosted_runner_registered`, `gitlab_rogue_runner_associated`, `tfc_rogue_agent_pool` |
 | T1543.002 | 1 | `systemd_unit_persistence` |
 | T1546.003 | 1 | `wmi_event_subscription_consumer` |
@@ -111,7 +112,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 
 | Directory | product | Rules |
 | --------- | ------- | ----: |
-| `cloud` | `aws`, `azure`, `gcp` | 11 |
+| `cloud` | `aws`, `azure`, `gcp` | 12 |
 | `cloudflare` | `cloudflare` | 3 |
 | `collection` | `windows` | 2 |
 | `credential_access` | `windows` | 11 |

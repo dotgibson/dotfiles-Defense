@@ -33,7 +33,7 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Offens
 | Priv Esc / Persistence   | Sysmon 1/13/17, 4720/7045                                         | sysmon, sigma         | LOLBAS / persistence folds                                           |
 | Coercion / Relay / AD CS | 5145 pipes, 4886 SAN                                              | siem                  | coercion → relay → DC fold                                           |
 | Collection               | 4663 file reads, 4688 archive cmds                                | sigma                 | collection / exfil fold                                              |
-| Exfil / C2               | Suricata, Zeek conn/dns/ssl                                       | network               | reverse-shell / pivot folds                                          |
+| Exfil / C2               | Suricata, Zeek conn/dns/ssl, CloudTrail share grants              | network, sigma        | reverse-shell / pivot folds; htpx pair `aws-snapshot-share-exfil`    |
 | Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn | sigma, network        | ransomware chain (teardown → recovery → payload); cryptomining pair  |
 | Anti-forensics           | 1102 + 104 log clears, auditd history syscalls, 4742 rogue DC     | sigma                 | DCShadow fold; `wevtutil cl` / `shred ~/.bash_history` on a lab host |
 
@@ -414,6 +414,32 @@ work. That makes them tuning-dependent in a way the AD rows are not: both ship a
 row earns its place because collection is the step between access and exfiltration and
 leaving it blank hid a real sequence, not because these rules are as sharp as the
 Kerberos ones.
+
+**Exfil / C2 gained a Sigma half, and the reason is worth stating** because the row read
+`network` alone for a long time and that was not an oversight. Wire detection is the right
+plane for exfil that *leaves* — the Suricata and Zeek work catches bytes crossing an egress
+boundary, and where the shape is ambiguous the ledger below records why T1041 and T1048 are
+declined rather than guessed at. What no egress sensor can see is exfil that never crosses
+one. **T1537 Transfer Data to Cloud Account** is that case: the attacker snapshots a volume,
+grants restore rights to an account they control, and copies it from there, so the bytes move
+inside the provider's own address space over the provider's own APIs. ATT&CK says as much in
+its own description — the technique exists precisely because a defender watching for large
+transfers *out* of the cloud environment is not watching for transfers *within* it.
+
+`detections/sigma/cloud/aws_snapshot_share_external.yml` covers it, and it is the inverse of
+the two CloudTrail rules beside it: `ModifySnapshotAttribute` and friends are **management**
+events, in every trail by default, where `aws_s3_bulk_exfil` and `aws_data_destruction` both
+go half-blind without S3 data-event logging. The rule ships two tiers because only one needs
+tuning — a grant to `group: all` is public and fires with no allowlist at all, while a grant
+to a named account is a finding only once the `DEPLOY-REQUIRED` list holds your own account
+IDs. Deploy the public arm first.
+
+Its blind spot is recorded in the rule rather than here, but the shape matters for the row:
+the attacker's `CopySnapshot` runs in *their* account and never reaches your trail — the same
+geometry that keeps `CopyObject` out of the S3 rule — so the grant is the only observable
+there will ever be. A share → copy → un-share sequence also leaves the permission list clean,
+which is why a posture sweep over currently-shared snapshots is not a substitute for the
+event stream.
 
 **Impact is the one row that spans both layers**, and it is worth understanding why
 rather than reading `sigma, network` as a formatting quirk. Most of the tactic is host

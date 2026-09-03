@@ -44,6 +44,8 @@ docker/validation/sigma-fixtures/cloud/aws_iam_privesc_policy_tp.jsonl	unverifie
 docker/validation/sigma-fixtures/cloud_aws_login_profile_created.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud/aws_s3_bulk_exfil_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud/aws_s3_bulk_exfil_tp.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/aws_snapshot_share_external_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud/aws_snapshot_share_external_tp.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud/cloudflare_api_token_created_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud/cloudflare_api_token_created_tp.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud/cloudflare_waf_rule_disabled_tn.jsonl	unverified	-

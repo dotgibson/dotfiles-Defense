@@ -13,3 +13,16 @@ validators:
   - all
   - -attacktag
   - -d3_fendtag
+
+# Per-RULE validator exclusions. Scoped to one rule id each, with a reason, so the
+# validator keeps protecting every other rule in the corpus.
+exclusions:
+  # aws_snapshot_share_external — number_as_string cannot tell a digit-only IDENTIFIER
+  # from a number. Its allowlist holds AWS account IDs, which CloudTrail emits as
+  # strings (and nests as strings inside the `valuesToAdd` JSON array). Unquoting them
+  # to satisfy the validator compiles a numeric literal into the Sentinel form
+  # (`== 111122223333`) that never matches the string field, so the allowlist silently
+  # stops suppressing — the exact class of defect fixture-provenance.tsv exists to
+  # expose, since the rule's own TN fixture still passes through the Python evaluator.
+  # The validator stays ON everywhere else, where a quoted EventID really is a mistake.
+  660a05c0-75eb-487a-8263-cec5d2f2678b: number_as_string

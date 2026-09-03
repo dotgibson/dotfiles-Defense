@@ -33,7 +33,14 @@ from sigma.conditions import (
     ConditionNOT,
     ConditionOR,
 )
-from sigma.types import SigmaBool, SigmaNull, SigmaNumber, SigmaString, SpecialChars
+from sigma.types import (
+    SigmaBool,
+    SigmaExists,
+    SigmaNull,
+    SigmaNumber,
+    SigmaString,
+    SpecialChars,
+)
 
 
 def _string_to_regex(sv):
@@ -94,6 +101,14 @@ def _match_value(event_value, sigma_value):
         return any(_number_eq(v, sigma_value.number) for v in values)
     if isinstance(sigma_value, SigmaNull):
         return any(v is None for v in values)
+    if isinstance(sigma_value, SigmaExists):
+        # `field|exists: true/false` — presence, not a value comparison, so it reads the
+        # RAW lookup rather than `values`: _lookup returns None for a path that resolves
+        # nowhere and [] for a path that reaches an empty container, and both are absent.
+        # A field present with a null value counts as absent too, which is what the
+        # backends' own spellings do (`isnotempty()`, `_exists_:`, `=*`).
+        present = event_value is not None and event_value != []
+        return present is sigma_value.exists
     raise ValueError(f"unsupported Sigma value type: {type(sigma_value).__name__}")
 
 
