@@ -148,7 +148,7 @@ fi
 # cache it is pointed at, and clobbering the user's shared ~/.cache/pysigma as a side
 # effect of running a gate would be rude.
 "$PYTHON" - "$BUNDLE" "$REPO/detections/sigma/" "$VERSION" "$REPO" <<'PY'
-import sys, tempfile
+import os, sys, tempfile
 
 bundle, rules, want_version, repo = sys.argv[1:5]
 
@@ -168,7 +168,23 @@ print("attack tags: validating against pinned ATT&CK v%s (%d tactics, %d techniq
 
 from sigma.cli.main import main
 
-sys.argv = ["sigma", "check", "--fail-on-issues", rules]
+# Run with the repo's OWN validation config, minus the `-attacktag` line it carries.
+# That line exists so the hermetic lint in sigma.yml never touches the network; here the
+# pinned bundle is already injected above, so attacktag can and must run.
+#
+# Reusing the file rather than passing no config at all is the point: `sigma check` with
+# no `-c` enables every validator and honours NO exclusions, so this gate silently
+# disagreed with the hermetic one about which rules are exempt from what. A per-rule
+# exclusion added in sigma-validation-config.yml passed there and failed here, which reads
+# as an ATT&CK-tag failure and is nothing of the sort (dotgibson/dotfiles-Defense#268).
+cfg_src = os.path.join(repo, "detections", "sigma-validation-config.yml")
+with open(cfg_src, encoding="utf-8") as fh:
+    cfg = [ln for ln in fh if ln.strip() != "- -attacktag"]
+cfg_path = os.path.join(tempfile.mkdtemp(prefix="attack-cfg-"), "validation.yml")
+with open(cfg_path, "w", encoding="utf-8") as fh:
+    fh.writelines(cfg)
+
+sys.argv = ["sigma", "check", "--fail-on-issues", "-c", cfg_path, rules]
 try:
     main()
     code = 0

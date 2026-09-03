@@ -288,6 +288,33 @@ under `[Unreleased]` from here.
   out of the S3 rule — and a share -> copy -> un-share sequence leaves a clean permission list, so
   a posture sweep over currently-shared snapshots is not a substitute for the event stream.
 
+- **Two backend-typing fixes on the T1537 rule, and the gate divergence they exposed
+  (review feedback on #268).** The allowlist's AWS account IDs were unquoted, which is the
+  convention every `EventID` in this corpus follows — but an account ID is a STRING that
+  happens to be all digits, so the Sentinel form compiled `== 111122223333` against a string
+  field and the allowlist silently suppressed nothing. Splunk and Lucene are untyped and
+  were unaffected, which is what made it easy to miss. They are quoted now, and the
+  `number_as_string` validator that objects is excluded for this one rule id in
+  `detections/sigma-validation-config.yml` rather than corpus-wide, so a genuinely
+  mis-typed `EventID` elsewhere still fails.
+
+  The `'*'` wildcard standing in for "field is present" was the second: it compiles to
+  `startswith ""` in KQL, a tautology for any string and wrong against `valuesToAdd`, which
+  CloudTrail emits as a JSON array. `|exists: true` gives each backend its real existence
+  test — `isnotempty()`, `_exists_:`, `=*`. `docker/validation/sigma_eval.py` gained
+  `SigmaExists` support to match, since it raised rather than guessing.
+
+  Both were invisible to the rule's own true-negative fixture, because that fixture runs
+  through the Python evaluator and not through a backend — precisely the hazard
+  `fixture-provenance.tsv`'s header describes, reached from a new direction.
+
+  `detections/check-attack-tags.sh` ran `sigma check` with NO config, so it enabled every
+  validator and honoured no exclusions. A per-rule exclusion therefore passed the hermetic
+  lint and failed here, reported as an ATT&CK-tag error it was not. It now reuses
+  `sigma-validation-config.yml` with only the `-attacktag` line stripped — that line exists
+  to keep the hermetic lint off the network, and this gate has the pinned bundle injected
+  already. Verified the tag validator still fires by tagging a rule `attack.t9999`.
+
 - **`detections/htpx.pin` -> v3.1.0 (`7ea71779365c`).** Carries the
   `aws-snapshot-share-exfil` <-> `aws-snapshot-share-cloudtrail` pair the rule above names.
   Authored red-first upstream (dotgibson/htpx#115) so the purple loop closed before the rule
