@@ -56,6 +56,6 @@
 # is exactly what the pin exists to prevent. dotgibson/dotfiles-Offense#251.
 repo	dotgibson/htpx
 branch	main
-sha	ca74c74a0157224334360e78898abbb99de3b4de
-version	3.0.0
-tag	v3.0.0
+sha	7ea71779365c5ca89824e1e4852462eafc111f85
+version	3.1.0
+tag	v3.1.0

@@ -1,0 +1,93 @@
+title: AWS snapshot/AMI shared outside the organisation (T1537)
+id: 660a05c0-75eb-487a-8263-cec5d2f2678b
+status: experimental
+description: |
+  Detects Transfer Data to Cloud Account (T1537): an EBS snapshot, AMI, or RDS snapshot
+  granted to an AWS account outside your own, or made public outright. This is exfil that
+  never crosses an egress boundary - the attacker snapshots a volume, grants themselves
+  restore rights, and copies it from their own account. The bytes move inside AWS's own
+  address space over AWS's own APIs, so egress monitoring, DLP, and the object-read volume
+  signal in aws_s3_bulk_exfil all stay quiet. The grant is the whole victim-side footprint.
+  Two tiers, and only one of them needs tuning - deploy the untuned arm first. A grant to
+  `group: all` makes the resource PUBLIC and fires regardless of filter_own_accounts:
+  there is no benign reading of publishing a production volume, so that arm is correct on
+  day one with no allowlist at all. A grant to a named account is only a finding once
+  filter_own_accounts holds your own account IDs, because cross-account sharing is
+  legitimate and routine - DR copies, shared golden AMIs, an analytics account. Without
+  that list filled, the named arm reports every nightly backup share you run.
+  Keyed on the `.add.` path rather than the bare verb, which scopes it twice over:
+  ModifySnapshotAttribute also sets a snapshot's description, and the `remove` half of the
+  same call is the attacker's CLEANUP, not the exfil. Neither should alert.
+  Management events, so unlike aws_s3_bulk_exfil and aws_data_destruction this rule needs
+  NO S3 data-event logging - these are in every trail by default. What it cannot see is the
+  other half: the attacker's CopySnapshot runs in THEIR account and never reaches your
+  trail, the same geometry that keeps CopyObject out of the S3 rule. The grant is the only
+  observable you will ever get, which makes missing it terminal rather than inconvenient.
+  That also rules out posture sweeps. A share -> copy -> un-share sequence completes in
+  seconds and leaves the permission list clean, so a nightly "which snapshots are shared?"
+  inventory - what most CSPM tooling does here - sees nothing. Only the event stream catches
+  it. Triage on the grantee account, on whether the actor has ever shared before, and on a
+  CreateSnapshot by the same principal moments earlier.
+  Validate (purple): share a snapshot to a second account from dotfiles-Offense (htpx pair
+  aws-snapshot-share-exfil).
+references:
+  - https://attack.mitre.org/techniques/T1537/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/aws-snapshot-share-cloudtrail.md
+author: dotfiles-Defense
+date: 2026-09-03
+tags:
+  - attack.exfiltration
+  - attack.t1537
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection_grant:
+    # Scoped by eventSource as well as verb, per the convention the other CloudTrail rules
+    # follow. ModifySnapshotAttribute is EC2-only, but ModifyDBSnapshotAttribute has an
+    # Aurora twin and both live under rds.amazonaws.com.
+    eventSource:
+      - 'ec2.amazonaws.com'          # EBS snapshots and AMIs
+      - 'rds.amazonaws.com'          # RDS / Aurora snapshots
+    eventName:
+      - 'ModifySnapshotAttribute'
+      - 'ModifyImageAttribute'
+      - 'ModifyDBSnapshotAttribute'
+      - 'ModifyDBClusterSnapshotAttribute'
+  selection_public:
+    # The untuned arm. EC2 marks a public share with the grantee group `all`; RDS has no
+    # group field and takes the literal string `all` in valuesToAdd instead.
+    - requestParameters.createVolumePermission.add.items.group: 'all'
+    - requestParameters.launchPermission.add.items.group: 'all'
+    - requestParameters.valuesToAdd: 'all'
+  selection_named:
+    # A grantee account is present at all. The wildcard is what requires the field to
+    # exist, which is how the `remove` half and a description-only Modify call drop out.
+    - requestParameters.createVolumePermission.add.items.userId: '*'
+    - requestParameters.launchPermission.add.items.userId: '*'
+    - requestParameters.valuesToAdd: '*'
+  filter_own_accounts:
+    # DEPLOY-REQUIRED: replace with every AWS account ID inside your own Organization -
+    # DR, backup, analytics, the shared-AMI factory. This filter is the whole tuning story
+    # for the named arm, and an unfilled list means your nightly cross-account backup share
+    # alerts, someone mutes the rule, and the mute takes the public arm down with it.
+    # Enumerate them with `aws organizations list-accounts`. Note it does NOT gate the
+    # public arm above, by design. Run detections/sigma/deploy-required.sh to find this.
+    # Unquoted, per the convention every EventID in this corpus follows - but QUOTE any
+    # account ID of yours that begins with a zero, or YAML will eat the leading digit.
+    - requestParameters.createVolumePermission.add.items.userId:
+        - 111122223333   # example — replace
+    - requestParameters.launchPermission.add.items.userId:
+        - 111122223333   # example — replace
+    - requestParameters.valuesToAdd:
+        - 111122223333   # example — replace
+  condition: selection_grant and (selection_public or (selection_named and not filter_own_accounts))
+falsepositives:
+  - Cross-account backup, DR, and analytics shares - the reason filter_own_accounts exists;
+    add the account ID there rather than muting the rule.
+  - A golden-AMI pipeline distributing a new image to every account in the Organization.
+    Allowlist the accounts, not the pipeline role - the grantee is the invariant here, and
+    a compromised pipeline role sharing OUT of the org is exactly what must still fire.
+  - Publishing an AMI to the Marketplace or to a partner deliberately, which does hit the
+    public arm. That is a change-window action; treat an unscheduled one as a finding.
+level: high

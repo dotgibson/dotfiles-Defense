@@ -399,6 +399,7 @@ family tests a pointer against a bitmask on the calls it gets wrong.
 | `aws_iam_privesc_policy`          | CloudTrail policy attach/put/version + group add                                        | T1098.003 | AWS IAM · aws-iam-privesc-policy         |
 | `aws_s3_bulk_exfil`               | CloudTrail S3 `GetObject`, distinct object keys per principal (value_count correlation) | T1530     | AWS S3 · aws-s3-mass-exfil               |
 | `aws_data_destruction`            | CloudTrail snapshot/bucket/object/table deletes per principal (event_count correlation) | T1485     | AWS destruction · cloud-snapshot-destroy |
+| `aws_snapshot_share_external`     | CloudTrail EBS/AMI/RDS share grant to an outside account, or `group: all`               | T1537     | AWS exfil · aws-snapshot-share-exfil     |
 | `gcp_service_account_key_created` | GCP audit `CreateServiceAccountKey`                                                     | T1098.001 | GCP IAM · gcp-sa-key                     |
 
 **`kubernetes/`** (kube-apiserver audit — `product: kubernetes`)

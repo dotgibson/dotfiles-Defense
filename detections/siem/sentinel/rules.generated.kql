@@ -21,6 +21,9 @@ eventSource =~ "iam.amazonaws.com" and (eventName in~ ("CreateLoginProfile", "Up
 // cloud/aws_s3_bulk_exfil.yml — S3 object-read base - a single GetObject on a bucket
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
+// cloud/aws_snapshot_share_external.yml — AWS snapshot/AMI shared outside the organisation (T1537)
+((eventSource in~ ("ec2.amazonaws.com", "rds.amazonaws.com")) and (eventName in~ ("ModifySnapshotAttribute", "ModifyImageAttribute", "ModifyDBSnapshotAttribute", "ModifyDBClusterSnapshotAttribute"))) and ((['requestParameters.createVolumePermission.add.items.group'] =~ "all" or ['requestParameters.launchPermission.add.items.group'] =~ "all" or ['requestParameters.valuesToAdd'] =~ "all") or ((['requestParameters.createVolumePermission.add.items.userId'] startswith "" or ['requestParameters.launchPermission.add.items.userId'] startswith "" or ['requestParameters.valuesToAdd'] startswith "") and (not((['requestParameters.createVolumePermission.add.items.userId'] == 111122223333 or ['requestParameters.launchPermission.add.items.userId'] == 111122223333 or ['requestParameters.valuesToAdd'] == 111122223333)))))
+
 // cloud/entra_directory_role_grant.yml — Entra directory role assigned (tenant privilege escalation)
 (OperationName in~ ("Add member to role", "Add eligible member to role", "Add member to role in PIM requested (permanent)", "Add member to role completed (PIM activation)", "Add member to role requested (PIM activation)")) and (not(Identity =~ "svc-iga-provisioning"))
 
