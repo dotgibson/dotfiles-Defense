@@ -8,14 +8,14 @@ name: lint (reusable)
 #
 #   jobs:
 #     lint:
-#       uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v5
+#       uses: dotgibson/dotfiles-core/.github/workflows/lint-call.yml@v6
 #       # Offense only: with: { extra_ls_files_excludes: ":!:offensive/companion/**" }
 #
 # The ONLY per-repo variance is the extra `git ls-files` exclude (Offense excludes its
 # vendored htpx `offensive/companion/` subtree); everything else — the pinned-tool
 # bootstrap, SHELLCHECK_OPTS, the core/ exclude, shfmt-advisory — is constant.
 #
-# CHECKOUT IS INVERTED vs the old per-repo lint.yml: dotfiles-core@v5 is checked out
+# CHECKOUT IS INVERTED vs the old per-repo lint.yml: dotfiles-core@v6 is checked out
 # at ROOT (so `./.github/actions/setup-core-tools` + `scripts/tool-versions.env`
 # resolve here — the SAME major line callers pin this workflow to, mirroring
 # auto-tag-call.yml), and the CALLER repo is checked out into `caller/` (the tree we
@@ -50,7 +50,7 @@ name: lint (reusable)
 #     OS-specifics leaking INTO Core, and nothing caught portable logic stranded OUTSIDE it
 #     — which is how the same direnv/gh/uv/ty block came to be hand-maintained in seven OS
 #     repos, in three drifted variants. ADVISORY for one release cycle, because unlike the
-#     leg above it is red-on-arrival by construction: callers pin the moving @v5 tag, so
+#     leg above it is red-on-arrival by construction: callers pin the moving @v6 tag, so
 #     they see this leg before they can possibly have vendored the Core that lets them
 #     delete their copy. See the long note on that step.
 #
@@ -86,8 +86,8 @@ jobs:
     env:
       EXTRA_EXCLUDES: ${{ inputs.extra_ls_files_excludes }}
     steps:
-      # 1) Core@v5 at ROOT — provides the composite action + pinned tool-versions.env.
-      #    (v5 = the current major, matching the @v5 callers; keep in step on a major bump.)
+      # 1) Core@v6 at ROOT — provides the composite action + pinned tool-versions.env.
+      #    (v6 = the current major, matching the @v6 callers; keep in step on a major bump.)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -291,7 +291,7 @@ jobs:
       # feature nobody provides.
       #
       # WHY IT WARNS RATHER THAN FAILS, for now. The RETURN-trap leg could land blocking
-      # because the fleet was verified clean first. This one CANNOT: callers pin @v5, a
+      # because the fleet was verified clean first. This one CANNOT: callers pin @v6, a
       # moving major tag, so every OS repo sees this leg the moment auto-tag moves — and no
       # repo can delete its copy until it has vendored the Core that replaces it. It is
       # red-on-arrival by construction. So it warns for one release cycle, and the flip is a
@@ -439,7 +439,7 @@ jobs:
         with:
           persist-credentials: false
           repository: ${{ github.repository_owner }}/dotfiles-core
-          # Same major as the callers (`@v5`) — see the note on the shell-lint job above.
+          # Same major as the callers (`@v6`) — see the note on the shell-lint job above.
           ref: v6
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -501,7 +501,7 @@ jobs:
   #   Debian 0 · Offense 0 · MacBook 1 · Gentoo 16 · Alpine 17 · Fedora 18 · openSUSE 20
   #   · Arch 26 · Defense 52
   #
-  # Seven of nine repos would go red the moment auto-tag moves @v5, before a maintainer
+  # Seven of nine repos would go red the moment auto-tag moves @v6, before a maintainer
   # could act — callers pin a moving major tag, so they see this leg before they can
   # possibly have fixed anything. So it warns first, exactly as the Core-owned-block leg
   # does, and the flip to blocking is a one-line follow-up once the fleet is clean.
@@ -526,7 +526,7 @@ jobs:
         with:
           persist-credentials: false
           repository: ${{ github.repository_owner }}/dotfiles-core
-          # Same major as the callers (`@v5`) — see the note on the shell-lint job above.
+          # Same major as the callers (`@v6`) — see the note on the shell-lint job above.
           ref: v6
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -554,7 +554,7 @@ jobs:
       #
       # BLOCKING since #592, after the whole fleet was cleared. It shipped advisory for one
       # release cycle because a new leg is red-on-arrival by construction: callers pin the
-      # moving @v5 tag, so they see it the moment auto-tag moves.
+      # moving @v6 tag, so they see it the moment auto-tag moves.
       - name: markdownlint (repo-owned markdown)
         working-directory: caller
         run: |
@@ -640,7 +640,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # Same inverted checkout as the other jobs: Core@v5 at ROOT for the composite action
+      # Same inverted checkout as the other jobs: Core@v6 at ROOT for the composite action
       # and the pins, the caller into caller/ as the tree we scan.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -735,7 +735,7 @@ jobs:
   #
   # That measurement is the precondition, not a formality. RE-MEASURE BEFORE ADDING A RULE:
   # a new rule that any caller fails must ship advisory the way #592 did, because callers
-  # read this file at the MOVING `@v5` tag and therefore meet it the moment auto-tag moves —
+  # read this file at the MOVING `@v6` tag and therefore meet it the moment auto-tag moves —
   # red on arrival, in a repo whose author changed nothing.
   #
   # Stated so nobody loosens the gate to get past it, the same way §8a records its release
@@ -753,7 +753,7 @@ jobs:
         with:
           persist-credentials: false
           repository: ${{ github.repository_owner }}/dotfiles-core
-          # Same major as the callers (`@v5`) — see the note on the shell-lint job above.
+          # Same major as the callers (`@v6`) — see the note on the shell-lint job above.
           ref: v6
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

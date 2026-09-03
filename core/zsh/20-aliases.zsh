@@ -31,23 +31,23 @@ if [[ -n ${HAVE_BAT:-} ]]; then
   # fd got this alias, bat did not — which is also what made core-doctor report `✗ bat` two
   # lines above a `resolved` section naming batcat. Harmless `alias bat=bat` elsewhere: zsh
   # does not re-expand an alias to its own name in command position.
-  alias bat="$BAT_BIN"
+  alias bat="$BAT_BIN"   # batcat on the Debian family, bat elsewhere
   export BAT_THEME="ansi" # follow the terminal palette (tokyonight via ghostty)
   export MANPAGER="sh -c 'col -bx | $BAT_BIN -l man -p'"
 fi
 
 # ── find -> fd ────────────────────────────────────────────────────────────────
-[[ -n ${HAVE_FD:-} ]] && alias fd="$FD_BIN"
+[[ -n ${HAVE_FD:-} ]] && alias fd="$FD_BIN"   # fdfind on the Debian family, fd elsewhere
 
 # ── grep stays POSIX for scripts; rg is its own command (smart-case default) ──
 [[ -n ${HAVE_RG:-} ]] && alias rg='rg --smart-case'
 
 # ── cd -> zoxide (z), interactive jump (zi), `-` to previous dir ─────────────
 if [[ -n ${HAVE_ZOXIDE:-} ]]; then
-  alias cd='z'
-  alias cdi='zi'
+  alias cd='z'    # zoxide: frecency-ranked directory jump
+  alias cdi='zi'  # interactive jump (pick from matches)
 fi
-alias -- -='cd -'
+alias -- -='cd -'  # previous directory
 
 # ── disk / process / monitor ──────────────────────────────────────────────────
 [[ -n ${HAVE_DUST:-} ]]  && alias du='dust'
@@ -70,7 +70,7 @@ if [[ -n ${HAVE_DUF:-} ]]; then alias df='duf'; else alias df='df -h'; fi
 # hijacks GUI-opening tools on a desktop; macOS ($OSTYPE=darwin*) always has a GUI,
 # so it's skipped too.
 if [[ -n ${HAVE_BROWSER:-} ]]; then
-  alias web="$BROWSER_BIN"
+  alias web="$BROWSER_BIN"  # the terminal web browser (see the note under the table)
   if [[ -z ${DISPLAY:-} && -z ${WAYLAND_DISPLAY:-} && $OSTYPE != darwin* ]]; then
     export BROWSER="$BROWSER_BIN"
   fi
@@ -112,7 +112,8 @@ alias vim='nvim'
   local bin="${commands[diff]}" cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/diff-color"
   [[ -z "$bin" ]] && return          # no diff at all → no alias
   if [[ -e "$cache" && ! "$bin" -nt "$cache" ]]; then
-    [[ -s "$cache" ]] && alias diff='diff --color=auto'   # fresh cache, zero forks
+    # fresh cache: zero forks
+    [[ -s "$cache" ]] && alias diff='diff --color=auto'
     return
   fi
   # (re)probe once, then persist the verdict (non-empty = supported) for next start.
@@ -143,7 +144,7 @@ alias lg='lazygit'
 # a change by *structure*, so formatting-only churn (rewraps, moved elements, trailing
 # commas) shows as no syntactic change. Wired through git's difftool (see the
 # difftool "difftastic" block in git/gitconfig); guarded so it only exists when installed.
-[[ -n ${HAVE_DIFFT:-} ]] && alias gdft='git difftool --tool=difftastic'
+[[ -n ${HAVE_DIFFT:-} ]] && alias gdft='git difftool --tool=difftastic'  # opt-in structural (AST) diff
 
 # ── jujutsu (jj) — OPT-IN, colocated git companion (NEVER shadows git) ─────────
 # Guarded by HAVE_JJ (00-tools.zsh): on a box without jj these simply don't exist, so
@@ -186,18 +187,18 @@ alias notes='cd "$NOTES_DIR" && nvim .'
 
 # ── safety nets (POSIX, intentionally NOT modernized) ────────────────────────
 # rm: macOS overrides this to `trash` in os/macos.zsh when trash(1) is available.
-alias rm='rm -i'
-alias cp='cp -i'
-alias mv='mv -i'
-alias mkdir='mkdir -p'
+alias rm='rm -i'  # interactive
+alias cp='cp -i'  # interactive
+alias mv='mv -i'  # interactive
+alias mkdir='mkdir -p'  # create parents
 
 # ── help / docs ───────────────────────────────────────────────────────────────
 # tealdeer: `help <cmd>` → community-curated quick-reference (complement to man).
 [[ -n ${HAVE_TLDR:-} ]] && alias help='tldr'
 
 # ── network conveniences (stay in Core; engagement-flavored -> Offense) ──────
-alias myip='curl -fsS https://ifconfig.me 2>/dev/null && echo'
-alias ports='ss -tulpn 2>/dev/null || netstat -tulpn'
+alias myip='curl -fsS https://ifconfig.me 2>/dev/null && echo'  # your public IP
+alias ports='ss -tulpn 2>/dev/null || netstat -tulpn'  # listening sockets (netstat fallback)
 [[ -n ${HAVE_GPING:-} ]] && alias ping='gping'
 # NOTE: `serve` is now a function in 30-functions.zsh (prints the reachable URL and
 # takes an optional port), replacing the old `python3 -m http.server` alias.
