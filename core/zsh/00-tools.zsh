@@ -678,7 +678,7 @@ _cache_completion ty ty generate-shell-completion zsh
 # the same harness gives coin-flip noise, and the win grows with how slow the filesystem
 # is. And figures that time `history start` + `history end` together are TOTAL WRITE WORK,
 # not latency — the hook backgrounds `end` — and their p99 remains unresolved. Say which
-# metric a number is (scripts/bench-atuin-daemon.sh reports the two separately; full
+# metric a number is (scripts/research/bench-atuin-daemon.sh reports the two separately; full
 # numbers, hosts and what is still unmeasured in the config). Core
 # ships the [daemon] block OFF (core/atuin/config.toml); a machine opts IN from its OS
 # layer (os/<os>.zsh) or host layer (99-local) with atuin's own env overrides —
@@ -696,9 +696,11 @@ _cache_completion ty ty generate-shell-completion zsh
 # and note the direction of travel, because everything below is premised on this ONE fact:
 # 18.16.1 failed LOUDLY (empty ATUIN_HISTORY_ID, which then crashed `history end`), 18.19.0
 # fails silently. It has moved once, so it can move again, so it is MEASURED rather than
-# assumed: .github/workflows/atuin-guard-verify.yml runs scripts/verify-atuin-guard.sh every
-# Tuesday against whatever atuin upstream ships that week, and files an issue when the answer
-# changes. /tool-scout carries the judgment half.
+# assumed: scripts/research/verify-atuin-guard.sh measures it, and
+# .github/workflows/atuin-guard-verify.yml runs that on manual dispatch against whatever atuin
+# upstream ships that day, filing an issue when the answer changes. (It ran weekly until #687;
+# the answer never moved, so re-measuring is now a decision, not a schedule.) /tool-scout
+# carries the judgment half.
 #
 # The line below is the MACHINE-READABLE anchor both of them compare against — one line, at
 # column 0, with nothing but the value after the `=`. It exists because grepping the prose
@@ -832,8 +834,8 @@ _core_atuin_daemon_guard() {
   # That last clause covers Alpine and macOS — two of the eight machines, for whom it is the ONLY
   # mitigation — and it is now MEASURED rather than assumed (#402). It has its own mode, its own
   # anchor above and its own issue title, because its remedy is nothing like the discard premise's:
-  # `scripts/verify-atuin-guard.sh --premise autostart` spawns a real daemon and owns its teardown,
-  # and the weekly workflow runs it as a separate job. On 18.19.0 all four arms spawn and land a
+  # `scripts/research/verify-atuin-guard.sh --premise autostart` spawns a real daemon and owns its teardown,
+  # and the (dispatch-only) atuin-guard-verify workflow runs it as a separate job. On 18.19.0 all four arms spawn and land a
   # row, INCLUDING over the stale socket a crashed daemon leaves — the client unlinks it first,
   # which `atuin daemon start` on its own does not.
   #

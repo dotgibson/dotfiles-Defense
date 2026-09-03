@@ -5,10 +5,274 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v6.0.1 … v5.3.0), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v6.1.0 … v5.4.0), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v6.1.0] - 2026-09-02
+
+### Changed
+
+- **The atuin daemon-guard research apparatus is archived under `scripts/research/`, and its
+  weekly workflow is dispatch-only (#687).** `verify-atuin-guard.sh` (1,845 lines),
+  `bench-atuin-daemon.sh` (1,225) and their shared `lib/atuin-db.sh` measured the premises
+  `_core_atuin_daemon_guard` rests on and the daemon's write-latency claim — for a feature
+  that ships OFF on every box. They answered those questions once, and the answers are
+  recorded in `atuin/config.toml` and `zsh/00-tools.zsh`; what remained was
+  `atuin-guard-verify.yml` re-asking a settled question every Tuesday at the cost of five
+  repo checkouts, one of five scheduled sweeps firing inside four hours each week. The
+  three files move to a clearly-marked `scripts/research/` (with a README stating the
+  rules: never vendored, never scheduled, re-measured on purpose), the workflow drops its
+  cron and keeps `workflow_dispatch` — the checksum-verified, tokenless live-upstream
+  measurement stays one `gh workflow run atuin-guard-verify` away — and its schedule-only
+  `notify-failure` job goes with the schedule. The four `make` targets stay as the manual
+  invocations. No OS repo gains or loses a file: #676 had already left all three out of
+  `core.vendor`, so what a sync carries from this change is the comment and prose repoints
+  in `zsh/00-tools.zsh`, `atuin/config.toml` and `PORTING-MATRIX.md` — no behaviour — and
+  the one fleet reference (`dotfiles-Alpine/bootstrap.sh` naming `verify-atuin-guard.sh`'s
+  `ver_cmp`) is a comment, not a call. `examples/atuin-daemon.service`
+  — counted in the issue's 3,730 lines — is deliberately untouched: it is shipped, and two
+  bootstraps install it. The runtime guard in `zsh/00-tools.zsh` is untouched too; that is
+  the part with a job. The hermetic self-test still drives the archived detector —
+  `test-core.sh` §J3-J4 behind the `atuin` scope, and the cheap §J2 bench-harness checks
+  unconditionally, as before — and `audit-core.sh` §2 now asserts
+  `scripts/research/lib/*.sh` as a sourced lib (mode 100644) like `scripts/lib/`.
+
+- **`bootstrap-test.yml`'s resolve job prints the resolver's own error under each
+  unresolved name.** The probe ran with its output discarded, so a red run said only
+  which names failed — and a name fails to resolve for reasons only the resolver can tell
+  apart: renamed or dropped upstream, a dependency missing from a half-synced mirror, or a
+  container snapshot the repo no longer agrees with. dotfiles-openSUSE#149 sat through
+  four runs with three names and no reason. The last eight lines of the probe's output now
+  follow each `UNRESOLVED:` line; pass/fail is unchanged. Reaches the OS repos at the next
+  `@v6` tag.
+- **`GITHUB-APP-AUTH.md` split into a live reference and a frozen record (#683).** The
+  file mixed three concerns — how the auth works now, the G2 migration that produced it,
+  and how to recover when the App is not working — and they drifted apart. That is the
+  defect #683 opened on: the top said both PATs were deleted while a paragraph 157 lines
+  down said one was "still present", and the recovery procedure was buried _underneath_
+  that sentence, inside a heading reading "Step 5 — migrate the consumers". An operator
+  reaching for recovery mid-incident had to read a migration runbook to find it, and what
+  they found was a migration-era leftover that no longer worked. `GITHUB-APP-AUTH.md`
+  keeps its name — every inbound reference stays valid — and now holds only what must
+  stay true: what runs today, the permissions the App must hold, where it is installed,
+  how to add a consumer, and **Recovery** promoted to a top-level section.
+  `GITHUB-APP-MIGRATION.md` takes the history, marked frozen and explicitly not a
+  template, since the patterns it prescribes name secrets that no longer exist.
+  Two structural fixes came with it: the recovery procedure is now **self-contained**
+  rather than pointing at a historical section for the fallback pattern it restores — that
+  coupling is what let a live instruction rot when the history around it changed — and the
+  numbered `Step N` headings are gone in favour of named sections, because the one inbound
+  cross-reference in `sync-fanout.yml` pointed at "Step 1" and would have silently aimed
+  at the wrong place. The still-open constraint on `notify-web-call.yml`'s declared
+  `WEBHOOK_SECRET` input lives in the **reference**, not the record: it is a current rule
+  about a future change, and keeping it in a file marked frozen would be the same drift
+  the split removes. The App's registration and private-key handling moved to the reference
+  too rather than the record — key rotation is an operational task, not history. The
+  recovery procedure also gained an exit: it used to end with broad PATs live and no way
+  back, which is the state G2 removed, and worse than pre-G2 because `token-health` — the
+  probe that watched those PATs for silent expiry — was retired because nothing depends on
+  a minted token surviving (each run mints a fresh one, so there is no expiry date to miss;
+  they do expire, in about an hour). Nothing watches a re-provisioned PAT, so it now says so
+  and prescribes reversing all seven steps, deleting the PATs, and verifying it.
+
+### Added
+
+- **`PORTING-MATRIX.md`'s two data tables are generated from the OS repos (#686).** The
+  package-manager table restated the seven `PKG_*` verbs every `os/<os>.capabilities`
+  already declares (and `check-capabilities.sh` already gates), and the package-name
+  table restated `install/packages.txt` — including the `# min:` floors that
+  `dotfiles-Debian` and `dotfiles-Gentoo` enforce in CI — as a copy nothing checked.
+  `scripts/gen-porting-matrix.sh` now renders both into
+  `<!-- core:porting-matrix:gen … -->` marker pairs, the way `gen-aliases.sh` renders the
+  cheat sheet: verbs verbatim from the declarations (openSUSE's Leap/Tumbleweed pair
+  rendered as both, labelled), package names from the lines the repo's own reader would
+  install — Debian's list read through its `scripts/pkg-filter.sh` tiers so `only:kali`
+  and `skip:kali` land in the right column — with a floor shown as `≥ X.Y.Z`. The table
+  was never a plain transposition, and the generator says so rather than pretending: a
+  cell the repo installs is _derived_; the footnote-²¹ "available, not installed" names
+  and the `asset`/`cargo`/`AUR`/`GURU` routes only `bootstrap.sh` knows are _asserted_ in
+  the script's `PKG_ROWS` registry, and a repo that starts installing an asserted one
+  through `packages.txt` is exit 2 naming the cell — the one transition on that half the
+  generator can see; a changed out-of-band route stays the footnotes' job. The ~1,100 footnote
+  lines are untouched. `make audit` gains §9h; because the inputs are sibling clones, an
+  absent one is exit 3 → an environment SKIP naming the repos (the §9c posture), never a
+  gate that only passes on one laptop, and `--require-siblings` reds it. `Makefile` gains
+  `gen-porting-matrix` / `check-porting-matrix`; `--list` prints every cell's provenance;
+  `--fleet DIR` points a worktree at the real fleet. Visible cell changes: the four
+  floored cells, and the commands table now shows the declared verbs exactly (`-y` /
+  `--noconfirm` on install/remove, `sudo dnf check-update`, `gentoo-pkg-pending`).
+- **The `core` front door reaches every first-party family: `core maint
+  <install|run|log|status|uninstall>`, `core sync` and `core update check` (#684).**
+  Core ships two hyphen-namespaced families — `core-help`/`core-doctor`/`core-version`
+  and `maint-install`/`maint-run`/`maint-log`/`maint-status`/`maint-uninstall` — and
+  only one was wired to the front door, which was the single most visible incoherence
+  in the verb surface. The dispatcher's own header gives the reason the namespace
+  exists (it keeps the generic-sounding verbs reachable under a form that won't be
+  mistaken for some other tool); the same argument covered `maint-*`, `update-check`
+  and `gsync`, which were simply never added. Additive only: every bare name keeps
+  working exactly as before, and `core update -y` still belongs to `up` — only the
+  literal word `check` in first position is intercepted. Retiring the bare names was
+  decided against in #692.
+
+  Each new arm carries the same availability guard as `core update`: `maint-*` is
+  band 55 and `up`/`update-check` band 60, both after this file, and `gsync` is a
+  band-20 function a trimmed `$ZSH_CFG` can drop — so when the twin is not loaded the
+  arm NAMES THE FRAGMENT (`55-maint.zsh`, `60-update.zsh`, `20-aliases.zsh`) instead of
+  reaching a missing function. A bare `core maint` (or `-h`/`--help`) prints the
+  family's usage on stdout and returns 0, the way a bare `core` is the cheat sheet; an
+  unknown sub-verb gets its own did-you-mean (`core maint stauts` → `status`) over
+  the new `$_CORE_MAINT_SUBCMDS`, the second single source beside `$_CORE_SUBCMDS`.
+
+  `_core` completes the new verbs and delegates to each twin's own completion
+  (`_maint-install`'s times, `_maint-log`'s `-f`, `_up`'s flags plus `check`), shifting
+  `words`/`CURRENT` so the twin sees itself at `words[1]` — without that, `core maint
+  install <tab>` offered nothing. And a new gate in `scripts/test-core.sh` asserts
+  `_core`'s describe arrays mirror the two dispatcher lists, because the header comment
+  that asked for it was the only thing keeping them in step. `PARITY.md` records
+  **Update check** and **Maintenance** as `aligned` rows with `parity-check.sh` needles
+  on both shells (dotgibson/dotfiles-Windows#236 adds the pwsh arms and lands first),
+  and **Upstream sync** as `deliberate` — Windows replicates Core rather than vendoring
+  `core/`, so there is no subtree to push.
+
+- **`aliases.md`'s tables are generated from the zsh sources and gated by `make audit`
+  (§9g, #685).** ~200 of the cheat sheet's lines were a hand-copy of data the shell
+  already held — the `alias` lines in `zsh/20-aliases.zsh` and `zsh/25-git.zsh`, the
+  `hash -d` named directories, the `_core_help` one-liners in `zsh/30-functions.zsh` — and
+  the doc said its function descriptions "are the same one-liners those surfaces print".
+  One already wasn't: `mkcd` was described three ways in three places. A sentence is not a
+  gate, so this is `theme/palette.toml` → `gen-theme.sh` applied to the cheat sheet.
+  `scripts/gen-aliases.sh` renders every table between a `<!-- core:aliases:gen … -->`
+  marker pair straight from the sources: _Expands To_ is the alias value **verbatim**
+  (`$BAT_BIN --paging=never`, `git checkout "$(git_main_branch)"` — what the shell holds,
+  not a paraphrase), _Requires_ is the `HAVE_*` flag guarding it, _Note_ is the alias
+  line's trailing comment, and _Does_ is the `_core_help` description — so the
+  `core-status` / `core-whatsnew` rows shrink to the one-liner `--help` prints, which is
+  what makes the doc's claim true. Which alias sits in which table is the one decision
+  left to a human and lives in the script's `BLOCKS` registry; coverage is bidirectional
+  in the `parity-check.sh` manner, so an alias added to a source and listed nowhere fails
+  the audit by name (exit 2, rendered apart from drift's exit 1), as does a listed name
+  nothing defines. `--root` drives it against a hermetic fixture (test-core.sh F10b: clean
+  render, own-output `--check`, drift inside a block, an edit outside the markers that
+  survives regeneration, an unclaimed alias, a deleted end marker, idempotence, and
+  `--check` writing nothing). The prose — the `web`/`$BROWSER` explanation, the cdup-vs-up
+  footgun, the confirmation note — stays hand-written outside the markers. `core help` is
+  deliberately **not** folded into this: it is a curated 40-row index with shorter blurbs,
+  a different product for a different moment, and the README no longer calls it "the
+  complete one" — for git aliases it lists 14 of 62. Its `mkcd` row did regain "(and
+  parents)". A dozen alias lines gained a trailing comment so the rendered Note column
+  keeps the glosses the hand-written doc had (`# previous directory`, `# interactive`, …).
+
+- **`make audit` gates the reusable workflows' documented caller examples (§8a-bis, #821).**
+  §8a proves the `ref:` keys name the right major. It does not read comments — so at
+  v5 → v6 every ref moved correctly while 25 `@v5` references survived in the prose
+  describing them, including the copyable `uses:` examples six `*-call.yml` headers hand
+  to OS-repo maintainers. Nothing failed, because nothing was wrong in the code; anyone
+  standing up a caller from one simply pinned a retired major. Same silent shape §8a
+  exists to end, one level up, so it gets the same answer: `_core_workflow_example_hits`
+  compares every documented example against `core.version` and fails the audit on a
+  mismatch. Scoped to a full `dotfiles-core/.github/workflows/<file>@vN` path, which is
+  always a copyable reference and never narrative — a blanket `@vN` scan would be **worse
+  than no gate**, because it reds on the true historical sentences (`claude-routines-call.yml`
+  narrating the v4→v5 cut; `lint-call.yml` naming the release the os.capabilities schema
+  landed in) and would train the next person to falsify them. Bare prose like "pinned to
+  v5" is deliberately not judged: indistinguishable from that history without a marker
+  convention this does not earn. The match carries the owner and a left boundary so a
+  lookalike repository (`someone/not-dotfiles-core/…`) is not attributed to Core and
+  cannot red this always-on gate. Driven against the real regression, not only fixtures:
+  the suite rebuilds `v6.0.0` and `v6.0.1` — both of which SHIPPED with seven documented
+  examples on `@v5` while every `ref:` read v6 — and requires a red on each.
+  **The audit job now checks out with `fetch-depth: 0`**, which is what makes that real:
+  on the default shallow checkout the tags are absent, so those assertions SKIPPED in CI
+  and the suite passed on synthetic fixtures while claiming otherwise. That was already
+  true of the sibling guard's v4.0.0 / v5.0.2 cases, which have never once run in CI —
+  so this switches on coverage the repo believed it already had.
+
+### Fixed
+
+- **`atuin-guard-verify` reports a verdict past the anchor instead of dying (#826).** The
+  first measurement against an atuin newer than the anchored 18.19.0 — the 1 Sep run, on
+  18.21.0 — exited 3 with no output and filed "the workflow itself is broken". Two defects,
+  one per layer. In the workflow, GitHub's default `bash -e {0}` aborted the measure step on
+  the verifier's non-zero exit before the step's own `case` could classify rc 1/3 as
+  reports; both measure steps now `set +e`, since that case statement is the error handling.
+  In the verifier, `--premise autostart` still waited on the pre-18.20 data-dir socket while
+  the sandbox pins `TMPDIR` — so a healthy 18.20+ daemon (which binds under
+  `$TMPDIR/atuin-$UID/atuin.sock` since upstream atuinsh/atuin#3910) never "answered" and the
+  run was `unmeasurable` by apparatus limit. `SOCK` now follows the measured version, the
+  hermetic stub binds where a real daemon of the version it claims binds, and a new
+  `test-core.sh` §J4 case (a healing stub claiming 18.20.0) pins it. The runtime guard in
+  `zsh/00-tools.zsh` already probed the new path first; only the research apparatus was behind —
+  and `PORTING-MATRIX.md`'s socket-path footnote, which still said the move had shipped in no
+  release, now says 18.20.0 and records the `0700` rule.
+- **`maint-install <tab>` (and now `core maint install <tab>`) no longer throws a parse
+  error (#684).** The completion's `_arguments` spec described the operand as
+  `(HH:MM, 24h)` with a bare colon, which `_arguments` reads as the message/action
+  separator — so every tab threw `parse error near ')'` and offered nothing. Found while
+  routing the front door through it; the colon is now escaped.
+
+- **The reusable workflows' caller examples pinned `@v5`, a major behind the tree (#821).**
+  Core is v6 and the fleet's callers are on `@v6`, but 25 `@v5` references survived across
+  six `*-call.yml` files — including the copyable `uses:` examples in their headers, so
+  anyone standing up a new caller from one landed on a retired major. Every actual `ref:` was
+  already `v6`; only the prose describing it had drifted, which is why nothing failed.
+  `audit-core.sh` §8a validates `ref:` lines against `core.version` and does not read
+  comments, so the gate that exists for precisely this class of error could not see it.
+  The sharpest illustration is `claude-routines-call.yml`, where the comment warning that
+  this line "has now gone stale twice" sat directly above a correct `ref: v6` while itself
+  saying `@v5` — the same drift, one level up, inside its own warning. One `@v5` is
+  deliberately kept: the sentence narrating the v4→v5 cut, which would be falsified by
+  bumping it.
+
+- **The "no dispatch token" warning names the missing credential, not the App's behaviour (#823).**
+  Both dispatchers warned `the fleet App minted no token here` when `TOKEN` was empty. The
+  mint cannot do that: it is gated on `vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'`,
+  and a mint that is ATTEMPTED and fails errors inside `create-github-app-token`, failing the
+  job before the warning branch is reachable. An empty token has exactly one cause — the step
+  was **skipped** — so the message now names that: a missing `FLEET_APP_ID` variable or
+  `FLEET_APP_PRIVATE_KEY` secret. The reusable's wording differs deliberately, because a
+  reusable workflow sees only the secrets its caller hands it, so there the key may simply
+  never have been passed — and nine repos execute that copy. This matters more since #683
+  removed the fallbacks: with no PAT behind it, this warning is the ONLY signal that a repo
+  has silently stopped refreshing the showcase, and pointing an operator at the App's
+  installation sent them to the wrong place. `sync-fanout.yml`'s preflight comment carried
+  the same loose phrasing and is corrected too. `GITHUB-APP-AUTH.md`'s rollback section had
+  the old warning pasted in verbatim and would have gone stale on merge; rather than paste
+  the new one, it now **describes** the degradation, since a copied message is exactly the
+  kind of duplicated fact this changelog entry exists to stop repeating.
+
+- **The fleet PAT retirement is finished in Core, and the docs now agree about it (#683).**
+  `GITHUB-APP-AUTH.md` said "both PATs are deleted" on line 9 and "still present until the
+  retire step" on line 166, and three workflows plus two `RELEASE-RUNBOOK.md` sites sided
+  with "still present". Exactly one could be true and both readings were bad: either the
+  documented rollback was a dead path, or long-lived credentials were live in the fleet
+  with the probe that watched their expiry deliberately retired. **Checked against the
+  live state (2026-09-01): the PATs really are gone** — `FLEET_SYNC_TOKEN` and
+  `WEBHOOK_SECRET` are absent from all twelve fleet repos at repo _and_ org scope, leaving
+  `FLEET_APP_PRIVATE_KEY` (org secret) and `FLEET_APP_ID` (org variable) as the only fleet
+  auth. So `token-health`'s retirement was justified after all and no expiry check needs
+  restoring; what was wrong was the rollback, and every `|| secrets.…` fallback, which had
+  been dead code resolving to the empty string. Removed the fallbacks from `sync-fanout.yml`
+  (3 sites), `notify-web.yml` and `notify-web-call.yml`, stopped `release.yml` passing
+  `WEBHOOK_SECRET`, and
+  rewrote the rollback as what it actually is — a deliberate re-provisioning (mint a PAT,
+  add the secret, restore the expressions, re-add each caller's `secrets:` mapping, _then_
+  unset `FLEET_APP_ID`), not a toggle. The last two steps are not optional: a reusable
+  workflow does not inherit its caller's secrets, so with `release.yml` now passing only the
+  App key the restored expression in `notify-web-call.yml` would read an empty
+  `WEBHOOK_SECRET`; and `app_token || secrets.…` prefers the left side whenever it is
+  non-empty, so a still-minting App keeps winning even when its token is too narrow to push,
+  while an App that fails to mint fails the step before the fallback is ever evaluated. The verification
+  command is recorded in `GITHUB-APP-AUTH.md` so the next reader re-checks rather than
+  re-argues. `sync-fanout.yml` now also states that the App's **Workflows: write** grant is
+  load-bearing with no safety net: a permission edit awaiting installation approval still
+  mints on the old set, failing every fan-out until accepted. **Not** removed:
+  `notify-web-call.yml`'s declared `WEBHOOK_SECRET` input, which nothing reads. At the time
+  of this entry the nine OS-repo callers still passed it; they have since been bumped
+  (#819). Dropping the declaration is a caller-visible break either way — it changes the
+  `workflow_call` contract — so it is marked deprecated-and-ignored and comes out on the
+  next MAJOR.
 
 ## [v6.0.1] - 2026-09-01
 
@@ -899,110 +1163,3 @@ repo-meta and stays upstream:
   every yank and paste, and its WSL probe was already rewritten once to avoid forking a `grep` per
   invocation — a file read and parse there would give back exactly what that bought, for a value
   that changes once per machine. The matrix now records this so it is not re-opened.
-
-## [v5.3.0] - 2026-08-27
-
-### Changed
-
-- **The scheduled runner dispatches through `os.capabilities` too (#665).** `maint/dotfiles-maint.sh`
-  carried **49 package-manager references** — the second-largest concentration of OS knowledge in
-  Core, and a second copy of the ladder #664 just removed from `zsh/60-update.zsh`. Two copies of
-  one fact drift, and these had: the maint ladder grew **no emerge arm at all**, so a Gentoo box's
-  daily run has never counted anything, and its zypper apply says `up` where the interactive one
-  says `dup` on Tumbleweed. There is now one.
-
-  `zsh/55-maint.zsh` keeps `_maint_scheduler` as the dispatcher — switching on a capability rather
-  than an OS name was always the right shape — but the answer now comes from the OS layer's
-  declared `SCHEDULER`, with the probe as the fallback for a box that has not declared.
-
-- **`SCHEDULER` gains `cron`, which was a defect in the schema rather than a judgement about cron.**
-  Core's `_maint_scheduler` has had a live cron arm all along — it is what an OpenRC box (Alpine,
-  Gentoo) gets, having `crontab` and no systemd — so #663's enum was rejecting a value Core itself
-  produces, and `scripts/test-core.sh` asserted that rejection. Alpine's only honest declaration was
-  `none`, which means "this box cannot hold a timer", on a box that can.
-
-- **A bash reader for the declaration, which the contract promised and nothing implemented.**
-  `examples/os.capabilities.example` and `lib/bootstrap-lib.sh` both said `maint/dotfiles-maint.sh`
-  reads the same file with `sed`; it did not. It now does — extracted, never sourced, for the reason
-  #663 chose flat `KEY=value`: sourcing a per-repo file into the one process in this system that may
-  call `sudo -n` is a code-execution surface, and extraction cannot execute anything. Same strictness
-  and the same trailing-whitespace trim as the zsh reader, so the two cannot disagree about one file.
-
-### Added
-
-- **`SCHEDULER_UNIT_DIR` — the key that gets the last OS-absolute path out of Core.**
-  `~/Library/LaunchAgents` appeared at **six sites** in `zsh/55-maint.zsh` and was the reason
-  `audit-core.sh` §5c carried a per-file exception. It now survives in exactly one place: the
-  built-in fallback for a box that has not declared. #667 authors the key across the fleet and
-  deletes that block, **and the §5c exception goes with it** — together with #664's sibling
-  package-manager fallback.
-
-  A **directory**, not a path, and the split is load-bearing: where units live is an OS fact, but
-  what Core calls its own job (`dotfiles-maint.service`, `com.dotfiles.maint`) is Core's identity and
-  is what `systemctl enable` and `launchctl` name. A declaration that could rename the file would
-  decouple the unit Core writes from the one it then enables — installed, reported healthy, never
-  run. The validator rejects a value ending in `.service`/`.plist`/`.timer` for that reason.
-
-  The plist and unit **templates stay in Core**, and are not the exception. They are portable text
-  parameterised by paths, selected by `_maint_scheduler`. Pushing them outward would put one systemd
-  unit in seven copies with no owner — the hand-maintained N-way drift `VENDORING.md` records as the
-  #449 failure. The OS layer owns _where_ the unit goes, not _what it says_.
-
-- **`MAINT_UNATTENDED_UPGRADE`, and the direction of its default is the whole point.** Scheduled
-  system upgrades are now gated twice: the operator's `MAINT_SYSTEM_UPGRADE=1` env var **and** the
-  repo's declared opt-in. **Omitting it refuses.** A fail-open here silently applies full system
-  upgrades on an engagement box, unattended, on a schedule nobody is watching — so `=0` is _rejected_
-  by the validator rather than read as "declared", which is how a value written to forbid something
-  would have permitted it.
-
-  This replaces two hand-rolled refusals: Kali, read out of `/etc/os-release` (OS knowledge in Core),
-  and Arch/Gentoo, inferred from `have pacman || have emerge` — a probe for a **binary** standing in
-  for a claim about a **distro**, true on any box with pacman installed for other reasons. Each repo
-  now says so itself, and a repo Core has never heard of refuses by default instead of being waved
-  through.
-
-### Fixed
-
-- **`XDG_CONFIG_HOME` was never defaulted in `maint/dotfiles-maint.sh`.** It defaults `XDG_CACHE_HOME`,
-  `XDG_STATE_HOME` and `XDG_DATA_HOME` but not `CONFIG`, so the new declaration path would have
-  resolved to a bare `/zsh/os.capabilities` on a box that does not export it — unreadable, and the
-  runner would have silently behaved as though the box declared nothing. Found while wiring the
-  reader; it would have been a silent no-op rather than an error.
-
-- **An empty assume-yes vector no longer risks a bash 3.2 `set -u` abort.** Expanding an empty array
-  as `"${a[@]}"` is an unbound-variable error on bash 3.2, which macOS still ships and every gate here
-  is held to — and an archive that declares no `PKG_ASSUME_YES` (Arch, Gentoo, Alpine) is exactly the
-  empty case. Uses the `${a[@]+"${a[@]}"}` guard.
-
-- **`core-doctor` classified opt-in-vs-expected from one Core-side list, so it reported
-  healthy boxes as degraded (#666).** A tool that is genuinely optional on one distro and
-  expected on another was reported as expected everywhere. `jj` and `ast-grep` are the known
-  cases — `PORTING-MATRIX.md` marks them 21 in the **Gentoo and Kali cells only**, while Arch,
-  openSUSE and Alpine package them — and `dust` is the same shape on the Debian family. The
-  result was a health report showing a degraded integration on a box where nothing was wrong,
-  which is the failure mode most likely to train an operator to ignore the report.
-
-  Core recorded this as unfixable without a new artifact and said so in its own words:
-  _"a Core-side list cannot say 'opt-in there, expected here' … Fixing that properly needs a
-  per-repo manifest; this is the fallback default until one exists."_ #663 landed the
-  manifest; this spends it. `core-doctor` now reads the split from the repo's own
-  `TOOLS_OPTIN`, and the JSON `expected` object moves with the render so a gate asserting it
-  cannot disagree with the glyph a human reads two lines above.
-
-  **A declared list REPLACES Core's default rather than adding to it**, so a repo declaring
-  this key must re-state everything it still considers optional — recorded in the example,
-  because the failure mode is silent and lands on whoever authors the nine declarations.
-
-  **This key falls back per-key, and that is deliberately unlike `up` and the maint runner.**
-  Those treat a declaration as authoritative all-or-nothing because for them an omission is a
-  SAFETY statement — no `PKG_ASSUME_YES` means never auto-confirm, no
-  `MAINT_UNATTENDED_UPGRADE` means refuse — and answering a refusal with a Core default would
-  permit what the repo forbade. `TOOLS_OPTIN` carries no such claim: omitting it says the repo
-  has not curated a list, not that nothing is optional. Reading it the other way would mark
-  every uninstalled optional tool as degraded and manufacture exactly the alarm fatigue the
-  opt-in state exists to prevent.
-
-  #666 flagged that this could disagree with #697's stale-flag reporting, since it changes
-  what "expected" means underneath it. They are independent by construction —
-  `_core_doctor_stale` runs on both the opt-in and the missing branch — and there is now a
-  test pinning that, so a future edit cannot quietly stop checking a reclassified tool.

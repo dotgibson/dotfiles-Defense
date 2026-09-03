@@ -111,7 +111,7 @@ update_check = false
 #
 # THE SYSTEMD PATH, MEASURED (dotgibson/dotfiles-core#352). Fedora 44 under WSL2 — a real
 # systemd user manager, a real transient unit (`systemd-run --user`), glibc 2.43, atuin
-# 18.19.0 — via `scripts/bench-atuin-daemon.sh --systemd`. 8 concurrent writers, one 20k-row
+# 18.19.0 — via `scripts/research/bench-atuin-daemon.sh --systemd`. 8 concurrent writers, one 20k-row
 # DB, 1600 samples per arm. PROMPT LATENCY, three runs with the sandbox on a local ext4 home:
 #
 #     p50    8.5-8.9 ms -> ~5.5 ms   1.55x / 1.55x / 1.60x faster
@@ -138,7 +138,7 @@ update_check = false
 # time, NOT independent corroboration, and the distinction is the whole point of the block
 # below: every figure here comes from one WSL2 host. It also timed `history start --hook`,
 # the form atuin's zsh hook actually runs, where the figures above time the plain form —
-# adjacent, not identical (scripts/verify-atuin-guard.sh measures both since #389).
+# adjacent, not identical (scripts/research/verify-atuin-guard.sh measures both since #389).
 #
 # STORAGE BACKING IS THE CONFOUNDER, and it is the most useful thing these runs turned up.
 # The SAME harness, same host, same day, PROMPT LATENCY p99, daemon off -> on:
@@ -206,7 +206,7 @@ update_check = false
 # For those four, the rationale stays BORROWED from upstream, deliberately and on the record.
 # The mechanism itself is measured — that is what the tables above are — so what is borrowed
 # is its magnitude on hardware nobody here will run, not whether it exists. Anyone who does
-# have such a box can settle a row with `scripts/bench-atuin-daemon.sh`; nobody is waiting.
+# have such a box can settle a row with `scripts/research/bench-atuin-daemon.sh`; nobody is waiting.
 #
 # HOW A MACHINE OPTS IN (the launcher is OS-native, so it lives in the OS repo, not here):
 #   systemd distros — install the user unit (examples/atuin-daemon.service),
