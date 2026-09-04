@@ -61,19 +61,25 @@ optoken() {
   }
   local otp
   otp=$(op item get "$1" --otp) || return 1
-  # Two honest limits on the success message below, both specific to clip's OSC 52 last
-  # resort (a real backend — pbcopy/wl-copy/xclip — has neither):
+  # `--sensitive` (#690): on a box with no real clipboard backend — the headless-over-ssh
+  # shelf that is the documented norm for part of the fleet — clip's OSC 52 last resort
+  # under tmux used to leave the code in a tmux paste buffer, readable by anything on the
+  # socket via `tmux show-buffer`, for as long as the buffer lived. Core's own
+  # `set-clipboard on` (tmux.conf) is what made that the default, so the "never lands in
+  # your history or scrollback" rationale above was inverted on exactly those boxes. With
+  # the flag, clip reaches the outer terminal through DCS passthrough when the pane allows
+  # it (no buffer at all), else through a named buffer it deletes in the same breath — and
+  # it says so on stderr in that case, so the signal arrives at the moment it matters
+  # rather than living in this comment. A real backend (pbcopy/wl-copy/xclip) is unchanged
+  # by the flag; so is every other caller of clip, which never passes it.
   #
-  #   1. OSC 52 succeeds as soon as the escape is WRITTEN, not when a terminal accepts
-  #      it. Clipboard WRITES are refused by default in several emulators (xterm's
-  #      disallowedWindowOps) and unimplemented in others, and the failure is a silent
-  #      drop. So "sent" is the strongest true claim; "copied" was not.
-  #   2. Under tmux with `set-clipboard on`, tmux accepts the escape and ALSO creates a
-  #      tmux paste buffer. The code is then readable via `tmux show-buffer` by anything
-  #      that can reach the tmux socket — which the "never lands in your history or
-  #      scrollback" rationale above does not cover. Worth knowing before you use this
-  #      on a shared box.
-  printf '%s' "$otp" | clip && _core_ok "TOTP sent to the clipboard"
+  # "sent", not "copied", stays the strongest true claim: OSC 52 succeeds as soon as the
+  # escape is WRITTEN, not when a terminal accepts it — clipboard writes are refused by
+  # default in several emulators (xterm's disallowedWindowOps) and unimplemented in others,
+  # and the failure is a silent drop.
+  #
+  # opsecret is not in this picture: it prints via `op read` and never touches clip.
+  printf '%s' "$otp" | clip --sensitive && _core_ok "TOTP sent to the clipboard"
 }
 
 # opssh — list SSH keys stored in 1Password

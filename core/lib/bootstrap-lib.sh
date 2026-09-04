@@ -747,9 +747,15 @@ blib_link_os_layer() {
   # The [[ -f ]] guard was the migration path while no OS repo had authored a declaration.
   # #667 authored them, so on a synced repo this now links — and the guard keeps its second
   # job: it is what makes a Role repo (no os/ band) and a partially-synced checkout a no-op
-  # rather than an error. A box that has not re-bootstrapped simply has no symlink, Core's
-  # 02-capabilities.zsh stays SILENT, and every existing hardcoded ladder keeps working
-  # until #763 retires it. Presence is enforced by the audit (§9c), not by bootstrap.
+  # rather than an error.
+  #
+  # THIS LINK IS NOW LOAD-BEARING, which it was not before #763. Core used to carry built-in
+  # package-manager and scheduler tables behind the declaration, so a box with no symlink
+  # kept working on those; they are gone. Without this link `up` has no upgrade verb,
+  # `maint-install` refuses on systemd/launchd and core-doctor prints no install hint —
+  # each saying so in its own voice, and each naming `--links-only` as the fix. Presence is
+  # enforced by the audit (§9c), not by bootstrap: a bootstrap that hard-failed here would
+  # be refusing to set up the very box that needs setting up.
   #
   # "warns once" is what this comment used to claim, and it was false twice over (#715):
   # there is no once-per-box state anywhere in that fragment, and the warning fired on

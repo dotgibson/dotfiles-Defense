@@ -788,6 +788,162 @@ _core_luacheck_verdict() { # _core_luacheck_verdict <probe-rc> <lint-rc>
   printf 'issues\n'
 }
 
+# ── _core_helper_verdict: the bootstrap-lib adoption RATCHET, as one decision ──
+# _core_helper_verdict <in-ledger 0|1> <in-bootstrap 0|1> — print exactly one of:
+#   ok         the ledger says this repo calls the helper, and it does
+#   regressed  the ledger says it calls it, and it no longer does — a repo LOST a helper
+#   advanced   it calls a helper the ledger does not record — the ratchet has to tighten
+#   gap        not adopted, not claimed; the honest, still-advisory state
+#
+# WHY A LEDGER AND NOT A COUNT. audit-core.sh §5f measured adoption as a bare fraction and
+# printed it. `blib_user_bindirs_on_path 1/9` sat in that report for months while the gap it
+# names shipped a live bug to openSUSE (#748) — every bootstrap there exited 2, and the
+# counter had said so the whole time. A number nothing acts on is not a gate; it is a place
+# for a defect to hide in plain sight. The fix is not "make it fail" — 8 of 9 repos are short
+# on arrival and a gate that is red on arrival gets switched off, which is the reason the
+# section was advisory in the first place. The fix is to make the number MONOTONE: name the
+# pairs that have adopted, and fail on any move away from that state.
+#
+# So `gap` stays advisory — that is the on-arrival state and it must not red the fleet — while
+# BOTH kinds of movement are blocking:
+#   · regressed — a repo dropped a helper it had. This is the only class the old counter could
+#     in principle have caught, and it could not: the fraction it printed would simply have
+#     read one lower, in a line already read as noise.
+#   · advanced — a repo adopted one and nobody recorded it. Failing on GOOD news looks odd
+#     until you notice it is the only thing that ever tightens the ratchet: without it the
+#     ledger drifts stale, every real regression after that reads as `gap`, and the section is
+#     a counter again. Same shape as gen-porting-matrix.sh's PKG_ROWS, where a repo that
+#     starts installing a package fails the gate until the cell is flipped (CLAUDE.md).
+#
+# The judgment lives HERE, not inline in the section, for the reason _core_tool_skip_count
+# moved: test-core.sh must be able to drive the code that actually runs. The previous
+# adoption test asserted a property of the section's SOURCE TEXT ("it contains no fail"),
+# which is exactly the kind of assertion that stays green while the logic beneath it changes.
+_core_helper_verdict() { # _core_helper_verdict <in-ledger 0|1> <in-bootstrap 0|1>
+  case "${1:-0}${2:-0}" in
+  11) printf 'ok\n' ;;
+  10) printf 'regressed\n' ;;
+  01) printf 'advanced\n' ;;
+  *) printf 'gap\n' ;;
+  esac
+}
+
+# ── _core_helper_called: a CALL, not a mention ────────────────────────────────
+# _core_helper_called <bootstrap.sh> <helper> — succeed when that file really references
+# the helper in code. Comments do not count.
+#
+# The ledger above is only as good as this test, and the first version of it was a bare
+# `grep -q "$helper" bootstrap.sh`. That matches a COMMENT — and the adoption PRs that
+# satisfy the ledger are exactly the ones that add a paragraph of comment explaining why
+# the helper is called. So deleting the call and leaving its explanation behind kept the
+# grep green and reported `ok`: the one regression this ledger exists to catch was
+# invisible in precisely the files it had just been taught to watch. Caught in review on
+# dotgibson/dotfiles-core#861 before it ever ran in anger.
+#
+# TWO RULES, and the asymmetry between them is deliberate:
+#
+#   1. Strip comments — everything from the first `#`. That is blunter than a shell parser
+#      and it can truncate a line early (a `${var#pattern}`, a `#` inside a string). Blunt
+#      in THIS direction is safe: over-stripping can only lose a real call, and losing one
+#      reports `regressed` — a loud, specific, immediately-checkable failure. Under-stripping
+#      loses a REGRESSION, silently, which is the defect being fixed. When a heuristic has to
+#      be wrong, make it wrong in the direction that shouts. (Verified against all nine
+#      sibling bootstraps and all eight helpers: it changes no verdict except the intended
+#      comment-only one.)
+#
+#   2. Match the helper as a WHOLE shell identifier, not a substring. `blib_note_fail` must
+#      not be answered by a `blib_note_fail_once`, and a future `blib_resolve_su_strict`
+#      must not silently satisfy the `blib_resolve_su` row. This also covers BLIB_DRY, which
+#      is a variable rather than a function — `export BLIB_DRY=1` is a reference and reads
+#      the same way.
+#
+# Pure awk+grep, busybox-safe, like every other fleet reader here. Returns non-zero when
+# the file is unreadable, which the caller already handles as "not adopted".
+#
+# FOUR THINGS ARE NOT CODE, and every one was found by a reviewer asking "what else could
+# satisfy this?" rather than by a run going wrong:
+#
+#   · comments        — an adoption PR's shape is "add the call, explain why", so a deleted
+#                       call with its paragraph left behind read as adopted.
+#   · strings         — `printf "run blib_user_bindirs_on_path first"` is prose the user
+#                       sees, including when the quotes inside it are backslash-escaped.
+#   · MULTI-LINE strings — a quote that opens on one line and closes on another, whose
+#                       interior line happens to be a bare helper name.
+#   · heredoc bodies  — and this one is LIVE in the fleet: dotfiles-Arch's usage() heredoc
+#                       documents `BLIB_DRY    set to 1 …`. Its real references keep that
+#                       row honest today, so nothing is wrong right now — but drop those and
+#                       the help text alone would have gone on reporting `ok` forever.
+#
+# So this is a scanner, not a stack of substitutions: it walks each line character by
+# character, carries quote and heredoc state ACROSS lines (both constructs span them), and
+# emits only what is left. A `#` inside a string is not a comment and a quote inside a
+# comment is not a quote, which is exactly what a pass-per-construct kept getting wrong.
+# Only `<<-` strips a leading indent from its terminator, and only tabs — a plain `<<EOF`
+# body may legally contain an indented `  EOF` line, and treating that as the terminator
+# ended the heredoc early and handed its remaining prose to the matcher as code.
+#
+# WHAT IT IS STILL NOT is a shell parser, and it is not trying to be — §5c's comment block
+# explains at length why getting that right needs a parser for every grammar in the tree.
+# Nested command substitution inside quotes is where it loses its place: Gentoo's
+# `blocker="$(printf '%s\n' "$out" |` … spans two lines with three quoting levels, and the
+# scanner mis-tracks it. That was measured, not assumed — it drops 4 further code lines
+# there and 9 in Fedora, and it changes NO verdict for any of the nine bootstraps against
+# any of the eight helpers. It can only ever delete too much, and deleting too much loses a
+# real call, which reports `regressed`: loud, specific, checkable in one grep. The opposite
+# mistake loses a REGRESSION, silently, which is the entire defect being fixed. When a
+# heuristic must be wrong, make it wrong in the direction that shouts.
+#
+# NB the HERESTRING at the end, not `… | grep -q`. `grep -q` exits the instant it matches,
+# which SIGPIPEs the upstream, which under `set -o pipefail` — which audit-core.sh sets —
+# makes the whole pipeline non-zero ON SUCCESS. That reads as "not adopted" for every repo
+# that HAS adopted, i.e. the ratchet fails everything it should pass. This is the SIGPIPE
+# trap #459 named and fail_detail() above already documents; a herestring has no upstream
+# process to kill, so there is nothing to signal.
+_core_helper_called() { # _core_helper_called <file> <helper>
+  local f="${1:-}" h="${2:-}" code
+  [ -r "$f" ] || return 1
+  code="$(awk 'inhd {
+      t = $0
+      if (dash) sub(/^\t+/, "", t)
+      if (t == delim) inhd = 0
+      next
+    }
+    {
+      n = length($0); out = ""; i = 1
+      while (i <= n) {
+        c = substr($0, i, 1)
+        if (ins) { if (c == "'\''") ins = 0; i++; continue }
+        if (ind) {
+          if (c == "\\") { i += 2; continue }
+          if (c == "\"") ind = 0
+          i++; continue
+        }
+        if (c == "#") {
+          p = (i == 1) ? " " : substr($0, i - 1, 1)
+          if (p == " " || p == "\t" || p == ";" || p == "&" || p == "|" || p == "(") break
+          out = out c; i++; continue
+        }
+        if (c == "'\''") { ins = 1; i++; continue }
+        if (c == "\"") { ind = 1; i++; continue }
+        if (c == "\\") { i += 2; continue }
+        if (substr($0, i, 2) == "<<") {
+          if (substr($0, i, 3) == "<<<") { out = out " "; i += 3; continue }
+          rest = substr($0, i + 2)
+          if (match(rest, /^-?[ \t]*("|'\'')?[A-Za-z_][A-Za-z0-9_]*("|'\'')?/)) {
+            tok = substr(rest, RSTART, RLENGTH)
+            dash = (substr(tok, 1, 1) == "-")
+            d = tok; sub(/^-?[ \t]*/, "", d); gsub(/["'\'']/, "", d)
+            delim = d; inhd = 1
+            out = out " "; i += 2 + RLENGTH; continue
+          }
+        }
+        out = out c; i++
+      }
+      print out
+    }' "$f")"
+  grep -qE "(^|[^A-Za-z0-9_])${h}([^A-Za-z0-9_]|\$)" <<<"$code"
+}
+
 # ── _core_claude_untracked_hits: a .claude/ file that will never leave this box ──
 # _core_claude_untracked_hits <repo-root> — print every path under .claude/ that git will
 # not ship AND that nothing will ever tell you about. Silence = clean.
@@ -1224,6 +1380,267 @@ _core_workflow_example_hits() { # _core_workflow_example_hits <repo-root> <expec
         }
       }
     ' "$f"
+  done
+}
+
+# ── _core_vendor_pin_hits: the first-vendor recipe names the CURRENT major ───
+# _core_vendor_pin_hits <repo-root> <expected-major> — print every first-vendor pin in
+# the root docs and scripts/ that names a major other than <expected-major>. Silence =
+# clean. Output is `file:LINE: msg`.
+#
+# WHAT A "FIRST-VENDOR PIN" IS. Three shapes, all copyable instructions for vendoring a
+# brand-new OS repo at the released major alias rather than `main` (#588):
+#
+#     git subtree add --prefix=core <remote> refs/tags/vN --squash
+#     git checkout vN                                  # in dotfiles-core (also `switch`,
+#                                                      # with options, the ref quoted)
+#     CORE_BRANCH="$(git rev-parse vN^{commit})" ./scripts/sync-core.sh dotfiles-X
+#
+# and new-os-repo.sh's `CORE_BRANCH="${CORE_BRANCH:-refs/tags/vN}"` default, which is the
+# same instruction with the pasting done for you.
+#
+# WHY A GATE. This exact rot has now happened at EVERY major cut. At v4 → v5 the scaffold
+# default, its --help, ARCHITECTURE.md, VENDORING.md and PORTING-MATRIX.md were each
+# corrected by hand, in three separate CHANGELOG entries, after someone noticed. At v5 → v6
+# all five went stale again and stayed that way through two releases: a greenfield repo
+# scaffolded in that window vendored a RETIRED major by default, and the docs told a human
+# to do the same. Nothing failed, because nothing was wrong in the code — the same silent
+# shape _core_workflow_ref_hits and _core_workflow_example_hits exist to end for the
+# workflow refs, one recipe over. So it gets the same treatment: the major is read from
+# core.version, and the text is held to it.
+#
+# WHY CONCRETE MAJORS IN THE DOCS AT ALL, rather than "the current major alias". The
+# CHANGELOG records the decision at the last cut: a ref the reader PASTES is not a claim
+# they read, so it stays concrete and copyable — and this function is what makes that
+# safe to promise.
+#
+# SCOPE, and the four exemptions that keep it honest:
+#   · Root-level *.md and scripts/*.sh — where the recipe is written — never core/ or
+#     nested docs.
+#   · CHANGELOG*.md are HISTORY: "corrected to refs/tags/v5" was true when written and
+#     must stay so. A gate that reds on a true sentence teaches people to falsify it.
+#   · scripts/test-core.sh builds fixture repos with tags of its own (`refs/tags/v1`);
+#     those are test data, not instructions.
+#   · An EXACT pin (`refs/tags/v5.3.0`, optionally `-pre` as core.version allows) is a
+#     deliberate freeze and is out of scope — whatever its major — EXCEPT on the scaffold
+#     default itself: a recipe's freeze is a choice its reader made, but new-os-repo.sh's
+#     `CORE_BRANCH:-` default is what every new repo inherits unasked, so it is always
+#     held to the current major, exact or not. Anything else dotted (`v5.3`, `v5.3.0.1`)
+#     is no tag this repo cuts, so it is judged by its leading major like a bare one.
+#     Another repository's tag reached through an API path (`git/refs/tags/v3`) is out
+#     of scope too.
+_core_vendor_pin_hits() { # _core_vendor_pin_hits <repo-root> <expected-major>
+  local root="${1:-.}" want="${2:-}" f
+  [ -n "$want" ] || return 0
+  for f in "$root"/*.md "$root"/scripts/*.sh; do
+    [ -f "$f" ] || continue
+    case "${f##*/}" in CHANGELOG*.md | test-core.sh) continue ;; esac
+    awk -v want="$want" -v file="${f#"$root"/}" '
+      {
+        line = $0
+        # Each shape carries its own left boundary so `git/refs/tags/v3` (a slash before
+        # `refs`) and `xv5^{commit}` do not match, while `:-refs/tags/vN` (the scaffold
+        # default) does. Every shape captures the WHOLE version token after the `v`
+        # (digits, dots, and any pre-release letters) — so `v5.3^{commit}` is seen, not
+        # skipped, and `v50` is read as 50 — and the token is classified once:
+        #   bare major          → judged against want
+        #   exact N.M.P[-pre]   → a deliberate freeze, exempt whatever its major
+        #   anything else       → no tag this repo cuts; judged by its leading major
+        # `git checkout` tolerates the GLOBAL git options before the subcommand (`-C <dir>`,
+        # `-c k=v`, `--git-dir=…`, `--work-tree=…`, `--no-pager`, a lone flag), which the
+        # scripts in this repo use routinely — an operand is a shell WORD, so a quoted path
+        # with a space (`-C "/tmp/core checkout"`) is consumed whole; any run of shell
+        # whitespace between its words, options
+        # before the ref (`--detach`, `-q`, and the operand-taking `-b`/`-B`/`-c`/`-C`/
+        # `--create`/`--force-create`/`--orphan` with their branch name), `switch` in
+        # place of `checkout`, and a quote
+        # opening the ref (v5 in single or double quotes), so a reformatted or
+        # option-bearing command cannot slip under the gate. A bare `--` is NOT an option
+        # for `checkout`: it ends option parsing and makes the next token a PATH, so
+        # `git checkout -- v5` restores a file, not a Core ref (for `switch`, the token
+        # after `--` is still a branch, so it stays judged). The exact-pin class is the SAME one core.version is
+        # validated against (audit-core.sh, SemVer [-pre]), so a pre-release this repo
+        # could actually cut is exempt and nothing wider is.
+        consumed = ""
+        # The left boundary also admits a Markdown `_` delimiter — an underscore that is
+        # itself at a word boundary — so `_refs/tags/v5_` is scanned, while `foo_refs…`
+        # (an intraword identifier) still is not.
+        while (match(line, /(^|[^A-Za-z0-9._\/]|(^|[^A-Za-z0-9_])_)(refs\/tags\/v[0-9][0-9A-Za-z.+-]*|git([[:space:]]+(-[Cc][[:space:]]+("[^"]*"|\047[^\047]*\047|[^[:space:]]+)|--(git-dir|work-tree|namespace)=("[^"]*"|\047[^\047]*\047|[^[:space:]]+)|--no-pager|-[a-zA-Z]))*[[:space:]]+(checkout([[:space:]]+((-[bBcC]|--(create|force-create|orphan))[[:space:]]+("[^"]*"|\047[^\047]*\047|[^[:space:]]+)|-[A-Za-z][-A-Za-z0-9=]*|--[A-Za-z][-A-Za-z0-9=]*))*|switch([[:space:]]+((-[bBcC]|--(create|force-create|orphan))[[:space:]]+("[^"]*"|\047[^\047]*\047|[^[:space:]]+)|-[-A-Za-z0-9=]+))*)[[:space:]]+["\047]?v[0-9][0-9A-Za-z.+-]*|v[0-9][0-9A-Za-z.+-]*\^\{commit\})/)) {
+          hit = substr(line, RSTART, RLENGTH)
+          rest = substr(line, RSTART + RLENGTH)
+          sub(/^[^rgv]*/, "", hit)                 # drop the boundary character(s)
+          blen = RLENGTH - length(hit)             # how long that boundary was (0, 1 or 2)
+          # THIS match is the scaffold default when the text right before it is the
+          # assignment (`CORE_BRANCH:-`) or the --help line (`CORE_BRANCH (default: `).
+          # Judged per match, not per line: a sentence naming the current default AND a
+          # deliberate freeze must keep the freeze exempt.
+          prefix = consumed substr(line, 1, RSTART - 1 + blen)
+          # An optional quote after `:-` (or after `(default: `): a quoted default,
+          # `CORE_BRANCH="${CORE_BRANCH:-"refs/tags/v5.3.0"}"`, is still the default.
+          isdefault = (hit ~ /^refs\/tags\/v/ && prefix ~ /CORE_BRANCH(:-["\047]?| \(default: ["\047]?)$/)
+          tok = hit
+          # Peeled either way — `v5.3.0.^{commit}` in the hit, or `refs/tags/v5.3.0.^{commit}`
+          # with the peel in rest — is a REVISION, not prose: no period in it is a
+          # sentence period, so the trim below must not turn `5.3.0.` into an exact pin.
+          peeled = (hit ~ /\^\{commit\}$/ || rest ~ /^\^\{commit\}/)
+          sub(/\^\{commit\}$/, "", tok)
+          # The ref is the LAST whitespace-separated token of the hit: in the checkout
+          # shape an operand-taking option puts a branch NAME before it, and a first
+          # `v<digit>` scan would read `vendor-v6` as the pin in `checkout -b vendor-v6 v5`.
+          n = split(tok, parts, /[[:space:]]+/); tok = parts[n]
+          # ...unless that last token is the OPERAND of a branch-creating option with no
+          # start point after it: `git checkout -b v5` / `git switch -c v5` create a
+          # branch NAMED v5 and pin nothing. The generic option branch let those match.
+          if (n >= 2 && parts[n - 1] ~ /^(-[bBcC]|--(create|force-create|orphan))$/) {
+            consumed = consumed substr(line, 1, RSTART + RLENGTH - 1); line = rest; continue
+          }
+          sub(/^["\047]/, "", tok); sub(/^refs\/tags\//, "", tok); sub(/^v/, "", tok)
+          # The token class admits `.`, so a sentence-ending period rides in with it:
+          # `refs/tags/v5.3.0.` would read as `5.3.0.` and an exact freeze would be
+          # reported stale. ONLY that one period is prose — a single trailing `.`, and
+          # only when whitespace or the end of the line follows it: inside a quoted
+          # argument (`"refs/tags/v5.3.0."`) bash hands the period to git, so it is part
+          # of a malformed ref and stays. Two (`v5.3.0..`) leave `5.3.0.`, which is
+          # malformed and judged; and a trailing `+` or `-` is kept, because `v5.3.0+`
+          # is no tag this repo cuts and must stay judged, not become exempt by trimming.
+          if (!peeled && rest ~ /^([[:space:]]|$)/) { sub(/\.$/, "", tok); sub(/\.$/, "", hit) }   # hit: the message quotes the pin, not the prose
+          major = tok; sub(/[^0-9].*$/, "", major)
+          exact = (tok ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/)
+          # The token class stops at a character it does not admit, so `v5.3.0_bad`,
+          # `v5.3.0/foo` and `v5.3.0@foo` would each match as `v5.3.0` and read exact.
+          # Rather than enumerate what git allows in a ref (`@`, `/`, `_` and more), the
+          # rule is the inverse: an exact pin is exempt ONLY when what follows it is a
+          # terminator — whitespace, end of line, a quote or backtick, closing
+          # punctuation, or a shell operator. Anything else glued on means the ref as
+          # written is not the tag, so it is malformed and judged. `#` is deliberately
+          # NOT a terminator: a comment starts only at the start of a word, so
+          # `v5.3.0#note` is one argument to git (judged), while `v5.3.0 # note` is
+          # exempt through the whitespace before its `#`. Nor is `^`: the literal
+          # `^{commit}` of the peeled form is consumed by the match itself, so a caret
+          # left in rest (`v5.3.0^foo`) is a malformed ref, judged. And in the peeled
+          # form the sentence period sits in rest rather than the token
+          # (`v5.3.0^{commit}.`), so one prose period is trimmed from rest first. And a
+          # full-ref peel — `refs/tags/v5.3.0^{commit}` — matches through the refs/tags
+          # shape and leaves the literal `^{commit}` in rest: that one suffix is consumed
+          # before the tests, so the same deliberate freeze is exempt in that spelling
+          # too, while any other caret suffix stays judged.
+          if (rest ~ /^\^\{commit\}/) rest = substr(rest, 10)
+          if (rest ~ /^\.([[:space:]]|$)/) rest = substr(rest, 2)
+          # Two kinds of terminator. A closer (whitespace, quote, backtick, bracket, a
+          # Markdown `*` delimiter), sentence-final `!` or `?`, or a shell operator
+          # (; & | < >) ends the token by itself — none of those can continue a ref.
+          # Prose punctuation (, :) and a closing Markdown `_` end it only when followed
+          # by whitespace, a closer or end of line — otherwise `v5.3.0:foo`, `v5.3.0,foo`
+          # and `v5.3.0_bad` are glued text, i.e. malformed, and judged.
+          # `]` is listed FIRST in each class, never as `\]`: a backslash is literal inside
+          # a POSIX bracket expression, so under musl (busybox awk, the Alpine lane) `\]`
+          # closed the class early and every exempt pin read as stale. gawk happened to
+          # accept the escape, which is why this only showed on Alpine.
+          if (rest != "" && rest !~ /^[][:space:]`"\047)}*!?;&|<>]/ && rest !~ /^[,:_]([][:space:]`"\047)}]|$)/) exact = 0
+          # The scaffold default is never exempt: it is not a freeze someone chose, it is
+          # the pin every new repo gets by default.
+          if ((!exact || isdefault) && major != want) {
+            printf "%s:%d: %s names v%s, but core.version is major v%s (%s)\n", \
+              file, NR, (isdefault ? "the scaffold default" : "first-vendor pin"), tok, want, hit
+          }
+          consumed = consumed substr(line, 1, RSTART + RLENGTH - 1)
+          line = rest
+        }
+      }
+    ' "$f"
+  done
+}
+
+# ── _core_have_read_hits: HAVE_* flags a repo reads but does not set ──────────
+_core_have_read_hits() { # _core_have_read_hits <repo-root> — HAVE_* names read but not set
+  # The fleet half of audit-core.sh §5j, extracted so it can be tested against fixtures
+  # rather than only by hand (#694 review). Echoes one flag NAME per line: every HAVE_*
+  # this repo READS and does not itself SET. Empty output means the repo reads only its
+  # own flags, which is always legal — the contract is about reading a name you did not set.
+  #
+  # THREE DECISIONS, each of which was a bug in an earlier draft:
+  #
+  # 1. READS ARE MATCHED BY THEIR `$` SIGIL, not by the bare name. `${HAVE_X…}`, `$HAVE_X`
+  #    and zsh's flag forms `${+HAVE_X}` and `${(t)HAVE_X}` are reads; a comment mentioning
+  #    the flag writes it bare. The two flag forms are not decoration and both were misses in
+  #    an earlier draft: `(( ${+HAVE_X} ))` asks whether a parameter is SET without caring
+  #    about its value, and `${(t)HAVE_X}` asks for its TYPE — this tree uses both idioms
+  #    itself (`(( ${+_CORE_PROBED} ))` in 30-functions.zsh, `${(t)GIT_EXEC_PATH}` in
+  #    00-tools.zsh), so an OS layer gating either way is entirely plausible and would have
+  #    walked past a matcher demanding `HAVE_` immediately after the brace. The pattern
+  #    therefore allows an optional parenthesised flag group and an optional `+`.
+  #    Measured across the fleet:
+  #    bare-name matching found HAVE_ASTGREP/HAVE_JNV/HAVE_SHELLCHECK in one dotfiles-Offense
+  #    comment and four more flags in five other comments, none of them reads. This is what
+  #    lets the gate skip comment-stripping, which PORTABILITY.md §3 documents as needing a
+  #    parser for five grammars.
+  # 2. WHOLE-LINE COMMENTS ARE DROPPED ANYWAY, on BOTH sides. The sigil rule alone still
+  #    misreads `# gated on $HAVE_X` as a read, and — worse, because it makes the gate too
+  #    LENIENT — `# HAVE_X=1` in a comment as an assignment, which would mark the flag owned
+  #    and suppress a real undeclared read of it. Cheap and imperfect (an inline trailing
+  #    comment survives), but it is the same filter Core applies to its own file, and a
+  #    consistent 80% beats two different 80%s.
+  # 3. VENDORED core/ IS PRUNED WITH find, NOT --exclude-dir. Both --exclude-dir and -I are
+  #    GNU extensions that busybox grep REJECTS, and the Alpine leg runs busybox — the trap
+  #    that once made _core_make_gate_hits report Core as the repo missing its own rule.
+  #    Without the prune every OS repo would appear to both set and read all of Core's flags,
+  #    because it carries a copy of the file being checked against.
+  # WHY *.sh IS SCANNED HERE THOUGH audit-core.sh §5j's own reader scan is .zsh-only, which
+  # looks inconsistent and is deliberate: the two directions err in OPPOSITE directions on
+  # purpose. Core's direction 3 asks "does anything read this flag?" — counting a non-reader
+  # there KEEPS A DEAD FLAG ALIVE, so it is strict, and .zsh is the only thing that can read
+  # an unexported parameter. This direction asks "does this repo read a flag it should not?" —
+  # MISSING a reader there lets an undeclared coupling through silently, so it is broad. A
+  # downstream `.sh` may well be sourced from a zsh fragment; and where it is a plain child
+  # process instead, a `$HAVE_X` in it is a read that can only ever be empty, which is its own
+  # defect and worth surfacing rather than ignoring. Each direction is tuned to FIND problems.
+  local dir="${1:-.}" files text owns uses f
+  [ -d "$dir" ] || return 0
+  files="$(find "$dir" \( -name .git -o -name core -o -name node_modules \) -prune -o \
+    -type f \( -name '*.zsh' -o -name '*.sh' \) -print 2>/dev/null)"
+  [ -n "$files" ] || return 0
+  # The non-comment text, read once: three passes run over it below and re-grepping the
+  # file list each time triples the I/O for no gain.
+  text="$(echo "$files" | tr '\n' '\0' | xargs -0 grep -hv '^[[:space:]]*#' 2>/dev/null)"
+  # The ownership match refuses a name that ABUTS A QUOTE, so `printf 'HAVE_RG=1\n'` in a
+  # bootstrap that GENERATES a fragment is not read as this repo assigning the flag. That
+  # matters because ownership SUPPRESSES a finding: a bogus own is a silent pass on a real
+  # undeclared read, the same false-negative shape as the commented-out assignment above.
+  # It is a heuristic, not a parser, and here is exactly where its floor is. Still missed:
+  # `echo "note: HAVE_RG=1"` (a space precedes the name, as in real code); a quoted HEREDOC
+  # writing either an assignment or a read (`cat <<'EOF' > frag.zsh`), where no quote abuts
+  # anything; and a quoted ARITHMETIC literal `printf '(( HAVE_RG ))\n'`, since that pass
+  # matches a bare name and cannot use the lookbehind at all. Now over-rejected: a
+  # concatenation like `echo 'v: '$HAVE_RG`, where the quote CLOSES a string rather than
+  # opening one — contrived for a flag gate, and the trade is deliberate. Telling any of
+  # these apart needs the shell grammar, which is the trap PORTABILITY.md §3 documents at
+  # length; one character of lookbehind buys the common generated-fragment case in both
+  # directions and nothing more is claimed. The rest is #866's problem, if direction 2 is
+  # ever to become blocking.
+  owns=" $(printf '%s\n' "$text" | grep -oE "(^|[^\"'[:alnum:]_])HAVE_[A-Z0-9_]+=" 2>/dev/null \
+    | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u | tr '\n' ' ') "
+  # TWO read shapes, because a shell has two. The sigil forms are the common ones; inside an
+  # ARITHMETIC context a parameter needs no `$` at all, so `(( HAVE_RG ))` is a plain read
+  # that the sigil pattern cannot see. That is not a hypothetical style — this tree gates on
+  # booleans exactly that way (`((UPDATE_CHECK_ENABLED))` in 60-update.zsh, `((CORE_CNF_ENABLED))`
+  # in 30-functions.zsh), so an OS layer writing `(( HAVE_X ))` is following the house style,
+  # and it would have passed direction 2 in silence.
+  # THE SIGIL PASS REFUSES A `$` THAT ABUTS A SINGLE QUOTE, and single only — the mirror of
+  # the ownership rule above, and the asymmetry is the whole point. A single quote suppresses
+  # expansion, so `printf '${HAVE_RG:-}\n' > frag.zsh` in a bootstrap that GENERATES a
+  # fragment is literal text, not a read of this repo's own shell. A DOUBLE quote does not,
+  # and `[[ -n "${HAVE_ATUIN:-}" ]]` is the single most common real form in this fleet — so
+  # rejecting on any quote would have made the commonest legitimate read invisible. This
+  # direction's error is a FALSE FINDING, which reds a clean repo; the ownership rule guards
+  # the opposite one.
+  uses="$( { printf '%s\n' "$text" | grep -oE "(^|[^'])[\$][{]?([(][^)]*[)])?[+]?HAVE_[A-Z0-9_]+" 2>/dev/null
+    printf '%s\n' "$text" | grep -F '((' 2>/dev/null | grep -oE 'HAVE_[A-Z0-9_]+' 2>/dev/null
+  } | grep -oE 'HAVE_[A-Z0-9_]+' | sort -u)"
+  for f in $uses; do
+    case "$owns" in
+    *" $f "*) ;;
+    *) printf '%s\n' "$f" ;;
+    esac
   done
 }
 

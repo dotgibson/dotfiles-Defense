@@ -8,8 +8,11 @@
 #
 # gum-aware, with a plain fallback on every helper, so a bare box (fresh server,
 # rescue shell) degrades to readable text instead of erroring. gum is detected
-# live (`command -v`), NOT via 00-tools.zsh's HAVE_GUM — these helpers must also work
+# live (`command -v`), never from a band-00 flag — these helpers must also work
 # under the function unit tests, which source this file ALONE in a `zsh -fc`.
+# (This used to name 00-tools.zsh's HAVE_GUM as the thing it deliberately did not
+# use. There is no such flag since #694: being the only would-be reader, and one
+# that declines to read, is precisely why it had none.)
 #
 # LOAD ORDER: source EARLY, right after 00-tools.zsh — every later module may call it.
 # Deliberately NOT interactivity-guarded (no `[[ $- == *i* ]] || return`): it only

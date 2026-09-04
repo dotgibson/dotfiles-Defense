@@ -78,8 +78,8 @@ unset _d  # file top level — no function scope to contain it
 #
 # WHY HERE AND NOT A PARSER. The obvious alternative is to have core-doctor parse this
 # file's `_have <tool> && HAVE_<X>=1` lines at runtime. That handles only the flag-NAME
-# irregulars (ast-grep→HAVE_ASTGREP but git-absorb→HAVE_GIT_ABSORB, three lines apart) and
-# is blind to every probe that does not take that shape — the fd/bat ladder below, the
+# irregulars (git-absorb→HAVE_GIT_ABSORB, where the dash becomes an underscore) and is
+# blind to every probe that does not take that shape — the fd/bat ladder below, the
 # derived flags, the git-absorb exec-path backfill. It would need those special cases
 # anyway, plus a parser, plus logic to find this file at runtime in a vendored tree. Keyed
 # on the argument to _have, which is the canonical tool name in every case, none of that
@@ -89,7 +89,9 @@ unset _d  # file top level — no function scope to contain it
 # contract this file is built on is untouched.
 #
 # The `if`/`return` form, not `command -v … && …`: the one-liner inverts the exit status on
-# the else branch, which would break all 38 `_have x && HAVE_X=1` lines at once.
+# the else branch, which would break every `_have x && HAVE_X=1` line at once. No count is
+# quoted here on purpose — #694 cut fourteen of those lines to bare probes, and a number in
+# this sentence would have been the thing that rotted.
 typeset -gA _CORE_PROBED=()
 _have() {
   if command -v "$1" >/dev/null 2>&1; then _CORE_PROBED[$1]=1; return 0; fi
@@ -334,14 +336,32 @@ for _b in w3m lynx links2 links elinks; do
 done
 unset _b
 
-# ── HAVE_* flags consumed by 20-aliases.zsh / 30-functions.zsh / 35-fzf.zsh ────────────
+# ── Detection ────────────────────────────────────────────────────────────────
+# TWO KINDS OF LINE LIVE HERE, and the difference between them is the contract
+# PORTABILITY.md §5 declares.
+#
+#   `_have <tool> && HAVE_<X>=1`   probes AND sets a flag. A flag exists only where
+#                                  something reads it: a Core module below, or — for the
+#                                  names §5 declares — an OS or role layer downstream.
+#   `_have <tool>`                 probes and sets nothing. The CALL is the whole point:
+#                                  it writes the _CORE_PROBED[<tool>] ledger row, which is
+#                                  what core-doctor reads and all these tools ever needed.
+#
+# Every line here used to be the first kind. Fourteen of those flags had no reader anywhere
+# in the fleet — set on every interactive shell, consumed by nothing (#694) — so they are
+# now the second kind. core-doctor is unaffected: it keys on _CORE_PROBED, never on a flag
+# (see `_core_doctor_stale`, 30-functions.zsh), so the probe is the part that mattered.
+#
+# TO ADD A FLAG BACK, add `&& HAVE_<X>=1` when a reader appears. If that reader is an OS or
+# role layer rather than a Core module, declare the name in PORTABILITY.md §5 in the same
+# change — audit-core.sh §5j fails a downstream read of a flag Core has not declared, and
+# fails a declared flag this file does not set.
 _have eza && HAVE_EZA=1
 _have rg && HAVE_RG=1
 _have zoxide && HAVE_ZOXIDE=1
 _have fzf && HAVE_FZF=1
 _have starship && HAVE_STARSHIP=1
 _have atuin && HAVE_ATUIN=1
-_have delta && HAVE_DELTA=1
 _have yazi && HAVE_YAZI=1
 _have btop && HAVE_BTOP=1
 _have dust && HAVE_DUST=1
@@ -353,27 +373,15 @@ _have carapace && HAVE_CARAPACE=1 # completion engine — init in 45-plugins.zsh
 _have xh && HAVE_XH=1
 _have glow && HAVE_GLOW=1
 _have doggo && HAVE_DOGGO=1
-_have gron && HAVE_GRON=1
-_have sd && HAVE_SD=1
-_have ast-grep && HAVE_ASTGREP=1    # AST-aware structural search/rewrite — own command, no alias (the syntax-tree complement to rg=text, sd=regex, gron=JSON). Opt-in; inert without the binary.
-_have gum && HAVE_GUM=1
 _have viddy && HAVE_VIDDY=1         # modern watch (20-aliases.zsh: watch → viddy)
 _have gping && HAVE_GPING=1         # graphical ping (20-aliases.zsh: ping → gping)
 _have tldr  && HAVE_TLDR=1          # tealdeer binary (20-aliases.zsh: help → tldr)
 # mid-2026 additions — data / disk / dev tooling (see PORTING-MATRIX package table):
-_have jq && HAVE_JQ=1               # JSON processor (gron greps; jq transforms — complements)
-_have yq && HAVE_YQ=1              # YAML/JSON/XML processor (the jq of YAML)
-_have jnv && HAVE_JNV=1            # interactive jq-filter editor + collapsible JSON viewer — own command, no alias (the "explore" verb to jq's "transform"/gron's "grep"). Opt-in; inert without the binary.
-_have lnav && HAVE_LNAV=1          # log reader — merges timelines, autodetects formats, runs SQL over records; own command, no alias (bat/rg read lines, jq/gron read JSON; nothing else reads a log AS a log). Opt-in; inert without the binary.
 _have duf && HAVE_DUF=1             # modern df (20-aliases.zsh: df → duf, with df -h fallback)
-_have ouch && HAVE_OUCH=1          # one-binary archive (un)packer (30-functions.zsh: extract prefers it)
-_have hyperfine && HAVE_HYPERFINE=1 # benchmarking (the perf note at the top of this file uses it)
-_have watchexec && HAVE_WATCHEXEC=1 # run a command when files change — own command, no alias (the EVENT-driven sibling to viddy's time-driven watch and hyperfine's measured repeat). Opt-in; inert without the binary.
-_have shellcheck && HAVE_SHELLCHECK=1 # shell linter (own command — no alias)
-_have shfmt && HAVE_SHFMT=1        # shell formatter (own command — no alias)
-_have jj && HAVE_JJ=1              # jujutsu — OPT-IN, colocated git companion (20-aliases.zsh: jjs/jjl/jjd)
-_have sesh && HAVE_SESH=1          # smart tmux session manager — drives Ctrl-G (35-fzf.zsh) + prefix+f (tmux-sesh.sh); both fall back to find+fzf when unset
-_have difft && HAVE_DIFFT=1        # difftastic — AST/structural diff; OPT-IN companion to delta (git dft), never the default pager (20-aliases.zsh: gdft)
+_have ouch && HAVE_OUCH=1           # one-binary archive (un)packer (30-functions.zsh: extract prefers it)
+_have jj && HAVE_JJ=1               # jujutsu — OPT-IN, colocated git companion (20-aliases.zsh: jjs/jjl/jjd)
+_have difft && HAVE_DIFFT=1         # difftastic — AST/structural diff; OPT-IN companion to delta (git dft), never the default pager (20-aliases.zsh: gdft)
+
 _have git-absorb && HAVE_GIT_ABSORB=1 # routes staged hunks into the earlier commit each belongs to, as fixup!s (git/gitconfig already sets rebase.autosquash). Installs as the `git absorb` SUBCOMMAND, so it shadows nothing and needs no alias.
 # …and when it is NOT on PATH, look where git itself looks (#424). The Debian family
 # packages git subcommands into git's exec-path — its `lib/git-core`, `libexec/git-core`
@@ -429,6 +437,44 @@ fi
 # BROWSER needs no ledger entry: there is no single canonical name to probe (w3m/lynx/
 # links2/links/elinks all qualify), which is exactly why the doctor has no browser row.
 [[ -n ${BROWSER_BIN:-} ]] && HAVE_BROWSER=1  # terminal web browser (20-aliases.zsh: web + headless BROWSER)
+
+# ── Probed, deliberately unflagged — the ledger is the whole record (#694) ────
+# Each line below is a tool Core detects for core-doctor's benefit and nothing else. The
+# reason is per-tool and stated per-tool; the shared half is that a flag nobody reads is a
+# global in every interactive shell that can only ever go stale.
+_have delta                         # git's pager, wired in git/gitconfig — a CONFIG file, which
+                                    # cannot read a shell parameter, so the flag never had a reader
+_have gron                          # greppable JSON — own command, no alias. Its flag's only
+                                    # reader was ever a TEST fixture, which is not a consumer;
+                                    # that assertion reads the ledger directly now (#694 review)
+_have gum                           # 05-ui.zsh's helpers probe gum LIVE with `command -v`, on
+                                    # purpose (they must work before band 00 has run), so they
+                                    # never read a flag — see the note at the top of that file
+_have jq                            # JSON processor (gron greps; jq transforms — complements).
+                                    # No Core module gates on it; dotfiles-Defense probes jq
+                                    # itself, in its own role-layer namespace
+_have sd                            # regex find/replace — own command, no alias (the regex
+                                    # complement to rg=text, ast-grep=syntax, gron=JSON)
+_have ast-grep                      # AST-aware structural search/rewrite — own command, no alias.
+                                    # Opt-in; inert without the binary
+_have yq                            # YAML/JSON/XML processor (the jq of YAML)
+_have jnv                           # interactive jq-filter editor + collapsible JSON viewer — own
+                                    # command, no alias (the "explore" verb to jq's "transform"
+                                    # and gron's "grep"). Opt-in; inert without the binary
+_have lnav                          # log reader — merges timelines, autodetects formats, runs SQL
+                                    # over records; own command, no alias (bat/rg read lines,
+                                    # jq/gron read JSON; nothing else reads a log AS a log)
+_have hyperfine                     # benchmarking (the perf note at the top of this file uses it;
+                                    # scripts/bench-core.sh probes the binary directly)
+_have watchexec                     # run a command when files change — own command, no alias (the
+                                    # EVENT-driven sibling to viddy's time-driven watch and
+                                    # hyperfine's measured repeat). Opt-in; inert without the binary
+_have shellcheck                    # shell linter (own command — no alias)
+_have shfmt                         # shell formatter (own command — no alias)
+_have sesh                          # smart tmux session manager — drives Ctrl-G (35-fzf.zsh) and
+                                    # prefix+f (tmux/scripts/tmux-sesh.sh). BOTH probe `sesh` with
+                                    # `command -v` themselves and fall back to find+fzf, so neither
+                                    # ever read the flag this line used to set
 
 # The PATH the flags above were decided against. Kept ONLY so core-doctor can name which
 # directory joined late when it reports an unwired tool — the ledger, not this, is what

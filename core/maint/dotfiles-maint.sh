@@ -7,10 +7,11 @@
 # of one step never aborts the rest. Updates the USER-SPACE stack (brew, plugin
 # managers, editor) automatically — those are low-risk. SYSTEM packages are only
 # *checked* (the shell nudge cache is refreshed); applying them stays manual via
-# `up`, unless you explicitly opt in (and never on Arch/Gentoo/Kali — see below).
+# `up`, unless you explicitly opt in AND this box's OS repo declares that unattended
+# upgrades are sane for it (Arch, Gentoo and Kali declare no MAINT_UNATTENDED_UPGRADE).
 #
 # Env knobs (set in the scheduler unit or your shell before a manual run):
-#   MAINT_SYSTEM_UPGRADE=0   # 1 = also apply system pkgs (apt/dnf/zypper/brew ONLY)
+#   MAINT_SYSTEM_UPGRADE=0   # 1 = also apply system pkgs, where the OS repo declares it
 #   ZPLUGINDIR=~/.local/share/zsh/plugins
 #   MAINT_NVIM_TIMEOUT=600    MAINT_BREW_TIMEOUT=900    MAINT_TS_TIMEOUT=300
 #   MAINT_RUSTUP_TIMEOUT=600 # seconds `rustup update` may block
@@ -108,44 +109,6 @@ _to() {
   else "$@"; fi
 }
 
-# _pkgcount <secs> <grep-ere> <cmd...> — count matching lines from a network-touching
-# package probe, distinguishing "0 upgradable" from "we never got an answer".
-#
-# A bare `count=$(_to … <mgr> | grep -c …)` cannot make that distinction: when timeout
-# SIGTERMs a stalled manager there is no output, `grep -c` prints 0, and grep's non-zero
-# status — the pipeline's, since grep is the last stage — is discarded by the assignment.
-# So the -1 sentinel below is bypassed on the exact failure the timeout exists to survive
-# (a mirror that accepts the connection and then stalls), and the daily log asserts the box
-# is up to date when nothing was measured.
-#
-# Capture first, then gate on how the probe DIED and deliberately NOT on the manager's own
-# status: these managers use exit status to MEAN things — dnf check-update exits 100 when
-# updates EXIST, pacman -Qu / checkupdates exit non-zero when there are NONE — so a general
-# non-zero gate would report "unknown" on the healthy path.
-#
-# Two shapes count as "no answer", because `timeout` does not report one way everywhere:
-#   · 124 — GNU coreutils (and macOS gtimeout) on expiry.
-#   · >=128 — killed by a signal (128+n). BUSYBOX timeout reports its SIGTERM this way, as
-#     143, NOT as 124; Alpine's audit caught exactly that, having reported a stalled manager
-#     as 0 upgradable with the 124-only test. 137 is the same story if it escalates to KILL.
-# The >=128 arm is safe to be broad: no manager in the ladder above exits anywhere near
-# there on its own (dnf tops out at 100, zypper ~107, apk 99), and a probe that any signal
-# cut short genuinely did not answer, whoever sent it.
-#
-# When neither timeout nor gtimeout is installed _to runs the command bare; nothing can then
-# expire, and only a real signal reaches the >=128 arm — which is still the honest answer.
-_pkgcount() {
-  local secs="$1" pat="$2" out rc
-  shift 2
-  out="$(_to "$secs" "$@" 2>/dev/null)"
-  rc=$?
-  if ((rc == 124 || rc >= 128)); then
-    echo -1
-    return 0
-  fi
-  printf '%s\n' "$out" | grep -cE "$pat"
-}
-
 # ── the OS layer's capability declaration, read from bash ────────────────────
 # The same file zsh/02-capabilities.zsh reads, read the same way: EXTRACTED, never sourced.
 # That is the whole reason #663 chose flat KEY=value over a shell fragment — sourcing a
@@ -203,11 +166,34 @@ EOF
   return 1
 }
 
-# _pkgcount_decl <secs> <ere> <field> <fs> <cmd...> — the declared counter. Same
-# no-answer-is--1 contract as _pkgcount above and for the same reasons; what differs is that
-# the archive's output shape arrives as DATA (an ERE, a field index, a separator) instead of
-# a hand-written pattern per manager. Kept as its own function rather than folded into
-# _pkgcount because the two have different arities and _pkgcount has other callers.
+# _pkgcount_decl <secs> <ere> <field> <fs> <cmd...> — THE counter, and since #763 the only
+# one. It counts matching lines from a network-touching package probe while distinguishing
+# "0 upgradable" from "we never got an answer", and the archive's output shape arrives as
+# DATA (an ERE, a field index, a separator) rather than as a hand-written pattern per
+# manager. It had a twin, `_pkgcount`, feeding a seven-arm `have brew / checkupdates /
+# pacman / dnf / zypper / apt-get / apk` ladder for a box with no declaration; that ladder
+# went with the rest of the fallbacks and took its counter with it.
+#
+# WHY THE -1 SENTINEL EXISTS. A bare `count=$(_to … <mgr> | grep -c …)` cannot make the
+# distinction: when timeout SIGTERMs a stalled manager there is no output, `grep -c` prints
+# 0, and grep's non-zero status — the pipeline's, since grep is the last stage — is discarded
+# by the assignment. So the sentinel would be bypassed on the exact failure the timeout
+# exists to survive (a mirror that accepts the connection and then stalls), and the daily log
+# would assert the box is up to date when nothing was measured.
+#
+# CAPTURE FIRST, THEN GATE ON HOW THE PROBE DIED — deliberately not on the manager's own
+# status, which these archives overload to MEAN things (see PKG_COUNT_EXIT_TRUSTED below).
+# Two shapes count as "no answer", because `timeout` does not report one way everywhere:
+#   · 124 — GNU coreutils (and macOS gtimeout) on expiry.
+#   · >=128 — killed by a signal (128+n). BUSYBOX timeout reports its SIGTERM this way, as
+#     143, NOT as 124; Alpine's audit caught exactly that, having reported a stalled manager
+#     as 0 upgradable with the 124-only test. 137 is the same story if it escalates to KILL.
+# The >=128 arm is safe to be broad: no package manager exits anywhere near there on its own
+# (dnf tops out at 100, zypper ~107, apk 99), and a probe that any signal cut short genuinely
+# did not answer, whoever sent it.
+#
+# When neither timeout nor gtimeout is installed _to runs the command bare; nothing can then
+# expire, and only a real signal reaches the >=128 arm — which is still the honest answer.
 _pkgcount_decl() {
   local secs="$1" pat="$2" field="$3" fs="$4" out rc
   shift 4
@@ -324,18 +310,20 @@ if have mise; then
   # within-constraint staleness, which the upgrade just cleared). Report-only, like
   # the `up` nudge for system packages below — apply with `mise up --bump <tool>`.
   #
-  # Bounded and rc-gated for the reason _pkgcount documents at length: this probe hits the
+  # Bounded and rc-gated for the reason _pkgcount_decl documents at length: this probe hits the
   # network to resolve "latest beyond the pin", and a registry that accepts the connection
   # and then stalls yields EMPTY output. A bare `[[ -n "$bump" ]]` reads that emptiness as
   # the happy path and logs "all runtimes current" — asserting a fact nothing measured.
   #
-  # The GATE HERE IS STRICTER THAN _pkgcount's, and deliberately so — do not "fix" the
-  # inconsistency. _pkgcount cannot test `rc != 0` because the managers it wraps OVERLOAD
-  # exit status to mean things: `dnf check-update` exits 100 when updates EXIST, `pacman -Qu`
-  # exits non-zero when there are NONE, so a general non-zero gate would report "unknown" on
-  # their healthy path. That forced it down to testing only how the probe DIED (124 = GNU or
-  # gtimeout expiry; >=128 = killed by a signal, which is how busybox timeout reports its own
-  # SIGTERM as 143), leaving a fast hard failure to fall through as "0 upgradable".
+  # The GATE HERE IS STRICTER THAN _pkgcount_decl's, and deliberately so — do not "fix" the
+  # inconsistency. _pkgcount_decl cannot test `rc != 0` by default because the managers it
+  # wraps OVERLOAD exit status to mean things: `dnf check-update` exits 100 when updates
+  # EXIST, `pacman -Qu` and `checkupdates` exit non-zero when there are NONE, so a general
+  # non-zero gate would report "unknown" on their healthy path. (PKG_COUNT_EXIT_TRUSTED is
+  # how an archive opts INTO that gate; Gentoo is the only one that does.) That forced it
+  # down to testing only how the probe DIED (124 = GNU or gtimeout expiry; >=128 = killed by
+  # a signal, which is how busybox timeout reports its own SIGTERM as 143), leaving a fast
+  # hard failure to fall through as "0 upgradable".
   #
   # `mise outdated` overloads nothing: 0 whether or not bumps exist, non-zero only on a real
   # failure. So ANY non-zero is honestly "we did not get an answer" — a stall, a 500 from the
@@ -483,13 +471,11 @@ if have nvim; then
 fi
 
 # ── System packages: refresh the shell-nudge cache (NON-ROOT count) ───────────
-# Distro detection for the Kali / opt-in apply guard below.
-OS_ID=""
-[[ -r /etc/os-release ]] && OS_ID="$(
-  # shellcheck source=/dev/null  # generated system file; nothing to follow at lint time
-  . /etc/os-release 2>/dev/null
-  echo "$ID"
-)"
+# THE /etc/os-release READ THAT USED TO OPEN THIS SECTION IS GONE (#763). It set $OS_ID for
+# a Kali check in the apply guard below — a distro STRING decision inside portable Core,
+# which is precisely what os.capabilities exists to replace, and the last such read Core
+# carried. Kali now declines by declaring no MAINT_UNATTENDED_UPGRADE, which is a claim its
+# own repo makes about itself rather than one Core infers about it.
 PKG_CACHE="$XDG_CACHE_HOME/zsh/pkg-updates"
 mkdir -p "${PKG_CACHE%/*}"
 count=-1
@@ -503,17 +489,18 @@ count=-1
 # it — and since the answer never arrives it is never persisted, so it prompts again forever.
 # EOF makes that a declined key and a slightly-low count instead of a dead run.
 #
-# _pkgcount bounds the ones that touch the network (via _to), for the other failure: a
-# mirror that accepts the connection and then stalls — and, unlike a bare `… | grep -c`,
-# reports -1 rather than 0 when the bound actually fires (see its comment above).
-# pacman -Qu reads the local DB only: it cannot stall, so it stays unwrapped and counted
-# directly — a 0 from it is a real 0.
+# _pkgcount_decl bounds the probe (via _to) for the other failure: a mirror that accepts the
+# connection and then stalls — and, unlike a bare `… | grep -c`, reports -1 rather than 0
+# when the bound actually fires (see its comment above).
+# ONE PROBE, WHATEVER THE ARCHIVE. The seven-arm `have brew / checkupdates / pacman / dnf /
+# zypper / apt-get / apk` ladder that used to sit behind this was the SECOND copy of the one
+# in zsh/60-update.zsh, and it had already drifted from it: it grew no emerge arm at all, so
+# a Gentoo box's daily run never counted anything, and its zypper apply said `up` where the
+# interactive one said `dup` on Tumbleweed. #665 made the declared path the primary and left
+# the ladder for a box that had not re-bootstrapped; #763 deleted it. An undeclared box now
+# logs "count UNAVAILABLE" — which is the truth, and which the nudge already renders as
+# silence.
 if cap_declared; then
-  # THE DECLARED PATH. One probe, whatever the archive — the seven-arm ladder below was the
-  # SECOND copy of the one in zsh/60-update.zsh and had already drifted from it: it grew no
-  # emerge arm at all, so a Gentoo box's daily run has never counted anything, and its
-  # zypper apply says `up` where the interactive one says `dup` on Tumbleweed. Two copies of
-  # one fact is how that happens; there is now one.
   _cmd="$(cap PKG_COUNT_PENDING)"
   if [[ -n "$_cmd" ]]; then
     _refresh="$(cap PKG_COUNT_REFRESH)"
@@ -525,29 +512,21 @@ if cap_declared; then
     # shellcheck disable=SC2086  # same deliberate split
     count=$(_pkgcount_decl "$MAINT_PKGCOUNT_TIMEOUT" "$_match" "$_field" "$_fs" $_cmd)
   fi
-elif have brew; then
-  count=$(_pkgcount "$MAINT_PKGCOUNT_TIMEOUT" '.' brew outdated --quiet)
-elif have checkupdates; then
-  count=$(_pkgcount "$MAINT_PKGCOUNT_TIMEOUT" '.' checkupdates)
-elif have pacman; then
-  count=$(pacman -Qu 2>/dev/null | grep -c .)
-elif have dnf; then
-  count=$(_pkgcount "$MAINT_PKGCOUNT_TIMEOUT" '^[a-zA-Z0-9][^ ]*[[:space:]]' dnf -q --refresh check-update)
-elif have zypper; then
-  count=$(_pkgcount "$MAINT_PKGCOUNT_TIMEOUT" '^v ' zypper -q list-updates)
-elif have apt-get; then
-  count=$(_pkgcount "$MAINT_PKGCOUNT_TIMEOUT" '^Inst ' apt-get -s upgrade)
-elif have apk; then
-  count=$(_pkgcount "$MAINT_PKGCOUNT_TIMEOUT" '.' apk list -u)
 fi </dev/null
 printf '%s\n%s\n' "${count:--1}" "$(date +%s)" >"$PKG_CACHE"
 # Log the sentinel as UNKNOWN, not as "-1 upgradable". -1 is how the cache spells "we did
-# not get an answer" (no supported manager, or the probe hit MAINT_PKGCOUNT_TIMEOUT), and
-# the whole point of keeping it distinct from 0 is that the daily log must not assert the
-# box is up to date when nothing was measured. The nudge stays silent either way — it
-# needs a positive count — so this is the only place the difference is visible.
+# not get an answer" — no declaration linked, an archive that declares no PKG_COUNT_PENDING,
+# or a probe that hit MAINT_PKGCOUNT_TIMEOUT — and the whole point of keeping it distinct
+# from 0 is that the daily log must not assert the box is up to date when nothing was
+# measured. The nudge stays silent either way — it needs a positive count — so this is the
+# only place the difference is visible, and since #763 it is also where an unlinked
+# declaration first shows up in an unattended run. Hence naming --links-only here.
 if [[ "${count:--1}" == -* ]]; then
-  log "system packages: count UNAVAILABLE (no supported manager, or the probe exceeded ${MAINT_PKGCOUNT_TIMEOUT}s) — nudge stays silent"
+  if cap_declared; then
+    log "system packages: count UNAVAILABLE (no PKG_COUNT_PENDING declared, or the probe exceeded ${MAINT_PKGCOUNT_TIMEOUT}s) — nudge stays silent"
+  else
+    log "system packages: count UNAVAILABLE (no os.capabilities linked — run ./bootstrap.sh --links-only) — nudge stays silent"
+  fi
 else
   log "system packages: ${count} upgradable (cache refreshed; apply with \`up\`)"
 fi
@@ -606,22 +585,16 @@ if [[ "$MAINT_SYSTEM_UPGRADE" == 1 ]]; then
         fi
       fi
     fi
-  elif [[ "$OS_ID" == kali ]]; then
-    log "system upgrade SKIPPED: Kali — update engagement boxes by hand between ops"
-  elif have pacman || have emerge; then
-    log "system upgrade SKIPPED: Arch/Gentoo must not be upgraded unattended — run \`up\`"
   else
-    # passwordless sudo required for this to work non-interactively; otherwise it
-    # logs a sudo failure and moves on (safe).
-    if have brew; then
-      : # brew already upgraded above
-    elif have dnf; then
-      step "system: dnf upgrade" sudo -n dnf -y upgrade --refresh
-    elif have zypper; then
-      step "system: zypper up" sudo -n zypper --non-interactive up
-    elif have apt-get; then
-      step "system: apt upgrade" sh -c 'sudo -n apt-get update && sudo -n apt-get -y full-upgrade && sudo -n apt-get -y autoremove'
-    fi
+    # NO DECLARATION, NO UNATTENDED UPGRADE — and refusing is the only safe default here.
+    # What used to sit in this arm was the pre-declaration path: a Kali check read out of
+    # /etc/os-release, an Arch/Gentoo refusal inferred from `have pacman || have emerge`
+    # (a probe for a BINARY standing in for a claim about a DISTRO — true on any box with
+    # pacman installed for other reasons), and a four-arm `sudo -n` apply ladder behind
+    # them. #763 deleted all of it. Every one of those judgements now belongs to the repo
+    # that can actually make it, and a box that cannot read its repo's judgement must not
+    # apply a full system upgrade unattended on a guess.
+    log "system upgrade SKIPPED: no os.capabilities linked — run ./bootstrap.sh --links-only, then apply with \`up\`"
   fi
 fi
 

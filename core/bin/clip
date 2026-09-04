@@ -3,7 +3,33 @@
 # ONE clipboard implementation, shared by zsh (pbcopy), tmux (copy-pipe), and
 # nvim (clipboard provider).
 # Detection order: WSL -> macOS -> Wayland -> X11 -> OSC 52.
+# Usage: … | clip [--sensitive]      (CLIP_SENSITIVE=1 is the same as --sensitive)
 set -euo pipefail
+
+# ── --sensitive: "this is a secret; leave it nowhere but the clipboard" (#690) ─
+# The real backends (clip.exe/pbcopy/wl-copy/xclip/xsel) put the payload on the system
+# clipboard and nothing else, so the flag changes nothing for them. It exists for the OSC 52
+# last resort UNDER TMUX, where the plain path leaves a copy of the payload in a tmux paste
+# buffer that anything with the socket can read back (`tmux show-buffer`) — see
+# _osc52_copy. optoken pipes a live TOTP through here with this flag; nothing else in Core
+# sets it, and the default path is byte-for-byte what it was before the flag existed.
+#
+# Parsed with a loop over "$@" rather than getopts: this is the nvim/tmux hot path (see
+# below) and the loop is free when there are no arguments, which is every caller but
+# optoken. An unknown argument is refused rather than ignored — `clip somefile` used to
+# hang reading stdin, which is not a behaviour worth preserving.
+_sensitive=""
+[[ -n "${CLIP_SENSITIVE:-}" && "${CLIP_SENSITIVE}" != 0 ]] && _sensitive=1
+for _arg in "$@"; do
+  case "$_arg" in
+    --sensitive) _sensitive=1 ;;
+    *)
+      echo "clip: unknown argument '$_arg'" >&2
+      echo "  usage: … | clip [--sensitive]" >&2
+      exit 2
+      ;;
+  esac
+done
 
 # Hot path: nvim/tmux re-exec this on EVERY yank/paste (the clipboard provider runs
 # with cache_enabled=0 by design — see nvim clipboard.lua). So the WSL probe reads
@@ -85,6 +111,16 @@ _osc52_copy() {
   # the foreground TUI also owns. If nvim redraws between two of them the sequence splits
   # and the terminal copies a partial value. nvim blocks on the provider job, so the window
   # is small — but it is real, and it grows with yank size.
+  #
+  # --sensitive under tmux never takes this write. With Core's own `set-clipboard on`
+  # (tmux.conf) the pane's OSC 52 is not merely forwarded: tmux's input_osc_52() ALSO
+  # paste_add()s the decoded payload as an unnamed buffer, so the "write the escape straight
+  # to the tty" idea from #690 would leave the secret exactly where the flag promises it will
+  # not be. The sensitive arm below routes around tmux's parser instead.
+  if [[ -n "$_sensitive" && -n "${TMUX:-}" ]]; then
+    _osc52_sensitive_tmux "$b64" "$tty"
+    return
+  fi
   if { printf '\033]52;c;%s\a' "$b64" >"$tty"; } 2>/dev/null; then
     return 0
   fi
@@ -107,8 +143,84 @@ _osc52_copy() {
     return 0
   fi
 
-  echo "clip: no clipboard backend, and no terminal at $tty for the OSC 52 fallback" >&2
+  _osc52_no_backend "$tty"
+}
+
+_osc52_no_backend() {
+  echo "clip: no clipboard backend, and no terminal at $1 for the OSC 52 fallback" >&2
   echo "  (install wl-clipboard or xclip, or run this from a terminal session)" >&2
+  return 1
+}
+
+# ── the sensitive arm under tmux (#690) ───────────────────────────────────────
+# Two ways to reach the outer terminal's clipboard without leaving the payload in a tmux
+# paste buffer, tried in order of how completely they close the window:
+#
+#   1. DCS passthrough — `ESC P tmux; <OSC 52 with its ESC doubled> ESC \`. tmux hands the
+#      inner sequence to the outer terminal verbatim and its own OSC 52 parser never sees
+#      it, so NO buffer is ever created. Needs the pane's `allow-passthrough` to be `on`
+#      (visible panes only) or `all`; tmux's default is `off`, in which case the DCS is
+#      dropped on the floor, silently — which is why it is probed rather than assumed.
+#   2. A NAMED transient buffer — `tmux load-buffer -w -b <name> -` followed at once by
+#      `tmux delete-buffer -b <name>`. `-w` is what puts the payload on the outer clipboard
+#      (server-side OSC 52, honouring `set-clipboard`); the delete is the whole point. Both
+#      are socket round-trips executed in order, so the buffer exists for the gap between
+#      them and no longer: narrowed, not closed, and said so on stderr at the moment it
+#      matters. Named so that the delete can never take out a buffer that is not ours — a
+#      bare `delete-buffer` removes the MOST RECENT buffer, which is a race against tmux
+#      reading the pane and against every other client on the socket.
+#
+# Neither arm reaches past ONE tmux: under nested tmux the outer server parses whatever the
+# inner one forwards (a passthrough DCS, or the OSC 52 that `-w` emits), and with its own
+# `set-clipboard on` it keeps a buffer this process cannot see, let alone delete.
+#
+# If the buffer cannot be deleted, this is a FAILURE: the payload is on the clipboard, but
+# the one thing --sensitive promised is untrue, so exit 1 with the exact command to fix it
+# rather than let the caller print "sent".
+_osc52_sensitive_tmux() {
+  local b64="$1" tty="$2" name passthrough
+  if ! command -v tmux >/dev/null 2>&1; then
+    _osc52_no_backend "$tty"
+    return
+  fi
+
+  # `-p` pane options, `-A` walk the pane→window→global inheritance (a bare `set -g`
+  # lives at the global-window level, which `-p` alone does not show), `-q` so a tmux
+  # older than 3.3 — no such option — prints nothing and lands on arm 2.
+  passthrough="$(tmux show-options -pAqv allow-passthrough 2>/dev/null || true)"
+  case "$passthrough" in
+    on | all)
+      # BEL still terminates the inner OSC; inside a DCS, C0 controls are collected as
+      # payload, so the outer terminal receives the identical sequence the non-tmux path
+      # emits. A tty that cannot be opened (no controlling terminal) falls to arm 2.
+      # \134 is the ST's backslash as an octal escape — a literal `\\` at the end of a
+      # single-quoted format reads as an escaped quote to shellcheck (SC1003).
+      if { printf '\033Ptmux;\033\033]52;c;%s\a\033\134' "$b64" >"$tty"; } 2>/dev/null; then
+        return 0
+      fi
+      ;;
+  esac
+
+  name="clip-sensitive-$$"
+  # A signal in the instant between the two commands (Ctrl-C, a closed ssh session's HUP)
+  # must not strand the buffer: the traps delete it on the way out. $name is expanded NOW,
+  # deliberately — the handler must name this buffer even if the variable is gone.
+  # shellcheck disable=SC2064
+  trap "tmux delete-buffer -b '$name' 2>/dev/null; trap - EXIT; exit 1" INT TERM HUP
+  # shellcheck disable=SC2064
+  trap "tmux delete-buffer -b '$name' 2>/dev/null" EXIT
+  if printf '%s' "$b64" | base64 -d 2>/dev/null | tmux load-buffer -w -b "$name" - 2>/dev/null; then
+    if tmux delete-buffer -b "$name" 2>/dev/null; then
+      trap - EXIT INT TERM HUP
+      echo "clip: could not pass the escape through tmux to the outer terminal (allow-passthrough off, or no tty), so the copy went through a tmux buffer (created and deleted at once; readable on the tmux socket for that instant — \`set -g allow-passthrough on\` avoids the buffer entirely)" >&2
+      return 0
+    fi
+    # The EXIT trap stays armed: one more attempt on the way out costs nothing.
+    echo "clip: copied, but could NOT delete the transient tmux buffer holding it — run: tmux delete-buffer -b $name" >&2
+    return 1
+  fi
+  trap - EXIT INT TERM HUP
+  echo "clip: tmux load-buffer failed — nothing copied" >&2
   return 1
 }
 
