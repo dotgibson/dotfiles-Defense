@@ -39,10 +39,12 @@
 # for exactly that reason; do not "simplify" it to `${v%%[[:space:]]##}`, which would
 # match nothing at this point in the chain and fail silently.
 #
-# WHY IT WARNS RATHER THAN FAILS. A box with no declaration keeps working on Core's
-# existing hardcoded ladders. The alternative — hard-failing at startup — would leave
-# an unusable interactive shell on a box you are very likely SSH'd into precisely to
-# fix it. Enforcement belongs in the audit (a gate you run), not the login shell.
+# WHY IT WARNS RATHER THAN FAILS. Hard-failing at startup would leave an unusable
+# interactive shell on a box you are very likely SSH'd into precisely to fix it — and
+# since #763 removed Core's built-in fallbacks, an undeclared box is exactly the box you
+# would be SSH'd into. Enforcement belongs in the audit (a gate you run), not the login
+# shell; the DEGRADATION is reported by each consumer, in its own voice, at the moment it
+# actually bites.
 #
 # BIN/CLIP IS DELIBERATELY NOT HERE. Its backend ladder stays hardcoded: bin/clip is
 # re-exec'd by nvim and tmux on EVERY yank and paste, and its WSL probe was already
@@ -98,19 +100,29 @@ elif [[ -n "${CORE_CAP_LOUD:-}" ]]; then
   # Between the two, absence is expected and unremarkable, and a warning that fires on every
   # shell during a normal migration window is how an operator learns to ignore stderr.
   #
-  # Consumers DO dispatch through $_CORE_CAP now (`up`, the maint runner, core-doctor), so a
-  # missing declaration is no longer free — but each of them falls back to a built-in row and
-  # keeps working, and the honest place to say so is that consumer's own call site, where
-  # the message can name what actually degraded rather than warning about a table nobody in
-  # this shell may go on to read. Revisit this default when #763 removes those fallbacks:
-  # absence stops being survivable then, and the warning becomes both true and urgent.
+  # AND WHY IT IS STILL OPT-IN AFTER #763, which deleted the built-in fallbacks and made a
+  # missing declaration genuinely costly. The cost is now paid at each consumer — `up` names
+  # the missing PKG_UPGRADE and points at `--links-only`, `maint-install` refuses rather than
+  # writing a unit to a guessed directory, core-doctor prints no install line, and
+  # core-status's OS row says the declaration is not linked. Every one of those messages can
+  # name what actually degraded; a warning here can only say a table is empty, to a shell
+  # that may never go on to read it. Two lines of stderr on EVERY interactive shell, every
+  # tmux split and every `zsh -i -c` is how an operator learns to ignore stderr — which is
+  # the failure mode this default was flipped to avoid in the first place (#715).
   #
   # 05-ui.zsh defines _core_warn/_core_hint — and it loads AFTER this fragment, so those
   # helpers do not exist yet. Write the plain thing rather than call a function that is
   # not there. stderr, so it never pollutes a `$(...)` capture from a login shell.
+  # BE PRECISE ABOUT WHAT IS LOST, because an overstated warning is its own kind of noise.
+  # `up` and the doctor's install hint have no declaration to read at all. maint-install is
+  # NARROWER: _maint_scheduler still probes, and the cron branch needs no SCHEDULER_UNIT_DIR,
+  # so an undeclared OpenRC/cron box installs its timer exactly as before — it is the
+  # systemd and launchd branches that have no unit directory to write to.
   print -u2 -- "core: no OS capability declaration at ${CORE_CAPABILITIES_FILE}"
-  print -u2 -- "  -> Core is using its built-in defaults. If your OS repo already ships"
-  print -u2 -- "     os/<os>.capabilities, re-run its ./bootstrap.sh --links-only to link it."
+  print -u2 -- "  -> \`up\` and core-doctor's install hint have nothing to run, and"
+  print -u2 -- "     maint-install/maint-uninstall refuse on systemd and launchd (cron is unaffected)."
+  print -u2 -- "     If your OS repo already ships os/<os>.capabilities, re-run its"
+  print -u2 -- "     ./bootstrap.sh --links-only to link it."
   print -u2 -- "     If it does not, author one first (see core/examples/os.capabilities.example)."
 fi
 

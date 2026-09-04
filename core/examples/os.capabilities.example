@@ -7,9 +7,10 @@
 # maint/dotfiles-maint.sh — which is bash, not zsh — reads the same file with sed.
 #
 # The values below are Fedora's, transcribed from PORTING-MATRIX.md §"Package-manager
-# commands". They are an EXAMPLE, not a default: nothing in Core falls back to them.
-# (Core does carry BUILT-IN DEFAULTS per manager, in zsh/60-update.zsh — but those are a
-# stopgap that #667 deletes once every repo declares, not a value read from this file.)
+# commands". They are an EXAMPLE, not a default: nothing in Core falls back to them, and
+# since #763 Core carries no per-manager defaults of its own either. A box with no linked
+# declaration has no upgrade verb, no scheduler unit directory and no install hint — each
+# consumer says so in its own voice. THE DECLARATION IS THE WHOLE SOURCE OF TRUTH.
 #
 # Validate a real one with:  core/scripts/check-capabilities.sh os/<os>.capabilities
 # That script is where the schema is defined, and it is what rejects an unknown key.
@@ -117,9 +118,12 @@ MAINT_UNATTENDED_UPGRADE=1
 TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
 
 # ──────────────────────────────────────────────────────────────────────────────
-# THE OTHER ARCHIVES, for the repos transcribing their own (#667). These are Core's
-# built-in rows from zsh/60-update.zsh, which are what those boxes run TODAY — so a
-# declaration that differs from its row is a deliberate change, not a transcription slip.
+# THE OTHER ARCHIVES. These were Core's built-in rows in zsh/60-update.zsh, which is what
+# every box ran before #667 transcribed them into the seven OS repos and #763 deleted the
+# table. They are kept here as the reference a NEW OS repo starts from — a declaration that
+# differs from its row is a deliberate change, not a transcription slip. The live values are
+# each repo's own os/<os>.capabilities; PORTING-MATRIX.md's package-manager table is
+# generated from those and is the place to read what the fleet actually declares.
 #
 #   Debian/Ubuntu/Kali (apt)
 #     PKG_UPGRADE=sudo apt-get full-upgrade
@@ -132,8 +136,9 @@ TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
 #     PKG_PENDING_FIELD=2
 #
 #   openSUSE (zypper) — Tumbleweed is `dup`, Leap is `up`, and ONE repo serves both.
-#   Core's built-in row still probes /etc/os-release; a declaration cannot, so decide
-#   this deliberately (a wrapper the repo ships, or two declarations) — see #667.
+#   Core's built-in row probed /etc/os-release for this, which is exactly the OS knowledge
+#   Core may not carry; a declaration cannot probe, so decide it deliberately. The repo
+#   ships TWO declarations (opensuse + opensuse.leap), which is the shape to copy.
 #     PKG_UPGRADE=sudo zypper dup          # Tumbleweed;  Leap: sudo zypper up
 #     PKG_UPGRADE_PARTIAL=sudo zypper up
 #     PKG_ASSUME_YES=-y
@@ -171,7 +176,9 @@ TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
 #   version in the tree?" and `up` runs `emerge -uDN @world`, which answers "what will
 #   actually change?" — permanently different questions, off by 70-vs-8 on a real box
 #   (#753/#756). Only the resolver knows, and its output needs parsing, so declare a
-#   script the repo ships rather than a one-liner. Core's built-in row calls its own
-#   function for this; a declaration must not reach into Core's internals.
+#   script the repo ships rather than a one-liner. Core's built-in row named a function of
+#   its own for this; that function went with the table in #763, and a declaration must not
+#   reach into Core's internals in any case. dotfiles-Gentoo ships scripts/pkg-pending.sh
+#   and declares it as `gentoo-pkg-pending` — copy that shape.
 #   PKG_COUNT_EXIT_TRUSTED says a non-zero exit means "could not answer": an
 #   `emerge --pretend` that cannot resolve must report unknown, never 0.

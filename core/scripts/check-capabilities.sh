@@ -48,7 +48,14 @@ CAP_REQUIRED=(
   SCHEDULER          # systemd | launchd | cron | none — see CAP_SCHEDULERS below, which
                      # is the authority; 55-maint.zsh branches on this
 )
-# OPTIONAL — absent means "Core's built-in default applies".
+# OPTIONAL — and since #763 "absent" means the KEY'S OWN ABSENCE IS THE STATEMENT, not that
+# Core substitutes a row of its own. Core carried per-manager and per-scheduler defaults
+# behind these until then; they are deleted, so no PKG_ASSUME_YES means never auto-confirm,
+# no PKG_UPGRADE_PARTIAL means `up -i` refuses, no SCHEDULER_UNIT_DIR means maint-install and
+# maint-uninstall refuse on systemd/launchd, and no MAINT_UNATTENDED_UPGRADE means the
+# scheduled runner will not apply. TOOLS_OPTIN is the ONE exception and says so at its entry:
+# it is the only key that still falls back to a Core-side default, because omitting it means
+# "I have not curated a list", not "nothing here is optional".
 #
 # EVERY key added for #664 is optional ON PURPOSE. The eight required verbs are what an
 # archive cannot work without; these express the ways archives DIFFER, and an archive that

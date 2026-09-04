@@ -28,7 +28,7 @@ core.version
 # loader.zsh is the shared fragment-loader an OS .zshrc sources (B12); it is NOT itself a
 # numbered fragment (no NN- prefix) — it DRIVES the glob, so it is never sourced by it.
 zsh/loader.zsh         # canonical glob+sort+byte-compile+source loop, vendored so OS .zshrc files stop duplicating it
-zsh/00-tools.zsh       # detection + the single init point (zoxide/starship/atuin/mise/direnv) + the Core→OS API (_cache_eval, _core_is_wsl)
+zsh/00-tools.zsh       # detection + the single init point (zoxide/starship/atuin/mise/direnv) + the Core→OS API (_cache_eval, _core_is_wsl, the HAVE_* flags PORTABILITY.md §5 declares)
 zsh/02-capabilities.zsh # reads the OS layer's os.capabilities declaration into _CORE_CAP (the OS repo authors that file; it is NOT Core, so it is not listed here)
 zsh/05-ui.zsh          # terminal-UX primitives (_core_err/warn/ok/hint/confirm/spin) — gum-aware
 zsh/10-options.zsh     # setopts + completion system (compinit, cached) + zstyles
