@@ -36,6 +36,11 @@ on:
       - '!**.md'
       - '!**/*.md'
       - '!LICENSE'
+      # …EXCEPT the hunt/case templates, which are INSTALLED markdown: bootstrap.sh:201
+      # links `defense/templates` into $CONFIG/defense/templates. The blanket exclusions
+      # above would drop them, which is the same silent-no-release defect this PR fixes.
+      # A positive pattern AFTER a negative one re-includes, so this wins.
+      - 'defense/templates/**'
       # CI plumbing and the suite — neither is wired into $HOME by bootstrap.sh.
       - '!.github/**'
       - '!tests/**'
