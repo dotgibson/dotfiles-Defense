@@ -1,18 +1,68 @@
 name: auto-tag
 
-# Cut THIS repo's own next vX.Y.Z release tag when a Core fan-out lands new core/ on
-# main. Delegates to the reusable workflow in dotfiles-core — one definition of the
-# version math + tagging (scripts/auto-tag.sh): PATCH-bump by default, idempotent (a
-# no-op when HEAD is already tagged vX.Y.Z), and it tags in CI so the second version
-# line (this repo's own tag) stops drifting from the Core it vendors. SHA-pinned, not
-# @v4 — see the note on the `uses:` below.
+# Cut THIS repo's own next vX.Y.Z tag (+ a GitHub Release) when its INSTALLABLE STATE
+# changes on main. Delegates to the reusable workflow in dotfiles-core — one definition
+# of the version math + tagging (scripts/auto-tag.sh): PATCH-bump by default, idempotent
+# (a no-op when HEAD is already tagged vX.Y.Z), and it tags in CI so this repo's own
+# version line stops drifting from the Core it vendors.
+#
+# THIS FILTER USED TO BE `paths: ['core/**']`, AND THAT WAS THE DEFECT
+# (dotgibson/dotfiles-core#696). Watching only the vendored subtree meant the tag advanced
+# when *Core* moved and at no other time, so this repo's own work was released only when
+# an unrelated fan-out happened to sweep it up — and was then attributed to a tag whose
+# entire meaning was "Core moved". Measured on dotfiles-Fedora, the template every Linux
+# repo is stamped from: seven Core syncs produced seven releases, and six native commits
+# produced none. So `v1.3.68` meant "68 Core syncs received" — and for exactly that,
+# core.lock is already authoritative and more precise. The release NOTES were never the
+# problem (auto-tag.sh groups Conventional Commits over the whole range since the last
+# tag); the trigger and the granularity were.
+#
+# A DENYLIST, NOT AN ALLOWLIST, on purpose. The default answer is "this changed what gets
+# installed, so cut a tag", and only what demonstrably does NOT ship is carved out. An
+# allowlist fails the way the old filter failed: add a new installable directory, forget
+# to list it, and releases silently stop. The denylist's failure mode is a spurious patch
+# tag — noisy, not wrong. `!` patterns are evaluated in order, so the exclusions below
+# override the `**` above.
 on:
   push:
     branches: [main]
-    paths: ['core/**']
+    paths:
+      - '**'
+      # Docs and licence — never installed. BOTH markdown forms on purpose: GitHub
+      # documents `**.js` as matching "all .js files in the repository", which implies
+      # `**` spans directory separators — but the filter-pattern semantics are not pinned
+      # down explicitly anywhere citable, and this repo carries nested markdown. Listing
+      # both costs nothing and is correct under either reading.
+      - '!**.md'
+      - '!**/*.md'
+      - '!LICENSE'
+      # CI plumbing and the suite — neither is wired into $HOME by bootstrap.sh.
+      - '!.github/**'
+      - '!tests/**'
+      # This repo's own Claude routine rail: report-first tooling, not host config.
+      - '!.claude/**'
+      # Author-time tooling config: linters, git and dependency-bot metadata.
+      - '!.editorconfig'
+      - '!.gitattributes'
+      - '!.gitignore'
+      - '!.markdownlint.jsonc'
+      - '!.shellcheckrc'
+      - '!renovate.json'
+  # The third SemVer component, reachable without editing this file. `bump` has been an
+  # input of the reusable from the start and NO caller in the fleet had ever passed one, so
+  # every tag any repo could cut was a patch — a release that adds a file and forces a
+  # re-bootstrap looked identical to a typo fix. Safe to press at any time: the reusable
+  # no-ops when HEAD already carries a vX.Y.Z tag.
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Which SemVer component to advance'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 permissions:
-  contents: write
+  contents: write # the tag push + GitHub Release needs write
 
 concurrency:
   group: auto-tag-${{ github.ref }}
@@ -29,3 +79,7 @@ jobs:
     # already pins this same caller for this same reason (RELEASE-STRATEGY.md, auto-tag row).
     # Renovate bumps the SHA; the trailing comment is the human-readable version.
     uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@c926609ade3146f8b74463c1c1d426bd44e4a550 # v6.1.0
+    # `inputs` is empty on a push event, so this reads `patch` there and the chosen
+    # component on a dispatch. One caller, both flows.
+    with:
+      bump: ${{ inputs.bump || 'patch' }}
