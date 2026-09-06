@@ -53,8 +53,11 @@ for a in "$@"; do case "$a" in
 # under set -e, losing the one message that says how to fix it.
 for req in core/zsh core/lib/ux.sh core/lib/bootstrap-lib.sh; do
   if [[ ! -e "$DOTFILES/$req" ]]; then
-    echo "core/ subtree missing or incomplete (no $req). One time, from the repo root run:" >&2
-    echo "  git subtree add --prefix=core <dotfiles-core remote> main --squash" >&2
+    echo "vendored core/ missing or incomplete (no $req). A clone always has core/;" >&2
+    echo "if building fresh, take a RELEASED TAG (never main, or core-integrity reports" >&2
+    echo "the fresh tree as TAMPERED), then let the fan-out stamp core.lock:" >&2
+    echo "  git subtree add --prefix=core <dotfiles-core remote> refs/tags/v7 --squash" >&2
+    echo "  make sync          # in dotfiles-core" >&2
     exit 1
   fi
 done
