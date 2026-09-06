@@ -1,0 +1,85 @@
+name: closing-refs
+
+# Does this PR close an issue its own body says it must not close?
+#
+# The hole this covers is measured, not theoretical. dotgibson/dotfiles-Defense#246 has been
+# auto-closed twice by merging PRs whose bodies opened with a disclaimer — #253 with
+# `Closes nothing. **#246 stays open**`, #269 with `**Closes nothing.** #246 is blocked on a
+# Windows host`. Both closed it. The first reopen blamed the branch name; #269 was then
+# branched with no issue number in it anywhere and closed #246 anyway, which is what proved
+# the cause: GitHub's linked-issue parser reads the closing keyword and the number, and the
+# DISCLAIMER IS WHAT PERFORMS THE CLOSE.
+#
+# Why a gate rather than a note in CONTRIBUTING.md: the damage lands at merge, and the author
+# who wrote the disclaimer is the one person already convinced the PR closes nothing. Both
+# times the error was found by noticing the issue had gone closed, and paid for with a reopen
+# and a comment reconstructing why. #246 is blocked on a Windows host that does not exist yet,
+# so a silent close is not a small clerical slip — it retires the only record of what the run
+# has to measure.
+#
+# It asks GitHub what the PR will ACTUALLY close (closingIssuesReferences — the same field the
+# second reopen used to prove the link) and compares that against the body. It does not grade
+# the wording: the verdict is a contradiction between two facts, so there is nothing to argue
+# about and nothing to tune. All the logic is in check-closing-refs.sh, hermetic and covered
+# by tests/test-defense.sh, so it is testable without opening a PR to try it.
+#
+# NO paths-ignore, deliberately — same reason lint.yml carries that note. A paths-ignore'd
+# workflow reports no status at all on a PR it skips, so a required check that never reports
+# leaves that PR permanently pending. The job is seconds and one GraphQL query.
+
+on:
+  pull_request:
+    # `edited` matters most: the disclaimer is usually written or reworded after the PR is
+    # opened, and closingIssuesReferences is recomputed from the body every time it changes.
+    types: [opened, edited, reopened, synchronize]
+
+concurrency:
+  group: closing-refs-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  guard:
+    name: no PR closes an issue it disclaims
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Ask GitHub what this PR will close
+        id: refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016
+          # $owner/$repo/$pr are GraphQL variables bound by -F, not shell expansions. Single
+          # quotes are required here — expanding them in the shell is what -F exists to avoid.
+          nums="$(gh api graphql \
+            -f query='query($owner:String!,$repo:String!,$pr:Int!){
+              repository(owner:$owner,name:$repo){
+                pullRequest(number:$pr){
+                  closingIssuesReferences(first:20){nodes{number}}}}}' \
+            -F owner="$OWNER" -F repo="$REPO" -F pr="$PR" \
+            --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[].number' |
+            tr '\n' ' ')"
+          echo "numbers=${nums%% }" >>"$GITHUB_OUTPUT"
+
+      - name: Compare against the PR body
+        env:
+          # Via env, never interpolated into the script. A PR body is attacker-controlled
+          # text; `run: ... ${{ github.event.pull_request.body }}` would be a shell injection,
+          # and this repo would rather not ship one of those.
+          BODY: ${{ github.event.pull_request.body }}
+          NUMBERS: ${{ steps.refs.outputs.numbers }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$BODY" >"$RUNNER_TEMP/pr-body.md"
+          # shellcheck disable=SC2086
+          # Word splitting is intended: NUMBERS is a space-separated list of issue numbers.
+          bash .github/workflows/check-closing-refs.sh "$RUNNER_TEMP/pr-body.md" $NUMBERS
