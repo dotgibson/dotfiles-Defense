@@ -104,12 +104,17 @@ jobs:
           fixed on \`main\`, and a report written from it wastes a maintainer's time.
           Check upstream before filing anything about Core.
 
-          To sync (a deliberate act — never edit \`core/\` in place):
+          To sync: Core is pushed INTO this repo by dotfiles-core's own fan-out, which
+          opens the bump PR — there is nothing to pull from this side. \`git subtree pull\`
+          is actively wrong here: it moves \`core/\` without moving \`core.lock\`, and
+          \`core-integrity\` then reports the tree as TAMPERED. Run the fan-out from a
+          dotfiles-core checkout instead:
 
           \`\`\`bash
-          git subtree pull --prefix core https://github.com/dotgibson/dotfiles-core.git v$UPSTREAM_VER --squash
-          make core-lock
+          make sync          # in dotfiles-core
           \`\`\`
+
+          Then verify from this repo with \`make core-verify\`.
 
           Changelog: https://github.com/dotgibson/dotfiles-core/blob/v$UPSTREAM_VER/CHANGELOG.md
           EOF
