@@ -22,7 +22,7 @@ answer is "none", it is Core's.
 
 ## 2. Never hand-edit `core/`
 
-`core/` is a vendored subtree, materialized by `dotfiles-core`'s own
+`core/` is a vendored copy, materialized by `dotfiles-core`'s own
 `scripts/sync-core.sh`. Anything you change there is **overwritten on the next sync**,
 and `core-integrity.yml` will report the tree as TAMPERED before that even happens.
 
