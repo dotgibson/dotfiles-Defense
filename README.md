@@ -121,7 +121,7 @@ cd ~/dotfiles-Defense
 exec zsh
 ```
 
-`core/` is a vendored subtree and is **already present** in a clone — there is no
+`core/` is a vendored copy and is **already present** in a clone — there is no
 submodule step. Host tools come from your OS-native layer; bring the heavy
 detection stack up and down with `siemup` / `siemdown`.
 
