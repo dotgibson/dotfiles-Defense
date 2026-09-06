@@ -15,8 +15,12 @@ containers.
 
 ## The rule that bites
 
-- `core/` is a vendored subtree of dotfiles-core — never edit it here; fix
-  upstream then sync.
+- `core/` is a vendored copy of dotfiles-core — never edit it here; fix
+  upstream then sync. It arrives by a **pinned fetch plus
+  `git read-tree --prefix=core/`**, with `core.lock` recording the commit — not
+  `git subtree` (dotgibson/dotfiles-core#587). A `git subtree pull` would move
+  `core/` without `core.lock` and leave `core-integrity` reporting **TAMPERED**;
+  `core/VENDORING.md` has the mechanism.
 - The loader adds a **`defense` stage** (`… os defense local`) — keep blue config
   there, not in `core/`.
 - **Case/evidence data NEVER lives in the repo.** It lives in `~/cases/`; the
