@@ -101,7 +101,36 @@ Every workflow under `.github/workflows/` runs on a PR. The `sigma.yml` gates ar
 **hard** — there are no advisory steps to ignore. `make sigma` reproduces the offline
 subset; `make attack-tags` covers the one that needs the network.
 
-## 7. Commits
+## 7. Pull requests that must NOT close an issue
+
+Do not put a closing keyword — `close/closes/closed`, `fix/fixes/fixed`,
+`resolve/resolves/resolved` — anywhere in a PR body that also names an issue the PR must
+leave open. GitHub's linked-issue parser matches the keyword to the number and does no
+negation analysis, so **the disclaimer is what performs the close**. This has happened
+twice to [#246](https://github.com/dotgibson/dotfiles-Defense/issues/246): #253 opened
+`Closes nothing. **#246 stays open**` and #269 opened `**Closes nothing.** #246 is blocked
+on a Windows host`. Both squash-merged, both closed it, both needed a reopen.
+
+Rewording the disclaimer does not help — #269 was branched with no issue number in it
+precisely to avoid what #253 was blamed on, and closed #246 anyway. Lead with the number so
+no keyword precedes it:
+
+| | |
+| --- | --- |
+| ✗ | `Closes nothing. #246 is blocked on a Windows host` |
+| ✗ | `This does not close #246` — the keyword is still adjacent to the number |
+| ✓ | `#246 stays open — it is blocked on a Windows host` |
+| ✓ | `Leaves #246 open; see the runbook for what unblocks it` |
+
+`closing-refs.yml` enforces this: it asks GitHub what the PR will actually close and fails
+when that contradicts the body. To check by hand before merging:
+
+```bash
+gh api graphql -f query='{repository(owner:"dotgibson",name:"dotfiles-Defense")
+  {pullRequest(number:NNN){closingIssuesReferences(first:10){nodes{number}}}}}'
+```
+
+## 8. Commits
 
 Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`), imperative mood, and a body
 that explains *why* rather than restating the diff. A commit that fixes a detection

@@ -916,5 +916,98 @@ is "an unknown argument exits non-zero" "1" "$rc"
 contains "an unknown argument is named" "$out" "unknown arg"
 
 # ─────────────────────────────────────────────────────────────────────────────
+group "check-closing-refs.sh — a PR must not close an issue it disclaims"
+
+# WHY THIS GATE IS TESTED HERE. #246 was auto-closed twice by merging PRs that said they
+# closed nothing (#253, #269). The gate exists so there is no third time, and its whole
+# value is the verdict — so the two real bodies that caused the closes are pinned as cases,
+# alongside the near-misses that must NOT fire. Hermetic: no network, no PR, no gh.
+CCR="$REPO/.github/workflows/check-closing-refs.sh"
+[ -x "$CCR" ] && ok "closing-refs gate is executable" || no "closing-refs gate is executable"
+
+CCRB="$TMPROOT/pr-body.md"
+# ccr <body> <issue...> — writes the body, runs the gate, echoes the exit code
+ccr() {
+  local body="$1"
+  shift
+  printf '%s' "$body" >"$CCRB"
+  bash "$CCR" "$CCRB" "$@" >/dev/null 2>&1
+  echo $?
+}
+
+# The two bodies that actually closed #246. If either of these ever passes, the gate has
+# stopped doing the one job it was written for.
+is "#253's body is caught" "1" \
+  "$(ccr 'Closes nothing. **#246 stays open** — it needs a Windows host.' 246)"
+is "#269's body is caught" "1" \
+  "$(ccr '**Closes nothing.** #246 is blocked on a Windows host' 246)"
+
+# The disclaimer and the number are usually on different lines — #269's were. Whitespace is
+# collapsed before matching so the two halves still meet.
+printf '%s\n' '**Closes nothing.**' '' '#246 stays open.' >"$CCRB"
+bash "$CCR" "$CCRB" 246 >/dev/null 2>&1
+is "a disclaimer split across lines is caught" "1" "$?"
+
+# Emphasis, link syntax and case must not hide it either.
+is "a full issue URL is normalised to #N" "1" \
+  "$(ccr 'Closes nothing. https://github.com/dotgibson/dotfiles-Defense/issues/246 stays open.' 246)"
+is "a targeted negation is caught" "1" \
+  "$(ccr 'This does not close #246; it only corrects the runbook.' 246)"
+
+# The other half of the contract: it must not cry wolf, or it gets bypassed and the next
+# silent close lands anyway.
+is "a genuine close passes" "0" \
+  "$(ccr 'Closes #246 by capturing the potato run on a Windows host.' 246)"
+is "a disclaimer with no closing reference passes" "0" \
+  "$(ccr 'Closes nothing. #246 stays open.')"
+is "unrelated prose using the word closed passes" "0" \
+  "$(ccr 'The seclogon route is ruled out, so that question is closed. Closes #246.' 246)"
+
+# Two regressions found while writing the gate — both are the disclaimer window running past
+# the issue it belongs to, and both would have failed honest PRs.
+is "a clause about another issue does not disclaim this one" "0" \
+  "$(ccr 'Closes #300. #246 stays open.' 300)"
+is "#2467 in the body does not disclaim #246" "0" \
+  "$(ccr 'Closes #246. #2467 stays open.' 246)"
+
+# A mixed PR reports only the contradicted issue, so the message says what to actually fix.
+printf '%s' 'Closes #300. #246 stays open.' >"$CCRB"
+out="$(bash "$CCR" "$CCRB" 300 246 2>&1)"
+rc=$?
+is "a mixed PR fails" "1" "$rc"
+contains "the contradicted issue is named" "$out" "contradicted: 246"
+lacks "the genuinely-closed issue is not named as contradicted" "$out" "contradicted: 300"
+
+# The remedy has to be in the failure text: the advice recorded in #246 itself
+# ("does not close #246") leaves the keyword adjacent to the number, so an author following
+# it would fail this gate twice without learning why.
+contains "the message rejects rewording the disclaimer" "$out" "does not close #246"
+contains "the message shows the safe phrasing" "$out" "#246 stays open"
+contains "the message shows how to verify before merging" "$out" "closingIssuesReferences"
+
+# Usage failures are exit 2, distinct from a real contradiction — CI must be able to tell a
+# broken invocation from a PR that genuinely disclaims what it closes.
+is "no arguments exits 2" "2" "$(
+  bash "$CCR" >/dev/null 2>&1
+  echo $?
+)"
+is "a missing body file exits 2" "2" "$(
+  bash "$CCR" "$TMPROOT/nope.md" 246 >/dev/null 2>&1
+  echo $?
+)"
+is "a non-numeric issue exits 2" "2" "$(ccr 'anything' abc)"
+
+# The workflow must not interpolate the PR body into a shell command — it is
+# attacker-controlled text. It is passed via env and written to a file instead.
+ccr_wf="$(cat "$REPO/.github/workflows/closing-refs.yml" 2>/dev/null)"
+lacks "the workflow never interpolates the PR body into run:" \
+  "$ccr_wf" 'run: |
+          set -euo pipefail
+          printf '"'"'%s'"'"' "${{ github.event.pull_request.body }}"'
+contains "the workflow passes the body through env" "$ccr_wf" "BODY: \${{ github.event.pull_request.body }}"
+contains "the workflow reads the real mechanism" "$ccr_wf" "closingIssuesReferences"
+contains "the workflow runs on body edits" "$ccr_wf" "edited"
+
+# ─────────────────────────────────────────────────────────────────────────────
 printf '\n\033[36msummary\033[0m\n  %d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
