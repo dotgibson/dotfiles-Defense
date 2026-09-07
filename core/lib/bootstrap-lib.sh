@@ -1097,7 +1097,8 @@ blib_install_system_file() {
   return 0
 }
 
-# blib_resolve_su [--require] — resolve the escalator ONCE into BLIB_SU, and export it.
+# blib_resolve_su [--require] [--prefer TOOL] — resolve the escalator ONCE into BLIB_SU,
+# and export it.
 #
 # Every OS bootstrap.sh hard-codes `sudo` at a dozen call sites. That is wrong on every box
 # where there is no sudo to call — and those are exactly the boxes a bootstrap meets first:
@@ -1114,6 +1115,18 @@ blib_install_system_file() {
 # --require makes "not root and no escalator" a hard error (returns 1). Without it the
 # caller gets an empty BLIB_SU and a warning, which is the correct outcome for a
 # links-only run — wiring symlinks needs no privileges at all.
+#
+# --prefer TOOL puts TOOL at the FRONT of that order, and exists because sudo-first is not a
+# universal fact. `dotfiles-Alpine` is the case: its os/alpine.capabilities declares "DOAS,
+# NOT SUDO — the Alpine fact this file exists to declare", and says so explicitly for "the
+# rare Alpine box that installs sudo as well". Without this flag, adopting this helper there
+# would silently invert a declared OS fact — so the repo would have kept its hand-rolled
+# probe, which is how `[[ "$(id -u)" -eq 0 ]]` survived there (#867). A helper the fleet
+# cannot adopt without a behaviour change is a helper the fleet does not adopt.
+#
+# TOOL is not restricted to sudo/doas: it is tried through the same _blib_su_path discipline
+# as the defaults, so `--prefer pkexec` resolves an absolute, executable pkexec or moves on.
+# A TOOL that is also a default is tried once, not twice.
 # _blib_su_path <name> — set $_BLIB_SU_PATH to NAME's absolute executable path and return
 # 0, or return 1. `command -v` alone is not enough: it also resolves aliases, builtins and
 # shell functions, so a `sudo()` function in the environment makes it print `sudo`. Require
@@ -1128,8 +1141,28 @@ _blib_su_path() {
 }
 
 blib_resolve_su() {
-  local require=0
-  [[ "${1:-}" == "--require" ]] && require=1
+  # Declared up here, not inside the branch that fills them: the root arm skips that branch
+  # entirely, and a `local` inside it would leave `_su_found` unset for the test below —
+  # fine today only because `&&` short-circuits first, which is a fact about the current
+  # line order rather than about the code being right.
+  local require=0 prefer="" _su_t="" _su_seen="" _su_found=0
+  while (($#)); do
+    case "$1" in
+    --require) require=1 ;;
+    --prefer)
+      prefer="${2:-}"
+      shift
+      ;;
+    --prefer=*) prefer="${1#--prefer=}" ;;
+    # A typo must not read as "no flags given" — that would silently drop a --require and
+    # turn a hard requirement into a warning, which is the direction that hurts.
+    *)
+      blib_warn "blib_resolve_su: unknown argument '$1'"
+      return 2
+      ;;
+    esac
+    shift
+  done
   if [[ -n "${BLIB_SU+x}" ]]; then
     export BLIB_SU
     return 0
@@ -1158,15 +1191,28 @@ blib_resolve_su() {
   # every call) and could hand privileged execution to the function itself.
   if [[ "$uid" == "0" ]]; then
     BLIB_SU=""
-  elif _blib_su_path sudo; then
-    BLIB_SU="$_BLIB_SU_PATH"
-  elif _blib_su_path doas; then
-    BLIB_SU="$_BLIB_SU_PATH"
   else
+    # $prefer first when named, then the defaults. `seen` keeps a --prefer that names one of
+    # the defaults from being probed twice; the case-glob form is bash 3.2-safe (no
+    # associative array), which this file must be — macOS ships 2007's bash.
+    for _su_t in ${prefer:+"$prefer"} sudo doas; do
+      case " $_su_seen " in *" $_su_t "*) continue ;; esac
+      _su_seen="$_su_seen $_su_t"
+      if _blib_su_path "$_su_t"; then
+        BLIB_SU="$_BLIB_SU_PATH"
+        _su_found=1
+        break
+      fi
+    done
+  fi
+  if [[ "$uid" != "0" ]] && ((!_su_found)); then
     BLIB_SU=""
     if ((require)); then
-      blib_warn "not root, and neither sudo nor doas is installed — cannot install packages"
-      blib_warn "re-run as root, install sudo, or use --links-only (which needs no privileges)"
+      # Names the list actually probed. With --prefer that is no longer "sudo or doas", and a
+      # message naming tools the caller never asked for sends the operator to install the
+      # wrong one.
+      blib_warn "not root, and none of:${_su_seen} is installed — cannot install packages"
+      blib_warn "re-run as root, install one of them, or use --links-only (which needs no privileges)"
       export BLIB_SU
       return 1
     fi

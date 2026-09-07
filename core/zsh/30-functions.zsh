@@ -445,15 +445,15 @@ _core_status_json() {
 # replacement — and it keeps the generic-sounding verbs (`up`, `serve`) reachable
 # under a namespaced form that won't be mistaken for some other tool.
 #   core                  → the cheat sheet  (U6: bare `core` is help, never an error)
-#   core help [filter]    → core-help
-#   core doctor [-v]      → core-doctor
-#   core version          → core-version
-#   core update [-y|-n]   → up
-#   core update check     → update-check
-#   core whatsnew [--full] → core-whatsnew
-#   core status [--json]  → core-status
-#   core maint <verb>     → maint-install|run|log|status|uninstall  (bare `core maint` lists them)
-#   core sync             → gsync
+#   core help [filter]              → core-help
+#   core doctor [-v]                → core-doctor
+#   core version                    → core-version
+#   core update [-y|-n]             → up
+#   core update check               → update-check
+#   core whatsnew [--full] [--all]  → core-whatsnew
+#   core status [--json]            → core-status
+#   core maint <verb>               → maint-install|run|log|status|uninstall  (bare `core maint` lists them)
+#   core sync                       → gsync
 # The subcommand lists are the single source the completion (_core), the
 # unknown-subcommand did-you-mean and the usage lines all read, so they can't drift —
 # and scripts/test-core.sh asserts _core's describe arrays mirror them.
@@ -2383,7 +2383,7 @@ _core_help_render() {
     "§updates & maintenance"
     "up [-y]|apply package updates (interactive; confirms first)"
     "update-check|refresh the 'updates available' nudge"
-    "core-whatsnew [--full]|what changed in Core since this box last looked"
+    "core-whatsnew|what changed in Core since this box last looked (--full for the prose, --all for every release)"
     "core-status|is this box current: version, provenance, live layers, core/ integrity"
     "gsync|push this repo's vendored core/ subtree back upstream to dotfiles-core"
     "maint-install [HH:MM]|schedule the daily safe-update job"

@@ -341,6 +341,80 @@ jobs:
           fi
           echo "${#files[@]} repo-owned .zsh — none re-implements a Core-owned block"
 
+      # ── ADVISORY: no repo-owned zsh reads an UNDECLARED Core HAVE_* flag.
+      #
+      # THE GAP THIS CLOSES (#866). audit-core.sh §5j direction 2 asserts exactly this, and
+      # it has never fired anywhere. Core's own CI checks out this repo alone, so direction 2
+      # records an environment skip on every run — the right posture, the same one §5f and
+      # §5h take — which leaves it exercised only by a maintainer's local `make audit`. So an
+      # OS-repo PR could add `${HAVE_LNAV:-}`, a flag Core no longer sets, and merge green;
+      # the break surfaces later as a shell function quietly not firing, which is the exact
+      # failure #694 existed to prevent.
+      #
+      # WHY IT NEEDED A VENDORED FILE. The rule lives in scripts/lib/common.sh ::
+      # _core_have_read_hits and has for a while, covered by thirteen fixtures. What it could
+      # not have here is the DECLARED TABLE: that is PORTABILITY.md §5, and PORTABILITY.md is
+      # repo-meta, not vendored. Rather than vendor 270 lines of prose — an allowlist change
+      # V5-PROPOSAL.md §4 treats as a major-version concern of its own — Core renders the
+      # machine-readable half into zsh/have-api.txt (scripts/gen-have-api.sh, gated by
+      # audit-core.sh §5m) and vendors that. The doc stays the contract; this reads its twin.
+      #
+      # WHY IT WARNS RATHER THAN FAILS, for now — the same reasoning as the block-duplication
+      # leg above, and the adoption note #866 asked for. The fleet is clean today (verified:
+      # the only cross-repo read is HAVE_ATUIN in Alpine/Debian/Fedora, which §5 declares),
+      # but callers pin a moving major, so every OS repo sees this leg the moment auto-tag
+      # moves — including a repo with a branch in flight that predates the rule. One release
+      # cycle of warning, then the flip is a three-line follow-up.
+      #
+      # READING THE TWIN, NOT REIMPLEMENTING IT. The allowlist is grepped out of the vendored
+      # file rather than restated here, so a flag declared in §5 reaches this leg by the same
+      # sync that ships the code — and a caller whose core/ predates the file is told to sync
+      # rather than judged against an allowlist it never received.
+      - name: Undeclared Core HAVE_* reads (repo-owned zsh) — advisory
+        working-directory: caller
+        env:
+          CORE_ROOT: ${{ github.workspace }}
+        run: |
+          api="core/zsh/have-api.txt"
+          if [ ! -f "$api" ]; then
+            echo "::notice::core/zsh/have-api.txt not vendored yet (Core predates dotgibson/dotfiles-core#866) — the HAVE_* contract leg is skipped until this repo syncs a Core that carries it"
+            exit 0
+          fi
+          # PARSING NOTHING IS A SKIP, NOT A GREEN AND NOT A FLEET-WIDE RED. An empty or
+          # malformed twin would mark EVERY read undeclared and red nine repos at once for a
+          # defect that is in Core. The generator refuses to render empty (gen-have-api.sh),
+          # so this is belt: if it somehow arrives empty, say so and check nothing.
+          declared="$(grep -vE '^[[:space:]]*(#|$)' "$api" || true)"
+          if [ -z "$declared" ]; then
+            echo "::warning::core/zsh/have-api.txt is present but declares nothing — not judging reads against an empty contract (report at dotgibson/dotfiles-core)"
+            exit 0
+          fi
+          # shellcheck source=scripts/lib/common.sh
+          . "$CORE_ROOT/scripts/lib/common.sh"
+          # The helper already subtracts the repo's OWN assignments, which is what keeps a
+          # Role layer's ~20 self-owned names out of this — PORTABILITY.md §5 "Role and OS
+          # layers own their own HAVE_* names".
+          hits=0
+          for flag in $(_core_have_read_hits .); do
+            # -x, so HAVE_ATUIN_SYNC is not swallowed by a declared HAVE_ATUIN; -F, because
+            # a flag name is a literal, never a pattern.
+            printf '%s\n' "$declared" | grep -qxF "$flag" && continue
+            echo "    reads \$$flag, which PORTABILITY.md §5 does not declare for downstream use"
+            hits=1
+          done
+          if [ "$hits" -ne 0 ]; then
+            echo "::warning::this repo reads a Core HAVE_* flag outside the declared surface (see above)"
+            echo "Core may rename or drop an undeclared flag in any release, so a read of one"
+            echo "breaks silently: the guard goes false and the feature it gates goes quiet."
+            echo "Two ways forward, and the first is the ask rather than a workaround:"
+            echo "  1. Declare it — add the row to PORTABILITY.md §5's 'What downstream may"
+            echo "     use' table in dotfiles-core, in the same change that reads it."
+            echo "  2. Or stop depending on Core's probe: command -v <tool> >/dev/null 2>&1"
+            echo "This warning becomes a BLOCKING failure in the next Core release."
+            exit 0
+          fi
+          echo "no repo-owned zsh reads an undeclared Core HAVE_* flag ($(printf '%s' "$declared" | wc -l | tr -d ' ')+1 declared)"
+
       # ── BLOCKING: the OS capability declaration validates against Core's schema.
       #
       # WHY HERE AND NOT IN EACH REPO'S `make lint`. Every declaring repo does have a

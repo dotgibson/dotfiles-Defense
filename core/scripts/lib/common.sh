@@ -141,14 +141,15 @@ skip_env() {
 #
 # THE THIRD QUESTION. tool ("install it"), environment ("clone the sibling"), out-of-scope
 # ("you narrowed the run") all say something is ABSENT. This one says the opposite: the run
-# was complete and the honest report includes a half that cannot be asserted. §9f's parity
-# default is the case — pwsh gets Ctrl+Arrow from a PSReadLine default, so there is no string
-# to grep, and parity-check.sh reports it rather than inventing a needle that cannot fail.
+# was complete and the honest report includes a part that cannot be asserted. §9j's hero-tape
+# weigher is the case — the nine OS/role gifs are not rendered yet (#698's follow-up), so
+# there is nothing to weigh, and gen-hero-tape.sh says so rather than passing on an absent
+# file. §9f's parity default used to be the other one, until #849 turned it into a real
+# assertion; the class outlived its first caller, which is the point of having one.
 #
 # WHY IT NEEDS ITS OWN CLASS. Without one it falls through to TOOL, and --strict — documented
 # as "a gate SKIPPED because its TOOL is absent" — would fail a fully-provisioned box purely
-# because the contract is being honest about a framework default. That would also disagree
-# with `parity-check.sh --strict`, which accepts the same reported default. A gate punished
+# because the contract is being honest about something it declined to assert. A gate punished
 # for reporting honestly teaches the next author to stop reporting.
 #
 # Recorded by INDEX, never by wording, for skip_env's reason.
@@ -468,6 +469,88 @@ _core_return_trap_hits() { # _core_return_trap_hits <file>
                              if (l !~ /^[[:space:]]*#/ && l !~ dis) print $1 }'
 }
 
+# ── bash-4-ism scanner (audit-core.sh §5k) ────────────────────────────────────
+# _core_bash4_hits <file> — print "<line>:<what>" for every bash 4+ construct <file> uses.
+# Silence = clean.
+#
+# PORTABILITY.md §1 sets the shell floor at bash 3.2, because macOS ships 2007's bash and the
+# audit matrix runs a macos-latest leg. TEN scripts here carry a comment saying so — this
+# file, audit-core.sh, gen-theme.sh, gen-aliases.sh, parity-check.sh, check-modern.sh,
+# nvim-reachability.sh, update-plugins.sh, core-lock.sh, research/lib/atuin-db.sh. Ten
+# comments and, until #874, zero checks: a convention enforced only by a CI leg that takes
+# seventeen minutes to answer, on one platform of four, after the fact.
+#
+# That is how #871 shipped one such call into test/73-maint-runner.sh. Every local gate was
+# green — the line is valid syntax so `bash -n` passes, shellcheck does not model bash
+# versions so §5 passes, and the suite passes on bash 5 — and the ubuntu, alpine and arch
+# legs passed too. Only macOS failed, with `command not found`, seventeen minutes in.
+#
+# WHAT IT COVERS is PORTABILITY.md §1's banned table, entry for entry — the gate and the doc
+# must not be able to disagree, or the doc becomes the thing people read and the gate becomes
+# the thing they satisfy. Each is a builtin or a syntax bash 3.2 does not HAVE, so a textual
+# match is a real defect rather than a style opinion, and each fails DIFFERENTLY, which is why
+# the finding names the construct rather than just the line:
+#   the array-reading builtins  4.0   command not found
+#   associative arrays          4.0   invalid option
+#   case-conversion expansion   4.0   bad substitution
+#   append-both-streams         4.0   parsed as a control operator — BACKGROUNDS the command
+#   pipe-both-streams           4.0   syntax error
+#   case fallthrough            4.0   syntax error
+#   wait -n                     4.3   waits for ALL jobs, not the next one — so a bounded
+#                                     parallel loop silently becomes a serial barrier, which
+#                                     with `&>>` is one of the two that fail SILENTLY
+#
+# WHAT IT DELIBERATELY DOES NOT COVER, both for the same reason — a gate that fires on
+# working code is a gate someone turns off (§5d says this too, about its own narrowing):
+#
+#   * `"${arr[@]}"` on an EMPTY array, an unbound-variable error under `set -u` before bash
+#     4.4. Not greppable: the identical expansion is correct wherever the array is known
+#     non-empty. PORTABILITY.md states the rule and test/85-escalation.sh pins a live case.
+#   * `typeset -A`, matched only in its `declare`/`local` spellings. `typeset` is the ZSH
+#     spelling, and zsh has had associative arrays forever — scripts/test/65-functions.sh
+#     alone carries ten legitimate `typeset -gA` lines, zsh snippets embedded as
+#     single-quoted literals for a zsh CHILD to run, which no textual scan can tell from
+#     bash. This repo's bash uses `declare`/`local`, so the needle follows that; a bash
+#     script spelling it `typeset -A` is the one shape §5k will miss.
+#   * pipe-both-streams written WITHOUT a following space. The needle requires whitespace or
+#     end-of-line after it, and a preceding character that is not a backslash, pipe or open
+#     bracket, because the bare two-character sequence occurs five times in this tree inside
+#     awk regexes and bracket expressions — `/^(&&|\|\||&)\$/` and `[^ \t;|&)}]` in
+#     fleet-vocabulary.sh, gen-aliases.sh and this file. Those are not shell operators and
+#     flagging them would have made the gate red on arrival, which is the one thing it must
+#     not be. `cmd |&other` is therefore missed; `cmd |& other`, how it is actually written,
+#     is caught.
+#
+# Named here so a green §5k is not read as promising more than it checks.
+#
+# COMMENTS ARE STRIPPED FIRST, and that is load-bearing rather than politeness: nine of the
+# ten references above are prose ABOUT the rule, and a gate that fires on its own
+# documentation is one that gets reverted the day it lands.
+_core_bash4_hits() { # _core_bash4_hits <file>
+  local f="${1:-}"
+  [ -f "$f" ] || return 0
+  # THE NEEDLES ARE ASSEMBLED FROM FRAGMENTS, like _core_pipefail_hits and
+  # _core_return_trap_hits above, so these very lines cannot match the patterns they define —
+  # the scanner reads every tracked shell script, and common.sh is one of them. The awk
+  # program therefore never spells a needle out: it concatenates, and the finding text is
+  # built at run time from the same pieces.
+  awk -v mf="map""file" -v ra="read""array" '
+    function said(w) { print NR ":" w }
+    {
+      l = $0
+      sub(/[[:space:]]*#.*$/, "", l)   # comment-stripped; only ever loses findings, never invents
+      if (l ~ /^[[:space:]]*$/) next
+      if      (l ~ ("(^|[^A-Za-z0-9_])(" mf "|" ra ")([[:space:]]|$)")) said(mf "/" ra " is bash 4.0")
+      else if (l ~ /(^|[[:space:]])(declare|local)[[:space:]]+-[A-Za-z]*A([[:space:]]|$)/) said("associative arrays are bash 4.0")
+      else if (l ~ /\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?(,,|\^\^)/) said("case-conversion expansion is bash 4.0")
+      else if (l ~ ("&" ">" ">")) said("append-both-streams is bash 4.0 — bash 3.2 BACKGROUNDS the command")
+      else if (l ~ ("(^|[^\\\\|[])[|]" "&([[:space:]]|$)")) said("pipe-both-streams is bash 4.0")
+      else if (l ~ (";;" "&")) said("case fallthrough is bash 4.0")
+      else if (l ~ ("(^|[[:space:]])wait[[:space:]]+-n([[:space:]]|$)")) said("wait -n is bash 4.3 — bash 3.2 waits for ALL jobs, turning a bounded parallel loop into a serial barrier")
+    }
+  ' "$f" 2>/dev/null
+}
+
 # ── _core_owned_block_hits: portable logic that Core owns, re-implemented locally ──
 # _core_owned_block_hits <file> — print `<line>:<rule-id>` for every place <file>
 # re-implements a block Core now owns. Silence = clean. Consumed by the reusable
@@ -729,14 +812,17 @@ _core_conflict_marker_hits() { # _core_conflict_marker_hits <file>
 # ── _core_parity_verdict: what did the parity gate actually establish? ────────
 # _core_parity_verdict <rc> <parity-check-output> — print exactly one of:
 #   ok-full        every aligned row is covered AND holds on both shells
-#   ok-defaults    ditto, except one or more pwsh halves are framework defaults that
-#                  parity-check.sh REPORTED rather than asserted
 #   ok-no-sibling  coverage held, but dotfiles-Windows is absent so pwsh was not read
 #   drift          a real finding: an unenforced row, or one that drifted out of a shell
 #   broken         the gate could not run, which must NOT be rendered as a clean contract
 #
-# WHY A HELPER, rather than the `if` chain this replaces. The three success cases are three
-# DIFFERENT claims, and audit-core.sh got the distinction wrong twice in one review round —
+# ok-defaults — a third success case, for pwsh halves that were framework DEFAULTS with no
+# string to grep — was retired in #849 when dotfiles-Windows bound Ctrl+Arrow explicitly and
+# word-nav, its only ever user, became a real assertion. A verdict no run can return is a
+# claim no test can hold to account, so it went with the sentinel that produced it.
+#
+# WHY A HELPER, rather than the `if` chain this replaces. The success cases are DIFFERENT
+# claims, and audit-core.sh got the distinction wrong twice in one review round —
 # once by inheriting CORE_JSON=1 (which silences the very skip line the classification reads,
 # so a --json run reported a full zsh+pwsh pass on a box with no pwsh file), and once by
 # printing an unqualified "holds across zsh + pwsh" and only admitting the unasserted halves
@@ -753,11 +839,8 @@ _core_parity_verdict() { # _core_parity_verdict <rc> <output>
   1) printf 'drift\n'; return 0 ;;
   *) printf 'broken\n'; return 0 ;;
   esac
-  # Order matters: with no sibling repo the pwsh half never runs at all, so the
-  # framework-default rows are never reached and cannot also be reported.
   case "$out" in
   *"dotfiles-Windows not checked out"*) printf 'ok-no-sibling\n'; return 0 ;;
-  *"nothing to grep"*) printf 'ok-defaults\n'; return 0 ;;
   esac
   printf 'ok-full\n'
 }
@@ -944,6 +1027,59 @@ _core_helper_called() { # _core_helper_called <file> <helper>
   grep -qE "(^|[^A-Za-z0-9_])${h}([^A-Za-z0-9_]|\$)" <<<"$code"
 }
 
+# ── _core_nested_worktrees: checkouts of this repo parked INSIDE this checkout ──
+# _core_nested_worktrees <repo-root> — print, one per line and relative to <repo-root>, the
+# root of every linked git worktree whose checkout lives under it. Silence = none.
+#
+# WHY THIS EXISTS. Claude Code puts its worktrees at `.claude/worktrees/<name>/`, i.e. INSIDE
+# the checkout they branch from. A gate that walks the FILESYSTEM then reads other sessions'
+# working copies as this repo's own content and reports on files no commit here can fix
+# (#905: `make audit` printed 1004 failures, 1002 of them about three other worktrees). CI
+# never saw it — a fresh checkout has no worktrees — so the gate reds ONLY on a maintainer's
+# machine, the one place RELEASE-RUNBOOK.md §1.1 demands it green.
+#
+# WHY NOT `_audit_ls`, WHICH IS HOW #906 FIXED THE SAME BLIND SPOT IN gen-theme.sh. That scan
+# could switch to git-aware discovery because it hunts SHIPPABLE consumers, and git's
+# exclusions are exactly right for it. _core_claude_untracked_hits cannot: its whole subject
+# is the file git refuses to mention, so every git-derived listing returns nothing for it and
+# would turn the gate green by seeing less. It has to walk, so it has to prune.
+#
+# GIT IS ASKED, NOT THE FILESYSTEM. `git worktree list --porcelain` is the registry git
+# maintains itself, so this cannot mistake a vendored `core/` or a stray directory for a
+# checkout, and it costs one subprocess rather than a stat per file. Both sides are
+# normalised through `cd`/`pwd -P` before the prefix test: git records the path it was
+# HANDED, which can differ from <repo-root>'s spelling by a symlink, and a textual compare
+# would then silently prune nothing — the vacuous-pass shape §1c's own canary exists for.
+#
+# SCOPE IS LINKED WORKTREES OF THIS REPO. An unrelated clone parked under this tree is not in
+# git's registry and stays reportable on purpose: nobody registered it, so "is this meant to
+# be here" is a real question. This answers only the half git can answer.
+_core_nested_worktrees() { # _core_nested_worktrees <repo-root>
+  local root="${1:-.}" abs line wt
+  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  abs="$(cd "$root" 2>/dev/null && pwd -P)" || return 0
+  [ -n "$abs" ] || return 0
+  # Heredoc rather than a pipe, the reason _core_claude_untracked_hits gives below: callers
+  # run under `set -o pipefail`, and a repo with no linked worktree must read as "none", not
+  # as a scanner failure.
+  while IFS= read -r line; do
+    case "$line" in
+    'worktree '*) wt="${line#worktree }" ;;
+    *) continue ;;
+    esac
+    [ -d "$wt" ] || continue # a stale entry git has not pruned yet
+    wt="$(cd "$wt" 2>/dev/null && pwd -P)" || continue
+    [ "$wt" = "$abs" ] && continue # the checkout we were handed is not nested in itself
+    # "$abs" is QUOTED inside the pattern so a repo path containing a glob character matches
+    # literally; the trailing /* is left unquoted because it is meant as a pattern.
+    case "$wt" in
+    "$abs"/*) printf '%s\n' "${wt#"$abs"/}" ;;
+    esac
+  done <<EOF
+$(git -C "$root" worktree list --porcelain 2>/dev/null)
+EOF
+}
+
 # ── _core_claude_untracked_hits: a .claude/ file that will never leave this box ──
 # _core_claude_untracked_hits <repo-root> — print every path under .claude/ that git will
 # not ship AND that nothing will ever tell you about. Silence = clean.
@@ -969,13 +1105,25 @@ _core_helper_called() { # _core_helper_called <file> <helper>
 # in the tree. The defect this exists for is invisibility: a blanket rule hid the file, so no
 # other signal exists. That is the whole scope.
 _core_claude_untracked_hits() { # _core_claude_untracked_hits <repo-root>
-  local root="${1:-.}" tracked f rel line before pat
+  local root="${1:-.}" tracked f rel line before pat wt
+  local -a prune=()
   [ -d "$root/.claude" ] || return 0
   git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 0
   # Newline-DELIMITED for a whole-line membership test with no subprocess per file, and so
   # `.claude/a.md` is not satisfied by `x.claude/a.md` — the same reasoning audit-core.sh
   # §1b gives for its own tracked list.
   tracked=$'\n'"$(git -C "$root" ls-files '.claude/*')"$'\n'
+  # Nested worktrees are PRUNED, not filtered out afterwards: Claude Code parks a whole
+  # checkout at `.claude/worktrees/<name>/`, and this walk spends a `git check-ignore` per
+  # file — so descending into one buys a thousand subprocesses in order to report a thousand
+  # findings about a tree no commit here owns (#905). The array is assembled BEFORE the loop
+  # because the heredoc feeding it is expanded when the loop is entered.
+  while IFS= read -r wt; do
+    [ -n "$wt" ] || continue
+    prune+=(-path "$root/$wt" -prune -o)
+  done <<EOF
+$(_core_nested_worktrees "$root")
+EOF
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     rel="${f#"$root"/}"
@@ -995,7 +1143,7 @@ _core_claude_untracked_hits() { # _core_claude_untracked_hits <repo-root>
 $(git -C "$root" check-ignore -v "$rel" 2>/dev/null)
 EOF
   done <<EOF
-$(find "$root/.claude" -type f 2>/dev/null | sort)
+$(find "$root/.claude" ${prune[@]+"${prune[@]}"} -type f -print 2>/dev/null | sort)
 EOF
 }
 
@@ -1381,6 +1529,273 @@ _core_workflow_example_hits() { # _core_workflow_example_hits <repo-root> <expec
       }
     ' "$f"
   done
+}
+
+# ── _core_caller_pin_hits: an OS repo CALLING a retired major ────────────────
+# _core_caller_pin_hits <repo-root> <expected-major> — print every LIVE `uses:` of a
+# dotfiles-core reusable workflow in <repo-root> pinned to a major other than
+# <expected-major>. Silence = clean. Output is `file:LINE: msg`.
+#
+# WHY THIS EXISTS, and why the two sibling helpers do not cover it (#804). They read
+# Core's OWN tree:
+#
+#   · _core_workflow_ref_hits reads `ref:` KEYS — the reusable's second checkout of
+#     dotfiles-core — and audit-core.sh §8a calls it as `. "$major"`, so its scope is
+#     literally Core's own .github/workflows/.
+#   · _core_workflow_example_hits reads COMMENT lines, the copyable example a human
+#     pastes, and says so in as many words.
+#
+# Neither reads the thing an OS repo actually executes: its own live
+# `uses: dotgibson/dotfiles-core/.github/workflows/<file>@vN`. So the v5 → v6 caller
+# sweep — 45 pins across 8 repos — was done entirely by hand, and NOTHING would have
+# reported a repo that was missed. #736 predicted this in as many words ("if #672's
+# fleet-drift.sh improvement landed, this step is checked rather than remembered — if it
+# did not, it is a hand grep again"); it did not, and §8a is not it.
+#
+# WHY A MISSED REPO IS WORSE THAN A NORMALLY-STALE PIN. It runs the OUTGOING major's
+# reusable workflows. On a major that changes what core-integrity expects — #676 is
+# exactly one — that repo's CI reports TAMPERED against a tree nobody touched, and its
+# fan-out PR cannot merge. It is also self-healing in the WRONG direction: the repo keeps
+# working on the old major until its pinned workflow is deleted or diverges, so the
+# failure surfaces long after the release that caused it.
+#
+# SAME MATCHER, SAME DOCTRINE as _core_workflow_example_hits, deliberately:
+#   · The owner and a LEFT BOUNDARY are part of the match, so `notdotgibson/dotfiles-core`
+#     and `someone/not-dotfiles-core` are not judged.
+#   · The path anchor means the match is always a caller reference and never narrative.
+#   · ONLY `@v<digits>` IS JUDGED. A SHA pin is deliberately not — dotfiles-MacBook pins
+#     by SHA on purpose, and this gate answers "which major", not "which pinning style".
+#     Inventing a second opinion about style would make it two gates wearing one name.
+# The one difference is which lines it reads: live `uses:`, not comments. Between them the
+# two cover the file; alone, each was green while the other's half rotted.
+#
+# NOT A REPLACEMENT FOR check-modern.sh, which owns pinning POLICY (is this action pinned
+# at all, and to what kind of ref). This answers a different question about a pin that
+# policy already accepts.
+_core_caller_pin_hits() { # _core_caller_pin_hits <repo-root> <expected-major>
+  local root="${1:-.}" want="${2:-}" f
+  [ -n "$want" ] || return 0
+  [ -d "$root/.github/workflows" ] || return 0
+  for f in "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml; do
+    [ -f "$f" ] || continue
+    awk -v want="$want" -v file="${f#"$root"/}" '
+      # LIVE `uses:` ONLY — the mirror of _core_workflow_example_hits, which reads the
+      # comment lines this skips. A commented example pinning a dead major is that gate;
+      # a job actually running one is this one.
+      /^[[:space:]]*#/ { next }
+      /(^|[^A-Za-z0-9._-])uses:[[:space:]]/ {
+        line = $0
+        while (match(line, /(^|[^A-Za-z0-9._-])dotgibson\/dotfiles-core\/\.github\/workflows\/[A-Za-z0-9._-]+@v[0-9]+/)) {
+          ref = substr(line, RSTART, RLENGTH)
+          ver = ref
+          sub(/^.*@v/, "", ver)
+          if (ver != want) {
+            printf "%s:%d: calls a dotfiles-core reusable workflow at @v%s, but core.version is major v%s — this job runs the RETIRED major'"'"'s workflows\n", \
+              file, NR, ver, want
+          }
+          line = substr(line, RSTART + RLENGTH)
+        }
+      }
+    ' "$f"
+  done
+}
+
+# ── _core_tools_optin_hits: a repo's TOOLS_OPTIN vs its matrix column ────────
+# _core_tools_optin_hits <core-root> <fleet-root> — print every repo whose
+# os/*.capabilities TOOLS_OPTIN disagrees with PORTING-MATRIX.md's ²¹ marks for its column.
+# Silence = clean. Output is `repo: msg`.
+#
+# WHY THIS EXISTS (#890, out of #836). Three copies of one set, and only two were gated:
+#
+#   · PORTABILITY.md / the matrix ²¹ marks — the human contract.
+#   · Core's _CORE_DOCTOR_OPTIN — the ROW-level ²¹ set, already re-derived and asserted by
+#     test/65-functions.sh ("core-doctor's opt-in list is derivable from footnote 21").
+#   · each OS repo's TOOLS_OPTIN — the CELL-level marks, gated by nothing at all.
+#
+# The miss it would have caught already happened, by eye rather than by check: `uv` is in
+# _CORE_DOCTOR_WIRED, dotfiles-openSUSE installs none and declared no TOOLS_OPTIN, so it fell
+# back to Core's default — which does not list uv — and core-doctor rendered a false `✗ uv` on
+# every openSUSE box. That is the alarm-fatigue failure the opt-in state exists to prevent.
+#
+# THE RULE, and it is exact because the current fleet already satisfies it:
+#
+#   a repo whose matrix column carries CELL-level ²¹ must declare TOOLS_OPTIN as Core's
+#   ROW-level ²¹ set PLUS those tools; a repo with no cell-level mark may omit it entirely.
+#
+# A declared list REPLACES Core's default rather than adding to it — which is why "plus" is
+# the whole set repeated, and why declaring only the delta would trade one false ✗ for nine.
+#
+# THE COLUMN→REPO MAP IS EXPLICIT, because it is not derivable: `Kali (apt)` and
+# `Debian/Ubuntu` are two columns of ONE repo, and a header-to-directory guess would either
+# invent a dotfiles-Kali or drop Kali's marks on the floor. dotfiles-MacBook, -Fedora,
+# -Offense and -Defense have no column at all, so this says nothing about them — the matrix
+# is the authority for the repos it covers and silent about the rest.
+#
+# THE ALIAS MAP IS EXPLICIT FOR THE SAME REASON. A parenthetical in the Tool cell is NOT
+# reliably a binary name: `jujutsu (jj)` is an alias, `op (1Password)` is a description, and
+# a blanket rule would look for a tool called `1Password`. So one entry, by hand — and any
+# cell-level tool whose Tool cell carries a parenthetical it does not know about is reported
+# rather than guessed at, so a new aliased row cannot slip through as a bare name.
+_core_tools_optin_hits() { # _core_tools_optin_hits <core-root> <fleet-root>
+  local core="${1:-.}" fleet="${2:-}" matrix
+  [ -n "$fleet" ] || return 0
+  matrix="$core/PORTING-MATRIX.md"
+  [ -f "$matrix" ] || return 0
+  command -v awk >/dev/null 2>&1 || return 0
+
+  # column-header<TAB>repo. Two columns legitimately map to one repo.
+  local map='Arch	dotfiles-Arch
+openSUSE	dotfiles-openSUSE
+Alpine	dotfiles-Alpine
+Gentoo (atom)	dotfiles-Gentoo
+Kali (apt)²¹ᵃ	dotfiles-Debian
+Debian/Ubuntu	dotfiles-Debian'
+
+  # The ROW-level set — Core's default, and what a declaring repo must repeat. Derived from
+  # the same table, so this cannot drift from test/65-functions.sh's assertion of it.
+  local rowlevel
+  rowlevel="$(awk -F'|' '
+    /^## Package names \(modern CLI stack\)/ { insec = 1 }
+    # DONE AFTER THE FIRST TABLE. Footnote 21 carries a coverage table of its OWN, later in
+    # the file, whose first column is backticked tool names — so a scan that stays armed
+    # sweeps `gping` in twice and invents a flag. test/65-functions.sh documents the same
+    # trap for the sibling derivation; this is the same bound.
+    done { next }
+    insec && !intab && /^\| Tool/ { intab = 1; next }
+    intab && !/^\|/ { intab = 0; done = 1; next }
+    intab && /^\|/ {
+      cell = $2; gsub(/^[ \t]+|[ \t]+$/, "", cell)
+      if (cell ~ /(²¹|¹⁷|¹⁹)/) {
+        name = cell
+        sub(/[ ⁰¹²³⁴⁵⁶⁷⁸⁹(].*/, "", name)
+        if (name != "") print name
+      }
+    }
+  ' "$matrix" | sort -u | tr '\n' ' ')"
+  [ -n "$rowlevel" ] || return 0
+
+  local col repo want got extra
+  while IFS='	' read -r col repo; do
+    [ -n "$col" ] || continue
+    [ -d "$fleet/$repo" ] || continue
+    # CELL-level ²¹ in this column: the tools this repo must add to the default.
+    extra="$(awk -F'|' -v want="$col" '
+      /^## Package names \(modern CLI stack\)/ { insec = 1 }
+      done { next }
+      insec && !intab && /^\| Tool/ {
+        intab = 1
+        for (i = 2; i <= NF; i++) { h = $i; gsub(/^[ \t]+|[ \t]+$/, "", h); if (h == want) ci = i }
+        next
+      }
+      intab && !/^\|/ { intab = 0; done = 1; next }
+      intab && ci && /^\|/ {
+        cell = $2; gsub(/^[ \t]+|[ \t]+$/, "", cell)
+        if (cell ~ /(²¹|¹⁷|¹⁹)/) next            # row-level: already in the default
+        val = $ci; gsub(/^[ \t]+|[ \t]+$/, "", val)
+        if (val ~ /²¹/) {
+          name = cell
+          # A parenthetical is reported, never guessed — see the header.
+          if (name ~ /\(/) { sub(/[⁰¹²³⁴⁵⁶⁷⁸⁹ ]+$/, "", name); print "?" name; next }
+          sub(/[ ⁰¹²³⁴⁵⁶⁷⁸⁹].*/, "", name)
+          if (name != "") print name
+        }
+      }
+    ' "$matrix" | sort -u | tr '\n' ' ')"
+
+    # Resolve the one known alias, and refuse to guess at any other.
+    case "$extra" in
+    *"?jujutsu (jj)"*) extra="$(printf '%s' "$extra" | sed 's/?jujutsu (jj)/jj/')" ;;
+    esac
+    case "$extra" in
+    *"?"*)
+      printf '%s: PORTING-MATRIX.md marks a cell-level ²¹ tool whose name carries a parenthetical this gate has no mapping for (%s) — add it to _core_tools_optin_hits rather than letting the bare name through\n' \
+        "$repo" "$(printf '%s' "$extra" | tr ' ' '\n' | grep '^?' | tr '\n' ' ')"
+      continue
+      ;;
+    esac
+
+    got="$(grep -h '^TOOLS_OPTIN=' "$fleet/$repo"/os/*.capabilities 2>/dev/null | head -n1 | sed 's/^TOOLS_OPTIN=//')"
+    if [ -z "$extra" ]; then
+      # No cell-level mark: declaring nothing is correct. A declaration is allowed (it may
+      # encode something this table cannot see), so this direction is deliberately silent.
+      continue
+    fi
+    want="$rowlevel$extra"
+    # Order-insensitive: the contract is the SET, and the fleet writes it in table order.
+    local w g
+    w="$(printf '%s' "$want" | tr ' ' '\n' | grep . | sort -u | tr '\n' ' ')"
+    g="$(printf '%s' "$got" | tr ' ' '\n' | grep . | sort -u | tr '\n' ' ')"
+    if [ -z "$got" ]; then
+      printf '%s: declares no TOOLS_OPTIN, but its PORTING-MATRIX.md column marks %s²¹ (available, not installed) — core-doctor will count it EXPECTED and render a false ✗ on every box. Declare: TOOLS_OPTIN=%s\n' \
+        "$repo" "$extra" "${want% }"
+    elif [ "$w" != "$g" ]; then
+      printf '%s: TOOLS_OPTIN disagrees with its PORTING-MATRIX.md column — declared [%s], expected [%s] (Core'"'"'s row-level ²¹ set plus this column'"'"'s cell-level marks; a declared list REPLACES the default rather than adding to it)\n' \
+        "$repo" "${g% }" "${w% }"
+    fi
+  done <<EOF
+$map
+EOF
+}
+
+# ── _core_vendoring_claim_hits: `core/` described as a git subtree ───────────
+# _core_vendoring_claim_hits <repo-root> — print every tracked markdown line in <repo-root>
+# that asserts `core/` IS a git subtree. Silence = clean. Output is `file:LINE: msg`.
+#
+# WHY THIS EXISTS (#891, after #774). #587 replaced the fan-out's `git subtree pull --squash`
+# with a pinned fetch plus `git read-tree --prefix=core/`, and #668 retired `git subtree` from
+# Core's own docs. The eight OS repos' CLAUDE.md files were not in that sweep and kept the old
+# framing for a full major cycle — in the file AUTO-LOADED INTO EVERY SESSION in those repos,
+# which is the worst place for it. It is not pedantry about a word: the framing is what leads
+# a reader to reach for `git subtree pull`, which moves `core/` but not `core.lock` and leaves
+# core-integrity reporting TAMPERED — precisely what VENDORING.md:154 forbids.
+#
+# KEYED ON THE CLAIM, NOT THE TOKEN, and this one has to be, because two `git subtree`
+# mentions in dotfiles-Offense are CORRECT and must survive:
+#
+#   · "a vendored `core/` is a filtered subset of upstream, which `git subtree pull` CANNOT
+#     produce" — a sentence arguing this gate's own position.
+#   · `offensive/companion` genuinely IS a git subtree of htpx, and sync-companion.sh really
+#     runs `git subtree pull --squash` on it.
+#
+# A blanket scan for the token reds on both, and a gate that reds on true sentences teaches
+# the next person to falsify them. Same lesson #770's §9m records for repo counts: key on the
+# claim. So this matches an IDENTITY assertion — `core/` … is … subtree — on ONE line, with
+# no sentence boundary between the parts. Order matters and is what excludes the companion
+# line, where `subtree` precedes `core/` rather than following it.
+#
+# WHAT IT DELIBERATELY DOES NOT CATCH, stated because a gate that overstates its reach is the
+# defect it exists to prevent. The PROHIBITION shape — dotfiles-MacBook's old
+# "a **manual** `git subtree pull` is not supported: it moves `core/` but not `core.lock`" —
+# is invisible here: `core/` follows `subtree` rather than being its subject. #774 called that
+# line the strongest evidence the FRAMING had to go, since it was right about the consequence
+# and wrong about the mechanism — but separating it from a legitimately negative sentence
+# ("cannot produce", "is not the mechanism") needs semantics a line matcher does not have.
+# Identity claims were seven of #774's eight sites; this catches those and says so.
+_core_vendoring_claim_hits() { # _core_vendoring_claim_hits <repo-root>
+  local root="${1:-.}" f
+  command -v git >/dev/null 2>&1 || return 0
+  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  # Tracked markdown only, and never the VENDORED copy: core/ is a copy of the repo being
+  # checked against, so counting it would report every OS repo for Core's own prose — the
+  # trap _core_have_read_hits prunes for and _core_make_gate_hits once fell into.
+  while IFS= read -r -d '' f; do
+    case "$f" in
+    core/*) continue ;;
+    *.md) ;;
+    *) continue ;;
+    esac
+    [ -f "$root/$f" ] || continue
+    awk -v file="$f" '
+      # `core/` … is … subtree, in that order, on one line, no sentence boundary between.
+      # The backticks are optional so both `\x60core/\x60 is a` and a bare `core/ is a` match.
+      {
+        line = tolower($0)
+        if (match(line, /`?core\/`?[^.!?]{0,60}[^a-z]is[^a-z][^.!?]{0,60}subtree/)) {
+          printf "%s:%d: describes `core/` as a git subtree — the fan-out has used a pinned fetch plus `git read-tree --prefix=core/` since dotgibson/dotfiles-core#587, and a `git subtree pull` moves core/ WITHOUT core.lock, leaving core-integrity reporting TAMPERED\n", file, FNR
+        }
+      }
+    ' "$root/$f"
+  done < <(git -C "$root" ls-files -z)
 }
 
 # ── _core_vendor_pin_hits: the first-vendor recipe names the CURRENT major ───
@@ -1769,6 +2184,29 @@ _core_make_gate_hits() { # _core_make_gate_hits <repo-root>
           printf "Makefile:%d: target `%s` ends a checker with `;` before a success echo — the echo runs regardless AND becomes the line exit status, so findings print and the target still exits 0 (use `&&`)\n", \
             lstart[i], target
         }
+        # ── R5: an UNPINNED markdownlint ─────────────────────────────────────
+        # R1-R4 all judge a target that runs. This judges WHICH markdownlint runs, and it is
+        # the dimension that let dotgibson/dotfiles-core#873 hide behind a green R1: six
+        # repos probed for a GLOBAL markdownlint-cli2 that nothing in their bootstrap
+        # installs, so on an ordinary box the guard fired every time and the target skipped
+        # — correctly, at exit 0, forever. A local mirror of a BLOCKING gate that never runs
+        # is not a mirror, and R3 could not see it because the Makefile plainly spelled the
+        # tool. Where the binary WAS present it was whatever npm last put there, while the
+        # gate installs MARKDOWNLINT_VERSION from the vendored core/scripts/tool-versions.env
+        # — so a rule that changes across a bump reds a required check against a green run.
+        #
+        # The trailing @ is the whole test: pinned means the version travels WITH the
+        # invocation, which is what npx needs and what a global install can never give.
+        # Comment lines are skipped because the fixed recipes explain what they replaced and
+        # name the bare binary while doing it — the same prose-is-not-a-command rule
+        # tool_runs() applies to quoted text. That rule also means a quoted invocation
+        # (dotfiles-MacBook writes one) reads as prose and is not judged here; it is the one
+        # shape R5 under-checks, and that repo is pinned anyway.
+        if (lbody[i] !~ /^[ \t]*@?#/ && tool_runs(lbody[i], "markdownlint-cli2") \
+            && lbody[i] !~ /markdownlint-cli2@/) {
+          printf "Makefile:%d: target `%s` runs markdownlint-cli2 UNPINNED — the blocking gate installs MARKDOWNLINT_VERSION from core/scripts/tool-versions.env, and a global binary is whatever npm last put there. Use npx with markdownlint-cli2@ plus that version (dotgibson/dotfiles-core#873)\n", \
+            lstart[i], target
+        }
       }
       ln = 0
     }
@@ -1806,4 +2244,110 @@ _core_make_gate_hits() { # _core_make_gate_hits <repo-root>
       }
     }
   ' "$mk"
+}
+
+# ── _core_fanout_count_hits: the fan-out set, counted wrong ───────────────────
+# _core_fanout_count_hits <repo-root> <live-count> — print every TRACKED line that says
+# how many repos a Core change fans out into, where the stated number disagrees with
+# <live-count>. Output is `path:LINE: msg`. Silence = clean.
+#
+# WHY THIS EXISTS. dotgibson/dotfiles-core#770 found the number contradicting itself across
+# the tree: five sites said EIGHT against ~20 that said nine, and two of the five were Core
+# files, so the wrong number was replicated nine ways on every sync. It had been fixed
+# piecemeal before — #668 found it on CODEOWNERS:1 and deliberately left it, because
+# correcting one of several inconsistent sites makes the tree no more correct.
+#
+# WHY IT KEEPS COMING BACK, and what that means for the pattern. There are three genuinely
+# different correct numbers here, and prose rarely says which is meant:
+#
+#   · 9  — repos that vendor `core/` (scripts/os-repos.txt; 7 OS + 2 Role)
+#   · 8  — OS-native repos, INCLUDING dotfiles-Windows, which vendors nothing
+#   · 11 — the whole system (8 OS + 2 Role + dotfiles-core)
+#
+# So "eight" was never simply a stale nine: it is someone correctly counting OS repos and
+# attaching it to the FAN-OUT, which is a different set. A gate keyed on the bare number
+# would therefore red on `85-escalation.sh`'s "eight repos rely on sudo-first" (nine minus
+# Alpine — correct), on #775's "eleven defects across eight repos" (the lint-call callers —
+# correct), and on every "eleven-repo system". That gate would be noise, and noise is how a
+# check teaches the fleet to ignore it.
+#
+# KEYED ON THE CLAIM, NOT THE NUMBER. A count is only checkable when the sentence says
+# which set it is counting, so this fires only where a FAN-OUT VERB governs the count —
+# "fans out to", "vendors into", "lands in", "ships to". Measured against the tree at the
+# time of writing: 23 such claims, and exactly the two genuine defects among them. Every
+# legitimate other-set usage above is invisible to it, because none of them is a fan-out
+# claim.
+#
+# CHANGELOG IS EXCLUDED, deliberately. It is a historical record and is correct for when
+# each entry was written; rewriting old entries to match today's fleet would be a lie about
+# what shipped. Same for the V*-PROPOSAL design records.
+#
+# THE COUNT IS PASSED IN, not read here, so the caller stays the one reader of
+# scripts/os-repos.txt (load_os_repos, the single reader since #669) and this helper is
+# drivable from a test with any number.
+_core_fanout_count_hits() { # _core_fanout_count_hits <repo-root> <live-count>
+  local root="${1:-.}" want="${2:-0}" file
+  command -v git >/dev/null 2>&1 || return 0
+  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  # ls-files, not a find: a fan-out claim in an untracked scratch file is not a claim the
+  # fleet ships. -z + read -d keeps a path with a space intact.
+  while IFS= read -r -d '' file; do
+    case "$file" in
+    CHANGELOG*.md | V[0-9]-PROPOSAL.md) continue ;;
+    esac
+    [[ -f "$root/$file" ]] || continue
+    awk -v f="$file" -v want="$want" '
+      # Number words the fleet actually writes, plus bare digits. An unknown word is not a
+      # count and is skipped rather than guessed at.
+      function num(w,   n) {
+        n["seven"] = 7; n["eight"] = 8; n["nine"] = 9; n["ten"] = 10; n["eleven"] = 11
+        if (w ~ /^[0-9]+$/) return w + 0
+        return (tolower(w) in n) ? n[tolower(w)] : -1
+      }
+      # claim_num(s) — the repo count a fan-out claim in <s> applies, or -1 for no claim.
+      # The verb must GOVERN the count: a short run of words between them is allowed (the
+      # claims in-tree read "fans out to all nine Core-vendoring repos", "vendors into
+      # nine repos", and the older "nine OS repos" the regex still has to catch),
+      # but not a sentence boundary, which would let an unrelated later number match.
+      function claim_num(s,   claim, tail) {
+        s = tolower(s)
+        if (!match(s, /(fans? out|fan-out|vendors? into|vendors? to|lands? in|ships? into|ships? to)[^.!?]{0,40}[[:space:]]+(seven|eight|nine|ten|eleven|[0-9]+)[[:space:]-]+(os[[:space:]-]+|core-vendoring[[:space:]-]+)?repos?/)) return -1
+        claim = substr(s, RSTART, RLENGTH)
+        # The LAST number before "repos" is the one being applied to it.
+        if (!match(claim, /(seven|eight|nine|ten|eleven|[0-9]+)[[:space:]-]+(os[[:space:]-]+|core-vendoring[[:space:]-]+)?repos?$/)) return -1
+        tail = substr(claim, RSTART, RLENGTH)
+        sub(/[[:space:]-]+(os[[:space:]-]+|core-vendoring[[:space:]-]+)?repos?$/, "", tail)
+        word = tail
+        return num(tail)
+      }
+      # THE GATE MUST NOT RED ON ITS OWN FIXTURES. 90-policy-gates.sh holds the wrong
+      # claims verbatim, on purpose, because a gate proven only against strings invented for
+      # it is proven against nothing. An explicit per-line opt-out beats excluding the whole
+      # file: the exemption is visible where it is taken, greps in one command, and cannot
+      # quietly grow to cover a real claim someone later adds to that file. It is the trap
+      # that once made _core_make_gate_hits report Core as the repo missing its own rule.
+      /core:fanout-fixture/ { prev = ""; next }
+      {
+        got = claim_num($0)
+        # A ONE-LINE CARRY, because a wrapped comment is how one of #770'"'"'s two survivors
+        # hid: ci.yml said "vendors into all" and put "8 repos" on the NEXT comment line, so
+        # a line-based check read neither half as a claim. Joining with the previous line
+        # catches the wrap; the finding is reported against the line carrying the NUMBER,
+        # which is the line an author has to edit.
+        # ...and ONLY when neither half is a claim on its own. Without that guard the line
+        # AFTER a complete claim joins with it and is reported a second time, against a line
+        # that says nothing about repos.
+        if (got < 0 && NR > 1 && claim_num(prev) < 0) {
+          joined = prev
+          sub(/^[[:space:]]*(#|--|\/\/)[[:space:]]*/, " ", $0)
+          got = claim_num(joined " " $0)
+        }
+        if (got > 0 && got != want) {
+          printf "%s:%d: a fan-out claim says %s repos; scripts/os-repos.txt lists %d — Core vendors into the %d Core-vendoring repos (7 OS + 2 Role; dotfiles-Windows vendors no core/)\n", \
+            f, FNR, word, want, want
+        }
+        prev = $0
+      }
+    ' "$root/$file"
+  done < <(git -C "$root" ls-files -z)
 }

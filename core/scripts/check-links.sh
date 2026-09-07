@@ -219,7 +219,9 @@ fi
 # THE TARGET IS THE POINT, not merely that something resolves. `-L` plus `-e` passes a graph
 # where .config/starship.toml points at tmux.conf: every link present, every link
 # resolvable, and the shell configured wrongly. Derived empirically, not guessed —
-# dotfiles-Fedora, -Offense and -Defense all wire exactly these seven.
+# dotfiles-Fedora, -Offense and -Defense all wire exactly these seven — plus the whole of
+# core/zsh, which is NOT listed here but DERIVED below (#854), because a hardcoded fragment
+# list drifts every time a module is added.
 LINKS=(
   ".config/zsh/loader.zsh|core/zsh/loader.zsh"         # the module chain's entry point
   ".config/starship.toml|core/starship/starship.toml"  # prompt, at the path 00-tools.zsh inits against
@@ -241,7 +243,48 @@ SEEDS=(
 for _r in ${REQUIRE[@]+"${REQUIRE[@]}"}; do LINKS+=("$_r|"); done
 SEEDS+=("${SEED[@]+"${SEED[@]}"}")
 
+# ── the numbered fragments, DERIVED from the tree being checked ───────────────
+# The table above names loader.zsh — the chain's entry point — and nothing else under
+# core/zsh. But blib_link_core links the WHOLE directory:
+#
+#   for f in "$dotfiles"/core/zsh/*.zsh; do blib_link "$f" "$config/zsh/$(basename "$f")"; done
+#
+# and the loader then globs `NN-*.zsh` in that directory. So a bootstrap that wires
+# loader.zsh and none of the fragments passed this gate with the loader having NOTHING TO
+# LOAD — a shell that starts clean and is configured with none of Core, certified as a
+# healthy graph (#854). scripts/test-core.sh already treats the complete flat set as
+# load-bearing, so the contract existed; the gate just did not check it.
+#
+# DERIVED, NOT LISTED, and from the repo being checked rather than from Core's own tree:
+# a hardcoded list drifts every time a fragment is added — the same argument the loader's
+# glob and test-core.sh's fragment glob already make — and the vendored core/ is right
+# there, which is what blib_link_core itself reads.
+#
+# `*.zsh`, matching blib_link_core, not the loader's narrower `NN-*.zsh`: the set that must
+# be LINKED is the set the linker links. loader.zsh is skipped only because the table above
+# already carries it with its own comment; asserting it twice would double-count the
+# summary, not catch anything more.
+_frag_n=0
+for _f in "$REPO_ROOT"/core/zsh/*.zsh; do
+  # nullglob is NOT set (bash 3.2 — macOS's stock shell — and PORTABILITY.md keeps the
+  # scripts glob-option-free), so an unmatched pattern arrives literally. The -e test is
+  # what distinguishes "no fragments" from "a file named `*.zsh`".
+  [[ -e "$_f" ]] || break
+  _b="${_f##*/}"
+  [[ "$_b" == loader.zsh ]] && continue
+  LINKS+=(".config/zsh/$_b|core/zsh/$_b")
+  _frag_n=$((_frag_n + 1))
+done
+
 rc=0
+# NO FRAGMENTS IS A FINDING, not a quiet pass. An empty derivation would make every
+# assertion below vacuous, and vacuous is exactly the state this section exists to end: the
+# loader would be linked, resolvable, and load nothing. rc=2 (the graph is wrong), not
+# rc=1 — the check RAN, and what it found is a tree that cannot configure a shell.
+if ((_frag_n == 0)); then
+  bad "no zsh fragments under core/zsh/ — the loader would be linked and have NOTHING TO LOAD"
+  rc=2
+fi
 # TWO questions per link, and the second is the one that catches a rename: a symlink can
 # exist and point at nothing, which is what a Core file renamed upstream leaves behind when
 # the OS repo's link name stays put. Asking it of ONLY loader.zsh, as the copied recipes
@@ -297,7 +340,7 @@ fi
 ((KEEP)) && say "kept the throwaway HOME at $tmp"
 
 if ((rc == 0)); then
-  ok "symlink graph OK (${#LINKS[@]} links checked against their Core targets, ${#SEEDS[@]} seeded)"
+  ok "symlink graph OK (${#LINKS[@]} links checked against their Core targets — $_frag_n of them zsh fragments derived from core/zsh/ — and ${#SEEDS[@]} seeded)"
 else
   bad "the symlink graph is not what Core's loader expects — see above"
 fi
