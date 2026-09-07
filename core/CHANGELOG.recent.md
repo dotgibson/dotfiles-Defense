@@ -5,10 +5,56 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v7.1.0 … v5.4.2), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v7.1.2 … v5.4.3), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v7.1.2] - 2026-09-07
+
+### Fixed
+
+- **v7.1.1 was staged and never published — this release carries its content.** The cut promoted an empty `[Unreleased]`, because #920's entries had been filed under `[v7.1.0]` by mistake and the section they should have landed in was bare. `tag-release.sh` refused to tag it: `release.yml` builds the Release body from that section, and an empty body on an immutable tag burns the version. No `v7.1.1` tag was ever created and no repo vendored it, so the number is simply skipped — the same outcome `RELEASE-RUNBOOK.md` records for v4.11.0. The two entries below are unchanged.
+
+- **`maint-status` reported a clean listing on a box where nothing was installed (#918).** Its
+  systemd arm ran `list-timers` (header + `0 timers listed` on **stdout**, exit 0) and
+  `status` (`Unit … could not be found` on **stderr**, discarded by `2>/dev/null`). The one
+  call that knew the unit was missing was the one whose output was thrown away, so the arm
+  rendered output indistinguishable from a healthy box.
+  Found on a live Proxmox node: `maint-install` had written nothing, both unit files were
+  absent, `is-enabled` said `not-found`, there was no crontab entry — and `maint-status`
+  looked fine. The operator reasonably believed the daily run was scheduled.
+  **The bug is an asymmetry, not an oversight in one line.** `launchd` has carried
+  `|| echo "not loaded"` and `cron` `|| echo "no cron entry"` all along; **systemd was the
+  only arm of the three without an absence branch**, and it is the arm Debian, Fedora, Arch,
+  openSUSE, Defense and Offense all take.
+  It now reports **three** distinguishable states, because they fail independently and
+  `list-timers` renders all of them as the same empty output: no `SCHEDULER_UNIT_DIR`
+  declared (nowhere to write — #763's rule), declared but no unit file (not installed), and
+  installed but not enabled (exists, will never fire). Naming only the second would have
+  pointed at the wrong repair for the other two.
+  The same failure family as #829, where `nvim --headless` exited 0 over a session in which
+  nothing ran: a status command that cannot report absence turns an unanswered question into
+  a wrong answer, and the next signal is noticing weeks later that nothing has updated.
+
+- **A maint step whose output lacked a trailing newline swallowed the front of the next log
+  record — including its `✗` (#919).** `log()` used `echo`, which emits a trailing newline
+  but no **leading** one, so a record only began on a fresh line if whatever wrote last
+  happened to end with one. `step()` pipes each command's raw output into `$LOG` — through
+  `tee` on the tty arm, `>>` on the scheduled one — and neither can promise that. Observed
+  on a live box as `Successfully updated 1 registry.2026-09-07 12:17:26  ✓ neovim: …`.
+  Harmless for a `✓`. For a `✗` it moves the **only** record that anything failed out of
+  column 0, where a timestamp-anchored scan and an operator's eye both miss it — and
+  `step()` deliberately continues past failures with the process still exiting 0, so that
+  log line is the entire error contract. **Not foreground-only**: the scheduled arm has the
+  same shape, so an unattended 3am run corrupts its log with nobody watching.
+  Fixed in `log()` rather than `step()`, because `step()` is not the only writer (the mise
+  bump probe and the zsh-plugin loop also append) and `log()` is the one place every record
+  passes through. The newline goes to the **file only** — the terminal's column is not
+  knowable, and at the start of a run the log may end mid-line from a previous run while the
+  terminal is fresh, so emitting to both would print a spurious blank line every time. The
+  guard is conditional, asserted by a case that fails if consecutive records ever gain a
+  blank line between them.
 
 ## [v7.1.0] - 2026-09-06
 
@@ -2651,53 +2697,3 @@ repo-meta and stays upstream:
   `test/check-core-freshness.sh:59-63`) is the last consumer of the old name and is dead
   against every lock that exists; retiring it is a `dotfiles-Offense` change, tracked
   separately.
-
-## [v5.4.2] - 2026-08-28
-
-### Fixed
-
-- **The docs still taught `git subtree` as the live mechanism (#668).** #587 replaced the
-  fan-out's `git subtree pull --squash` with a pinned fetch plus `read-tree --prefix`, but
-  the record never followed. Two Core documents contradicted each other on the repo's
-  central mechanism, and the one giving instructions was the wrong one:
-  `RELEASE-STRATEGY.md` handed the reader
-  `git subtree pull --prefix=core <core-remote> vX.Y.Z --squash` for both adopting a release
-  and rolling one OS back — precisely what `VENDORING.md` forbids, because it moves `core/`
-  but not `core.lock` and leaves `core-integrity.sh` reporting `TAMPERED`.
-
-  Both recipes are now the real incantation, run from a Core checkout, with the three
-  constraints that make it work stated for the first time: `sync-core.sh` refuses unless
-  local `HEAD` **is** the pinned commit; it reads `core_version` from the **working
-  tree**, so pinning an older tag from `main` writes a silently wrong lock; and the pin
-  must be the **peeled commit**, never `refs/tags/vX.Y.Z` — releases are annotated tags,
-  and the script resolves its pin with `git ls-remote`, which returns the _tag object_, a
-  SHA that can never equal the `HEAD` a tag checkout leaves you on. The three pre-existing
-  `CORE_BRANCH=refs/tags/v…` recipes in `ARCHITECTURE.md`, `VENDORING.md` and
-  `PORTING-MATRIX.md` carried that same latent defect and are corrected too. The claim that
-  a rollback "merges backwards, it does not un-merge" is deleted — materializing replaces
-  the tree outright, so an older pin is just an ordinary sync.
-
-  Several surfaces an operator actually reads at runtime were asserting the retired
-  mechanism: `make help`, `sync-core.sh --help`, both lines of the core-guard hook's
-  refusal message, the README `new-os-repo.sh` writes into every new OS repo, and the
-  **fan-out PR body shipped into nine repos on every release** ("Vendors the released Core
-  into `core/` via `git subtree pull --squash`"). `.bin/sync-upstream.sh` recommended the
-  forbidden command in its own error tip. All corrected, along with the now-false "the
-  subtree squash records the exact Core commit" in `ARCHITECTURE.md`, `core.manifest` and
-  `zsh/30-functions.zsh` — `core.lock` records it.
-
-  One-line mechanism claims in `CLAUDE.md`, `CONTRIBUTING.md`, `SECURITY.md`,
-  `ARCHITECTURE.md`, `README.md`, the PR and issue templates, the `doc-consistency`
-  subagent, and the non-Markdown surfaces that carried the same sentence (`ci.yml`,
-  `core-integrity.yml`, `sync-fanout.yml`, `core-integrity.sh`, `CODEOWNERS`,
-  `.gitattributes`, `.pre-commit-config.yaml`) simply drop the clause: they state the invariant that matters (`core/` is a copy; a defect
-  fans out N-way) and leave `VENDORING.md` the single owner of _how_, so no mechanism claim
-  can go stale in ten files again.
-
-  What **stays** is the one `git subtree` that is still live: the one-time `subtree add`
-  that creates a `core/` where none exists (`scripts/new-os-repo.sh` runs it, and
-  `sync-core.sh` skips a repo without one). It is now labelled as initial vendoring and
-  never the update path, and its `refs/tags/v4` is corrected to `v5`. `PORTING-MATRIX.md`
-  step 5 also stopped instructing an add that could not work: step 1 copies Fedora's
-  `core/` across, so `subtree add` there fails with _prefix 'core' already exists_ — the
-  step is a re-vendor via `sync-core.sh`.

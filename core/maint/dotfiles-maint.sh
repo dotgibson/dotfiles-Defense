@@ -120,7 +120,33 @@ if [[ -f "$LOG" ]] && [[ "$(wc -l <"$LOG" 2>/dev/null || echo 0)" -gt "$MAINT_LO
   tmp="$(mktemp "${LOG}.XXXXXX")" && tail -n "$MAINT_LOG_KEEP" "$LOG" >"$tmp" && mv "$tmp" "$LOG"
 fi
 
-log() { echo "$(date '+%F %T')  $*" | tee -a "$LOG"; }
+# A RECORD'S POSITION MUST NOT DEPEND ON THE PREVIOUS WRITER (#919).
+# `echo` emits a trailing newline but no LEADING one, so a record only began on a fresh line
+# if whatever wrote last happened to end with one — and step() pipes each command's RAW
+# output into $LOG (through `tee` on the tty arm, `>>` on the scheduled one), neither of
+# which can promise that. A step ending without a newline therefore swallowed the front of
+# the next record: `Successfully updated 1 registry.2026-09-07 12:17:26  ✓ neovim: …` was
+# observed on a live box. Harmless for a ✓; for a ✗ it moves the ONLY record that anything
+# failed out of column 0, where a timestamp-anchored scan and an operator's eye both miss it.
+# step() deliberately continues past a failure and the process still exits 0, so that log
+# line is the whole error contract.
+#
+# FIXED HERE RATHER THAN IN step(), because step() is not the only writer — the mise bump
+# probe and the zsh-plugin loop also append to $LOG — and log() is the one place every
+# record passes through.
+#
+# THE NEWLINE GOES TO THE FILE ONLY, never to stdout. What is known here is the FILE's last
+# byte; the terminal's column is not knowable and the two are not in sync — at the start of a
+# run the log may end mid-line from a PREVIOUS run while the terminal is fresh, and emitting
+# to both would print a spurious blank line every time.
+#
+# `$(…)` strips trailing newlines, so a last byte that IS a newline yields the empty string
+# and a last byte that is not yields itself: the test needs no `wc -l`, whose leading-space
+# output differs between GNU and BSD anyway.
+log() {
+  [ -s "$LOG" ] && [ -n "$(tail -c1 "$LOG" 2>/dev/null)" ] && printf '\n' >>"$LOG"
+  echo "$(date '+%F %T')  $*" | tee -a "$LOG"
+}
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # portable timeout (GNU `timeout` / macOS `gtimeout`; else run unbounded)
