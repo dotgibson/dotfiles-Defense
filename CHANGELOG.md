@@ -294,6 +294,56 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **T1555.006 Cloud Secrets Management Stores — Key Vault bulk secret read, closing the Azure
+  resource plane (#280).** `detections/sigma/cloud/azure_keyvault_bulk_secret_read.yml` is a
+  base rule plus a `value_count` correlation: one identity reading many *distinct* secrets from
+  a Key Vault inside a 15-minute bucket. The cloud twin of `vault_bulk_secret_read`, and the
+  same argument holds — a healthy application re-reads its own small set, an attacker with a
+  stolen token sweeps across unrelated ones. Breadth per identity, not read rate: a flat
+  "more than N reads" is wrong in both directions at once, letting the automation principal
+  that legitimately reads 200 secrets a run stay silent while a targeted grab of the ten
+  highest-value secrets sails under the floor. It ships at the same threshold as its
+  HashiCorp sibling so an analyst tuning one credential store starts from the same number in
+  the other, and both say the flat floor is the starting point rather than the destination.
+
+  **The identity claims are the part worth reading.** The correlation groups by
+  `identity_claim_oid_g`, the objectidentifier claim, because it is the only caller field
+  present for *both* a human and a service principal: `identity_claim_upn_s` is null for an
+  SP, and `identity_claim_appid_g` is the APPLICATION — allowlist the Azure CLI's shared app
+  id and you have exempted every CLI user in the tenant. The raw event from Microsoft's
+  logging reference also shows why the resource-specific schema is a trap rather than a
+  rename: in `AZKVAuditLogs` the flat columns collapse into one dynamic `Identity`, whose
+  claims are keyed by their full XML-schema URIs
+  (`http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn`), so `Identity.claim.upn`
+  silently resolves to nothing. Only `appid` is a short key. The rule ships the
+  AzureDiagnostics spelling — what the paired entry queries, and already flat enough for a
+  correlation to group by — and names the translation.
+
+  **Scoped to SecretGet, and unfiltered on result.** `SecretList`/`SecretListVersions` return
+  names, not values; counting them into a breadth measure would let one legitimate inventory
+  call inflate the score, so they stay out of the rule and stay in the triage guidance, where
+  a List followed by a run of Gets is the drain in its clearest form. There is no `ResultType`
+  filter for the same reason the Run Command rule carries no status arm: a burst of *denied*
+  SecretGets across many secrets is a principal sweeping a vault it has no permission on,
+  which is the sharper finding, and filtering to Success would drop exactly that.
+
+  **Counting `requestUri_s` is an approximation, and the direction of its error is stated.**
+  The paired entry's KQL recovers the secret name with `split(requestUri_s, "/")[4]`; Sigma
+  has no such transform, so this counts distinct request URIs. The two differ when one caller
+  reads the same secret at several explicit versions in a window — which inflates. It is sound
+  because of the group-by: within one identity the client library and api-version are
+  constant. The error runs toward more sensitivity, never less: it can produce a false
+  positive, it cannot hide a sweep.
+
+  Six fixture lines at `vendor-documented`, each verified individually — TP: two distinct
+  secrets under one oid plus a Forbidden read; TN: the allowlisted oid, a `SecretList`, and a
+  `KeyGet`. The Sentinel gap is named rather than papered over: the kusto backend cannot
+  express a Sigma correlation, so `rules.generated.kql` carries this as UNSUPPORTED like its
+  two siblings — and for this rule that points somewhere useful, because the paired htpx entry
+  *is* the Sentinel implementation. The telemetry caveat is recorded too: unlike Activity Log,
+  Key Vault `AuditEvent` is a diagnostic setting an estate has to switch on, so this rule is
+  inert until it is, which is a collection gap rather than a detection one.
+
 - **T1651 Cloud Administration Command — Azure Run Command, the first rule on this repo's
   Azure resource plane (#280).** `detections/sigma/cloud/azure_vm_run_command.yml` reads the
   Azure Activity Log for Run Command, the ARM call that executes an arbitrary script in a
