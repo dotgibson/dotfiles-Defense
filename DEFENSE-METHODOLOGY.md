@@ -441,6 +441,32 @@ there will ever be. A share → copy → un-share sequence also leaves the permi
 which is why a posture sweep over currently-shared snapshots is not a substitute for the
 event stream.
 
+**The cloud rows have a second axis, and it is not a tactic.** Every cloud provider this
+repo covers has two control planes — an *identity* plane (who exists, what they hold) and a
+*resource* plane (what runs, what is read) — and a corpus can be deep on one and empty on
+the other while a per-tactic map like the table above shows nothing wrong. That is what
+happened to Azure. Six pairs of Entra/M365 identity coverage sat in `detections/sigma/cloud/`, AWS and GCP
+both reached their resource planes, and Azure's resource plane had no rule at all: the
+provider read as covered until you sorted by plane.
+
+`detections/sigma/cloud/azure_vm_run_command.yml` is the first rule on that plane, and it
+brings a data source the table's prose did not name before — the **Azure Activity Log**,
+alongside CloudTrail and GCP Cloud Audit Logs. T1651 Cloud Administration Command is the
+technique worth having there first: Run Command executes an arbitrary script in a VM's guest
+as SYSTEM or root through ARM alone, so a stolen Contributor token is remote code execution
+without a guest credential, an RDP session, or a packet the guest's network sensors can see.
+Activity Log is on by default, which makes it the cheapest resource-plane telemetry any
+Azure estate has. The rule reads the operation and nothing else, and its own header explains
+why a status allowlist — the obvious narrowing, and the one the paired htpx entry's hunting
+query uses — is a silent miss in a shipped rule.
+
+The plane is not closed. The Key Vault half of the same asymmetry, bulk secret read from the
+`AuditEvent` diagnostic log, is still uncovered and is tracked in
+[dotgibson/dotfiles-Defense#280](https://github.com/dotgibson/dotfiles-Defense/issues/280)
+along with the reason it is second: unlike Activity Log, that telemetry is a diagnostic
+setting an estate has to switch on, so the rule would document a data source many readers do
+not yet collect.
+
 **Impact is the one row that spans both layers**, and it is worth understanding why
 rather than reading `sigma, network` as a formatting quirk. Most of the tactic is host
 work — the T1489 teardown, T1490 recovery inhibition, and T1485/T1486 payload rules under

@@ -6,7 +6,7 @@ A **gap here is not a defect.** htpx spans SaaS and CI/CD platforms this repo ha
 
 Corpus: `dotgibson/htpx` at `6358a8df8661` (v3.2.0), pinned in `detections/htpx.pin`.
 
-**105 blue entries · 96 claimed here · 23 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
+**105 blue entries · 97 claimed here · 23 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
 
 ## htpx blue entries claimed by detection content here
 
@@ -21,6 +21,7 @@ Corpus: `dotgibson/htpx` at `6358a8df8661` (v3.2.0), pinned in `detections/htpx.
 | `aws-loginprofile-cloudtrail` | T1098 | `aws_login_profile_created` |
 | `aws-s3-exfil-cloudtrail` | T1530 | `aws_s3_bulk_exfil` |
 | `aws-snapshot-share-cloudtrail` | T1537 | `aws_snapshot_share_external` |
+| `azure-runcommand-activity` | T1651 | `azure_vm_run_command` |
 | `bloodhound-collect-4662` | T1069.002, T1087.002, T1482 | `sharphound_ldap_sweep_4662` |
 | `cf-api-token-audit` | T1098 | `cloudflare_api_token_created` |
 | `cf-waf-disable-audit` | T1686.001 | `cloudflare_waf_rule_disabled` |
@@ -116,7 +117,6 @@ The other side of the boundary. Each is a detection the corpus documents and thi
 | htpx blue entry | ATT&CK | Title |
 | --------------- | ------ | ----- |
 | `azure-keyvault-audit` | T1555.006 | Detect Key Vault bulk secret read (AuditEvent diagnostic logs) |
-| `azure-runcommand-activity` | T1651 | Detect Azure VM Run Command (Activity Log, runCommand action) |
 | `cryptomine-pool-detect` | T1496.001 | Detect cryptojacking (Stratum pool connections + CPU peg) |
 | `dga-nxdomain-entropy` | T1568.002 | Detect DGA beacons (NXDOMAIN burst + label entropy) |
 | `dns-tunnel-sysmon-22` | T1071.004 | Detect DNS tunneling (Sysmon 22 query volume + label length) |

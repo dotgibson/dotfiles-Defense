@@ -1,0 +1,135 @@
+title: Azure VM Run Command execution (T1651)
+id: 43529d15-802f-43f5-b3bc-0679ff71e172
+status: experimental
+description: |
+  Detects Cloud Administration Command (T1651): Azure Run Command, the control-plane call
+  that executes an arbitrary script inside a VM's guest OS as SYSTEM (Windows) or root
+  (Linux). The attacker never needs a credential for the guest, never touches RDP or SSH,
+  and never crosses a network boundary the guest can see - ARM authorisation on the VM
+  object is the whole prerequisite, so a stolen Contributor token is remote code execution
+  on every VM in scope. ATT&CK cites APT29 for the technique and names Azure RunCommand in
+  it.
+  BOTH PATHS, because they are the same capability under two operation names. The classic
+  invoke is `runCommand/action`; the managed path is a `runCommands/write` that creates a
+  child resource on the VM, and it is the stealthier of the two - the one an operator
+  watching for "Run Command on Virtual Machine" in the portal's activity view does not
+  recognise. A rule keyed on the invoke alone misses its own paired red's better half,
+  which is the too-narrow-for-its-own-red mistake htpx already corrected in
+  `kerberoasting-4769`.
+  Arc machines are in scope for the same reason: Microsoft.HybridCompute is Run Command
+  onto on-prem and other-cloud hosts that happen to be Azure-joined, so leaving the
+  provider out would cover the technique everywhere except the estate where a defender is
+  least expecting an Azure control plane to reach. VM Scale Set instances likewise.
+  NO STATUS ARM, which is a deliberate divergence from the paired htpx entry, whose KQL
+  filters ActivityStatusValue to Start/Started/Succeeded/Success. Two reasons, and the
+  first is that the field's own vocabulary is not stable enough to allowlist. Microsoft
+  documents the column as "Started, In Progress, Succeeded, Failed, Active, Resolved",
+  while Microsoft's own sample queries for this table use `== "Start"` and `== "Success"` -
+  the short forms the reference page does not list. Six documented values, two more in the
+  samples, and no statement anywhere about which a given operation emits: an allowlist over
+  that is a guess, and a guess inside a selection is a silent miss rather than a visible
+  one. The second reason is simpler - Failed belongs in the alert. An attacker who invoked
+  Run Command against a VM and was denied by RBAC is a finding, and one of the more
+  valuable ones, because it is the attempt you can still get ahead of.
+  The operation is the invariant, so the operation is the whole selection. The cost is that
+  one invocation emits two rows as it moves from its opening status to its terminal one -
+  deduplicate by grouping on `Caller` and `_ResourceId` in the SIEM, which is where that
+  belongs and where it cannot cost you a detection.
+  DELETE IS DELIBERATELY NOT SELECTED. `runCommands/delete` removes the managed child
+  resource, which is the attacker's CLEANUP and not the execution; alerting on it would
+  fire on the routine teardown every automation does and invert what this rule means. It is
+  still the corroborating pivot at triage - a write and a delete against the same
+  `_ResourceId` minutes apart is a script that ran and was tidied away.
+  Telemetry cost is zero: Azure Activity Log is on by default and retained 90 days with no
+  diagnostic setting to enable, which is what makes this the cheaper half of the Azure
+  resource-plane pair (`azure_keyvault_bulk_secret_read` needs Key Vault `AuditEvent`
+  switched on). What Activity Log will NOT give you is the script body - the control plane
+  records that a command ran, not what it did. Recovering that means guest telemetry, or
+  the managed path's child resource, which stores the script until someone deletes it.
+  Validate (purple): run `az vm run-command invoke` and then `az vm run-command create`
+  (the managed path) from dotfiles-Offense (htpx pair azure-vm-runcommand).
+references:
+  - https://attack.mitre.org/techniques/T1651/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/azure-runcommand-activity.md
+author: dotfiles-Defense
+date: 2026-09-07
+tags:
+  - attack.execution
+  - attack.t1651
+logsource:
+  product: azure
+  service: activitylogs
+detection:
+  selection_operation:
+    # AzureActivity column names, matching the deploy target the rest of this repo's Azure
+    # content compiles for. An estate shipping the RAW Activity Log JSON instead (an event
+    # hub into Splunk, say) sees `operationName` and `status.value` for these two fields -
+    # remap there rather than widening this rule, which would make both spellings wrong.
+    #
+    # Enumerated in full rather than matched on a `runcommand` substring. The two operation
+    # names differ by ONE LETTER, so a substring reads as sufficient and is how the managed
+    # path gets missed by accident later; spelling both out makes an edit that drops one
+    # visible in the diff. It also keeps `runCommands/read` - listing the child resources,
+    # which is enumeration and not execution - out of the rule.
+    #
+    # Four of these five are confirmed verbatim against Microsoft's own references - the
+    # Compute RBAC permissions page for the VM invoke, the same page's `runCommands/read`
+    # sibling plus the documented RBAC requirement of `az vm run-command create` for the VM
+    # managed write, and the REST references for the scale-set and Arc managed writes, both
+    # of which print the resource type in their sample response. The VMSS INVOKE is the
+    # exception: it is the direct analogue of the VM invoke and its REST operation exists,
+    # but this repo has not confirmed the operation string itself. Left in - a value that
+    # turns out not to be emitted is inert, where omitting a real one is a miss - and
+    # flagged here so the next reader knows which line is the soft one.
+    OperationNameValue:
+      - 'MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION'                    # invoke
+      - 'MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMANDS/WRITE'                    # managed
+      - 'MICROSOFT.COMPUTE/VIRTUALMACHINESCALESETS/VIRTUALMACHINES/RUNCOMMAND/ACTION'  # unconfirmed
+      - 'MICROSOFT.COMPUTE/VIRTUALMACHINESCALESETS/VIRTUALMACHINES/RUNCOMMANDS/WRITE'
+      - 'MICROSOFT.HYBRIDCOMPUTE/MACHINES/RUNCOMMANDS/WRITE'                     # Arc
+    # UPPERCASE, and the casing is load-bearing for exactly one of the three deploy forms.
+    # Log Analytics emits OperationNameValue uppercased even though the ARM operation id is
+    # mixed case; Microsoft's own AzureActivity sample queries settle it, because the one
+    # that uses the case-SENSITIVE `==` writes
+    # `OperationNameValue == "MICROSOFT.COMPUTE/VIRTUALMACHINES/WRITE"` while the samples
+    # spelling the operation in mixed case all reach for the case-insensitive `has`.
+    # Sentinel and Splunk do not care either way - `sigma convert -t kusto` compiles this to
+    # `in~` and Splunk's `IN` is case-insensitive - but Lucene against a keyword field is
+    # case-sensitive, so the Elastic form is the one that depends on shipping the emitted
+    # casing. Verified by compiling this rule to all three backends.
+  filter_ops_automation:
+    # DEPLOY-REQUIRED: replace with the identities that legitimately run commands on your
+    # VMs - the configuration-management service principal, an Update Manager or Automation
+    # runbook identity, the break-glass ops group. Run Command is a real operations tool and
+    # an unfilled list means every routine remediation alerts, someone mutes the rule, and
+    # the mute takes the Arc and scale-set arms with it. Until filled this excludes only the
+    # example. Run detections/sigma/deploy-required.sh to find this.
+    #
+    # Allowlist the CALLER, never the operation: the operation IS the technique, and there
+    # is no Run Command path that is safe by shape rather than by who invoked it.
+    #
+    # A SERVICE PRINCIPAL DOES NOT APPEAR HERE AS A NAME. Microsoft documents Caller as the
+    # "GUID of the caller"; in practice it is the UPN for a human and an object GUID for an
+    # app or managed identity, which is why the table's own sample query filters interactive
+    # users with `Caller has "@"`. Automation is the case this filter exists for and it is
+    # the case that has no "@" - so resolve the identity to its GUID (`az ad sp show --id
+    # <appId> --query id`) and put THAT here. A UPN-shaped entry for a service principal
+    # matches nothing and leaves the rule as noisy as an empty allowlist, while looking
+    # filled in.
+    Caller:
+      - 'sp-config-management@example.onmicrosoft.com'   # example — a human operator
+      - '00000000-0000-0000-0000-000000000000'           # example — an automation SP's object GUID
+  condition: selection_operation and not filter_ops_automation
+falsepositives:
+  - Configuration management, patching, or Update Manager runbooks that use Run Command as
+    their execution channel - the reason filter_ops_automation exists; allowlist the
+    automation identity there rather than muting the rule.
+  - Break-glass troubleshooting by an on-call engineer, which is legitimate and looks
+    identical. Treat an invocation outside a change window, or from a service principal
+    rather than a human, as the finding; a `Caller` that has never issued Run Command
+    before is the sharpest single triage signal here.
+  - One invocation emitting two rows as it moves from its opening status to its terminal
+    one. Deduplicate by grouping on `Caller` and `_ResourceId` in the SIEM, not by adding a
+    status allowlist to the rule - see the description for why that field's vocabulary will
+    not carry one.
+level: high

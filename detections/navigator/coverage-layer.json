@@ -477,6 +477,12 @@
       "comment": "1 rule(s): adcs_esc1_san_mismatch_4886"
     },
     {
+      "techniqueID": "T1651",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): azure_vm_run_command"
+    },
+    {
       "techniqueID": "T1685",
       "score": 5,
       "enabled": true,

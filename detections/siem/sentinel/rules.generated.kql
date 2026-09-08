@@ -24,6 +24,9 @@ eventSource =~ "iam.amazonaws.com" and (eventName in~ ("CreateLoginProfile", "Up
 // cloud/aws_snapshot_share_external.yml — AWS snapshot/AMI shared outside the organisation (T1537)
 ((eventSource in~ ("ec2.amazonaws.com", "rds.amazonaws.com")) and (eventName in~ ("ModifySnapshotAttribute", "ModifyImageAttribute", "ModifyDBSnapshotAttribute", "ModifyDBClusterSnapshotAttribute"))) and ((['requestParameters.createVolumePermission.add.items.group'] =~ "all" or ['requestParameters.launchPermission.add.items.group'] =~ "all" or ['requestParameters.valuesToAdd'] =~ "all") or ((isnotempty(['requestParameters.createVolumePermission.add.items.userId']) or isnotempty(['requestParameters.launchPermission.add.items.userId']) or isnotempty(['requestParameters.valuesToAdd'])) and (not((['requestParameters.createVolumePermission.add.items.userId'] =~ "111122223333" or ['requestParameters.launchPermission.add.items.userId'] =~ "111122223333" or ['requestParameters.valuesToAdd'] =~ "111122223333")))))
 
+// cloud/azure_vm_run_command.yml — Azure VM Run Command execution (T1651)
+(OperationNameValue in~ ("MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION", "MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMANDS/WRITE", "MICROSOFT.COMPUTE/VIRTUALMACHINESCALESETS/VIRTUALMACHINES/RUNCOMMAND/ACTION", "MICROSOFT.COMPUTE/VIRTUALMACHINESCALESETS/VIRTUALMACHINES/RUNCOMMANDS/WRITE", "MICROSOFT.HYBRIDCOMPUTE/MACHINES/RUNCOMMANDS/WRITE")) and (not((Caller in~ ("sp-config-management@example.onmicrosoft.com", "00000000-0000-0000-0000-000000000000"))))
+
 // cloud/entra_directory_role_grant.yml — Entra directory role assigned (tenant privilege escalation)
 (OperationName in~ ("Add member to role", "Add eligible member to role", "Add member to role in PIM requested (permanent)", "Add member to role completed (PIM activation)", "Add member to role requested (PIM activation)")) and (not(Identity =~ "svc-iga-provisioning"))
 
