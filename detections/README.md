@@ -395,6 +395,7 @@ family tests a pointer against a bitmask on the calls it gets wrong.
 | `entra_sp_credential_backdoor`    | Entra AuditLogs "Add SP credentials"                                                    | T1098.001 | M365/Entra · sp-cred-backdoor            |
 | `entra_directory_role_grant`      | Entra AuditLogs "Add member to role"                                                    | T1098.003 | M365/Entra · entra-directory-role        |
 | `azure_vm_run_command`            | Azure Activity Log Run Command invoke + managed `runCommands/write`                     | T1651     | Azure VM · azure-vm-runcommand           |
+| `azure_keyvault_bulk_secret_read` | Key Vault `AuditEvent` SecretGet, distinct secrets per oid (value_count correlation)    | T1555.006 | Azure KV · azure-keyvault-secret-dump    |
 | `aws_iam_access_key_created`      | CloudTrail `CreateAccessKey`                                                            | T1098.001 | AWS IAM · aws-iam-backdoor-key           |
 | `aws_login_profile_created`       | CloudTrail Create/UpdateLoginProfile                                                    | T1098     | AWS IAM · aws-console-login-profile      |
 | `aws_iam_privesc_policy`          | CloudTrail policy attach/put/version + group add                                        | T1098.003 | AWS IAM · aws-iam-privesc-policy         |

@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**113 rules · 131 detection documents · 83 techniques · 12 tactics · 24 logsources.**
+**114 rules · 133 detection documents · 84 techniques · 12 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
@@ -14,7 +14,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Privilege Escalation | TA0004 | 9 | 15 |
 | Stealth | TA0005 | 3 | 6 |
 | Defense Impairment | TA0112 | 7 | 12 |
-| Credential Access | TA0006 | 17 | 20 |
+| Credential Access | TA0006 | 18 | 21 |
 | Discovery | TA0007 | 14 | 6 |
 | Lateral Movement | TA0008 | 11 | 8 |
 | Collection | TA0009 | 5 | 4 |
@@ -87,6 +87,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1552.004 | 1 | `ssh_private_key_read` |
 | T1552.006 | 1 | `gpp_cpassword_sysvol_5145` |
 | T1555 | 2 | `dpapi_backupkey_5145`, `vault_bulk_secret_read` |
+| T1555.006 | 1 | `azure_keyvault_bulk_secret_read` |
 | T1556 | 2 | `okta_idp_created`, `shadow_credentials_keycredentiallink_5136` |
 | T1556.006 | 1 | `okta_mfa_factor_reset` |
 | T1558 | 1 | `unconstrained_delegation_4624` |
@@ -113,7 +114,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 
 | Directory | product | Rules |
 | --------- | ------- | ----: |
-| `cloud` | `aws`, `azure`, `gcp` | 13 |
+| `cloud` | `aws`, `azure`, `gcp` | 14 |
 | `cloudflare` | `cloudflare` | 3 |
 | `collection` | `windows` | 2 |
 | `credential_access` | `windows` | 11 |
