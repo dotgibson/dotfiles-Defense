@@ -216,10 +216,126 @@ _core_status_integrity() {
   REPLY="${#_lines} file(s) edited since commit"; REPLY2=dirty
 }
 
+# _core_status_integrity_deep <repo-dir> — the COMMITTED half of the integrity question.
+#
+# _core_status_integrity above compares the WORKTREE against HEAD. That catches the hazard
+# operators actually hit — hand-editing a vendored file, which the next `make sync` clobbers
+# — and it is local, offline and instant, which is most of `core status`'s value. It cannot
+# catch an edit that was COMMITTED: a bad `git subtree pull`, a hand-edit that got committed,
+# a conflict resolved wrongly. For that you need the tree the pinned core_sha says core/
+# should be, and that tree is not on the box (#797).
+#
+# TREE OIDS, NOT A FILE-BY-FILE DIFF. core-integrity.sh already frames the question this way
+# — "the git tree object of HEAD:core in an OS repo" — and git trees are content-addressed,
+# so an OID computed in the fetched clone and one computed here are equal exactly when the
+# content is. That needs no checkout-index, no materialisation, and no diff binary (#572).
+#
+# THE FILTER COMES FROM THE FETCHED CHECKOUT, never from anything vendored. #676 removed
+# core-vendor.sh from the vendor set because a gate resolving trees in CORE's object store
+# cannot run in a repo that has none; sourcing it from the commit we just fetched sidesteps
+# that entirely, and it is the same trick dotfiles-MacBook's test/verify-core.sh uses today.
+# A core_sha predating the allowlist has no such file, core_vendor_effective_tree falls
+# through to the whole tree, and the comparison spans the migration with no flag day.
+#
+# DEGRADES, NEVER ERRORS — the rule every other row in this panel follows. Offline, a
+# restricted network, no git, a sha upstream will not serve: a stated `unverifiable` and
+# exit 0. The ONE exception is a malformed core.lock, which is `broken`: a sha that is not
+# 40 hex characters is a defect in this checkout, not a fact about the network, and
+# reporting it as "could not check" would launder it into the weather.
+_core_status_integrity_deep() {
+  emulate -L zsh
+  local dir="$1" sha actual expected tmp up to
+  REPLY=""; REPLY2=unverifiable
+  if ! _core_have git; then REPLY="unverifiable (git not available)"; return 0; fi
+  if ! git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
+    REPLY="unverifiable (not a git checkout)"; return 0
+  fi
+  # No core.lock, or no vendored core/: this checkout is Core itself, not a consumer.
+  if [[ ! -r "$dir/core.lock" ]]; then
+    REPLY="n/a (this checkout is Core itself, not a consumer)"; REPLY2=na; return 0
+  fi
+  sha="$(_core_status_kv "$dir/core.lock" core_sha)"
+  if [[ ! "$sha" =~ '^[0-9a-f]{40}$' ]]; then
+    REPLY="core.lock: core_sha is not a 40-char hex sha (${sha:-empty}) — re-run the fan-out"
+    REPLY2=broken; return 0
+  fi
+  # `HEAD:core`, NOT `HEAD:core^{tree}`. A path revision already resolves to the tree, and
+  # peeling it again is a parse error — which rev-parse reports by printing nothing, so the
+  # wrong spelling degrades to a permanent, silent "n/a (HEAD carries no core/)" on a repo
+  # that has one. Caught only by running it against a real consumer checkout.
+  actual="$(git -C "$dir" rev-parse --verify --quiet 'HEAD:core' 2>/dev/null)"
+  if [[ -z "$actual" ]]; then
+    REPLY="n/a (HEAD carries no core/ to verify)"; REPLY2=na; return 0
+  fi
+
+  # mktemp -d + an EXIT trap, verify-core.sh's discipline — but this is a shell FUNCTION in
+  # the user's interactive shell, so it cannot install a trap (that would outlive the call
+  # and fire on shell exit) and has no `set -e` to lean on. Every exit path below removes the
+  # directory explicitly instead, which is why the returns are routed through one place.
+  tmp="$(command mktemp -d "${TMPDIR:-/tmp}/core-status-deep.XXXXXX" 2>/dev/null)" || {
+    REPLY="unverifiable (could not create a temp directory)"; return 0
+  }
+  up="${CORE_UPSTREAM:-https://github.com/dotgibson/dotfiles-core}"
+  # A HARD CEILING, because this is the one row that touches the network and it is reachable
+  # from an interactive prompt. `timeout` is GNU, `gtimeout` is the macOS Homebrew spelling;
+  # with neither we still run, because refusing to check on a box without coreutils would
+  # make --deep useless exactly where it is most likely to be wanted.
+  to=(); if _core_have timeout; then to=(timeout 20); elif _core_have gtimeout; then to=(gtimeout 20); fi
+  if ! git -C "$tmp" init -q 2>/dev/null ||
+    ! "${to[@]}" git -C "$tmp" fetch -q --depth 1 "$up" "$sha" 2>/dev/null; then
+    command rm -rf -- "$tmp"
+    REPLY="unverifiable (could not fetch ${sha:0:8} from upstream — offline, or the commit is not served)"
+    return 0
+  fi
+  # READ FROM THE OBJECT STORE, NOT FROM A WORKING TREE. `git fetch` into a fresh `git init`
+  # populates objects and FETCH_HEAD only — it checks nothing out — so testing for
+  # "$tmp/scripts/lib/core-vendor.sh" on disk is always false and silently takes the
+  # predates-the-allowlist branch below, comparing against the WHOLE tree and reporting a
+  # correctly-vendored repo as `differs`. That is exactly what the first draft did.
+  #
+  # `${sha}:path` is BRACED. Unbraced, zsh parses `$sha:s...` as a history-substitution
+  # modifier and silently drops everything from the colon on — git then receives a bare
+  # commit-ish and fails with "bad file". Inside double quotes makes no difference.
+  if git -C "$tmp" cat-file -e "${sha}:scripts/lib/core-vendor.sh" 2>/dev/null; then
+    local _cv
+    _cv="$(command mktemp "${TMPDIR:-/tmp}/core-vendor.XXXXXX" 2>/dev/null)" || _cv=""
+    if [[ -n "$_cv" ]] &&
+      git -C "$tmp" cat-file blob "${sha}:scripts/lib/core-vendor.sh" >"$_cv" 2>/dev/null; then
+      # RUN THROUGH bash, NOT SOURCED INTO THIS SHELL. core-vendor.sh is a bash library —
+      # `source`ing it from zsh is a portability error that shows up as an empty result and
+      # therefore a false `unverifiable`, which is the quietest possible way to be wrong.
+      # A separate process is also the right isolation: this is code fetched from the
+      # network, and it must not be able to define functions or set variables in the
+      # caller's interactive shell.
+      expected="$(command bash -c 'source "$1" >/dev/null 2>&1 && core_vendor_effective_tree "$2" "$3"' \
+        _ "$_cv" "$tmp" "$sha" 2>/dev/null)"
+    fi
+    [[ -n "$_cv" ]] && command rm -f -- "$_cv"
+  else
+    # A sha predating the allowlist carries no such file — the whole tree IS the vendor set,
+    # which is the same presence-is-the-switch rule Core's own fan-out uses, so this spans
+    # the migration with no flag day.
+    expected="$(git -C "$tmp" rev-parse --verify --quiet "${sha}^{tree}" 2>/dev/null)"
+  fi
+  command rm -rf -- "$tmp"
+  if [[ -z "$expected" ]]; then
+    REPLY="unverifiable (upstream served ${sha:0:8} but its vendor set could not be resolved)"
+    return 0
+  fi
+  if [[ "$expected" == "$actual" ]]; then
+    REPLY="core/ is byte-for-byte ${sha:0:8}"; REPLY2=verified
+  else
+    REPLY="core/ DIFFERS from ${sha:0:8} — the committed tree is not what the lock pins"
+    REPLY2=differs
+  fi
+}
+
 core-status() {
   emulate -L zsh
   local a
-  for a in "$@"; do [[ "$a" == --json ]] && { _core_status_json; return 0; }; done
+  local -i _d=0
+  for a in "$@"; do [[ "$a" == --deep ]] && _d=1; done
+  for a in "$@"; do [[ "$a" == --json ]] && { _core_status_json "$_d"; return 0; }; done
   # Same TTY/paging wrapper as core-doctor and core-whatsnew: force colour through the
   # capture so a paged panel keeps it, and page only when it does not fit.
   if [[ -t 1 && -z ${CORE_NO_PAGER:-} ]]; then
@@ -239,7 +355,7 @@ core-status() {
 #
 # Every name is prefixed _cs_ and unset by the callers. No `local` here on purpose — the
 # callers need to read these after the call returns.
-_core_status_gather() {
+_core_status_gather() { # $1 = 1 to also run the network-touching deep probe
   emulate -L zsh
   # Declared together and up front, not at their use sites below. This function's own
   # scratch (_epoch) and the two outvars _core_status_integrity writes (REPLY/REPLY2) are
@@ -250,6 +366,11 @@ _core_status_gather() {
   _cs_ver="unknown"; _cs_root=""; _cs_lock_ver=""; _cs_sha=""; _cs_ref=""; _cs_tag=""
   _cs_age=""; _cs_os=""; _cs_mgr=""; _cs_sched=""; _cs_role=""; _cs_cap_declared=0
   _cs_integrity=""; _cs_integrity_token="na"
+  # A SIBLING PAIR, never a widening of the shallow one. `.integrity.status` is a published
+  # token set (clean/dirty/unknown/na) and _core_doctor_json's never-widen rule applies: a
+  # consumer matching on it must not start seeing `verified` because someone passed a flag.
+  # Empty token means the deep probe did not run at all, which is the default.
+  _cs_deep=""; _cs_deep_token=""
   [[ -r "$_CORE_VERSION_FILE" ]] && _cs_ver="$(<"$_CORE_VERSION_FILE")"
   # The stamp carries a trailing newline; strip ALL whitespace, as the whatsnew nudge does.
   _cs_ver="${_cs_ver//[[:space:]]/}"
@@ -271,6 +392,20 @@ _core_status_gather() {
     fi
     _core_status_integrity "$_cs_root"
     _cs_integrity="$REPLY"; _cs_integrity_token="$REPLY2"
+    # OPT-IN, and never on the default path. This is the only row that touches the network,
+    # and `core status` being offline and instant is most of its value — so it runs on an
+    # explicit --deep and nothing else. It must never become reachable from a prompt or a
+    # nudge path for the same reason.
+    if (( ${1:-0} )); then
+      _core_status_integrity_deep "$_cs_root"
+      _cs_deep="$REPLY"; _cs_deep_token="$REPLY2"
+    fi
+  elif (( ${1:-0} )); then
+    # ASKED AND NOT APPLICABLE is not the same as NOT ASKED, and null is the encoding for the
+    # second. This checkout resolves no core.lock — it is Core itself, or a tree that vendors
+    # nothing — so --deep has a real answer, and reporting it as null would tell a consumer
+    # the probe never ran.
+    _cs_deep="n/a (this checkout is Core itself, not a consumer)"; _cs_deep_token=na
   fi
 
   _cs_os="$(_core_status_os)" || _cs_os=""
@@ -294,20 +429,23 @@ _core_status_gather() {
 _core_status_render() {
   emulate -L zsh
   _core_wants_help "$1" && {
-    _core_help "core-status [--json]" "is this box current: Core version + provenance, the live OS/role layers, tool health, and whether core/ has been edited"
+    _core_help "core-status [--json] [--deep]" "is this box current: Core version + provenance, the live OS/role layers, tool health, and whether core/ has been edited (--deep also verifies the COMMITTED core/ against upstream — needs the network)"
     return 0
   }
   # Order-independent and fail-closed, with a did-you-mean — the core-whatsnew shape.
   local arg
+  local -i _deep=0
   for arg in "$@"; do
     case "$arg" in
     --json) ;; # intercepted by the wrapper; accepted here so a direct render call is not a usage error
+    # OPT-IN, and the only argument that reaches the network. See _core_status_gather.
+    --deep) _deep=1 ;;
     *)
       _core_err "core-status: unexpected argument: $arg"
       local _sug
-      _sug="$(_core_suggest "$arg" --json)"
+      _sug="$(_core_suggest "$arg" --json --deep)"
       [[ -n "$_sug" ]] && _core_hint "did you mean ${_sug}?"
-      _core_usage "core-status [--json]"
+      _core_usage "core-status [--json] [--deep]"
       return 1
       ;;
     esac
@@ -321,8 +459,9 @@ _core_status_render() {
 
   local _cs_ver _cs_root _cs_lock_ver _cs_sha _cs_ref _cs_tag _cs_age
   local _cs_os _cs_mgr _cs_sched _cs_role _cs_integrity _cs_integrity_token
+  local _cs_deep _cs_deep_token
   local -i _cs_cap_declared
-  _core_status_gather
+  _core_status_gather "$_deep"
 
   # ── row 1: version + provenance ────────────────────────────────────────────
   local _prov
@@ -372,6 +511,11 @@ _core_status_render() {
   _core_doctor_tally _tp _tt _tw _tk
   rows+=("Tools|${_tp}/${_tt} present · ${_tw}/${_tk} wired          ${d}core-doctor -v${r}")
   rows+=("Integrity|${_cs_integrity:-${d}n/a (this checkout is Core itself, not a consumer)${r}}")
+  # A SECOND ROW, not a replacement. The shallow verdict answers "has anyone edited core/
+  # since it was committed" and the deep one answers "is what was committed what the lock
+  # pins" — different questions with different failure modes, and collapsing them would hide
+  # a dirty worktree behind a verified tree (or the reverse).
+  [[ -n "$_cs_deep" ]] && rows+=("Integrity (deep)|$_cs_deep")
 
   local -i kw=0
   local line key val
@@ -407,8 +551,9 @@ _core_status_json() {
   emulate -L zsh
   local _cs_ver _cs_root _cs_lock_ver _cs_sha _cs_ref _cs_tag _cs_age
   local _cs_os _cs_mgr _cs_sched _cs_role _cs_integrity _cs_integrity_token
+  local _cs_deep _cs_deep_token
   local -i _cs_cap_declared
-  _core_status_gather
+  _core_status_gather "${1:-0}"
 
   local -i _tp _tt _tw _tk
   _core_doctor_tally _tp _tt _tw _tk
@@ -434,6 +579,19 @@ _core_status_json() {
   # parsing the human sentence beside it. `na` is this checkout being Core itself.
   print -rn -- "},\"integrity\":{\"status\":"; _core_status_jstr "$_cs_integrity_token"
   print -rn -- ",\"detail\":"; _core_status_jstr "$_cs_integrity"
+  # A SIBLING KEY, never a widened one (#797). `.integrity.status` is a published token set
+  # — clean/dirty/unknown/na — and the never-widen rule this file states for _core_doctor_json
+  # applies: a consumer matching on it must not start seeing `verified` or `differs` because
+  # somebody passed a flag. `.integrity.deep` carries its own set and is null when --deep was
+  # not asked for, so "not checked" and "checked and clean" stay distinguishable.
+  print -rn -- ",\"deep\":"
+  if [[ -n "$_cs_deep_token" ]]; then
+    print -rn -- "{\"status\":"; _core_status_jstr "$_cs_deep_token"
+    print -rn -- ",\"detail\":"; _core_status_jstr "$_cs_deep"
+    print -rn -- "}"
+  else
+    print -rn -- null
+  fi
   print -r -- "}}"
 }
 
@@ -2379,6 +2537,7 @@ _core_help_render() {
     "Ctrl-E|Atuin history TUI|atuin"
     "Ctrl-G|session picker (sesh)|sesh"
     "Alt-Z|zoxide project jump|zoxide"
+    "Alt-C|cd into a subdirectory|fzf"
     "Ctrl-\\|toggle autosuggestions"
     "§updates & maintenance"
     "up [-y]|apply package updates (interactive; confirms first)"
