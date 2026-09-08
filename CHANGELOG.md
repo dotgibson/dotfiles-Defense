@@ -228,6 +228,26 @@ under `[Unreleased]` from here.
 
 ### Changed
 
+- **`detections/htpx.pin` -> v3.2.0 (`6358a8df8661`).** A plain bump, on the drift bot's
+  weekly report (#277). Upstream's v3.2.0 closes the corpus's Azure asymmetry — every Azure
+  pair before it sat on the Entra/M365 identity plane, none on the resource plane — with two
+  new pairs: `azure-vm-runcommand` <-> `azure-runcommand-activity` (T1651, Activity Log) and
+  `azure-keyvault-secret-dump` <-> `azure-keyvault-audit` (T1555.006, Key Vault
+  `AuditEvent`). **No rule here changed and none needed to:** nothing this repo names was
+  renamed or retired, so every claim still resolves and the claim gate was green before and
+  after. The report diff is the whole content of the bump — the two entries land in
+  *"htpx blue entries nothing here claims"*, moving the boundary from 103 blue entries to
+  105 with the 96 claimed here unchanged.
+
+  That two-row gap is **recorded, not accepted by default**. This repo covers the AWS and
+  GCP resource planes (`aws_snapshot_share_external`, `gcp_service_account_key_created`, and
+  their siblings) and the Azure *identity* plane, so the missing Azure resource-plane
+  telemetry — `AzureActivity`, and Key Vault `AuditEvent`, which is a diagnostic setting an
+  estate has to switch on — is the same asymmetry upstream just fixed, seen from this side.
+  It is a coverage candidate, filed as #280 rather than smuggled into a pin bump: a bump
+  whose diff is only the pin and the generated report is reviewable at a glance, and one
+  that also ships two new Azure rules is not.
+
 - **Five rules matched one spelling of an action that has more than one.** Each was evadable by
   a caller who reached the same outcome through the sibling API, and the corpus review (#261)
   found them together. `gcp_service_account_key_created` selected only
