@@ -5,4 +5,5 @@
 # one object for a statusline or a gate to consume.
 _arguments -s \
   '(-h --help)'{-h,--help}'[show usage and exit]' \
-  '--json[machine-readable status object on stdout]'
+  '--json[machine-readable status object on stdout]' \
+  '--deep[also verify the COMMITTED core/ against upstream (fetches; needs the network)]'

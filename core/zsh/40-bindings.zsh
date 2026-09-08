@@ -38,6 +38,7 @@ zvm_after_init() {
   bindkey -M viins '^[[A' history-substring-search-up
   bindkey -M viins '^[[B' history-substring-search-down
   bindkey -M viins '^[z' _fzf_zoxide_jump # Alt+Z   → zoxide jump
+  bindkey -M viins '^[c' _fzf_cd_dir      # Alt+C   → cd into a subdirectory (parity w/ PSFzf)
   bindkey -M viins '^G' _tmux_sessionizer # Ctrl+G  → sesh session picker
 
   # --- Normal / command mode ---

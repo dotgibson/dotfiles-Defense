@@ -117,6 +117,44 @@ _fzf_zoxide_jump() {
 zle -N _fzf_zoxide_jump
 
 # =========================================================
+# Widget: Alt+C — cd into a SUBDIRECTORY of the current one
+# =========================================================
+# NOT a second key for Alt+Z, and the distinction is the whole reason this exists (#808).
+# Alt+Z is a FRECENCY jump to anywhere zoxide has already seen; Alt+C is scoped to below
+# $PWD and finds directories zoxide has never visited. Different intents, and an operator
+# arriving from stock fzf or PSFzf expects the latter on this key.
+#
+# PARITY.md advertised Alt+C as `aligned` for years while NEITHER shell bound it — zsh has
+# never bound ^[c and never sources fzf's own key-bindings, so the FZF_ALT_C_* exports that
+# would have configured fzf's stock widget were dead config and were deleted in v6.0.0.
+# #682 removed the false claim; this implements it for real.
+#
+# --type d, no --strip-cwd-prefix: the RESULT IS cd'd TO, not inserted into the buffer like
+# Ctrl+T's, so it has to stay a usable path from here. `.git` is excluded for the reason the
+# file picker excludes it — a repo's object store is thousands of directories nobody wants
+# to cd into, and on a large repo it dominates the list.
+_fzf_cd_dir() {
+  local result
+  # Bound unconditionally in 40-bindings.zsh, so guard here — the same shape as the two
+  # widgets above, in Core's voice, rather than a "command not found" from an unset $FD_BIN
+  # piped into a missing fzf.
+  if ! _core_have fzf || [[ -z ${FD_BIN:-} ]]; then
+    _core_warn "Alt-C: needs fzf + fd"
+    zle reset-prompt
+    return 1
+  fi
+  result=$("$FD_BIN" --type d --exclude .git | fzf \
+    --prompt="Change to Subfolder ❯ " \
+    --preview="$_FZF_DIR_PREVIEW")
+  if [[ -n "$result" ]]; then
+    cd "$result" || return
+  fi
+  zle reset-prompt
+}
+
+zle -N _fzf_cd_dir
+
+# =========================================================
 # Widget: Ctrl+R — custom history searcher
 # =========================================================
 _fzf_history_clean() {
