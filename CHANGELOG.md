@@ -228,6 +228,26 @@ under `[Unreleased]` from here.
 
 ### Changed
 
+- **`detections/htpx.pin` -> v3.2.0 (`6358a8df8661`).** A plain bump, on the drift bot's
+  weekly report (#277). Upstream's v3.2.0 closes the corpus's Azure asymmetry — every Azure
+  pair before it sat on the Entra/M365 identity plane, none on the resource plane — with two
+  new pairs: `azure-vm-runcommand` <-> `azure-runcommand-activity` (T1651, Activity Log) and
+  `azure-keyvault-secret-dump` <-> `azure-keyvault-audit` (T1555.006, Key Vault
+  `AuditEvent`). **No rule here changed and none needed to:** nothing this repo names was
+  renamed or retired, so every claim still resolves and the claim gate was green before and
+  after. The report diff is the whole content of the bump — the two entries land in
+  *"htpx blue entries nothing here claims"*, moving the boundary from 103 blue entries to
+  105 with the 96 claimed here unchanged.
+
+  That two-row gap is **recorded, not accepted by default**. This repo covers the AWS and
+  GCP resource planes (`aws_snapshot_share_external`, `gcp_service_account_key_created`, and
+  their siblings) and the Azure *identity* plane, so the missing Azure resource-plane
+  telemetry — `AzureActivity`, and Key Vault `AuditEvent`, which is a diagnostic setting an
+  estate has to switch on — is the same asymmetry upstream just fixed, seen from this side.
+  It is a coverage candidate, filed as #280 rather than smuggled into a pin bump: a bump
+  whose diff is only the pin and the generated report is reviewable at a glance, and one
+  that also ships two new Azure rules is not.
+
 - **Five rules matched one spelling of an action that has more than one.** Each was evadable by
   a caller who reached the same outcome through the sibling API, and the corpus review (#261)
   found them together. `gcp_service_account_key_created` selected only
@@ -273,6 +293,63 @@ under `[Unreleased]` from here.
   nothing in production — the hazard `fixture-provenance.tsv` exists to expose.
 
 ### Added
+
+- **T1651 Cloud Administration Command — Azure Run Command, the first rule on this repo's
+  Azure resource plane (#280).** `detections/sigma/cloud/azure_vm_run_command.yml` reads the
+  Azure Activity Log for Run Command, the ARM call that executes an arbitrary script in a
+  VM's guest as SYSTEM or root. A stolen Contributor token is therefore remote code execution
+  with no guest credential, no RDP or SSH, and no packet the guest's own sensors can see.
+  The gap it closes was invisible to a per-tactic coverage map: Azure was six pairs deep on
+  the Entra/M365 *identity* plane and empty on the resource plane, while AWS and GCP reached
+  both, so the provider read as covered until you sorted by plane. The htpx v3.2.0 bump is
+  what surfaced it — upstream closed the same asymmetry from the red side, and both new blue
+  entries landed in HTPX-COVERAGE.md's unclaimed table.
+
+  **Both operation paths, because they are one capability under two names.** `runCommand/action`
+  is the classic invoke; `runCommands/write` is the managed path that creates a child resource
+  on the VM, and it is the stealthier half — a rule keyed on the invoke alone misses its own
+  paired red, which is the mistake htpx fixed in `kerberoasting-4769`. Arc machines
+  (`Microsoft.HybridCompute`) and scale-set instances are selected for the same reason:
+  Run Command onto an on-prem host that happens to be Azure-joined is the case a defender is
+  least expecting an Azure control plane to reach. `runCommands/delete` is deliberately NOT
+  selected — that is the attacker's cleanup, not the execution, and alerting on it would fire
+  on every routine teardown and invert what the rule means. It stays the triage pivot: a write
+  and a delete against the same `_ResourceId` minutes apart is a script that ran and was tidied.
+
+  **No status arm, diverging from the paired entry's KQL, and the divergence is the point.**
+  That query filters `ActivityStatusValue` to Start/Started/Succeeded/Success. Microsoft
+  documents the column as "Started, In Progress, Succeeded, Failed, Active, Resolved" while
+  its own sample queries for the table use the short forms `Start` and `Success` — so the
+  vocabulary is inconsistent in Microsoft's own references, and an allowlist over it is a
+  guess that fails silently. Failed also belongs in the alert: an attacker denied by RBAC is
+  a finding you can still get ahead of. The operation is the invariant, so the operation is
+  the whole selection; deduplicate in the SIEM by `Caller` and `_ResourceId`, where it cannot
+  cost a detection.
+
+  **The fixtures reached `vendor-documented`, and the checking changed the rule twice.** All
+  five AzureActivity columns are confirmed against the Azure Monitor table reference, and the
+  UPPERCASE operation casing is settled by that table's own sample page: the sample using the
+  case-*sensitive* `==` writes `MICROSOFT.COMPUTE/VIRTUALMACHINES/WRITE`, while every
+  mixed-case sample reaches for the case-insensitive `has`. Casing is load-bearing for exactly
+  one deploy form — `sigma convert` compiles this to `in~` for Sentinel and `IN` for Splunk,
+  both case-insensitive, but Lucene against a keyword field is not. Four of the five operation
+  strings are confirmed verbatim (Compute RBAC permissions page; the documented RBAC
+  requirement of `az vm run-command create`; the scale-set and Arc REST references, which
+  print the resource type in their sample responses); the scale-set *invoke* is flagged in the
+  rule as the one line this repo has not confirmed. Checking also corrected the
+  `filter_ops_automation` guidance: Microsoft documents `Caller` as a GUID, and the table's own
+  sample filters humans with `Caller has "@"` — so an automation identity must be allowlisted
+  by object GUID, and a UPN-shaped entry for a service principal matches nothing while looking
+  filled in.
+
+  Seven fixture lines, each proving one decision: the TP covers the invoke, the managed write
+  under a non-Started status, a *failed* invoke, and the Arc path; the TN covers the allowlisted
+  caller, the delete, and the read. Every line verified individually against the rule.
+  `make check`, `make attack-tags`, and `make htpx` green — the pairing gate now resolves 99
+  reference URLs across 97 blue entries, and `azure-runcommand-activity` moves out of
+  HTPX-COVERAGE.md's unclaimed table. DEFENSE-METHODOLOGY.md gains the resource-plane axis and
+  names Azure Activity Log as a data source; the Key Vault half of #280 stays open, second
+  because its telemetry is a diagnostic setting rather than on by default.
 
 - **T1537 Transfer Data to Cloud Account — `detections/sigma/cloud/aws_snapshot_share_external.yml`
   (#262).** The corpus had no detection for exfil that never crosses an egress boundary. An
