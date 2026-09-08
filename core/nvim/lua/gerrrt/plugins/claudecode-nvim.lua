@@ -18,7 +18,7 @@
 --            no-dap-ui / no-toggleterm stance stated in config/autocmds.lua. If the in-editor
 --            terminal ever grates (paste handling, <C-\><C-n> mode juggling), `provider = "none"`
 --            runs the server ONLY: drive `claude` from a tmux pane and attach it with `/ide`.
---         2. `cond` gates the whole spec on the `claude` binary. Core vendors into eight OS repos
+--         2. `cond` gates the whole spec on the `claude` binary. Core vendors into nine repos
 --            and `claude` is in no package list on any of them, so on most boxes this plugin must
 --            be completely inert — the same reasoning as the `uv` gate in config/autocmds.lua:
 --            maps that only ever advertise a command that opens a failed terminal are worse than

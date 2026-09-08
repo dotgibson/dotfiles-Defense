@@ -595,8 +595,37 @@ maint-status() {
   _core_wants_help "$1" && { _core_help "maint-status" "when does the job next run / is it enabled"; return 0; }
   case "$(_maint_scheduler)" in
   systemd)
-    systemctl --user list-timers dotfiles-maint.timer --no-pager 2>/dev/null
-    systemctl --user status dotfiles-maint.service --no-pager 2>/dev/null | head -5
+    # ABSENCE IS A VERDICT, NOT AN EMPTY LISTING (#918). `list-timers` prints its header and
+    # `0 timers listed` on STDOUT and exits 0 when the unit does not exist; the one call that
+    # KNOWS — `status` — writes "Unit … could not be found" to STDERR, which the redirect
+    # below discards. So this arm rendered a clean-looking listing on a box where
+    # maint-install had never written anything, and the operator read it as healthy. That is
+    # the failure this command exists to prevent, wearing the command's own output.
+    #
+    # The launchd and cron arms below have always carried an absence branch (`|| echo "not
+    # loaded"`, `no cron entry`); systemd was the only one of the three without, and it is
+    # the arm the whole Linux fleet takes — Debian, Fedora, Arch, openSUSE, Defense and
+    # Offense all declare SCHEDULER=systemd.
+    #
+    # TWO FACTS, NOT ONE, because they fail INDEPENDENTLY and `list-timers` renders both as
+    # the same empty output: the unit can be missing, or present and not enabled, and those
+    # are different repairs. An undeclared SCHEDULER_UNIT_DIR is a third — maint-install
+    # could not have written anywhere, so "not installed" would name the wrong cause.
+    local _ms_unit _ms_en
+    _ms_unit="$(_maint_unit_file systemd)"
+    if [[ -z "$_ms_unit" ]]; then
+      echo "no SCHEDULER_UNIT_DIR declared — maint-install has nowhere to write a unit"
+      _core_hint "declare it in os/<os>.capabilities, or re-run your OS repo's ./bootstrap.sh --links-only"
+    elif [[ ! -f "$_ms_unit" ]]; then
+      echo "not installed — no $_ms_unit"
+      _core_hint "run: maint-install"
+    else
+      _ms_en="$(systemctl --user is-enabled dotfiles-maint.timer 2>/dev/null)"
+      [[ "$_ms_en" == enabled ]] ||
+        echo "installed but NOT enabled (is-enabled: ${_ms_en:-unknown}) — the unit exists and will never fire; re-run: maint-install"
+      systemctl --user list-timers dotfiles-maint.timer --no-pager 2>/dev/null
+      systemctl --user status dotfiles-maint.service --no-pager 2>/dev/null | head -5
+    fi
     ;;
   launchd) launchctl list 2>/dev/null | grep -i dotfiles || echo "not loaded" ;;
   cron) crontab -l 2>/dev/null | grep -F "# dotfiles-maint" || echo "no cron entry" ;;

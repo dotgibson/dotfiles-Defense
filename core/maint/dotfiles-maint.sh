@@ -16,6 +16,8 @@
 #   MAINT_NVIM_TIMEOUT=600    MAINT_BREW_TIMEOUT=900    MAINT_TS_TIMEOUT=300
 #   MAINT_RUSTUP_TIMEOUT=600 # seconds `rustup update` may block
 #   MAINT_MISE_TIMEOUT=2700  # seconds EACH mise step may block (source builds — see below)
+#   MAINT_GIT_TIMEOUT=300    # seconds EACH zsh-plugin git fetch/pull may block
+#   MAINT_TPM_TIMEOUT=600    # seconds EACH tmux-plugin (TPM) step may block
 #   MAINT_ENABLED=1          # 0 = no-op (e.g. drop a guard on a Kali engagement box)
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -69,6 +71,29 @@ export PATH="$HOME/.local/bin:${CARGO_HOME:-$HOME/.cargo}/bin${PATH:+:$PATH}:/us
 # The upgradable-count probe below refreshes package metadata over the network. It is a
 # nudge, not a transaction — a slow mirror must cost us an accurate number, never the run.
 : "${MAINT_PKGCOUNT_TIMEOUT:=180}"
+# The zsh-plugin loop's fetch/pull and TPM's per-plugin clones are the runner's remaining
+# network calls, and until #899 they were the only ones with NO ceiling at all — a stalled
+# remote held the whole run for as long as it cared to. Sized as downloads, not builds: a
+# shallow single-commit fetch and a handful of small plugin repos.
+: "${MAINT_GIT_TIMEOUT:=300}"
+: "${MAINT_TPM_TIMEOUT:=600}"
+
+# NO GIT INVOCATION IN THIS RUNNER MAY ASK A QUESTION (#899, out of #820).
+# step()'s `</dev/null` is the runner's answer to a prompting step, and for dnf or ssh it is
+# the right one. It does NOT cover git: git asks for credentials on `/dev/tty`, not stdin, so
+# an EOF on stdin leaves the prompt — and the block — exactly where it was. `maint-run` from a
+# terminal is precisely where a controlling tty exists to be blocked on. The variable that
+# actually answers is this one, and it is set for the whole runner rather than per call site
+# because the git calls are not all ours: TPM shells out to git for every plugin it clones.
+#
+# Under a scheduler there is no controlling tty and git already fails fast, so this changes
+# nothing there — it exists for the foreground run, which is the case that hangs.
+#
+# NOT COVERED, and left honest rather than half-fixed: a plugin on an SSH remote whose key
+# needs a passphrase. That prompt is ssh's, not git's, and GIT_TERMINAL_PROMPT does not reach
+# it. The MAINT_GIT_TIMEOUT ceiling below bounds it — a wait, then a logged ✗ — which is the
+# same treatment every other network call in this file gets.
+export GIT_TERMINAL_PROMPT=0
 # Log rotation bound (B6): trim to MAINT_LOG_KEEP lines once the log passes
 # MAINT_LOG_MAX, so an append-only daily log can't grow without limit. Configurable so
 # a noisy box can keep more history (or a tiny one less); KEEP < MAX or trimming churns.
@@ -95,7 +120,33 @@ if [[ -f "$LOG" ]] && [[ "$(wc -l <"$LOG" 2>/dev/null || echo 0)" -gt "$MAINT_LO
   tmp="$(mktemp "${LOG}.XXXXXX")" && tail -n "$MAINT_LOG_KEEP" "$LOG" >"$tmp" && mv "$tmp" "$LOG"
 fi
 
-log() { echo "$(date '+%F %T')  $*" | tee -a "$LOG"; }
+# A RECORD'S POSITION MUST NOT DEPEND ON THE PREVIOUS WRITER (#919).
+# `echo` emits a trailing newline but no LEADING one, so a record only began on a fresh line
+# if whatever wrote last happened to end with one — and step() pipes each command's RAW
+# output into $LOG (through `tee` on the tty arm, `>>` on the scheduled one), neither of
+# which can promise that. A step ending without a newline therefore swallowed the front of
+# the next record: `Successfully updated 1 registry.2026-09-07 12:17:26  ✓ neovim: …` was
+# observed on a live box. Harmless for a ✓; for a ✗ it moves the ONLY record that anything
+# failed out of column 0, where a timestamp-anchored scan and an operator's eye both miss it.
+# step() deliberately continues past a failure and the process still exits 0, so that log
+# line is the whole error contract.
+#
+# FIXED HERE RATHER THAN IN step(), because step() is not the only writer — the mise bump
+# probe and the zsh-plugin loop also append to $LOG — and log() is the one place every
+# record passes through.
+#
+# THE NEWLINE GOES TO THE FILE ONLY, never to stdout. What is known here is the FILE's last
+# byte; the terminal's column is not knowable and the two are not in sync — at the start of a
+# run the log may end mid-line from a PREVIOUS run while the terminal is fresh, and emitting
+# to both would print a spurious blank line every time.
+#
+# `$(…)` strips trailing newlines, so a last byte that IS a newline yields the empty string
+# and a last byte that is not yields itself: the test needs no `wc -l`, whose leading-space
+# output differs between GNU and BSD anyway.
+log() {
+  [ -s "$LOG" ] && [ -n "$(tail -c1 "$LOG" 2>/dev/null)" ] && printf '\n' >>"$LOG"
+  echo "$(date '+%F %T')  $*" | tee -a "$LOG"
+}
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # portable timeout (GNU `timeout` / macOS `gtimeout`; else run unbounded)
@@ -272,6 +323,17 @@ step() {
   # step that colourizes on `isatty` still sees false and the log keeps the same clean text it
   # always had; mirroring buys visibility without inviting escape sequences into $LOG.
   if [[ -t 1 ]]; then
+    # THE TTY ARM COUPLES THIS STEP TO ANYTHING HOLDING ITS STDOUT (#899, out of #820).
+    # `>>"$LOG"` in the other arm returns the moment the command does. A pipe does not: `tee`
+    # sees EOF only when EVERY writer has closed it, so a step that leaves a background
+    # process inheriting stdout — a tmux server, a daemon a package manager restarts — keeps
+    # tee, and therefore `maint-run`, blocked after the step's own work is finished. It is
+    # foreground-only; the scheduled run takes the else arm and never enters this shape, which
+    # is a poor trade: the tty arm exists to make the interactive run LESS likely to look
+    # wedged. Every step that could plausibly do it is `_to`-wrapped, so the coupling costs a
+    # bounded wait and a logged ✗ rather than a run that never returns. That is a ceiling, not
+    # a cure — the cure is a redesign of the mirror, and nobody has reproduced a specific step
+    # leaking the fd to justify one.
     "$@" </dev/null 2>&1 | tee -a "$LOG"
     # The COMMAND's status, never tee's. `pipefail` (set at the top) reports the LAST non-zero
     # stage, which would blame the step for a tee that died on a full disk; PIPESTATUS[0] names
@@ -295,7 +357,7 @@ log "═══════════ dotfiles-maint start ($(uname -s) $(hostn
 if have brew; then
   step "brew update" _to "$MAINT_BREW_TIMEOUT" brew update
   step "brew upgrade" _to "$MAINT_BREW_TIMEOUT" brew upgrade
-  step "brew cleanup" brew cleanup -s
+  step "brew cleanup" _to "$MAINT_BREW_TIMEOUT" brew cleanup -s
 fi
 
 # ── mise (runtime/tool versions per your config) ──────────────────────────────
@@ -331,10 +393,17 @@ if have mise; then
   # state rather than masquerading as good news. rc is logged so the daily log can tell them
   # apart after the fact (124/143 = the timeout fired; anything else = mise itself failed).
   # </dev/null for the reason step() states at length: this probe is NOT a step() call, so it
-  # is the one command in the run that inherits the caller's stdin. Under `maint-run` that is a
-  # terminal, while its stderr goes to /dev/null — so a mise that decides to PROMPT here (an
-  # untrusted config path, a credential) asks a question NOBODY CAN SEE and blocks on the tty
-  # until MAINT_MISE_TIMEOUT expires. EOF turns that into the fast rc!=0 the gate below reports.
+  # inherits the caller's stdin. Under `maint-run` that is a terminal, while its stderr goes to
+  # /dev/null — so a mise that decides to PROMPT here (an untrusted config path, a credential)
+  # asks a question NOBODY CAN SEE and blocks on the tty until MAINT_MISE_TIMEOUT expires. EOF
+  # turns that into the fast rc!=0 the gate below reports. It is the only site where the
+  # question is invisible as well as blocking, since its stderr is discarded too.
+  #
+  # This used to claim it was "the one command in the run that inherits the caller's stdin".
+  # It never was (#899): the zsh-plugin loop below is not a step() call either, and its git
+  # calls put stdout AND stderr into $LOG — invisible and blocking, the shape this file names
+  # as its worst. They are answered by GIT_TERMINAL_PROMPT and a ceiling rather than by an
+  # EOF, for the reason given where that export is set; the count here was simply wrong.
   bump="$(_to "$MAINT_MISE_TIMEOUT" mise outdated --bump --no-header </dev/null 2>/dev/null)"
   bump_rc=$?
   if ((bump_rc != 0)); then
@@ -396,7 +465,7 @@ if [[ -d "$ZPLUGINDIR" ]]; then
       # way plugins.zsh installs a pin); verify HEAD landed on the pin before claiming it.
       if [[ "$(git -C "$d" rev-parse HEAD 2>/dev/null)" == "$pin" ]]; then
         log "  • ${name} pinned (${pin:0:7}) — held"
-      elif git -C "$d" fetch -q --depth 1 origin "$pin" >>"$LOG" 2>&1 &&
+      elif _to "$MAINT_GIT_TIMEOUT" git -C "$d" fetch -q --depth 1 origin "$pin" >>"$LOG" 2>&1 &&
         git -C "$d" checkout -q --detach FETCH_HEAD >>"$LOG" 2>&1 &&
         [[ "$(git -C "$d" rev-parse HEAD 2>/dev/null)" == "$pin" ]]; then
         log "  ✓ ${name} → pinned ${pin:0:7}"
@@ -405,7 +474,7 @@ if [[ -d "$ZPLUGINDIR" ]]; then
       fi
     elif ! git -C "$d" symbolic-ref -q HEAD >/dev/null 2>&1; then
       log "  • ${name} detached (unpinned) — held"
-    elif git -C "$d" pull --ff-only >>"$LOG" 2>&1; then
+    elif _to "$MAINT_GIT_TIMEOUT" git -C "$d" pull --ff-only >>"$LOG" 2>&1; then
       log "  ✓ ${name}"
     else
       log "  ✗ ${name} (pull failed) — continuing"
@@ -446,10 +515,13 @@ if have zsh; then
 fi
 
 # ── tmux plugins (TPM) ────────────────────────────────────────────────────────
+# `_to`-wrapped for both halves of #899: these clone and pull over the network with no
+# ceiling of their own, and they are the likeliest steps in the file to leave a tmux server
+# holding the tty arm's pipe open after the step itself has finished.
 TPM="$HOME/.config/tmux/plugins/tpm/bin"
 if [[ -x "$TPM/update_plugins" ]]; then
-  step "tmux: install new plugins" "$TPM/install_plugins"
-  step "tmux: update plugins" "$TPM/update_plugins" all
+  step "tmux: install new plugins" _to "$MAINT_TPM_TIMEOUT" "$TPM/install_plugins"
+  step "tmux: update plugins" _to "$MAINT_TPM_TIMEOUT" "$TPM/update_plugins" all
 fi
 
 # ── Neovim: lazy.nvim sync + treesitter parsers + Mason registry ──────────────
@@ -457,17 +529,41 @@ if have nvim; then
   # One headless session: Lazy! sync (bang = synchronous), then update treesitter parsers,
   # then refresh the Mason registry, then quit.
   #
+  # WHY EVERY ARM IS A pcall THAT RECORDS, AND WHY THE LAST -c CAN :cq (#829)
+  # `nvim --headless` exits 0 when a `-c` command FAILS — the error goes to stderr and the
+  # process still succeeds. step() reads that 0 and logs a green ✓ over a session in which
+  # nothing ran, so a box whose config aborts at load (an option its nvim is too old for, a
+  # plugin that never loaded, a renamed command) reports a healthy maintenance run forever
+  # while plugins, parsers and the Mason registry silently go un-updated. Nothing else in the
+  # run has this shape: every other step is a real process whose exit status means something.
+  # `:cq` is the documented way to make nvim exit NON-zero, so the arms record their failures
+  # in one table and the final -c turns a non-empty table into an rc step() can see.
+  # The sentinel is FAIL-CLOSED: __maint_fail unset means the setup -c itself never ran, which
+  # is also a failure — a check that can only fire when the run got far enough to set it up is
+  # the same false green in a smaller box.
+  #
   # TREESITTER (main branch): there is NO :TSUpdateSync — that was a master-branch command, and
   # `+silent! ...` would have swallowed the "not an editor command" error, so parsers never
   # updated. On main, update is the async Lua API require('nvim-treesitter').update(); it returns
   # a task we must :wait() on, or a bare +qa! quits before parsers finish compiling. We update
   # only the INSTALLED parsers (a no-arg update resolves to 'all' and would try to pull every
-  # parser); require() is pcall-guarded and auto-loads the plugin via lazy's require shim.
+  # parser). A require() that FAILS is now recorded rather than shrugged off: the plugin is in
+  # Core's lazy-lock, so a headless session that cannot require it is a broken install, not a
+  # box that opted out.
+  #
+  # MASON needs the require() too, and that is a FIX, not ceremony. mason.nvim is a dependency
+  # of nvim-lspconfig/conform/nvim-lint, all of which load on buffer events that never fire in a
+  # headless session — so :MasonUpdate did not exist here and `+silent! MasonUpdate` swallowed
+  # the E492 every single run. The registry has never actually been refreshed by this step.
+  # require("mason") pulls it in through lazy's require shim first, so the command exists.
   step "neovim: Lazy sync / TSUpdate / MasonUpdate" \
     _to "$MAINT_NVIM_TIMEOUT" nvim --headless \
-    "+Lazy! sync" \
-    -c 'lua local ok,ts=pcall(require,"nvim-treesitter"); if ok then local p=require("nvim-treesitter.config").get_installed("parsers"); if #p>0 then ts.update(p):wait((tonumber(vim.env.MAINT_TS_TIMEOUT) or 300)*1000) end end' \
-    "+silent! MasonUpdate" "+qa!"
+    -c 'lua _G.__maint_fail = {}; _G.__maint_try = function(n, f) local ok, e = pcall(f); if not ok then table.insert(_G.__maint_fail, n .. ": " .. tostring(e)) end end' \
+    -c 'lua __maint_try("Lazy sync", function() vim.cmd("Lazy! sync") end)' \
+    -c 'lua __maint_try("TSUpdate", function() local ts = require("nvim-treesitter"); local p = require("nvim-treesitter.config").get_installed("parsers"); if #p > 0 then ts.update(p):wait((tonumber(vim.env.MAINT_TS_TIMEOUT) or 300) * 1000) end end)' \
+    -c 'lua __maint_try("MasonUpdate", function() require("mason"); vim.cmd("MasonUpdate") end)' \
+    -c 'lua local f = _G.__maint_fail; if f == nil or #f > 0 then io.stderr:write("maint: neovim: " .. (f and table.concat(f, " | ") or "the setup -c never ran") .. "\n"); vim.cmd("cq") end' \
+    "+qa!"
 fi
 
 # ── System packages: refresh the shell-nudge cache (NON-ROOT count) ───────────
