@@ -381,6 +381,12 @@
       "comment": "2 rule(s): dpapi_backupkey_5145, vault_bulk_secret_read"
     },
     {
+      "techniqueID": "T1555.006",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): azure_keyvault_bulk_secret_read"
+    },
+    {
       "techniqueID": "T1556",
       "score": 2,
       "enabled": true,

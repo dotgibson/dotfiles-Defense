@@ -460,12 +460,15 @@ Azure estate has. The rule reads the operation and nothing else, and its own hea
 why a status allowlist — the obvious narrowing, and the one the paired htpx entry's hunting
 query uses — is a silent miss in a shipped rule.
 
-The plane is not closed. The Key Vault half of the same asymmetry, bulk secret read from the
-`AuditEvent` diagnostic log, is still uncovered and is tracked in
-[dotgibson/dotfiles-Defense#280](https://github.com/dotgibson/dotfiles-Defense/issues/280)
-along with the reason it is second: unlike Activity Log, that telemetry is a diagnostic
-setting an estate has to switch on, so the rule would document a data source many readers do
-not yet collect.
+`detections/sigma/cloud/azure_keyvault_bulk_secret_read.yml` closes the other half, and it
+carries a **telemetry prerequisite the Run Command rule does not**: Key Vault `AuditEvent` is
+a diagnostic setting an estate has to switch on, where Activity Log is simply there. That is
+why it lands second, and it is the honest caveat to attach to it — the rule is inert in a
+tenant that has never configured vault diagnostics, and that is a collection gap rather than
+a detection one. It counts distinct secrets per object id in a bucketed window rather than
+read rate, the same breadth-per-identity shape `detections/sigma/vault/vault_bulk_secret_read.yml`
+uses for HashiCorp Vault; the two are deliberately tuned to the same threshold so an analyst
+tuning one credential store starts from the same number in the other.
 
 **Impact is the one row that spans both layers**, and it is worth understanding why
 rather than reading `sigma, network` as a formatting quirk. Most of the tactic is host
