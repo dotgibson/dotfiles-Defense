@@ -27,7 +27,7 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Offens
 | ATT&CK tactic            | Primary data sources                                              | Where detections live | Validate with (Offense)                                              |
 | ------------------------ | ----------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------- |
 | Initial Access           | npm / PyPI publish audit logs                                     | sigma                 | htpx pairs `npm-malicious-publish` / `pypi-malicious-publish`        |
-| Recon / Discovery        | Zeek, 4688/4769, 4798/4799, 5145                                  | network, sigma        | recon / Kerberoast folds                                             |
+| Recon / Discovery        | Zeek, 4688/4769, 4798/4799, 5145, 1644/4662                       | network, sigma        | recon / Kerberoast folds                                             |
 | Credential Access        | Sysmon 10, 4625/4771                                              | sysmon, sigma         | Responder / cracking folds                                           |
 | Lateral Movement         | 4624 type 3, Zeek SMB                                             | sigma, network        | lateral-movement fold                                                |
 | Priv Esc / Persistence   | Sysmon 1/13/17, 4720/7045                                         | sysmon, sigma         | LOLBAS / persistence folds                                           |
@@ -557,6 +557,20 @@ all) and `host_enum_srvsvc_wkssvc_5145.yml` (the srvsvc/wkssvc enumeration pipes
 5145 feed the coercion rules already require), and `host_recon_powershell_4104.yml` closes
 the last of it: the five techniques that still hung on that one file (T1007, T1016, T1018,
 T1057, T1082) now have a second feed in PowerShell script-block logging.
+
+**Two of its techniques were covered in name only.** T1087.002 / T1069.002 accounted as
+covered through `detections/sigma/discovery/sharphound_ldap_sweep_4662.yml`, a fan-out
+detector (≥ 100 distinct objects in 10 minutes), while the hand-run form of the same
+techniques — a few broad, revealing LDAP filters for Kerberoastable accounts, the
+`userAccountControl` bitfield, `adminCount=1` — never approaches that threshold. It was
+also the one htpx blue entry (`ldap-recon-4662`) nothing here claimed and nothing below
+declined. `detections/sigma/discovery/ldap_recon_search_filter_1644.yml` keys on the
+filter content itself, which only 1644 carries, and states the prerequisite plainly: 1644
+is off by default and the rule is inert without the NTDS Field Engineering setting.
+`detections/sigma/discovery/ldap_recon_property_reads_4662.yml` is the fallback for
+directories without it, counting the SPN / UAC property GUIDs those filters read one
+layer down, labelled the noisier arm because it needs a read SACL and cannot tell a
+targeted filter from the same properties read inside a broader sweep (#284).
 
 That last one is worth a sentence, because it is not a duplicate of the 4688 rule with
 different keywords. Every selection in `host_recon_command_burst` requires a PROCESS to be

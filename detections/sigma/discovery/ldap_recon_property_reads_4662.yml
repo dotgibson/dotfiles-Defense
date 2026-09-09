@@ -1,0 +1,85 @@
+title: Recon property read base - 4662 on servicePrincipalName / userAccountControl
+id: 3c17c18b-048f-440f-966a-da9e1c4dd74e
+status: experimental
+description: |
+  Base event for the 4662 fallback correlation below (the fallback arm of
+  ldap_recon_search_filter_1644.yml): a non-machine, non-SYSTEM
+  principal reading the servicePrincipalName or userAccountControl property of a
+  directory object. These are the properties the targeted LDAP filters in the 1644 rule read
+  one layer down, so where 1644 is not collected the same intent shows up as many
+  distinct objects having exactly these properties read in a short window. One
+  read is normal; the correlation counts distinct objects per principal.
+  Machine accounts and SYSTEM are filtered so replication and DC service traffic do
+  not dominate the count.
+  Requires the Directory Service Access audit subcategory plus a SACL granting read
+  auditing on user objects (or the domain head); without it 4662 is not emitted.
+references:
+  - https://attack.mitre.org/techniques/T1087/002/
+  - https://attack.mitre.org/techniques/T1069/002/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/ldap-recon-4662.md
+author: dotfiles-Defense
+date: 2026-09-09
+name: ldap_recon_property_read_4662
+tags:
+  - attack.discovery
+  - attack.t1087.002
+  - attack.t1069.002
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4662
+    Properties|contains:
+      - '28630ebc-41d5-11d1-a9c1-0000f80367c1'   # servicePrincipalName
+      - 'bf967a68-0de6-11d0-a285-00aa003049e2'   # userAccountControl
+  filter_machine_accounts:
+    SubjectUserName|endswith: '$'
+  filter_system:
+    SubjectUserSid: 'S-1-5-18'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - Directory-sync / IAM service accounts run under a user identity (allowlist by SID).
+level: informational
+---
+title: Targeted LDAP recon - property reads across many objects (4662 fallback)
+id: 319b4608-2e52-47b2-8b58-d669dcfbb087
+status: experimental
+description: |
+  Fallback for ldap_recon_search_filter_1644.yml, for directories where 1644 is not
+  collected: one principal reading servicePrincipalName / userAccountControl on many
+  distinct objects in a short window. A Kerberoast or AS-REP-roast candidate search
+  touches every user object's SPN or UAC property once, which is the fan-out this
+  counts. It is deliberately labelled the noisier arm: it depends on a Directory
+  Service Access SACL that many domains do not set, and it cannot tell a targeted
+  filter from the same properties read as part of a broader sweep - so where both
+  fire, sharphound_ldap_sweep_4662.yml already names the collection and this adds
+  the "which properties" signal.
+  The threshold is lower than the SharpHound sweep's (50 objects in 5m vs 100 in
+  10m) because the selection is narrower - only these two properties - and a small
+  domain's full user set is often under 100. Tune to directory size.
+  It is a separate file from the 1644 rule on purpose: the Sentinel / Elastic deploy
+  forms cannot express a Sigma correlation and mark the whole FILE unsupported, which
+  would have taken the primary arm down with it.
+  Validate (purple): the same targeted filters as the 1644 arm from dotfiles-Offense
+  (hacktheplanet AD enumeration fold; htpx pair ldap-recon-4662), on a DC with the
+  read SACL in place.
+references:
+  - https://attack.mitre.org/techniques/T1087/002/
+  - https://attack.mitre.org/techniques/T1069/002/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/ldap-recon-4662.md
+correlation:
+  type: value_count
+  rules:
+    - ldap_recon_property_read_4662
+  group-by:
+    - SubjectUserName
+  timespan: 5m
+  condition:
+    gte: 50
+    field: ObjectName
+falsepositives:
+  - Admin tooling that legitimately reads SPN / UAC across the directory (SPN
+    management scripts, delegation audits, IAM reconciliation) - allowlist the
+    principal or raise the threshold per directory size.
+level: medium
