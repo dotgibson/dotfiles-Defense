@@ -124,9 +124,9 @@
     },
     {
       "techniqueID": "T1069.002",
-      "score": 1,
+      "score": 3,
       "enabled": true,
-      "comment": "1 rule(s): sharphound_ldap_sweep_4662"
+      "comment": "3 rule(s): ldap_recon_property_reads_4662, ldap_recon_search_filter_1644, sharphound_ldap_sweep_4662"
     },
     {
       "techniqueID": "T1070",
@@ -166,9 +166,9 @@
     },
     {
       "techniqueID": "T1087.002",
-      "score": 2,
+      "score": 4,
       "enabled": true,
-      "comment": "2 rule(s): ldap_recon_explicit_creds_4648, sharphound_ldap_sweep_4662"
+      "comment": "4 rule(s): ldap_recon_explicit_creds_4648, ldap_recon_property_reads_4662, ldap_recon_search_filter_1644, sharphound_ldap_sweep_4662"
     },
     {
       "techniqueID": "T1098",

@@ -294,6 +294,19 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **Targeted LDAP recon has a detection (#284).** T1087.002 / T1069.002 read as covered,
+  but only through `sharphound_ldap_sweep_4662.yml`, a fan-out detector — a handful of
+  revealing filters (`servicePrincipalName=*`, the `userAccountControl` bitfield match,
+  `adminCount=1`) never trips it, and `ldap-recon-4662` was the one htpx blue entry nothing
+  here claimed and nothing in the methodology declined. Two rules close it:
+  `detections/sigma/discovery/ldap_recon_search_filter_1644.yml` keys on the search-filter
+  content, which only 1644 carries, and says that 1644 is off by default;
+  `ldap_recon_property_reads_4662.yml` is the fallback where it is not collected, counting
+  the SPN / UAC property GUIDs those filters read. They are two files because the Sentinel
+  / Elastic deploy forms mark a whole file unsupported when it holds a correlation, which
+  would have dropped the primary arm with the fallback. Both fire on their fixtures under
+  zircolite, the 4662 arm with a true negative past its threshold.
+
 - **T1555.006 Cloud Secrets Management Stores — Key Vault bulk secret read, closing the Azure
   resource plane (#280).** `detections/sigma/cloud/azure_keyvault_bulk_secret_read.yml` is a
   base rule plus a `value_count` correlation: one identity reading many *distinct* secrets from

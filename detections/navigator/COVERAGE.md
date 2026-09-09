@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**114 rules · 133 detection documents · 84 techniques · 12 tactics · 24 logsources.**
+**116 rules · 136 detection documents · 84 techniques · 12 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
@@ -15,7 +15,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Stealth | TA0005 | 3 | 6 |
 | Defense Impairment | TA0112 | 7 | 12 |
 | Credential Access | TA0006 | 18 | 21 |
-| Discovery | TA0007 | 14 | 6 |
+| Discovery | TA0007 | 14 | 8 |
 | Lateral Movement | TA0008 | 11 | 8 |
 | Collection | TA0009 | 5 | 4 |
 | Exfiltration | TA0010 | 3 | 3 |
@@ -44,14 +44,14 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1057 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1059 | 1 | `jenkins_script_console` |
 | T1069.001 | 1 | `local_group_enum_sweep_4798_4799` |
-| T1069.002 | 1 | `sharphound_ldap_sweep_4662` |
+| T1069.002 | 3 | `ldap_recon_property_reads_4662`, `ldap_recon_search_filter_1644`, `sharphound_ldap_sweep_4662` |
 | T1070 | 1 | `harbor_artifact_deleted` |
 | T1070.003 | 1 | `history_clearing` |
 | T1072 | 2 | `jenkins_job_backdoor`, `tfc_variable_injection` |
 | T1074.001 | 1 | `archive_staging_utility` |
 | T1082 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1087.001 | 3 | `host_recon_command_burst`, `host_recon_powershell_4104`, `local_group_enum_sweep_4798_4799` |
-| T1087.002 | 2 | `ldap_recon_explicit_creds_4648`, `sharphound_ldap_sweep_4662` |
+| T1087.002 | 4 | `ldap_recon_explicit_creds_4648`, `ldap_recon_property_reads_4662`, `ldap_recon_search_filter_1644`, `sharphound_ldap_sweep_4662` |
 | T1098 | 16 | `aws_login_profile_created`, `cloudflare_api_token_created`, `gcp_iam_policy_backdoor`, `github_credential_backdoor`, `gitlab_token_backdoor`, `harbor_robot_account_created`, `jenkins_api_token_created`, `k8s_clusteradmin_binding`, `npm_maintainer_added`, `okta_api_token_created`, `pypi_collaborator_added`, `pypi_trusted_publisher_added`, `rbcd_allowedtoact_5136`, `slack_app_installed`, `tfc_token_backdoor`, `vault_approle_backdoor` |
 | T1098.001 | 3 | `aws_iam_access_key_created`, `entra_sp_credential_backdoor`, `gcp_service_account_key_created` |
 | T1098.003 | 3 | `aws_iam_privesc_policy`, `entra_directory_role_grant`, `gws_admin_role_grant` |
@@ -119,7 +119,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `collection` | `windows` | 2 |
 | `credential_access` | `windows` | 11 |
 | `defense_impairment` | `windows` | 3 |
-| `discovery` | `windows` | 6 |
+| `discovery` | `windows` | 8 |
 | `github` | `github` | 3 |
 | `gitlab` | `gitlab` | 3 |
 | `google_workspace` | `google_workspace` | 3 |
