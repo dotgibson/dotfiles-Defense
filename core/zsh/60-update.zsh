@@ -247,7 +247,20 @@ _pkgup_refresh() {
 # Capture _pkgup_list into a file so a spinner can wrap the slow, SILENT fetch (brew
 # outdated / apt -s can stall a second or two with no output) while the caller still gets
 # the names. `>|` forces past 10-options.zsh's NO_CLOBBER (the mktemp target pre-exists).
-_pkgup_list_to() { _pkgup_list >|"$1" 2>/dev/null; }
+#
+# The status it returns is what the spinner paints — and _pkgup_list's is the COUNT VERB's,
+# which most archives overload: `dnf check-update` exits 100 when updates EXIST, `checkupdates`
+# exits 2 when there are NONE. The list path is documented above to ignore that status (a
+# partial list is still a better preview than none), but the spinner did not: every OS repo's
+# README hero (#948) filmed `x checking pacman for upgradable packages (exit 2)` in red over a
+# green "nothing to upgrade". Answer 0 unless the archive declared its exit meaningful
+# (PKG_COUNT_EXIT_TRUSTED — Gentoo, where a non-zero `emerge --pretend` IS a failure).
+_pkgup_list_to() {
+  _pkgup_list >|"$1" 2>/dev/null
+  local rc=$?
+  [[ -n "$(_pkgup_verb PKG_COUNT_EXIT_TRUSTED)" ]] && return $rc
+  return 0
+}
 
 # _up_pending — populate the caller's `pending` array with upgradable package names,
 # behind a spinner on a TTY (U8). Falls back to a plain capture with no spinner on a

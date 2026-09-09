@@ -129,26 +129,32 @@ zle -N _fzf_zoxide_jump
 # would have configured fzf's stock widget were dead config and were deleted in v6.0.0.
 # #682 removed the false claim; this implements it for real.
 #
-# --type d, no --strip-cwd-prefix: the RESULT IS cd'd TO, not inserted into the buffer like
-# Ctrl+T's, so it has to stay a usable path from here. `.git` is excluded for the reason the
-# file picker excludes it — a repo's object store is thousands of directories nobody wants
-# to cd into, and on a large repo it dominates the list.
+# The picking is fcd's (30-functions.zsh) — this widget is the key, not a second copy of
+# the function. Its first cut re-implemented fd|fzf inline and the copy drifted in two ways
+# nobody chose: no --hidden, so Alt+C could not reach .config/.github/.claude while `fcd`
+# could, and no find fallback (#933). Delegating is what makes "cd into a subdirectory" mean
+# one thing on both entry points; the --hidden/--exclude .git reasoning lives with fcd now.
+#
+# THE KEY COLLIDES WITH vi's CHANGE OPERATOR, and that is accepted, not overlooked. In
+# viins `^[` is vi-cmd-mode and `c` is vicmd's `vi-change`, and a terminal sends Alt+C as
+# exactly those two bytes — so after Esc, zsh has to wait to learn whether a `c` is part of
+# this chord or the start of `cw`/`ciw`. Core loads zsh-vi-mode, whose NEX readkey engine
+# owns that wait: ZVM_ESCAPE_KEYTIMEOUT, default 0.03s, NOT the 0.4s ZVM_KEYTIMEOUT that
+# governs ordinary multi-key sequences. A terminal's Alt+C lands well inside 30ms; a human
+# typing Esc then `c` almost never does. Alt+Z has no such problem (`z` is not a vicmd
+# verb), and the parity row that justifies this key — PSFzf's Alt+c — has none either,
+# since PSReadLine is not in vi mode. Moving to a Ctrl chord would close the window and
+# break the parity that is the reason the binding exists; the window is kept.
 _fzf_cd_dir() {
-  local result
   # Bound unconditionally in 40-bindings.zsh, so guard here — the same shape as the two
-  # widgets above, in Core's voice, rather than a "command not found" from an unset $FD_BIN
-  # piped into a missing fzf.
-  if ! _core_have fzf || [[ -z ${FD_BIN:-} ]]; then
-    _core_warn "Alt-C: needs fzf + fd"
+  # widgets above, in Core's voice, rather than fcd's error for a key press. Only fzf is
+  # required: fd's absence is fcd's find fallback, not a refusal.
+  if ! _core_have fzf; then
+    _core_warn "Alt-C: needs fzf"
     zle reset-prompt
     return 1
   fi
-  result=$("$FD_BIN" --type d --exclude .git | fzf \
-    --prompt="Change to Subfolder ❯ " \
-    --preview="$_FZF_DIR_PREVIEW")
-  if [[ -n "$result" ]]; then
-    cd "$result" || return
-  fi
+  fcd
   zle reset-prompt
 }
 

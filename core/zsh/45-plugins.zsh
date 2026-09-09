@@ -156,9 +156,17 @@ _defer_or_now() {
 # =========================================================
 # Plugins
 # =========================================================
-# Loaded NOW: zsh-vi-mode MUST be synchronous — it resets all bindings on init
-# and fires the zvm_after_init hook (40-bindings.zsh) that registers our keymap, so
-# it has to run on the critical path.
+# Loaded NOW, and INITIALISED now: zsh-vi-mode resets all bindings on init and fires the
+# zvm_after_init hook (40-bindings.zsh) that registers our keymap, so it has to run on the
+# critical path. Its DEFAULT is not that — with ZVM_INIT_MODE unset, zvm_init runs from the
+# first precmd, after every rc file, which is AFTER the transient prompt below has registered
+# zle-line-finish. zvm then WRAPS that widget, and zvm_reset_prompt reads the wrapper's
+# dynamically-scoped $rawfunc and calls the widget straight back into itself: "maximum nested
+# function level reached" on every prompt, which is how Debian 13's zsh filmed for #948.
+# `sourcing` makes the order below mean what it says — zvm first, the transient prompt last,
+# and last wins zle-line-finish — and it lands late bindkeys (50+, OS, role) AFTER zvm's
+# reset instead of under it.
+ZVM_INIT_MODE=sourcing
 _zplugin_load jeffreytse zsh-vi-mode
 
 # ── Transient prompt (Pass 2, P1) — olets/zsh-transient-prompt ───────────────
