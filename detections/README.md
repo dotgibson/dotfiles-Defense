@@ -179,7 +179,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Offense` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 111 rules / 129 documents, organized by ATT&CK tactic
+### `sigma/` — 116 rules / 136 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -226,6 +226,8 @@ purple-validatable out of the box.
 | ---------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `sharphound_ldap_sweep_4662`       | 4662 dir-access (value_count correlation)                                                           | T1087.002 / T1069.002                                                     | AD enumeration · bloodhound-collect                                               |
 | `ldap_recon_explicit_creds_4648`   | 4648 explicit-cred fan-out (value_count correlation)                                                | T1087.002 / T1046                                                         | recon · PURPLE-TEAM 4648 row                                                      |
+| `ldap_recon_search_filter_1644`    | 1644 LDAP search filter names SPN / UAC-bitfield / adminCount / delegation attributes               | T1087.002 / T1069.002                                                     | AD enumeration · ldap-recon-4662                                                  |
+| `ldap_recon_property_reads_4662`   | 4662 SPN / UAC property reads, distinct objects per principal (value_count correlation)             | T1087.002 / T1069.002                                                     | AD enumeration · ldap-recon-4662                                                  |
 | `host_recon_command_burst`         | proc create, distinct discovery commands per host (value_count correlation)                         | T1033 / T1082 / T1018 / T1016 / T1049 / T1057 / T1007 / T1087.001 / T1135 | Situational awareness · `whoami`/`net`/`nltest` sweep                             |
 | `local_group_enum_sweep_4798_4799` | 4798/4799 local group membership enumerated, distinct hosts per principal (value_count correlation) | T1069.001 / T1087.001                                                     | AD enumeration · SharpHound LocalGroup / `net localgroup \\host`                  |
 | `host_enum_srvsvc_wkssvc_5145`     | 5145 IPC$ to the srvsvc/wkssvc pipes, distinct hosts per principal (value_count correlation)        | T1135 / T1049 / T1033                                                     | SMB enumeration · smb-enum-nxc                                                    |
@@ -240,6 +242,17 @@ emits an empty `Path` for an interactive console, and a `not filter` on an empty
 nulls the whole match — so the obvious tuning move would suppress exactly the
 hands-on-keyboard case and keep the inventory scripts. Tune it with the threshold, triage
 on `Path` at alert time.
+
+`ldap_recon_search_filter_1644` and `ldap_recon_property_reads_4662` are one detection in
+two files, and they exist because T1087.002 / T1069.002 read as covered while the
+hand-run form of them was not. `sharphound_ldap_sweep_4662` counts a **fan-out** — hundreds
+of distinct objects — and a handful of targeted filters (`servicePrincipalName=*`, the
+`userAccountControl` bitfield match, `adminCount=1`) never reaches it. The filter text
+lives only in **1644**, so that is the primary arm; it needs the off-by-default NTDS
+Field Engineering diagnostics, so the 4662 arm counts the property GUIDs those filters
+read where 1644 is not collected. Two files rather than one because the Sentinel /
+Elastic deploy forms cannot express a correlation and mark the whole **file** unsupported
+— in one file the primary arm would have gone down with the fallback (#284).
 
 **`persistence/`**
 

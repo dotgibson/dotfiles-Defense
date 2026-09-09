@@ -146,6 +146,9 @@ docker/validation/sigma-fixtures/kerberoast_4769.jsonl	unverified	-
 docker/validation/sigma-fixtures/kerberoast_4769_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/ldap_recon_4648.jsonl	unverified	-
 docker/validation/sigma-fixtures/ldap_recon_4648_tn.jsonl	unverified	-
+docker/validation/sigma-fixtures/ldap_recon_1644.jsonl	unverified	1644 emits its parameters POSITIONALLY (unnamed <Data> elements labelled Starting node / Filter / Search scope / ... in the message), not as named EventData. SearchFilter, StartingNode, Client and User are the rule's chosen names for those labels and must be mapped at deploy time; the rule description says so. 4 events: 3 targeted filters (SPN, UAC bitfield, adminCount) from one client plus 1 benign sAMAccountName lookup that must not match
+docker/validation/sigma-fixtures/ldap_recon_4662_properties.jsonl	unverified	51 lines with 51 distinct ObjectName, sized PAST the correlation's gte-50; Properties carries the servicePrincipalName / userAccountControl property GUIDs. 4662 field names as per the sibling sharphound / dcsync fixtures
+docker/validation/sigma-fixtures/ldap_recon_4662_properties_tn.jsonl	unverified	51 lines, same EventID and EventData key set as the TP with only the subject changed to a machine account (DC02$), so exactly filter_machine_accounts catches it; sized PAST gte-50 so a broken filter really would fire
 docker/validation/sigma-fixtures/local_group_enum_4798_4799.jsonl	unverified	-
 docker/validation/sigma-fixtures/local_group_enum_4798_4799_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/lsass_access_sysmon10.jsonl	unverified	-

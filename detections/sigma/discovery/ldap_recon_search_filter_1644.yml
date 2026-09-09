@@ -1,0 +1,58 @@
+title: Targeted LDAP recon - revealing search filter (1644)
+id: 1baec552-6017-447a-8ad9-a32479714331
+status: experimental
+description: |
+  Detects a single LDAP search whose filter names the attributes hand-run recon goes
+  after: servicePrincipalName (Kerberoastable accounts), the userAccountControl
+  bitfield match (don't-require-preauth, trusted-for-delegation), adminCount (the
+  protected groups), and the delegation attributes. This is the shape the SharpHound
+  sweep detector cannot see: a handful of broad, revealing queries never trips a
+  distinct-object fan-out threshold, so T1087.002 / T1069.002 read as covered by
+  sharphound_ldap_sweep_4662.yml while the targeted form went undetected.
+  The filter text is only in 1644 - 4662 names the object and property GUIDs read,
+  not the client's query - so this arm keys on the search-filter content. No volume
+  threshold: one such query is the finding.
+  Data-source prerequisite (no data source, no detection): 1644 is emitted only when
+  the DC's NTDS Diagnostics "15 Field Engineering" level is raised (>= 5) and the
+  Search Time / Expensive Search thresholds are set low enough that the queries of
+  interest cross them. Without that registry setting this rule is silently inert;
+  ldap_recon_property_reads_4662.yml is the fallback for that case, one layer down.
+  Field mapping: 1644 carries its parameters positionally, not as named EventData.
+  SearchFilter here is the "Filter:" parameter; map it to your ingestion's extraction
+  at deploy time (Splunk Windows TA extracts the message labels, e.g. Filter /
+  Search_Filter; Sentinel's SecurityEvent surfaces it in ParameterXml).
+  Validate (purple): run targeted LDAP filters from dotfiles-Offense (hacktheplanet
+  AD enumeration fold, ldapsearch / nxc ldap --admin-count / Get-ADUser -Filter;
+  htpx pair ldap-recon-4662).
+references:
+  - https://attack.mitre.org/techniques/T1087/002/
+  - https://attack.mitre.org/techniques/T1069/002/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/ldap-recon-4662.md
+  - https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/configure-ad-and-lds-event-logging
+author: dotfiles-Defense
+date: 2026-09-09
+tags:
+  - attack.discovery
+  - attack.t1087.002
+  - attack.t1069.002
+logsource:
+  product: windows
+  service: directory-service
+detection:
+  selection:
+    EventID: 1644
+    SearchFilter|contains:
+      - 'servicePrincipalName'
+      - 'userAccountControl:1.2.840.113556.1.4.803'
+      - 'adminCount'
+      - 'msDS-AllowedToDelegateTo'
+      - 'trustedForDelegation'
+  condition: selection
+falsepositives:
+  - Identity / PKI / monitoring tooling that legitimately queries these attributes
+    (Kerberos SPN management, delegation audits, PAM discovery) - allowlist by Client
+    address or User once the deploy-time field mapping is in place.
+  - A DC whose 1644 thresholds are set to log every search will also log the
+    directory's own tooling; raise the Expensive/Inefficient thresholds rather than
+    widening this rule.
+level: high

@@ -34,7 +34,16 @@ jobs:
       # it opens with `[[ $- == *i* ]] || return 0`, so the suite drives it through
       # `zsh -f -i`. Without the shell there is nothing to test.
       - name: Install zsh
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends zsh
+        # Drop GitHub's third-party apt repos (packages.microsoft.com / azure / Google
+        # Chrome) before update. They intermittently serve a bad InRelease or a
+        # Packages.gz with a hash-sum mismatch and fail the WHOLE `apt-get update` with
+        # exit 100 — a flake unrelated to installing from the Ubuntu base repos (#286 hit
+        # the Chrome one twice in a row). Same pattern as Core's lint-call.yml, plus the
+        # Chrome source; targeting only those files is safe wherever the Ubuntu base lives.
+        run: |
+          sudo find /etc/apt/sources.list.d -type f \( -iname '*microsoft*' -o -iname '*azure*' -o -iname '*google-chrome*' \) -delete 2>/dev/null || true
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends zsh
 
       - name: tests/test-defense.sh
         run: ./tests/test-defense.sh

@@ -117,6 +117,12 @@ EventID:1102
 // discovery/ldap_recon_explicit_creds_4648.yml — Explicit-credential logon base - 4648 with a named target
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
+// discovery/ldap_recon_property_reads_4662.yml — Recon property read base - 4662 on servicePrincipalName / userAccountControl
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
+// discovery/ldap_recon_search_filter_1644.yml — Targeted LDAP recon - revealing search filter (1644)
+EventID:1644 AND (SearchFilter:(*servicePrincipalName* OR *userAccountControl\:1.2.840.113556.1.4.803* OR *adminCount* OR *msDS\-AllowedToDelegateTo* OR *trustedForDelegation*))
+
 // discovery/local_group_enum_sweep_4798_4799.yml — Local SAM enumeration base - local group membership was enumerated
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 

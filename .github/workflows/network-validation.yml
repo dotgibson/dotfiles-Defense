@@ -60,7 +60,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install suricata + scapy
+        # Drop GitHub's third-party apt repos (packages.microsoft.com / azure / Google
+        # Chrome) before update. They intermittently serve a bad InRelease or a
+        # Packages.gz with a hash-sum mismatch and fail the WHOLE `apt-get update` with
+        # exit 100 — a flake unrelated to installing from the Ubuntu base repos (#286 hit
+        # the Chrome one twice in a row). Same pattern as Core's lint-call.yml, plus the
+        # Chrome source; targeting only those files is safe wherever the Ubuntu base lives.
         run: |
+          sudo find /etc/apt/sources.list.d -type f \( -iname '*microsoft*' -o -iname '*azure*' -o -iname '*google-chrome*' \) -delete 2>/dev/null || true
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends suricata python3-pip
           pip3 install --break-system-packages scapy || pip3 install scapy

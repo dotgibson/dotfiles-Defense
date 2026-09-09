@@ -6,7 +6,7 @@ A **gap here is not a defect.** htpx spans SaaS and CI/CD platforms this repo ha
 
 Corpus: `dotgibson/htpx` at `6358a8df8661` (v3.2.0), pinned in `detections/htpx.pin`.
 
-**105 blue entries · 98 claimed here · 23 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
+**105 blue entries · 99 claimed here · 23 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
 
 ## htpx blue entries claimed by detection content here
 
@@ -64,6 +64,7 @@ Corpus: `dotgibson/htpx` at `6358a8df8661` (v3.2.0), pinned in `detections/htpx.
 | `k8s-rolebinding-audit` | T1098 | `k8s_clusteradmin_binding` |
 | `kerberoasting-4769` | T1558.003 | `kerberoasting_rc4_tgs`, `detections/network/zeek/kerberoast-rc4.zeek` |
 | `lateral-4624-fanout` | T1550.002 | `passthehash_4624_fanout` |
+| `ldap-recon-4662` | T1069.002, T1087.002 | `ldap_recon_property_reads_4662`, `ldap_recon_search_filter_1644` |
 | `lsass-4656` | T1003.001 | `lsass_handle_access` |
 | `mass-encrypt-4663` | T1486 | `mass_file_encryption_4663`, `mass_file_encryption_sysmon_11` |
 | `mtls-c2-ja3` | T1573.002 | `detections/network/zeek/tls-c2.zeek` |
@@ -121,7 +122,6 @@ The other side of the boundary. Each is a detection the corpus documents and thi
 | `dga-nxdomain-entropy` | T1568.002 | Detect DGA beacons (NXDOMAIN burst + label entropy) |
 | `dns-tunnel-sysmon-22` | T1071.004 | Detect DNS tunneling (Sysmon 22 query volume + label length) |
 | `domain-fronting-sni-mismatch` | T1090.004 | Detect domain fronting (CDN edge from a non-browser process; SNI vs Host mismatch) |
-| `ldap-recon-4662` | T1069.002, T1087.002 | Detect LDAP reconnaissance (4662 targeted reads; 1644 broad filters) |
 | `unconstrained-deleg-4624` | T1558 | Detect unconstrained-deleg abuse (DC machine-account auth to a non-DC, 4624) |
 | `web-service-c2-beacon` | T1102.002 | Detect web-service C2 (non-browser process to SaaS API) |
 
