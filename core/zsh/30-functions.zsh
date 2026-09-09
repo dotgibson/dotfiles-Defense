@@ -2082,6 +2082,18 @@ extract() {
 }
 
 # fcd — fuzzy-cd into any subdirectory (needs fzf + fd, degrades to find)
+#
+# THE one definition of "pick a directory below $PWD and cd into it": the Alt+C widget in
+# 35-fzf.zsh calls this rather than carrying its own fd|fzf line. Its first cut did carry
+# one, and the copy differed in two ways nobody chose — no --hidden, so Alt+C could not
+# reach .config/.github/.claude/.ssh (the interesting directories in a dotfiles tree) while
+# fcd could, and no find fallback (#933). One definition, one behaviour, on both entry
+# points. The prompt and preview are here for the same reason: the widget used to be the
+# only caller that had them, and a difference in dressing is still a difference.
+#
+# --hidden is what makes --exclude .git load-bearing: without it fd skips .git for being
+# hidden and the exclude is dead config. With it, the object store — thousands of
+# directories nobody wants to cd into, dominating the list on a large repo — is kept out.
 fcd() {
   _core_wants_help "$1" && { _core_help "fcd" "fuzzy-cd into any subdirectory (fzf + fd, degrades to find)"; return 0; }
   _core_have fzf || {
@@ -2090,10 +2102,14 @@ fcd() {
     return 1
   }
   local dir
+  # _FZF_DIR_PREVIEW is exported by 35-fzf.zsh, which loads after this file — so it is read
+  # at call time, and the preview is simply absent if that module never loaded.
   if [[ -n ${HAVE_FZF:-} && -n ${HAVE_FD:-} ]]; then
-    dir=$("$FD_BIN" --type d --hidden --exclude .git | fzf) && cd "$dir"
+    dir=$("$FD_BIN" --type d --hidden --exclude .git |
+      fzf --prompt="Change to Subfolder ❯ " ${_FZF_DIR_PREVIEW:+--preview=$_FZF_DIR_PREVIEW}) && cd "$dir"
   else
-    dir=$(find . -type d -not -path '*/.git/*' 2>/dev/null | fzf) && cd "$dir"
+    dir=$(find . -type d -not -path '*/.git/*' 2>/dev/null |
+      fzf --prompt="Change to Subfolder ❯ " ${_FZF_DIR_PREVIEW:+--preview=$_FZF_DIR_PREVIEW}) && cd "$dir"
   fi
 }
 

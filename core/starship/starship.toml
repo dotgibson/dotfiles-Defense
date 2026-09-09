@@ -88,6 +88,11 @@ style = "bg:color_srf1 fg:color_blue"
 Windows = "󰍲 "
 Ubuntu = "󰕈 "
 SUSE = " "
+# starship names SLES `SUSE` and Leap/Tumbleweed `openSUSE`; the second was missing, so an
+# openSUSE prompt fell through to starship's own default for it — a lizard emoji that draws
+# as tofu wherever no colour-emoji font is installed, which is every terminal this palette
+# targets. Found by the dotfiles-openSUSE README hero render (#948); same glyph as SUSE.
+openSUSE = " "
 Raspbian = "󰐿 "
 Mint = "󰣭 "
 Macos = "󰀵 "

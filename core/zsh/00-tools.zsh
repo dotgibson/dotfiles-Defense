@@ -753,14 +753,15 @@ _cache_completion ty ty generate-shell-completion zsh
 # above is how a detector silently starts comparing against the wrong number: that paragraph
 # also names 18.16.1, and a re-verification that measures against the wrong version is worse
 # than one that never runs. Editing it is a CLAIM that the premise was re-measured at that
-# version — not a version bump.
-# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.19.0
+# version — not a version bump. Last re-measured 2026-09-03: three atuin-guard-verify
+# dispatches against upstream's then-latest 18.21.0, `holds` on both premises (#941).
+# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.21.0
 #
 # ONE ANCHOR PER PREMISE. The stand-down below rests on a DIFFERENT upstream fact, measured by
 # a different mode (`--premise autostart`) and reported under its own issue title, so it gets
 # its own line rather than borrowing this one — otherwise re-measuring either premise would
 # silently re-date the claim about the other.
-# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=18.19.0
+# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=18.21.0
 #
 # So this guard is DATA-LOSS PREVENTION, not a latency optimisation: keep probing (see the
 # throttle below) and, the first time nothing is listening, force the daemon off for THIS shell
@@ -881,7 +882,8 @@ _core_atuin_daemon_guard() {
   # mitigation — and it is now MEASURED rather than assumed (#402). It has its own mode, its own
   # anchor above and its own issue title, because its remedy is nothing like the discard premise's:
   # `scripts/research/verify-atuin-guard.sh --premise autostart` spawns a real daemon and owns its teardown,
-  # and the (dispatch-only) atuin-guard-verify workflow runs it as a separate job. On 18.19.0 all four arms spawn and land a
+  # and the (dispatch-only) atuin-guard-verify workflow runs it as a separate job. On 18.19.0 — and again on
+  # 18.21.0, 2026-09-03 — all four arms spawn and land a
   # row, INCLUDING over the stale socket a crashed daemon leaves — the client unlinks it first,
   # which `atuin daemon start` on its own does not.
   #
@@ -936,11 +938,22 @@ _core_atuin_daemon_guard() {
   #
   # ORDER mirrors upstream's own resolution: the 18.20.0 default first, then the two legacy
   # locations a daemon predating it would still be holding.
+  #
+  # ...plus a SECOND /tmp candidate, from 18.21.0 (atuin PR #4036, merged 2026-08-31): the
+  # client now tries $TMPDIR/atuin-$UID/atuin.sock and THEN /tmp/atuin-$UID/atuin.sock, even
+  # when $TMPDIR is set — because the daemon and the shell need not agree on $TMPDIR. A
+  # systemd user unit starts with no $TMPDIR and binds /tmp; a shell that exports one (a
+  # 99-local, a tmux server started under a different env, a unit with PrivateTmp=) resolved
+  # only its own $TMPDIR here, probed a path nobody binds, and took the same silent one-way
+  # degrade the paragraph above describes — while atuin's own client, one candidate later,
+  # would have connected. Added only when $TMPDIR is set AND is not /tmp, so the common case
+  # still pays one connect, and the order is upstream's (#941).
   local -a socks
   if [[ -n ${ATUIN_DAEMON__SOCKET_PATH:-} ]]; then
     socks=("$ATUIN_DAEMON__SOCKET_PATH")   # explicit config wins outright — probe nothing else
   else
     socks=("${TMPDIR:-/tmp}/atuin-${UID}/atuin.sock")
+    [[ -n ${TMPDIR:-} && ${TMPDIR%/} != /tmp ]] && socks+=("/tmp/atuin-${UID}/atuin.sock")
     [[ -n ${XDG_RUNTIME_DIR:-} ]] && socks+=("$XDG_RUNTIME_DIR/atuin.sock")
     socks+=("${XDG_DATA_HOME:-$HOME/.local/share}/atuin/atuin.sock")
   fi

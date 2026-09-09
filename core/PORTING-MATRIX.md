@@ -492,6 +492,20 @@ guard probes the new default and both legacy paths, newest first, so it follows 
 across the version boundary in either direction. The research apparatus was the part that
 fell behind — its autostart measurement still waited on the old path until #826.
 
+**18.21.0 added a second `/tmp` candidate, and the guard follows it (#941).** Upstream
+PR #4036 (merged 2026-08-31) makes the client try `$TMPDIR/atuin-$UID/atuin.sock` and _then_
+`/tmp/atuin-$UID/atuin.sock` even when `$TMPDIR` is set, because the daemon and the shell need
+not agree on `$TMPDIR` — a systemd user unit starts without one and binds `/tmp`, while a shell
+that exports one (a `99-local`, a tmux server started under a different environment, a unit
+with `PrivateTmp=`) resolved only its own. On that shape the guard probed a path nobody binds
+and took the same silent one-way degrade, one candidate short of where atuin's own client
+would have connected. It now appends the `/tmp` path whenever `$TMPDIR` is set and is not
+`/tmp`, in upstream's order. Upstream calls #4036 a hotfix with a more robust resolution in the
+works, so this list may grow again; the candidate-list test in `scripts/test/71-prompt-atuin.sh`
+is where a new path gets pinned. Both anchors were re-dated to 18.21.0 in the same change, on
+the strength of the 2026-09-03 `atuin-guard-verify` dispatches (three runs, `holds` on both
+premises) rather than a changelog read.
+
 The exports belong in that repo's `os/<os>.zsh` (loader fragment 80), **never** in the Core
 config: Core is vendored identically to every repo, so a per-machine value there would be
 wrong on the other eight. `autostart` is mutually exclusive with `systemd_socket = true` —
@@ -627,9 +641,10 @@ before detection now.
 **Coverage here is per tool, never a fleet-wide zero** — the table below is the authority, not
 the prose. **Two** repos' `bootstrap.sh` really do install entries from this family:
 `dotfiles-Alpine` (`ouch` and `jnv`¹⁷, via cargo¹⁴) and `dotfiles-Gentoo` (`shfmt`
-unconditionally via `go`; `ouch`, `ast-grep`¹¹, `jnv`¹⁷ and `watchexec`²⁵ via cargo, plus
-`dev-vcs/jj`⁸ via emerge, all in an opt-in extras block that `--no-extras` skips; and `gping`¹⁹
-via GURU). For the other seven repos "no bootstrap installs it" still holds.
+unconditionally via `go`; `ast-grep`¹¹, `jnv`¹⁷ and `watchexec`²⁵ via cargo, plus
+`dev-vcs/jj`⁸ via emerge and `app-arch/ouch` via GURU's `guru_extras_install` seam, all in an
+opt-in extras block that `--no-extras` skips; and `gping`¹⁹ via GURU). For the other seven
+repos "no bootstrap installs it" still holds.
 
 **How the Gentoo half of that went unnoticed is the lesson worth keeping:** this table was
 previously verified against each repo's `install/packages.txt` **alone**, and Gentoo is the repo
@@ -663,13 +678,15 @@ you:
 - "extras" above means Gentoo's opt-in block: installed by default, **skipped by
   `--no-extras`**. That flag is the one thing keeping these honest as ²¹ entries rather than ³
   ones — the tool is still something you can decline.
-- **Gentoo's `ouch` cell is a cargo cell by CHOICE, not by availability** — the same shape as
-  `watchexec`²⁵, and worth stating because only one of the two said so. GURU carries
+- **Gentoo's `ouch` cell is a GURU cell, and it used to be a cargo cell by CHOICE** — the same
+  shape `watchexec`²⁵ still has, and worth stating because the two parted ways. GURU carries
   `app-arch/ouch` (0.7.1, 0.8.0, **0.8.1**) and `::gentoo` carries no `ouch` at any category;
-  `dotfiles-Gentoo` `cargo install`s it anyway, for upstream-latest. Read the cell as "cargo,
-  over an available overlay ebuild", not "nothing packages it". Verified 2026-08-23 against
-  `gentoo/guru@master`. The genuinely-unpackaged Gentoo entries in this family are
-  `ast-grep`¹¹ and `jnv`¹⁷, absent from both trees.
+  `dotfiles-Gentoo` `cargo install`ed it anyway, for upstream-latest, until
+  dotgibson/dotfiles-Gentoo#133 found the cargo build cannot succeed on a GCC/libstdc++ box at
+  all (¹² has the mechanism) and moved it to `guru_extras_install app-arch/ouch`. Read the
+  cell as "overlay ebuild, opt-in", and `watchexec` as the one cargo-by-choice example left.
+  Verified 2026-08-23 against `gentoo/guru@master`. The genuinely-unpackaged Gentoo entries in
+  this family are `ast-grep`¹¹ and `jnv`¹⁷, absent from both trees.
 - This list used to read "**macOS-only in practice**: the MacBook `Brewfile` carries them;
   **no** Linux repo does." Every row above falsifies that — Alpine carries seven of the eight
   outright and Gentoo installs all eight, four of them from `bootstrap.sh`. Keep it a **per-tool**
@@ -1272,22 +1289,22 @@ version and a verdict that disagreed.
 
 | Target              | `jq`  | vs ≥ 1.8.2  | verified   |
 | ------------------- | ----- | ----------- | ---------- |
-| Arch                | 1.8.2 | at or above | 2026-09-07 |
-| Gentoo              | 1.8.2 | at or above | 2026-09-07 |
-| openSUSE Tumbleweed | 1.8.2 | at or above | 2026-09-07 |
-| Homebrew            | 1.8.2 | at or above | 2026-09-07 |
-| Alpine edge         | 1.8.2 | at or above | 2026-09-07 |
-| Alpine 3.24         | 1.8.2 | at or above | 2026-09-07 |
-| Alpine 3.23         | 1.8.2 | at or above | 2026-09-07 |
-| Alpine 3.22         | 1.8.2 | at or above | 2026-09-07 |
-| Fedora Rawhide      | 1.8.2 | at or above | 2026-09-07 |
+| Arch                | 1.8.2 | at or above | 2026-09-09 |
+| Gentoo              | 1.8.2 | at or above | 2026-09-09 |
+| openSUSE Tumbleweed | 1.8.2 | at or above | 2026-09-09 |
+| Homebrew            | 1.8.2 | at or above | 2026-09-09 |
+| Alpine edge         | 1.8.2 | at or above | 2026-09-09 |
+| Alpine 3.24         | 1.8.2 | at or above | 2026-09-09 |
+| Alpine 3.23         | 1.8.2 | at or above | 2026-09-09 |
+| Alpine 3.22         | 1.8.2 | at or above | 2026-09-09 |
+| Fedora Rawhide      | 1.8.2 | at or above | 2026-09-09 |
 | Fedora 45           | 1.8.2 | at or above | 2026-09-06 |
-| Fedora 44           | 1.8.1 | **below**   | 2026-09-07 |
-| Fedora 43           | 1.8.1 | **below**   | 2026-09-07 |
-| Alpine 3.21         | 1.7.1 | **below**   | 2026-09-07 |
-| Debian 13           | 1.7.1 | **below**   | 2026-09-07 |
-| Ubuntu 24.04        | 1.7.1 | **below**   | 2026-09-07 |
-| openSUSE Leap 15.x  | 1.6   | **below**   | 2026-09-07 |
+| Fedora 44           | 1.8.1 | **below**   | 2026-09-09 |
+| Fedora 43           | 1.8.1 | **below**   | 2026-09-09 |
+| Alpine 3.21         | 1.7.1 | **below**   | 2026-09-09 |
+| Debian 13           | 1.7.1 | **below**   | 2026-09-09 |
+| Ubuntu 24.04        | 1.7.1 | **below**   | 2026-09-09 |
+| openSUSE Leap 15.x  | 1.6   | **below**   | 2026-09-09 |
 
 <!-- core:porting-matrix:end fleet-versions -->
 
@@ -1422,8 +1439,10 @@ educational and the most time-expensive.
 
 **Offense (Kali / WSL2)** — One of the two repos that are not stamped from Fedora (macOS
 is the other, see _Repo status_): it's Debian-family
-(apt) and carries a unique **offensive role layer** on top of the usual OS layer,
-adding an `offensive` stage to the zsh loader (`… os offensive local`). Two things
+(apt) and carries a unique **offensive role layer** on top of an OS layer it no longer
+ships itself — `dotfiles-Debian` owns band 80 and accepts `ID=kali` as a first-class
+target, and Offense adds the `85-offensive.zsh` stage to the loader between it and
+`99-local.zsh` (`80-os → 85-offensive → 99-local`). Two things
 actually bite. (1) Debian renames binaries — `bat`→`batcat`, and the `fd-find`
 package installs `fdfind`; Core handles both. (2) **WSL2 is NAT'd**, so a listener
 or reverse shell in Kali isn't reachable from your LAN until you enable **mirrored
