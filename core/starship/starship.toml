@@ -93,6 +93,10 @@ SUSE = " "
 # as tofu wherever no colour-emoji font is installed, which is every terminal this palette
 # targets. Found by the dotfiles-openSUSE README hero render (#948); same glyph as SUSE.
 openSUSE = " "
+# starship names Kali `Kali`; without a symbol it draws its own default — a dragon emoji,
+# tofu wherever no colour-emoji font is installed. The Offense and Defense role heroes
+# (#948) film on Kali, which is how this one surfaced.
+Kali = " "
 Raspbian = "󰐿 "
 Mint = "󰣭 "
 Macos = "󰀵 "

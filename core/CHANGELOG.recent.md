@@ -5,10 +5,360 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v7.2.0 … v5.5.0), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v7.3.0 … v6.0.0), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v7.3.0] - 2026-09-09
+
+### Added
+
+- **The vocabulary register reads `dotfiles-Windows` — the same seven verbs, spelled
+  `.\task.ps1 <verb>` (#855, a #691 follow-up).** #691's promise is that a contributor
+  moving between repos re-learns nothing, and the one repo still outside it was the
+  fleet's most-tested: no Makefile, no runner, bare scripts, in exactly the place where
+  "reproduce the CI gate locally" has the most to offer. Windows is deliberately absent
+  from `scripts/os-repos.txt` (that list drives the fan-out, and Windows vendors no
+  `core/`), so the register now names it the way `fleet-drift.sh` does — **an outlier row
+  read by name**, last in the table, with `task.ps1` beside the repo so the `make <verb>`
+  headers stay the contract's names — and `os-repos.txt` stays Windows-free, which the
+  suite pins. `make` is not a given on a Windows host and `just` would be a new dependency,
+  so the shim is PowerShell: a dispatcher over the repo's existing entry points, landing in
+  `dotfiles-Windows` as `task.ps1`.
+  The read is **static**, like the Makefile read: a verb is a quoted key of `Get-TaskVerbs`
+  alone at the start of its line — a key on a comment line or inside a string declares
+  nothing — and `test` is credited only when its entry names the suite runner under the
+  populated `tests/` by path (either separator), else **no-op**; a Windows clone without the
+  shim renders **no task.ps1** across its row, the way a fleet repo without a Makefile
+  renders **no Makefile**. The test-floor column is the same reader as everywhere else,
+  which already credited a `shell: pwsh` step running `./tests/Invoke-Tests.ps1`. The
+  per-verb cell logic that was inline in the fleet loop is one function shared by both row
+  kinds, so a label cannot drift between them.
+
+- **The CI floor now bans blanket `permissions:` grants — `banned_permission_values`.** Rule 5
+  requires every workflow to declare a `permissions:` block but never looked at its value, so
+  `permissions: write-all` — the maximal token grant, strictly worse than omitting the block —
+  satisfied a rule named for least privilege. A new dimension (5b) in `scripts/check-modern.sh`
+  reads the value: at any indent, so the job-level form is caught too (a job grant that widens
+  to everything narrows nothing); bare or quoted; and with a trailing `# comment` tolerated, so
+  a rationale beside the grant is not the way past the gate. It is anchored to the key and the
+  line end, which is why it is its own dimension rather than a `banned_patterns` entry: that
+  list is a blind `grep -F`, under which the word could never appear in a workflow comment at
+  all — not even to explain why a grant is narrow. `read-all` is deliberately not banned; it is
+  not a token-abuse vector, and banning it buys noise.
+
+  Like rule 8, this is not deprecation-driven, and the baseline says so plainly. The fleet is at
+  zero occurrences, so it is adopted at zero fix-first cost — and Core owns the `*-call.yml@vN`
+  reusable workflows the OS repos actually execute. Both directions are covered by fixtures in
+  the hermetic `check-modern` harness: the workflow-level, job-level and quoted-with-comment
+  forms are each caught, while the word in a comment, `read-all`, and a named-scope `write`
+  are not. (#816)
+
+### Fixed
+
+- **starship drew a dragon emoji on Kali** (#948, the Offense and Defense heroes, which film on
+  Kali). `[os.symbols]` had no `Kali` entry, so starship fell through to its own default — the
+  same gap openSUSE had until #950, with the same tofu wherever no colour-emoji font is
+  installed. `Kali` now gets the Nerd Font Kali glyph.
+
+- **`up -n`'s spinner painted a healthy dry run red** (found filming the nine OS/role README
+  heroes, #948). The spinner reports the exit of `_pkgup_list_to`, which is the COUNT VERB's —
+  and most archives overload it: `dnf check-update` exits 100 when updates _exist_,
+  `checkupdates` exits 2 when there are _none_. The list path was documented to ignore that
+  status (a partial list is still a better preview than none) but the spinner was not, so
+  every OS repo's signature moment read `x checking pacman for upgradable packages (exit 2)`
+  over a green "nothing to upgrade". The helper now answers 0 unless the archive declared its
+  exit meaningful (`PKG_COUNT_EXIT_TRUSTED`, Gentoo's case), where it still propagates.
+  Pinned both ways in `scripts/test/70-detection.sh`.
+
+- **starship drew a lizard emoji on openSUSE** (same hunt, #948). starship names SLES `SUSE`
+  and Leap/Tumbleweed `openSUSE`; `[os.symbols]` declared only the first, so an openSUSE
+  prompt fell through to starship's own default for the second — 🦎, which renders as tofu
+  wherever no colour-emoji font is installed, which is every terminal this palette targets.
+  `openSUSE` now gets the same Nerd Font glyph as `SUSE`.
+
+- **Every prompt on Debian 13 died with "maximum nested function level reached"** (found
+  filming dotfiles-Debian's README hero, #948). zsh-vi-mode's default is a lazy init from the
+  first precmd — after every rc file, so after the transient prompt has registered
+  `zle-line-finish` — at which point zvm wraps that widget, and `zvm_reset_prompt` reads the
+  wrapper's dynamically-scoped `$rawfunc` and calls the widget straight back into itself.
+  `45-plugins.zsh` now sets `ZVM_INIT_MODE=sourcing` before loading zvm, so the load order
+  means what its comments always said: zvm first, the transient prompt last, and last wins
+  `zle-line-finish`. Late `bindkey`s (50+, OS, role layers) now also land after zvm's reset
+  instead of under it. Pinned in `scripts/test/60-loader.sh`.
+
+- **Rule 2 of the CI floor now sees the `runs-on:` mapping form.** The matcher required the
+  banned label on the same line as `runs-on:` or `os:`, so `runs-on:` alone on its line with
+  the label on a nested `labels:` child — the runner-group syntax — walked straight through
+  the ban. The alternation gains `labels:`; no baseline change, and a fixture pins the shape.
+  Latent rather than live — the fleet uses no runner groups or self-hosted labels — and a
+  matrix key named anything other than `os:` still escapes, deliberately: catching it means
+  dropping the key prefix, which would then fire on every comment in the tree that names a
+  label. (#816)
+- **The atuin daemon guard probes the `/tmp` socket the 18.21.0 client gained (#941).**
+  Upstream PR atuinsh/atuin#4036 (merged 2026-08-31, in 18.21.0) makes the client try
+  `$TMPDIR/atuin-$UID/atuin.sock` and _then_ `/tmp/atuin-$UID/atuin.sock` even when `$TMPDIR`
+  is set, because the daemon and the shell need not agree on `$TMPDIR`: a systemd user unit
+  starts without one and binds `/tmp`, while a shell that exports one — a `99-local`, a tmux
+  server started under a different environment, a unit with `PrivateTmp=` — resolved only its
+  own. `_core_atuin_daemon_guard` probed that path, found nothing, exported
+  `ATUIN_DAEMON__ENABLED=false` at the first precmd and unhooked for the life of the shell with
+  **no warning**, because `_CORE_ATUIN_DAEMON_WAS_UP` is never set on that path — one candidate
+  short of where atuin's own client would have connected. The candidate list now appends the
+  `/tmp` path whenever `$TMPDIR` is set and is not `/tmp`, in upstream's order, still by
+  parameter expansion alone; the common case pays one connect as before. The suite gained the
+  case, which skips rather than clobbers when a real daemon already owns that inode on the box
+  running it. The finding came from the 2026-09-01 `/tool-scout` run, whose report was lost to
+  a filing error (#932). Both `VERIFIED_AGAINST` anchors in `zsh/00-tools.zsh` move from
+  `18.19.0` to `18.21.0` in the same change — a claim of re-measurement, not a version bump:
+  `atuin-guard-verify` was dispatched three times on 2026-09-03 against upstream's then-latest
+  and reported `holds` on both premises.
+- **The weekly routines no longer file a stub as the report when their subagent outlives the
+  main turn (#932).** Headless `claude -p` prints only the final turn, and it waits for
+  background work for a bounded 600 s before killing it and emitting whatever text it has.
+  `/tool-scout` delegates its research to a subagent; on 2026-09-08 that delegate was still
+  researching when the main turn ended, the ceiling fired, and `file-routine-issue.sh` filed
+  the "I'll relay its proposal when it lands" preamble as the scan — a report that reads as
+  "nothing found" to anyone who does not open the run log. `claude-routines.yml` now sets
+  `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` for every job, so each job's `timeout-minutes` is
+  the only ceiling and overrunning it is a red job that `notify-failure` reports, not a green
+  one with a hollow issue. The two delegating routines (`/tool-scout`, `/doc-audit`) also now
+  say to wait for the delegate in the foreground, so the fix does not rest on one env var.
+  `/tool-scout` additionally learns how to check for an open `atuin-guard-verify:` verdict
+  without `Bash` — WebFetch the issue search — instead of reporting `gh` as unavailable every
+  week, which it always will be in that job.
+- **`gen-theme.sh --check` passed green over a sibling that was checked out but missing
+  its registered file (#933).** The sibling arm decided "can I reach this row?" on the
+  **directory**, so when `dotfiles-MacBook/` existed without `sketchybar/colors.sh` — the
+  sibling has not landed the palette yet, the zebar path moved, someone deleted it — no
+  `SKIPPED` line was printed, `preflight` and the render loop each took their partial-tree
+  `continue`, and §9d recorded a pass over a file nobody opened: coverage loss reading as
+  health, in the gate whose own comment says it exists to prevent exactly that. Both CI
+  legs that clone the fleet reliably have the directory, so that was the shape the failure
+  would have taken there. The row is now tested on the **file**; a present-but-incomplete
+  sibling is reported on its own `SKIPPED —` line, by file, and exits 3 like an absent one
+  (Core-relative rows keep the documented partial-tree `continue` — a different fact). §9d
+  collects its skip label from every `SKIPPED —` line rather than stripping at the first
+  phrase, and the suite gained the case the old one lacked: repo present, file absent.
+- **`Alt+C` could not reach hidden directories, and was a second, weaker copy of `fcd`
+  (#933).** `_fzf_cd_dir` re-implemented `fd | fzf` inline without `--hidden`, so the
+  widget skipped `.config`, `.github`, `.claude` and `.ssh` — the interesting directories
+  in a dotfiles tree, which `fcd` reached — and refused outright without fd where `fcd`
+  falls back to `find`. Its `--exclude .git` was dead config too: without `--hidden`, fd
+  already skips `.git` for being hidden, while the comment above it claimed the flag kept
+  the object store out of the list. The widget now **delegates to `fcd`**, which carries
+  the prompt and preview the widget used to have alone, so "cd into a subdirectory" has
+  one definition on both entry points. The widget's guard needs only fzf now.
+- **`Alt+C`'s collision with vi's change operator is stated (#933).** In viins `^[` is
+  `vi-cmd-mode` and `c` is `vi-change`, and a terminal sends Alt+C as exactly those two
+  bytes. The binding is kept — Core loads zsh-vi-mode, whose NEX engine disambiguates Esc
+  with `ZVM_ESCAPE_KEYTIMEOUT` (30 ms, not the 0.4 s `ZVM_KEYTIMEOUT`), which a terminal's
+  chord lands inside and a human's `Esc` `cw` almost never does; and the parity row that
+  justifies the key has no such problem, since PSReadLine is not in vi mode. The widget's
+  comment now owns that tradeoff instead of omitting it.
+- **`freshness.yml`'s apply step could not take the exit 3 the updater grew for it (#933).**
+  `update-fleet-versions.sh` exits 3 so an absent fleet stops reading as a defect (#917),
+  but its only caller ran it bare under `set -euo pipefail`, where 3 reds the step exactly
+  as 2 did — the check-mode step forty lines above already branched on the code, which
+  made the omission visible by contrast. The apply step now branches too: 3 is a summary
+  line and exit 0. The fleet-clone loop above it is tolerant as well: one repo that cannot
+  be cloned anonymously is warned by name and skipped, rather than aborting the loop
+  before either graceful path downstream could run.
+- **`render_fleet_versions` ran TSV data through `printf '%b'` (#933).** Rows were
+  accumulated with a literal `\t` and emitted with `%b`, which reinterprets escapes in the
+  fields as well as the separators — a backslash in any field would have been rewritten,
+  and a `\c` would have truncated the rest of the table silently. It now joins with the
+  `$TAB` the script already defines and emits with `%s`, removing the class.
+- Suite: the "an unterminated `/*` is not treated as a marker" case renders the fixture
+  before appending the line, so its `!= 2` assertion can actually fail — on an unrendered
+  stub `--check` was already 1, and the case passed whatever the parser did. Also dropped a
+  duplicated 12-line comment paragraph in §9d (#933).
+- **`/doc-audit`'s 2026-09-01 fleet sweep (#811) — the Core-side drift that survived the
+  v7 cut.** The sweep was filed against 6.0.0 and most of its findings were overtaken by the
+  v6→v7 release work (the `refs/tags/v5` vendoring commands, the Fedora `sudo dnf
+  check-update` and Gentoo `gentoo-pkg-pending` cells, the tree-sitter-cli orphaning hedge and
+  the Offense repo-status row were all already right). What was not: `CLAUDE.md` and
+  `RELEASE-RUNBOOK.md` still named `@v5` as the fleet's _current_ caller alias while every
+  caller is `@v7`; `PORTING-MATRIX.md` said `dotfiles-Gentoo` cargo-installs `ouch` in two
+  places while its own table cell, footnote ¹² and the repo's `bootstrap.sh` all say
+  `guru_extras_install app-arch/ouch` (dotgibson/dotfiles-Gentoo#133); `ARCHITECTURE.md` and
+  the matrix's Offense paragraph still described `dotfiles-Offense` as carrying its own apt OS
+  layer (it ships no `os/` at all — band 80 comes from `dotfiles-Debian`, which accepts
+  `ID=kali`), and the paragraph quoted the pre-v4 loader chain (`… os offensive local`) for
+  what is now `80-os → 85-offensive → 99-local`.
+- **`core.vendor`'s line-number citations rotted a second time in a week, so the cross-repo
+  ones are gone.** The same-repo `zsh/30-functions.zsh` cite for the `PORTING-MATRIX.md` hint
+  string had moved 1224 → 1382 (the sweep found it stale at 765 a week earlier), and 27 of
+  the 43 cross-repo `file:line` cites — every one of the seven into `dotfiles-MacBook`'s
+  `ci.yml`, all seven `check-capabilities.sh` Makefile lines — pointed at the wrong line.
+  Those files move independently of Core, so the numbers can never stay right; the
+  annotations now name the consumer file and keep the exact line only for cites into this
+  repo, which is what `audit-core.sh` §1e can hold to reality. (#811)
+
+- **The README hero is re-rendered from the current tape, and the render-date check is wired
+  in as `audit-core.sh` §9l (#877 items 1 and 2, the last of #698's original defect).**
+  `assets/demo.gif` on `main` was still the blob committed on 2026-07-06: a `dotfiles-MacBook`
+  tree walked through `z dotfiles` and `core help`, two months before #862 rewrote the tape to
+  film a `dotfiles-core` checkout, and two releases after #870 landed `--check-render` red and
+  deliberately un-wired. The front page showed the very thing #698 was filed about the whole
+  time. The gif is now the current tape's tour — `ll`, `cat README.md`, `glog -8`,
+  `core status`, `core-version` — filmed on a Core host over a clean `main` checkout, then put
+  through the `gifsicle -O3 --lossy=80 --colors 64` pass `assets/README.md` documents.
+  **§9k's ceiling was never tested against this tape until now**: `assets/hero.tape.in`'s own
+  comment records the first shortened cut at 2.46 MB, so the byte count is in the PR, not in
+  prose. `make check-hero-render` flips green on the uncommitted gif and stays green once the
+  gif and this entry land in the same commit, which is the only order §9l accepts.
+  **§9l is the one block #870's entry promised.** It mirrors §9k's shape — exit 1 is a stale or
+  missing gif with the script's own per-row remedy carried through `fail_detail`, exit 2 is
+  "could not run", and exit 3 (no usable history: shallow, not a checkout, unrelated
+  histories) is an **environment skip** in §9h's posture, never a pass, which is #821's lesson.
+  Always on and not scope-guarded, for §9j's reason: a `.tape` and a `.gif` are both inert to
+  `ci-classify.sh`. `scripts/test/42-gen-hero-tape.sh` pins the third leg as wired, exactly
+  as it pins the first two. Item 3 — the nine sibling heroes — stays open on #877: the tapes
+  are written by `make gen-hero-tape-fleet` today, but `@@HOSTGUARD@@` requires each to be
+  filmed on the distro its row is about, so that is nine boxes, not one.
+
+- **The hero render can no longer be hijacked by the OS layer's tmux auto-attach (#877).**
+  The tape's hidden setup sources `~/.config/zsh/.zshrc` from inside vhs — an interactive TTY —
+  and every OS layer attaches (or creates) a `main` tmux session for one. The `source` then
+  never returns: the rest of the tour is typed into the pane, the `cd` never lands, and the gif
+  films a tmux status bar over the wrong directory, which is exactly how the first #877 render
+  came out. The fleet already had an opt-out, spelled two ways — `DOTFILES_NO_AUTOTMUX` on
+  MacBook, openSUSE and Gentoo, `DEBIAN_NO_TMUX` on Debian — and nothing at all on Alpine, Arch
+  and Fedora. **`DOTFILES_NO_AUTOTMUX` is now the one name**: the template exports it before the
+  source, the four repos that did not read it gain the guard (Debian keeps its own name working
+  alongside), and `gen-hero-tape.sh` **refuses to render a row whose shell layer auto-attaches
+  without honouring it** — exit 2, the cannot-run leg, scanning that repo's own `os/` and
+  `zsh/` (never the vendored `core/`) with comment lines dropped in both directions, so
+  Alpine's prose about an inline attach it does not do is not an attach, and a knob that is only
+  mentioned guards nothing. The `.` row scans Core's own `zsh/`, so the check is never vacuous.
+  Deliberately **not** an in-tape `[[ -z $TMUX ]] || exit 1` after the source: on an unguarded
+  host that line would be typed into the attached pane and `exit 1` a shell in a real session.
+  The tape changed, so the gif is re-rendered in the same commit — the only order §9l accepts.
+
+### Changed
+
+- **nvim plugin pins move forward for three plugins.** `friendly-snippets`, `gitsigns.nvim` and
+  `nvim-lspconfig` advance to upstream HEAD — the set a re-run of the fleet health board's
+  signals (#794) found stale on 2026-09-09, the day after #938 and the freshness bot's Monday
+  refresh (#946) had rolled the previous set.
+
+  Every new SHA is a strict fast-forward of the one it replaces (`status=ahead`, `behind_by=0`
+  in all three), and each range was read before promotion:
+
+  - **`friendly-snippets`** `30bfd47` → `6290e13`, 6 commits: snippet data only — React
+    `className`, Python async, Kubernetes kustomization/helm/namespace and Unity
+    `SerializeField`/`RequireComponent` snippets, a Perl tabstop fix, and one `package.json`
+    line mapping `typescriptreact` onto the HTML snippets. Core loads it only as blink.cmp's
+    snippet source; no Lua API is involved.
+  - **`gitsigns.nvim`** `5be654f` → `f2421c5`, 6 commits: a new repository diff panel (an
+    additive `diff` action with its own `actions/diff.lua`, `git/diff.lua` and
+    `git/commit.lua`), a `diffthis` cleanup that ignores already-closed source windows, a
+    `show` fix that reads the requested revision's path, and an attach guard for a buffer
+    wiped while `on_attach_pre` yields. Core sets `on_attach`, not `on_attach_pre`, and the
+    actions its keymaps call (`nav_hunk`, `stage_hunk`, `reset_hunk`, `stage_buffer`,
+    `preview_hunk`, `blame_line`, `diffthis`, `select_hunk` via `:Gitsigns`) keep their
+    signatures — the only new signature is the internal `create_revision_buf` helper.
+  - **`nvim-lspconfig`** `19576de` → `84b6b6c`, 2 commits: a new `laravel_lsp` server config
+    and its docs. Core does not configure it; nothing under Core's `servers/` tree is affected.
+
+  Nothing renames or removes an API Core calls. (`nvim/lazy-lock.json`, #794)
+
+- **The README hero tour's wait after its signature command is a registry column** (#948,
+  the nine sibling heroes): `assets/hero-repos.txt` gains an optional seventh field, `sigwait`,
+  a vhs duration that lands after `Sleep` on the signature line, 4s when absent (it was a
+  fixed 2.2 s). `dnf --refresh check-update` re-validates every enabled repo's metadata before
+  it answers — ~3 s on a warm cache — and at 2.2 s the first Fedora render typed the proof line
+  into the spinner and cut before the answer; Portage resolves `emerge --pretend` in ~10 s, so
+  Gentoo's row says `15s` and nobody else's says anything. `gen-hero-tape.sh` validates the
+  field (a duration vhs can parse; an empty seventh column is refused) and the suite pins it.
+  Every tape and this repo's own gif are re-rendered. Eight of the nine sibling heroes are now
+  filmed and committed in their repos — Fedora, Alpine, Arch, Debian, Gentoo, openSUSE, Offense
+  and Defense, each on a rootless chroot of its distro; `assets/README.md` records the recipe
+  and the five traps; MacBook's was filmed on a Mac, which closes the set.
+
+- **nvim plugin pins move forward for five plugins.** `friendly-snippets`, `nvim-lspconfig`,
+  `nvim-tree.lua`, `nvim-treesitter` and `schemastore.nvim` advance to upstream HEAD — the set
+  the 2026-09-07 fleet health board (#794) reported as stale, one day after the freshness bot's
+  Monday refresh (#916) had rolled the previous set.
+
+  Every new SHA is a strict fast-forward of the one it replaces (`status=ahead`, `behind_by=0`
+  in all five), and each range was read before promotion:
+
+  - **`friendly-snippets`** `6cd7280` → `30bfd47`, 16 commits: snippet-data fixes and additions
+    (markdown todo variants, django template tags, a Java class fix, zig 0.15 `buildExe`) plus a
+    repo-wide Prettier/StyLua reformat that accounts for most of the 76 touched files. Core loads
+    it only as blink.cmp's snippet source; no Lua API is involved.
+  - **`nvim-lspconfig`** `615d7b2` → `19576de`, 6 commits: fixes to `robotcode`, `powershell_es`
+    and `phpantom_lsp` — none of which Core configures — and a `plugin/lspconfig.lua` refactor
+    that moves legacy-only code below its version check. Nothing under Core's `servers/` tree is
+    affected.
+  - **`nvim-tree.lua`** `b2aadda` → `882c54f`, 1 commit: an "invalid 'line'" renderer fix for an
+    empty tree with `hidden_display` set. Core calls `setup()` and `api.tree.open()`, both public
+    and unchanged.
+  - **`nvim-treesitter`** `32dbd2e` → `5cb0114`, 1 commit: type-annotation tightening in
+    `async.lua`; the three `install.lua` lines it touches are `---@type` comments, so the
+    `install()` Core calls has the same signature.
+  - **`schemastore.nvim`** `4a0e1b7` → `2224119`, 2 commits: catalog refreshes only.
+
+  Nothing renames or removes an API Core calls. (`nvim/lazy-lock.json`, #794)
+- **Bumped two pins in `scripts/tool-versions.env` on the weekly freshness review; held the
+  third (#813).** This is the class no bot covers — the CLI gate pins sit between
+  `/freshness-triage`'s plugin locks and Renovate's manifests — so the routine re-audited all
+  ten against upstream and found seven still current:
+
+  | Pin | Was | Now | |
+  | --- | --- | --- | --- |
+  | `NVIM_VERSION` | 0.12.4 | **0.12.5** | one patch on the 0.12 line |
+  | `CLAUDE_CODE_VERSION` | 2.1.222 | **2.1.265** | the routine bots' own CLI |
+  | `SHFMT_VERSION` | 3.13.1 | 3.13.1 | **held** — 3.14.x changes formatting output, see below |
+
+  nvim 0.12.5 is fixes-plus-features on a line whose breaking changes (diagnostic sign config,
+  `vim.diagnostic.disable()`, `vim.diff` → `vim.text.diff`, the `'shelltemp'` default) all
+  landed at 0.12.0 and were absorbed by the 0.12.4 pin; nothing new to adapt to.
+  `NVIM_SHA256` recomputed with `make update-tool-checksums` and **cross-checked against the
+  `digest` GitHub reports for the release asset** rather than trusted from our own download —
+  the four unbumped hashes re-derived byte-identical, which is its own integrity signal.
+
+  **shfmt stays at 3.13.1 deliberately.** 3.14.0 changed _output_, not just behaviour — a space
+  after `!` in arithmetic, nested closing parens spaced like the opening ones, no `;`-joined
+  `then`/`do` when a heredoc is pending — and 3.14.1 followed a week later with heredoc
+  indentation fixes. Core's own audit does not gate shfmt, so a green tick here proves nothing
+  about it; the pin exists only so `setup-core-tools` installs one verified shfmt for MacBook
+  and the distro/role lint workflows, where a bump can newly flag files that pass today with
+  no diff in this repo to warn you. The consumer step is advisory (`::warning::`, not red), so
+  it would not break them — but it would start nagging on every run until each repo reformats.
+  Bump it alongside a reformat pass across the consumers, not on its own.
+- **Every mint step passes `client-id`, not the deprecated `app-id`, and reads a new
+  `FLEET_APP_CLIENT_ID` org variable (#831).** Our pinned `create-github-app-token` (v3.2.0)
+  carries `deprecationMessage: "Use 'client-id' instead."` on `app-id`, and all five mints
+  here — `notify-web.yml`, the reusable `notify-web-call.yml`, `sync-fanout.yml` and
+  `freshness.yml`'s three — passed it.
+  **It is not a one-line swap, which is why it needed its own change.** `FLEET_APP_ID` holds
+  the App **ID**; the new input wants the App's **Client ID**, a different value on the same
+  settings page (and a public one: `gh api /apps/dotgibson-fleet-sync --jq .client_id`). So the
+  variable is a **new** one rather than a repurposed one — the two names never hold different
+  meanings mid-rollout — and the `if:` guards move in the same commit as the input, because a
+  guard still testing `vars.FLEET_APP_ID` against a step reading `FLEET_APP_CLIENT_ID` would
+  keep gating on a variable the mint no longer uses.
+  **Precondition, not a follow-up: the org variable must exist before this merges.** With it
+  unset, every guard is false, `sync-fanout`'s preflight goes red (the loud half) and the
+  `notify-web` dispatch degrades to a `::warning::` and skips (the quiet half) — the exact
+  failure shape #831 was written to avoid.
+  **`FLEET_APP_ID` is retired here but must not be deleted yet.** The nine OS-repo callers
+  execute `notify-web-call.yml` at the `@v7` alias, which reads the old variable until the next
+  release advances it; `htpx`'s fan-out and `dotfiles-Windows`' inline notifier still pass
+  `app-id` and are tracked in their own repos. `GITHUB-APP-AUTH.md` carries the retirement
+  note with the grep that derives the remaining readers, its _Re-creating or re-keying_ section
+  now tells you to collect the Client ID, and the known-gaps callout shrinks to the one gap
+  left (scope the verbs).
+- **Rule 1's node20 rationale carries the final date.** The ban was already correct; the
+  comment said "fall 2026". Node 20 leaves the runners on **2026-09-23** — the 2025-09-19
+  deprecation changelog, its date fixed by an editor's note of 2026-08-25. No fix-first work:
+  every external action in the tree (`actions/checkout`, `actions/cache`,
+  `actions/create-github-app-token`) already resolves to `using: node24` at its pinned SHA.
+  (#816)
 
 ## [v7.2.0] - 2026-09-08
 
@@ -2584,55 +2934,3 @@ repo-meta and stays upstream:
   #679's theme generator would otherwise have carried dead config forward into the new
   mechanism. #682 remains open for its other two bugs (the unbound `Alt+C`, and
   `parity-check.sh`'s unproven one-to-one claim).
-
-## [v5.5.0] - 2026-08-30
-
-### Changed
-
-- **`atuin/config.toml` no longer pins `search_mode`, so a machine can finally choose it.**
-  The line asserted `"fuzzy"` — which is atuin's OWN default (`atuin default-config` ships
-  it commented out at that value), so it pinned a default rather than choosing anything.
-  What it DID do was shadow `ATUIN_SEARCH_MODE`, under the same precedence rule `[daemon]`
-  documents at length: atuin builds config as defaults → Environment → **file**, and the
-  later source wins, so any key present here beats the environment.
-
-  That blocked the one mode worth opting into. **`daemon-fuzzy`** routes interactive search
-  through the atuin daemon, and is meaningful only where that daemon runs — which Core
-  ships **off**, per machine, for the reasons already recorded in `[daemon]`. It cannot be
-  a fleet-wide assertion: even on a host that opted in, `os/alpine.zsh` deliberately leaves
-  the daemon off **inside containers**, and these repos target containers as much as hosts,
-  so a blanket `daemon-fuzzy` would apply on precisely the shells with no daemon to talk to.
-
-  **No host changes behaviour.** atuin still defaults to `"fuzzy"`, so an unset key and the
-  old assertion are the same thing everywhere — the difference is only that the override
-  now reaches. A machine running the daemon sets `ATUIN_SEARCH_MODE=daemon-fuzzy` from its
-  OS layer (`os/<os>.zsh`) or host layer (`99-local`), beside the `ATUIN_DAEMON__*` exports
-  that turned the daemon on.
-
-  This is the trap `[daemon]` already warned about, found in the block above it: _"The same
-  trap applies to any future per-machine key: if a machine is meant to override it via
-  `ATUIN_*`, it must not be written here."_ `search_mode` was written here.
-
-### Fixed
-
-- **`make publish` reported a network failure for a stale tag, and hid the evidence.**
-  `scripts/tag-release.sh` opened phase 2 with `git fetch -q --tags origin 2>/dev/null`.
-  The `vN` major alias is **force-moved to every release**, so any clone that missed one
-  carries a stale local `vN` — and a plain `git fetch --tags` REFUSES to move it
-  (`! [rejected] v5 -> v5 (would clobber existing tag)`), exits 1, and takes `publish`
-  down with it. Nothing was wrong with the network, but with stderr redirected to
-  `/dev/null` the only thing the operator saw was `could not fetch origin — publishing
-  needs the remote's view of main`, which points at exactly the wrong thing. Hit cutting
-  **v5.4.3**, on a clone whose `v4` and `v5` were both behind; the actual repair was a
-  one-line tag update.
-
-  The fetch now passes `--force` and no longer swallows stderr, so a real failure names
-  its cause (`Could not resolve host: …`) instead of wearing the generic message.
-  Forcing is correct rather than merely convenient: `vN` is a MOVING alias whose remote
-  value is authoritative by definition, so a local ref that disagrees is stale, never a
-  competing truth. Immutable `vX.Y.Z` release tags are unaffected — they never move, so
-  `--force` has nothing to overwrite there, and the tag ruleset forbids it regardless.
-
-  Verified both ways: with `v5` deliberately pointed at `v5.4.2`, the old fetch exits 1
-  and the new one exits 0 and realigns it, leaving `v5.4.2`/`v5.4.3` untouched; against
-  an unresolvable remote it still exits 1, now printing the reason.
