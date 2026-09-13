@@ -20,6 +20,9 @@
 set -euo pipefail
 
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# CONFIG and the BOOTSTRAP_* declarations below are read by blib_main in the SOURCED lib,
+# which shellcheck does not follow into — hence the SC2034 waivers on each.
+# shellcheck disable=SC2034
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
 DO_CHECK=1
 
@@ -49,15 +52,18 @@ source "$DOTFILES/core/lib/ux.sh"
 source "$DOTFILES/core/lib/bootstrap-lib.sh"
 
 # ── what this repo is (read by blib_main) ─────────────────────────────────────
+# shellcheck disable=SC2034
 BOOTSTRAP_NAME="Defense"
 # The band-85 role stage and defense/templates, via blib_link_role_layer — the helper
 # Offense already used while this file hand-rolled the same links (the fork the lib's own
 # comment named). No BOOTSTRAP_OS: the 80 band belongs to your OS-native repo, not this one.
+# shellcheck disable=SC2034
 BOOTSTRAP_ROLE=defense
 # Report-only, deliberately: blib_set_login_shell is correct, but it sudo's (chsh, and an
 # append to /etc/shells), and this bootstrap's contract is "does NOT install OS packages",
 # line 4 — so the closing hook names the remedy (blib_login_shell_hint) and lets the
 # operator run it. With no provisioning hook either, the driver resolves no escalator.
+# shellcheck disable=SC2034
 BOOTSTRAP_LOGIN_SHELL=0
 
 # ── hooks (called by blib_main, in its order; shellcheck cannot see that) ─────
