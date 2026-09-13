@@ -228,6 +228,16 @@ under `[Unreleased]` from here.
 
 ### Changed
 
+- **`bootstrap.sh` closes on Core's failure tally instead of over it** (dotgibson/dotfiles-core#973).
+  This bootstrap installs nothing and escalates nothing, so it had no failure ledger — and
+  none of its own steps needs one; the tool probe is report-only by design. But the shared
+  scaffold it calls records *its* failures (a tpm clone behind a proxy) into the lib's array
+  as it goes, and this script then printed "Defense bootstrap complete" regardless. The closing
+  block now runs `blib_failures_report`, says "finished WITH the misses above" when there were
+  any, and a new `--strict` turns that into exit 1; without it the exit code is unchanged, as
+  befits a report-only script. Core's §5f ledger exempts this repo from `blib_note_fail` and
+  `blib_resolve_su` with those reasons, so this is the last row the fleet ratchet had open.
+
 - **`detections/htpx.pin` -> v3.2.0 (`6358a8df8661`).** A plain bump, on the drift bot's
   weekly report (#277). Upstream's v3.2.0 closes the corpus's Azure asymmetry — every Azure
   pair before it sat on the Entra/M365 identity plane, none on the resource plane — with two
