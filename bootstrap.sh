@@ -16,6 +16,7 @@
 #   ./bootstrap.sh --dry-run       # print the full plan, change nothing
 #   ./bootstrap.sh --only=zsh,git  # wire only these groups
 #   ./bootstrap.sh --skip=tmux     # wire everything except these
+#   ./bootstrap.sh --strict        # exit 1 if a step the shared scaffold ran did not complete
 #     groups: zsh nvim tmux git prompt tools (the band-85 role stage rides `zsh`)
 set -euo pipefail
 
@@ -23,6 +24,7 @@ DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
 LINKS_ONLY=0
 DO_CHECK=1
+STRICT=0
 ONLY_CSV=""
 SKIP_CSV=""
 
@@ -30,12 +32,13 @@ for a in "$@"; do case "$a" in
   --links-only) LINKS_ONLY=1 ;;
   --no-check) DO_CHECK=0 ;;
   --dry-run) BLIB_DRY=1 ;;
+  --strict) STRICT=1 ;;
   # Stashed, not applied: the validator (blib_select) lives in the library, which cannot
   # be sourced until the subtree guard below has run. Applied right after the source.
   --only=*) ONLY_CSV="${a#*=}" ;;
   --skip=*) SKIP_CSV="${a#*=}" ;;
   -h | --help)
-    sed -n '2,19p' "$0"
+    sed -n '2,20p' "$0"
     exit 0
     ;;
   *)
@@ -257,14 +260,35 @@ detect_login_shell() {
   printf '%s' "${shell_field:-${SHELL:-}}"
 }
 
+# ── closing report ────────────────────────────────────────────────────────────
+# This bootstrap installs nothing and escalates nothing, so it has no best-effort steps
+# of its own to ledger (the tool probe above is report-only by design, and Core's §5f
+# exempts this repo from blib_note_fail and blib_resolve_su for exactly that reason). But
+# the shared scaffold records ITS failures — a tpm clone behind a proxy — into BLIB_FAILED
+# as it goes, and this file used to close with "complete" over them. blib_failures_report
+# prints them together here and returns non-zero when there were any; --strict turns that
+# into exit 1, otherwise the run stays exit 0 like the rest of this report-only script.
+DEGRADED=0
+blib_failures_report || DEGRADED=1
+
 login_shell="$(detect_login_shell)"
+hint="open a new shell, or: exec zsh"
 if ! command -v zsh >/dev/null 2>&1; then
   blib_warn "zsh is NOT installed — the config above is wired but inert; nothing reads ~/.zshrc"
   blib_warn "  your OS-native layer owns package installation (see install/README.md)"
-elif [[ "$login_shell" != *zsh ]]; then
-  blib_warn "zsh is installed, but your login shell is ${login_shell:-unknown}"
-  blib_warn "  fix: chsh -s $(command -v zsh)  — takes effect at next login"
-  blib_ok "Defense bootstrap complete — for this session: exec zsh"
 else
-  blib_ok "Defense bootstrap complete — open a new shell, or: exec zsh"
+  if [[ "$login_shell" != *zsh ]]; then
+    blib_warn "zsh is installed, but your login shell is ${login_shell:-unknown}"
+    blib_warn "  fix: chsh -s $(command -v zsh)  — takes effect at next login"
+    hint="for this session: exec zsh"
+  fi
+  if ((DEGRADED)); then
+    blib_warn "Defense bootstrap finished WITH the misses above — the layer is wired; re-run after fixing them, then $hint"
+  else
+    blib_ok "Defense bootstrap complete — $hint"
+  fi
+fi
+if ((DEGRADED && STRICT)); then
+  blib_warn "exiting non-zero (--strict)"
+  exit 1
 fi
