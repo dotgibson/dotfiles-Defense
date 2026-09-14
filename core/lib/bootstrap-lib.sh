@@ -28,9 +28,14 @@
 # order), and degrades to plain/no-colour when it hasn't — so this file has no hard
 # ordering dependency on ux.sh.
 #
-# Usage (in an OS bootstrap.sh):
+# Usage (in an OS bootstrap.sh) — the DRIVER form, since #976: declare, define hooks, call.
 #   source "$DOTFILES/core/lib/ux.sh"
 #   source "$DOTFILES/core/lib/bootstrap-lib.sh"
+#   BOOTSTRAP_NAME=Fedora BOOTSTRAP_OS=fedora
+#   bootstrap_provision() { blib_read_pkgs_into pkgs "$DOTFILES/install/packages.txt" || exit 1
+#                           blib_priv dnf install -y "${pkgs[@]}"; }
+#   blib_main "$@"        # flags, guard, escalator, probe, provision, wire, closing report
+# The helpers below are also callable one by one (the pre-#976 form every repo still runs):
 #   blib_is_wsl && IS_WSL=1
 #   wire_links() {
 #     blib_link_core      "$DOTFILES" "$CONFIG"
@@ -1573,4 +1578,250 @@ exit 1
 HOOK
   chmod +x "$hook"
   blib_ok "core-guard: pre-commit installed in ${root##*/}"
+}
+
+# ── the driver ────────────────────────────────────────────────────────────────
+# blib_main "$@" — run a whole OS/Role bootstrap: the shared skeleton every bootstrap.sh in
+# the fleet had hand-rolled, with a small set of NAMED hooks for what is genuinely that
+# repo's (V8-PROPOSAL.md §4.2(3), §4.4; dotgibson/dotfiles-core#976). The repo keeps its
+# core/ presence guard inline (the chicken-and-egg at the top of this file), sources
+# lib/ux.sh and this file, declares what it is, defines the hooks it needs, and ends with
+# `blib_main "$@"`. Nothing new is linked onto a host and nothing a host reads changes
+# meaning: the driver calls the same helpers, in the same order, that the repos already
+# call by hand — which is why §4.4 chose a repo-internal hook over a declared overlay.
+#
+# DECLARED by the repo (variables, before the call):
+#   BOOTSTRAP_NAME         "Fedora", "Defense" — the closing lines say it
+#   BOOTSTRAP_OS           fedora|alpine|… — wires the os/ overlays via blib_link_os_layer
+#   BOOTSTRAP_ROLE         defense|offensive — wires the band-85 role via blib_link_role_layer
+#   BOOTSTRAP_SU_PREFER    doas — blib_resolve_su --prefer, for a box whose declared
+#                          escalator is not sudo (os/alpine.capabilities)
+#   BOOTSTRAP_SU           lazy — the driver resolves NO escalator; a hook that needs one
+#                          calls blib_resolve_su itself (Offense: only --install does).
+#                          Default: resolved up front, --require on a provisioning run.
+#   BOOTSTRAP_LOGIN_SHELL  0 to NOT call blib_set_login_shell (a role repo that installs
+#                          nothing and declines to sudo — Defense, Offense); pair it with
+#                          blib_login_shell_hint in bootstrap_closing to still say so
+#   BOOTSTRAP_STRICT_DEFAULT 1 to make a non-empty failure tally exit non-zero WITHOUT
+#                          --strict (Arch's contract: a package that did not install is
+#                          exit 1, always)
+#   BOOTSTRAP_FAIL_EXIT    the exit code for that case (default 1; openSUSE documents 2)
+#   DOTFILES, CONFIG       the repo root and $XDG_CONFIG_HOME, as every bootstrap sets them
+#
+# HOOKS (functions; each optional — the driver checks with `declare -F`):
+#   bootstrap_usage        print the repo's banner and its OWN flags; the driver prints the
+#                          shared flags after it
+#   bootstrap_flag <arg> [<next>]
+#                          return 0 having consumed a repo-specific flag (set your own var),
+#                          2 having consumed it AND the argument after it (the driver
+#                          shifts twice), 1 to say "not mine" — then the driver reports it
+#                          as unknown. `--x=VALUE` needs no second return code.
+#   bootstrap_guard        refuse to run on the wrong box (exit 1 yourself); runs first
+#   bootstrap_check        a report-only host probe; runs unless --links-only
+#   bootstrap_provision    install packages — runs only on a full run (not --links-only,
+#                          not --dry-run: provisioning is never faked), under a resolved
+#                          escalator and the sudo keepalive. Best-effort steps record with
+#                          blib_note_fail. Absent hook: no escalator is demanded at all.
+#   bootstrap_wire_pre_loader
+#                          links only this repo owns that must exist BEFORE the managed
+#                          ~/.zshrc is written — a capability re-link for a distro tier
+#                          (Debian, openSUSE), a script into ~/.local/bin (Gentoo)
+#   bootstrap_wire_post_loader
+#                          links that must come AFTER it — Alpine's ~/.zshenv ZDOTDIR shim.
+#                          Both through blib_link, so --dry-run and --only/--skip are
+#                          honoured for free.
+#   bootstrap_closing <degraded 0|1>
+#                          say what only this repo knows at the end (a "run mkcase" hint, a
+#                          login-shell nudge). Set BLIB_NEXT_HINT to change the closing
+#                          line's tail; return non-zero to say you have ALREADY described
+#                          the run's state and the driver should print no closing line.
+#
+# THE DRIVER'S OWN FLAGS (one definition, one --help): --links-only, --dry-run/-n,
+# --strict, --only=G,G / --only G,G, --skip=…, -h/--help. --dry-run previews the wiring,
+# runs the probe (report-only), and skips provisioning. --strict turns a non-empty failure
+# tally into exit BOOTSTRAP_FAIL_EXIT (1); misses are listed either way. Unknown flag: 2.
+#
+# EXPORTED for the hooks: BLIB_LINKS_ONLY, BLIB_STRICT, BLIB_DRY (already the lib's own
+# switch), BLIB_SU. Exit: 0 clean, 1 a hook refused or --strict with misses, 2 usage.
+#
+# NOT here, deliberately: --json, --uninstall, --quiet — MacBook's own surface, and the
+# reason MacBook is the one bootstrap this driver does not aim to absorb (its report is
+# the template for what a hook must be ABLE to express, not a target to flatten).
+_blib_main_usage() {
+  if declare -F bootstrap_usage >/dev/null 2>&1; then
+    bootstrap_usage
+    printf '\n'
+  else
+    printf 'usage: bootstrap.sh [flags]\n\n'
+  fi
+  cat <<'USAGE'
+Shared flags (core/lib/bootstrap-lib.sh :: blib_main):
+  --links-only        (re)create the symlinks only — no provisioning, no host probe
+  --dry-run, -n       print every planned change and change nothing; provisioning is
+                      skipped rather than faked
+  --strict            exit 1 if any best-effort step did not complete (misses are
+                      listed either way)
+  --only=G,G          wire ONLY these Core module groups   (zsh nvim tmux git prompt tools)
+  --skip=G,G          wire everything EXCEPT these groups
+  -h, --help          this text
+USAGE
+}
+
+blib_main() {
+  local _bm_a _bm_links=0 _bm_dry=0 _bm_only="" _bm_skip="" _bm_degraded=0 _bm_rc=0
+  local _bm_strict="${BOOTSTRAP_STRICT_DEFAULT:-0}" _bm_name="${BOOTSTRAP_NAME:-dotfiles}"
+  : "${DOTFILES:?blib_main: DOTFILES (the repo root) must be set before the call}"
+  : "${CONFIG:=${XDG_CONFIG_HOME:-$HOME/.config}}"
+  while (($#)); do
+    _bm_a="$1"
+    case "$_bm_a" in
+    --links-only) _bm_links=1 ;;
+    --dry-run | -n) _bm_dry=1 ;;
+    --strict) _bm_strict=1 ;;
+    --only=*) _bm_only="${_bm_a#*=}" ;;
+    --skip=*) _bm_skip="${_bm_a#*=}" ;;
+    --only | --skip)
+      # A value is required, and it must not itself look like a flag: `--only --strict`
+      # would otherwise silently select a group named "--strict" (blib_select rejects it,
+      # but with a message about groups rather than about the missing value).
+      if [[ $# -lt 2 || "${2-}" == -* ]]; then
+        blib_warn "$_bm_a requires module names, e.g. $_bm_a zsh,nvim"
+        return 2
+      fi
+      if [[ "$_bm_a" == --only ]]; then _bm_only="$2"; else _bm_skip="$2"; fi
+      shift
+      ;;
+    -h | --help)
+      _blib_main_usage
+      return 0
+      ;;
+    *)
+      _bm_rc=1
+      if declare -F bootstrap_flag >/dev/null 2>&1; then
+        bootstrap_flag "$_bm_a" "${2-}" && _bm_rc=0 || _bm_rc=$?
+      fi
+      case "$_bm_rc" in
+      0) ;;
+      2) shift ;; # the hook consumed the value after the flag too
+      *)
+        printf 'unknown flag: %s\n' "$_bm_a" >&2
+        _blib_main_usage >&2
+        return 2
+        ;;
+      esac
+      _bm_rc=0
+      ;;
+    esac
+    shift
+  done
+  # Re-read after the parse: a bootstrap_flag may have declared the policy (a
+  # `--tolerate-failures` that flips it off, say), and the declaration wins over the default.
+  ((_bm_strict)) || _bm_strict="${BOOTSTRAP_STRICT_DEFAULT:-0}"
+  ((_bm_dry)) && export BLIB_DRY=1
+  export BLIB_LINKS_ONLY="$_bm_links" BLIB_STRICT="$_bm_strict"
+  # blib_select aborts the run itself on a malformed selector — called directly, never in
+  # a subshell, so that exit is the bootstrap's.
+  [[ -n "$_bm_only" ]] && blib_select --only "$_bm_only"
+  [[ -n "$_bm_skip" ]] && blib_select --skip "$_bm_skip"
+
+  if declare -F bootstrap_guard >/dev/null 2>&1; then bootstrap_guard; fi
+  # The PATH prelude: user-local bindirs first, so presence guards in the hooks tell the
+  # truth about what an earlier run installed (#748).
+  blib_user_bindirs_on_path
+
+  # ── escalator: demanded only when packages will actually be installed ──────────
+  # And resolved at all only when something privileged CAN happen — a provisioning hook, or
+  # the login-shell change (chsh + /etc/shells). A report-only role repo with neither must
+  # not be told "no privilege escalator found" on a box that has none; it needs none.
+  if [[ "${BOOTSTRAP_SU:-}" == lazy ]]; then
+    : # a hook resolves it at the point of need (Offense: inside --install)
+  elif declare -F bootstrap_provision >/dev/null 2>&1 && ((_bm_links == 0 && _bm_dry == 0)); then
+    blib_resolve_su ${BOOTSTRAP_SU_PREFER:+--prefer "$BOOTSTRAP_SU_PREFER"} --require || return 1
+  elif declare -F bootstrap_provision >/dev/null 2>&1 || [[ "${BOOTSTRAP_LOGIN_SHELL:-1}" != 0 ]]; then
+    blib_resolve_su ${BOOTSTRAP_SU_PREFER:+--prefer "$BOOTSTRAP_SU_PREFER"} || true
+  fi
+
+  # ── probe, then provision ────────────────────────────────────────────────────
+  if declare -F bootstrap_check >/dev/null 2>&1 && ((_bm_links == 0)); then bootstrap_check; fi
+  if declare -F bootstrap_provision >/dev/null 2>&1 && ((_bm_links == 0 && _bm_dry == 0)); then
+    trap 'blib_sudo_keepalive_stop' EXIT
+    blib_sudo_keepalive_start || {
+      blib_warn "sudo authentication failed — cannot provision packages"
+      return 1
+    }
+    bootstrap_provision
+    blib_sudo_keepalive_stop
+  fi
+
+  # ── wire ────────────────────────────────────────────────────────────────────
+  blib_link_core "$DOTFILES" "$CONFIG"
+  if [[ -n "${BOOTSTRAP_OS:-}" ]]; then blib_link_os_layer "$DOTFILES" "$CONFIG" "$BOOTSTRAP_OS"; fi
+  if [[ -n "${BOOTSTRAP_ROLE:-}" ]]; then blib_link_role_layer "$DOTFILES" "$CONFIG" "$BOOTSTRAP_ROLE"; fi
+  if declare -F bootstrap_wire_pre_loader >/dev/null 2>&1; then bootstrap_wire_pre_loader; fi
+  blib_write_zshrc_loader
+  if declare -F bootstrap_wire_post_loader >/dev/null 2>&1; then bootstrap_wire_post_loader; fi
+  if [[ "${BOOTSTRAP_LOGIN_SHELL:-1}" != 0 ]]; then blib_set_login_shell; fi
+  # The local core/ guard writes .git/hooks unconditionally, so it is the one helper the
+  # driver gates on dry-run by hand.
+  if _blib_dry; then
+    blib_say "(dry run) would install the core/ pre-commit guard"
+  else
+    blib_install_core_guard "$DOTFILES" || true
+  fi
+  blib_wire_summary
+
+  # ── close ───────────────────────────────────────────────────────────────────
+  blib_failures_report || _bm_degraded=1
+  if declare -F bootstrap_closing >/dev/null 2>&1; then
+    bootstrap_closing "$_bm_degraded" || _bm_rc=1
+  fi
+  if ((_bm_rc == 0)); then
+    if ((_bm_degraded)); then
+      blib_warn "$_bm_name bootstrap finished WITH the misses above — ${BLIB_NEXT_HINT:-open a new shell, or: exec zsh}"
+    elif _blib_dry; then
+      blib_ok "$_bm_name dry run complete — nothing was changed; re-run without --dry-run to apply"
+    else
+      blib_ok "$_bm_name bootstrap complete — ${BLIB_NEXT_HINT:-open a new shell, or: exec zsh}"
+    fi
+  fi
+  if ((_bm_degraded && _bm_strict)); then
+    blib_warn "exiting non-zero (${BLIB_STRICT_WHY:---strict})"
+    return "${BOOTSTRAP_FAIL_EXIT:-1}"
+  fi
+  return 0
+}
+
+# blib_login_shell_hint — the REPORT-ONLY counterpart to blib_set_login_shell, for a
+# bootstrap whose contract is "installs nothing" (BOOTSTRAP_LOGIN_SHELL=0): say whether the
+# config just wired will ever load. Everything above wires a zsh config; on a box with no
+# zsh, or with zsh installed but not the login shell, every step still "succeeds" and
+# nothing ever reads ~/.zshrc. Defense and Offense each carried this guard, near-identically
+# (#976 folded them). Returns 1 when zsh is ABSENT — the wiring is inert and a closing hook
+# should not let the driver say "complete" — and 0 otherwise, with a chsh nudge when zsh is
+# present but not the login shell. Best-effort lookups, in descending order of trust
+# (getent, /etc/passwd, $SHELL), each guarded: under `pipefail` a getent that exits 2 for a
+# user outside the passwd DB would otherwise take the bootstrap down on its last line.
+blib_login_shell_hint() {
+  local user shell_field="" login_shell
+  user="$(id -un 2>/dev/null || true)"
+  if [[ -n "$user" ]]; then
+    if command -v getent >/dev/null 2>&1; then
+      shell_field="$(getent passwd "$user" 2>/dev/null | cut -d: -f7 || true)"
+    fi
+    if [[ -z "$shell_field" && -r /etc/passwd ]]; then
+      shell_field="$(awk -F: -v u="$user" '$1 == u { print $7; exit }' /etc/passwd 2>/dev/null || true)"
+    fi
+  fi
+  login_shell="${shell_field:-${SHELL:-}}"
+  if ! command -v zsh >/dev/null 2>&1; then
+    blib_warn "zsh is NOT installed — the config above is wired but inert; nothing reads ~/.zshrc"
+    blib_warn "  your OS-native layer owns package installation"
+    return 1
+  fi
+  if [[ "$login_shell" != *zsh ]]; then
+    blib_warn "zsh is installed, but your login shell is ${login_shell:-unknown}"
+    blib_warn "  fix: chsh -s $(command -v zsh)  — takes effect at next login"
+    BLIB_NEXT_HINT="for this session: exec zsh"
+  fi
+  return 0
 }
