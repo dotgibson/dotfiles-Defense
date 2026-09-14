@@ -5,10 +5,66 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v7.4.0 … v6.0.1), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v7.4.2 … v7.0.0), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v7.4.2] - 2026-09-13
+
+### Fixed
+
+- **openSUSE is recorded on the `blib_install_core_guard` row — the row closes at 9/9** (#986;
+  follow-up to #992). A `blib_main` caller is credited with the whole helper contract, and the
+  driver installs the Core guard openSUSE's own bootstrap never had, so §5f read the repo as
+  `advanced` on that row the moment dotgibson/dotfiles-openSUSE#186 merged — the state the
+  v7.4.1 fan-out audit meets. Same shape as Defense in #988. (`scripts/audit/40-fleet-registers.sh`)
+
+## [v7.4.1] - 2026-09-13
+
+### Fixed
+
+- **`blib_main` always exports `BLIB_DRY` as 0 or 1, and `BOOTSTRAP_SU=lazy` also skips the
+  driver's sudo keepalive** (#990, #991 — two defects in #985, each found by the next adopter).
+  The driver exported `BLIB_DRY` only on a dry run, so a hook written `((BLIB_DRY)) || return 0`
+  — valid bash, clean under every linter — died with `unbound variable` under `set -u` on the
+  first REAL run: the stubbed full-provision CI leg, the one path a dry-run test cannot cover
+  (dotgibson/dotfiles-Debian#78's first run). And `lazy` told the driver not to resolve an
+  escalator but still wrapped `bootstrap_provision` in the keepalive, which would prime sudo
+  on a repo whose run may never need it (Offense without `--install`) and fail outright where
+  the escalator is not sudo. Both knobs are now always 0/1 and lazy means the hook owns
+  escalation end to end; the fixture in `scripts/test/37-bootstrap-driver.sh` reads
+  `BLIB_DRY` bare on purpose and runs a lazy case with `BLIB_SU` unset. (`lib/bootstrap-lib.sh`)
+
+### Changed
+
+- **openSUSE is on the bootstrap driver — the `blib_main` row reads 4/9** (#986;
+  dotgibson/dotfiles-openSUSE#186). The repo whose closing report exits 2 whenever an optional
+  install did not complete now declares that contract (`BOOTSTRAP_STRICT_DEFAULT=1`,
+  `BOOTSTRAP_FAIL_EXIT=2`, `--tolerate-failures` flipping the default off through
+  `bootstrap_flag`) instead of wrapping the driver's report in a private one; its OS check,
+  the `--only`/`--skip` exclusion and the links-only WSL note are `bootstrap_guard`, zypper
+  provisioning is `bootstrap_provision` with the body unchanged, and the Leap capability
+  re-link takes the pre-loader slot. 716 → 657 lines. (`scripts/audit/40-fleet-registers.sh`)
+
+- **Fedora and Debian are on the bootstrap driver — the `blib_main` row reads 3/9** (#986;
+  dotgibson/dotfiles-Fedora#181, dotgibson/dotfiles-Debian#78). The two the survey called the
+  driver's shape verbatim: each keeps its OS guard and preflight as `bootstrap_guard`, its
+  package phase as `bootstrap_provision` with the body unchanged, its dry-run preview as
+  `bootstrap_check`, and its own flags through `bootstrap_flag`; Debian also uses the
+  pre-loader slot for the distro tier's capability re-link and the closing hook for its
+  shadowed-tools report — the two slots the survey said had to exist. Fedora's `make check`
+  ran the vendored links gate through the driver on a Fedora box and a real `--dry-run`
+  printed the 38-package plan and wrote nothing. Together with Defense that is 753 + 962 + 270
+  → 660 + 876 + 205 lines. (`scripts/audit/40-fleet-registers.sh`)
+
+- **Defense is the first repo on the bootstrap driver — the §5f ledger records it** (#986;
+  dotgibson/dotfiles-Defense#292, after v7.4.0 vendored `blib_main` there). Its `bootstrap.sh`
+  now declares what it is and hands over to the driver, so `blib_main` gets its first ledger
+  entry and `blib_install_core_guard`, the row Defense had always been short on, is satisfied
+  by the driver installing the guard on a fresh clone. The scanner credits a `blib_main` caller
+  with the whole helper contract, so every other row it held stays `ok` with the names gone from
+  the file. (`scripts/audit/40-fleet-registers.sh`)
 
 ## [v7.4.0] - 2026-09-13
 
@@ -2842,401 +2898,3 @@ repo-meta and stays upstream:
   one. `clip-paste` and `opsecret` are untouched: the first has no OSC 52 read path by
   design, the second prints via `op read` and never touches `clip`. Not tagged BREAKING:
   #690 assumed the default tmux path would change, and it does not — no host adapts.
-
-## [v6.1.0] - 2026-09-02
-
-### Changed
-
-- **The atuin daemon-guard research apparatus is archived under `scripts/research/`, and its
-  weekly workflow is dispatch-only (#687).** `verify-atuin-guard.sh` (1,845 lines),
-  `bench-atuin-daemon.sh` (1,225) and their shared `lib/atuin-db.sh` measured the premises
-  `_core_atuin_daemon_guard` rests on and the daemon's write-latency claim — for a feature
-  that ships OFF on every box. They answered those questions once, and the answers are
-  recorded in `atuin/config.toml` and `zsh/00-tools.zsh`; what remained was
-  `atuin-guard-verify.yml` re-asking a settled question every Tuesday at the cost of five
-  repo checkouts, one of five scheduled sweeps firing inside four hours each week. The
-  three files move to a clearly-marked `scripts/research/` (with a README stating the
-  rules: never vendored, never scheduled, re-measured on purpose), the workflow drops its
-  cron and keeps `workflow_dispatch` — the checksum-verified, tokenless live-upstream
-  measurement stays one `gh workflow run atuin-guard-verify` away — and its schedule-only
-  `notify-failure` job goes with the schedule. The four `make` targets stay as the manual
-  invocations. No OS repo gains or loses a file: #676 had already left all three out of
-  `core.vendor`, so what a sync carries from this change is the comment and prose repoints
-  in `zsh/00-tools.zsh`, `atuin/config.toml` and `PORTING-MATRIX.md` — no behaviour — and
-  the one fleet reference (`dotfiles-Alpine/bootstrap.sh` naming `verify-atuin-guard.sh`'s
-  `ver_cmp`) is a comment, not a call. `examples/atuin-daemon.service`
-  — counted in the issue's 3,730 lines — is deliberately untouched: it is shipped, and two
-  bootstraps install it. The runtime guard in `zsh/00-tools.zsh` is untouched too; that is
-  the part with a job. The hermetic self-test still drives the archived detector —
-  `test-core.sh` §J3-J4 behind the `atuin` scope, and the cheap §J2 bench-harness checks
-  unconditionally, as before — and `audit-core.sh` §2 now asserts
-  `scripts/research/lib/*.sh` as a sourced lib (mode 100644) like `scripts/lib/`.
-
-- **`bootstrap-test.yml`'s resolve job prints the resolver's own error under each
-  unresolved name.** The probe ran with its output discarded, so a red run said only
-  which names failed — and a name fails to resolve for reasons only the resolver can tell
-  apart: renamed or dropped upstream, a dependency missing from a half-synced mirror, or a
-  container snapshot the repo no longer agrees with. dotfiles-openSUSE#149 sat through
-  four runs with three names and no reason. The last eight lines of the probe's output now
-  follow each `UNRESOLVED:` line; pass/fail is unchanged. Reaches the OS repos at the next
-  `@v6` tag.
-- **`GITHUB-APP-AUTH.md` split into a live reference and a frozen record (#683).** The
-  file mixed three concerns — how the auth works now, the G2 migration that produced it,
-  and how to recover when the App is not working — and they drifted apart. That is the
-  defect #683 opened on: the top said both PATs were deleted while a paragraph 157 lines
-  down said one was "still present", and the recovery procedure was buried _underneath_
-  that sentence, inside a heading reading "Step 5 — migrate the consumers". An operator
-  reaching for recovery mid-incident had to read a migration runbook to find it, and what
-  they found was a migration-era leftover that no longer worked. `GITHUB-APP-AUTH.md`
-  keeps its name — every inbound reference stays valid — and now holds only what must
-  stay true: what runs today, the permissions the App must hold, where it is installed,
-  how to add a consumer, and **Recovery** promoted to a top-level section.
-  `GITHUB-APP-MIGRATION.md` takes the history, marked frozen and explicitly not a
-  template, since the patterns it prescribes name secrets that no longer exist.
-  Two structural fixes came with it: the recovery procedure is now **self-contained**
-  rather than pointing at a historical section for the fallback pattern it restores — that
-  coupling is what let a live instruction rot when the history around it changed — and the
-  numbered `Step N` headings are gone in favour of named sections, because the one inbound
-  cross-reference in `sync-fanout.yml` pointed at "Step 1" and would have silently aimed
-  at the wrong place. The still-open constraint on `notify-web-call.yml`'s declared
-  `WEBHOOK_SECRET` input lives in the **reference**, not the record: it is a current rule
-  about a future change, and keeping it in a file marked frozen would be the same drift
-  the split removes. The App's registration and private-key handling moved to the reference
-  too rather than the record — key rotation is an operational task, not history. The
-  recovery procedure also gained an exit: it used to end with broad PATs live and no way
-  back, which is the state G2 removed, and worse than pre-G2 because `token-health` — the
-  probe that watched those PATs for silent expiry — was retired because nothing depends on
-  a minted token surviving (each run mints a fresh one, so there is no expiry date to miss;
-  they do expire, in about an hour). Nothing watches a re-provisioned PAT, so it now says so
-  and prescribes reversing all seven steps, deleting the PATs, and verifying it.
-
-### Added
-
-- **`PORTING-MATRIX.md`'s two data tables are generated from the OS repos (#686).** The
-  package-manager table restated the seven `PKG_*` verbs every `os/<os>.capabilities`
-  already declares (and `check-capabilities.sh` already gates), and the package-name
-  table restated `install/packages.txt` — including the `# min:` floors that
-  `dotfiles-Debian` and `dotfiles-Gentoo` enforce in CI — as a copy nothing checked.
-  `scripts/gen-porting-matrix.sh` now renders both into
-  `<!-- core:porting-matrix:gen … -->` marker pairs, the way `gen-aliases.sh` renders the
-  cheat sheet: verbs verbatim from the declarations (openSUSE's Leap/Tumbleweed pair
-  rendered as both, labelled), package names from the lines the repo's own reader would
-  install — Debian's list read through its `scripts/pkg-filter.sh` tiers so `only:kali`
-  and `skip:kali` land in the right column — with a floor shown as `≥ X.Y.Z`. The table
-  was never a plain transposition, and the generator says so rather than pretending: a
-  cell the repo installs is _derived_; the footnote-²¹ "available, not installed" names
-  and the `asset`/`cargo`/`AUR`/`GURU` routes only `bootstrap.sh` knows are _asserted_ in
-  the script's `PKG_ROWS` registry, and a repo that starts installing an asserted one
-  through `packages.txt` is exit 2 naming the cell — the one transition on that half the
-  generator can see; a changed out-of-band route stays the footnotes' job. The ~1,100 footnote
-  lines are untouched. `make audit` gains §9h; because the inputs are sibling clones, an
-  absent one is exit 3 → an environment SKIP naming the repos (the §9c posture), never a
-  gate that only passes on one laptop, and `--require-siblings` reds it. `Makefile` gains
-  `gen-porting-matrix` / `check-porting-matrix`; `--list` prints every cell's provenance;
-  `--fleet DIR` points a worktree at the real fleet. Visible cell changes: the four
-  floored cells, and the commands table now shows the declared verbs exactly (`-y` /
-  `--noconfirm` on install/remove, `sudo dnf check-update`, `gentoo-pkg-pending`).
-- **The `core` front door reaches every first-party family: `core maint
-  <install|run|log|status|uninstall>`, `core sync` and `core update check` (#684).**
-  Core ships two hyphen-namespaced families — `core-help`/`core-doctor`/`core-version`
-  and `maint-install`/`maint-run`/`maint-log`/`maint-status`/`maint-uninstall` — and
-  only one was wired to the front door, which was the single most visible incoherence
-  in the verb surface. The dispatcher's own header gives the reason the namespace
-  exists (it keeps the generic-sounding verbs reachable under a form that won't be
-  mistaken for some other tool); the same argument covered `maint-*`, `update-check`
-  and `gsync`, which were simply never added. Additive only: every bare name keeps
-  working exactly as before, and `core update -y` still belongs to `up` — only the
-  literal word `check` in first position is intercepted. Retiring the bare names was
-  decided against in #692.
-
-  Each new arm carries the same availability guard as `core update`: `maint-*` is
-  band 55 and `up`/`update-check` band 60, both after this file, and `gsync` is a
-  band-20 function a trimmed `$ZSH_CFG` can drop — so when the twin is not loaded the
-  arm NAMES THE FRAGMENT (`55-maint.zsh`, `60-update.zsh`, `20-aliases.zsh`) instead of
-  reaching a missing function. A bare `core maint` (or `-h`/`--help`) prints the
-  family's usage on stdout and returns 0, the way a bare `core` is the cheat sheet; an
-  unknown sub-verb gets its own did-you-mean (`core maint stauts` → `status`) over
-  the new `$_CORE_MAINT_SUBCMDS`, the second single source beside `$_CORE_SUBCMDS`.
-
-  `_core` completes the new verbs and delegates to each twin's own completion
-  (`_maint-install`'s times, `_maint-log`'s `-f`, `_up`'s flags plus `check`), shifting
-  `words`/`CURRENT` so the twin sees itself at `words[1]` — without that, `core maint
-  install <tab>` offered nothing. And a new gate in `scripts/test-core.sh` asserts
-  `_core`'s describe arrays mirror the two dispatcher lists, because the header comment
-  that asked for it was the only thing keeping them in step. `PARITY.md` records
-  **Update check** and **Maintenance** as `aligned` rows with `parity-check.sh` needles
-  on both shells (dotgibson/dotfiles-Windows#236 adds the pwsh arms and lands first),
-  and **Upstream sync** as `deliberate` — Windows replicates Core rather than vendoring
-  `core/`, so there is no subtree to push.
-
-- **`aliases.md`'s tables are generated from the zsh sources and gated by `make audit`
-  (§9g, #685).** ~200 of the cheat sheet's lines were a hand-copy of data the shell
-  already held — the `alias` lines in `zsh/20-aliases.zsh` and `zsh/25-git.zsh`, the
-  `hash -d` named directories, the `_core_help` one-liners in `zsh/30-functions.zsh` — and
-  the doc said its function descriptions "are the same one-liners those surfaces print".
-  One already wasn't: `mkcd` was described three ways in three places. A sentence is not a
-  gate, so this is `theme/palette.toml` → `gen-theme.sh` applied to the cheat sheet.
-  `scripts/gen-aliases.sh` renders every table between a `<!-- core:aliases:gen … -->`
-  marker pair straight from the sources: _Expands To_ is the alias value **verbatim**
-  (`$BAT_BIN --paging=never`, `git checkout "$(git_main_branch)"` — what the shell holds,
-  not a paraphrase), _Requires_ is the `HAVE_*` flag guarding it, _Note_ is the alias
-  line's trailing comment, and _Does_ is the `_core_help` description — so the
-  `core-status` / `core-whatsnew` rows shrink to the one-liner `--help` prints, which is
-  what makes the doc's claim true. Which alias sits in which table is the one decision
-  left to a human and lives in the script's `BLOCKS` registry; coverage is bidirectional
-  in the `parity-check.sh` manner, so an alias added to a source and listed nowhere fails
-  the audit by name (exit 2, rendered apart from drift's exit 1), as does a listed name
-  nothing defines. `--root` drives it against a hermetic fixture (test-core.sh F10b: clean
-  render, own-output `--check`, drift inside a block, an edit outside the markers that
-  survives regeneration, an unclaimed alias, a deleted end marker, idempotence, and
-  `--check` writing nothing). The prose — the `web`/`$BROWSER` explanation, the cdup-vs-up
-  footgun, the confirmation note — stays hand-written outside the markers. `core help` is
-  deliberately **not** folded into this: it is a curated 40-row index with shorter blurbs,
-  a different product for a different moment, and the README no longer calls it "the
-  complete one" — for git aliases it lists 14 of 62. Its `mkcd` row did regain "(and
-  parents)". A dozen alias lines gained a trailing comment so the rendered Note column
-  keeps the glosses the hand-written doc had (`# previous directory`, `# interactive`, …).
-
-- **`make audit` gates the reusable workflows' documented caller examples (§8a-bis, #821).**
-  §8a proves the `ref:` keys name the right major. It does not read comments — so at
-  v5 → v6 every ref moved correctly while 25 `@v5` references survived in the prose
-  describing them, including the copyable `uses:` examples six `*-call.yml` headers hand
-  to OS-repo maintainers. Nothing failed, because nothing was wrong in the code; anyone
-  standing up a caller from one simply pinned a retired major. Same silent shape §8a
-  exists to end, one level up, so it gets the same answer: `_core_workflow_example_hits`
-  compares every documented example against `core.version` and fails the audit on a
-  mismatch. Scoped to a full `dotfiles-core/.github/workflows/<file>@vN` path, which is
-  always a copyable reference and never narrative — a blanket `@vN` scan would be **worse
-  than no gate**, because it reds on the true historical sentences (`claude-routines-call.yml`
-  narrating the v4→v5 cut; `lint-call.yml` naming the release the os.capabilities schema
-  landed in) and would train the next person to falsify them. Bare prose like "pinned to
-  v5" is deliberately not judged: indistinguishable from that history without a marker
-  convention this does not earn. The match carries the owner and a left boundary so a
-  lookalike repository (`someone/not-dotfiles-core/…`) is not attributed to Core and
-  cannot red this always-on gate. Driven against the real regression, not only fixtures:
-  the suite rebuilds `v6.0.0` and `v6.0.1` — both of which SHIPPED with seven documented
-  examples on `@v5` while every `ref:` read v6 — and requires a red on each.
-  **The audit job now checks out with `fetch-depth: 0`**, which is what makes that real:
-  on the default shallow checkout the tags are absent, so those assertions SKIPPED in CI
-  and the suite passed on synthetic fixtures while claiming otherwise. That was already
-  true of the sibling guard's v4.0.0 / v5.0.2 cases, which have never once run in CI —
-  so this switches on coverage the repo believed it already had.
-
-### Fixed
-
-- **`atuin-guard-verify` reports a verdict past the anchor instead of dying (#826).** The
-  first measurement against an atuin newer than the anchored 18.19.0 — the 1 Sep run, on
-  18.21.0 — exited 3 with no output and filed "the workflow itself is broken". Two defects,
-  one per layer. In the workflow, GitHub's default `bash -e {0}` aborted the measure step on
-  the verifier's non-zero exit before the step's own `case` could classify rc 1/3 as
-  reports; both measure steps now `set +e`, since that case statement is the error handling.
-  In the verifier, `--premise autostart` still waited on the pre-18.20 data-dir socket while
-  the sandbox pins `TMPDIR` — so a healthy 18.20+ daemon (which binds under
-  `$TMPDIR/atuin-$UID/atuin.sock` since upstream atuinsh/atuin#3910) never "answered" and the
-  run was `unmeasurable` by apparatus limit. `SOCK` now follows the measured version, the
-  hermetic stub binds where a real daemon of the version it claims binds, and a new
-  `test-core.sh` §J4 case (a healing stub claiming 18.20.0) pins it. The runtime guard in
-  `zsh/00-tools.zsh` already probed the new path first; only the research apparatus was behind —
-  and `PORTING-MATRIX.md`'s socket-path footnote, which still said the move had shipped in no
-  release, now says 18.20.0 and records the `0700` rule.
-- **`maint-install <tab>` (and now `core maint install <tab>`) no longer throws a parse
-  error (#684).** The completion's `_arguments` spec described the operand as
-  `(HH:MM, 24h)` with a bare colon, which `_arguments` reads as the message/action
-  separator — so every tab threw `parse error near ')'` and offered nothing. Found while
-  routing the front door through it; the colon is now escaped.
-
-- **The reusable workflows' caller examples pinned `@v5`, a major behind the tree (#821).**
-  Core is v6 and the fleet's callers are on `@v6`, but 25 `@v5` references survived across
-  six `*-call.yml` files — including the copyable `uses:` examples in their headers, so
-  anyone standing up a new caller from one landed on a retired major. Every actual `ref:` was
-  already `v6`; only the prose describing it had drifted, which is why nothing failed.
-  `audit-core.sh` §8a validates `ref:` lines against `core.version` and does not read
-  comments, so the gate that exists for precisely this class of error could not see it.
-  The sharpest illustration is `claude-routines-call.yml`, where the comment warning that
-  this line "has now gone stale twice" sat directly above a correct `ref: v6` while itself
-  saying `@v5` — the same drift, one level up, inside its own warning. One `@v5` is
-  deliberately kept: the sentence narrating the v4→v5 cut, which would be falsified by
-  bumping it.
-
-- **The "no dispatch token" warning names the missing credential, not the App's behaviour (#823).**
-  Both dispatchers warned `the fleet App minted no token here` when `TOKEN` was empty. The
-  mint cannot do that: it is gated on `vars.FLEET_APP_ID != '' && env.HAS_APP_KEY == 'true'`,
-  and a mint that is ATTEMPTED and fails errors inside `create-github-app-token`, failing the
-  job before the warning branch is reachable. An empty token has exactly one cause — the step
-  was **skipped** — so the message now names that: a missing `FLEET_APP_ID` variable or
-  `FLEET_APP_PRIVATE_KEY` secret. The reusable's wording differs deliberately, because a
-  reusable workflow sees only the secrets its caller hands it, so there the key may simply
-  never have been passed — and nine repos execute that copy. This matters more since #683
-  removed the fallbacks: with no PAT behind it, this warning is the ONLY signal that a repo
-  has silently stopped refreshing the showcase, and pointing an operator at the App's
-  installation sent them to the wrong place. `sync-fanout.yml`'s preflight comment carried
-  the same loose phrasing and is corrected too. `GITHUB-APP-AUTH.md`'s rollback section had
-  the old warning pasted in verbatim and would have gone stale on merge; rather than paste
-  the new one, it now **describes** the degradation, since a copied message is exactly the
-  kind of duplicated fact this changelog entry exists to stop repeating.
-
-- **The fleet PAT retirement is finished in Core, and the docs now agree about it (#683).**
-  `GITHUB-APP-AUTH.md` said "both PATs are deleted" on line 9 and "still present until the
-  retire step" on line 166, and three workflows plus two `RELEASE-RUNBOOK.md` sites sided
-  with "still present". Exactly one could be true and both readings were bad: either the
-  documented rollback was a dead path, or long-lived credentials were live in the fleet
-  with the probe that watched their expiry deliberately retired. **Checked against the
-  live state (2026-09-01): the PATs really are gone** — `FLEET_SYNC_TOKEN` and
-  `WEBHOOK_SECRET` are absent from all twelve fleet repos at repo _and_ org scope, leaving
-  `FLEET_APP_PRIVATE_KEY` (org secret) and `FLEET_APP_ID` (org variable) as the only fleet
-  auth. So `token-health`'s retirement was justified after all and no expiry check needs
-  restoring; what was wrong was the rollback, and every `|| secrets.…` fallback, which had
-  been dead code resolving to the empty string. Removed the fallbacks from `sync-fanout.yml`
-  (3 sites), `notify-web.yml` and `notify-web-call.yml`, stopped `release.yml` passing
-  `WEBHOOK_SECRET`, and
-  rewrote the rollback as what it actually is — a deliberate re-provisioning (mint a PAT,
-  add the secret, restore the expressions, re-add each caller's `secrets:` mapping, _then_
-  unset `FLEET_APP_ID`), not a toggle. The last two steps are not optional: a reusable
-  workflow does not inherit its caller's secrets, so with `release.yml` now passing only the
-  App key the restored expression in `notify-web-call.yml` would read an empty
-  `WEBHOOK_SECRET`; and `app_token || secrets.…` prefers the left side whenever it is
-  non-empty, so a still-minting App keeps winning even when its token is too narrow to push,
-  while an App that fails to mint fails the step before the fallback is ever evaluated. The verification
-  command is recorded in `GITHUB-APP-AUTH.md` so the next reader re-checks rather than
-  re-argues. `sync-fanout.yml` now also states that the App's **Workflows: write** grant is
-  load-bearing with no safety net: a permission edit awaiting installation approval still
-  mints on the old set, failing every fan-out until accepted. **Not** removed:
-  `notify-web-call.yml`'s declared `WEBHOOK_SECRET` input, which nothing reads. At the time
-  of this entry the nine OS-repo callers still passed it; they have since been bumped
-  (#819). Dropping the declaration is a caller-visible break either way — it changes the
-  `workflow_call` contract — so it is marked deprecated-and-ignored and comes out on the
-  next MAJOR.
-
-## [v6.0.1] - 2026-09-01
-
-### Added
-
-- **`make audit` runs the cross-shell parity contract (§9f, #682).** `parity-check.sh`
-  ran only on `make parity-check` and a weekly cron, so a false or unenforced `PARITY.md`
-  row merged clean and sat until Monday — which is how the contract promised an `Alt+C`
-  dir-jump binding for years with the gate green the whole time. Its most valuable
-  assertion is Core-only (the coverage half reads `PARITY.md` and the `CHECKS` array,
-  both in this repo), so it belongs on the blocking path; the cross-repo half self-skips
-  without a sibling `dotfiles-Windows`, exactly like §9c, and the pass line says which
-  half actually ran rather than claiming "zsh + pwsh" on a box that opened no pwsh file.
-  Not scope-guarded, for §9d's reason: `PARITY.md` is a `*.md` file and inert to
-  `ci-classify.sh`, so the very push that adds an unenforced row arrives as `--scope none`.
-  The unassertable half is reported through a new `skip_note` class (`scripts/lib/common.sh`):
-  a plain `skip` counts as a missing TOOL, so `--strict` would have failed a
-  fully-provisioned box purely because the contract was being honest about a PSReadLine
-  default — and would have disagreed with `parity-check.sh --strict`, which accepts the same
-  reported default. A gate punished for reporting honestly teaches the next author to stop
-  reporting.
-
-### Fixed
-
-- **`scripts/parity-check.sh` proves its one-to-one claim instead of asserting it (#682).**
-  The script's own comment said it "mirrors PARITY.md's `aligned` rows one-to-one — every
-  aligned row has a check here", and `PARITY.md`'s Enforcement section repeated it. Both
-  were false: **21 aligned rows, 18 checks.** Three rows had no check at all
-  (**History search**, **Word nav**, and one row covering five functions) and two were only
-  half-checked, which is worse than none because the row renders green while half of it is
-  fiction — **Dir jump** claimed `Alt+Z` _and_ `Alt+C` while the needle tested only
-  `Alt+Z`, and **Fuzzy git** claimed `gaf`/`grf`/`grsf` while the needle tested only
-  `gaf`. Honest coverage was **16 of 21**. (#682 reported 17 checks, four unchecked rows
-  and 15 of 21 — one release stale: #679 had just added **Theme**'s check. The shape of
-  the defect was identical either way.) Every check now carries the row-key of the table
-  row it enforces, and the script parses `PARITY.md` to assert the mapping in both
-  directions: an `aligned` row with no needle fails, and so does a needle whose row was
-  renamed or deleted. (Reclassifying a row does _not_ orphan its check — every status
-  populates the known set, and `deliberate`/`gap` rows may keep one, as `cheat` now does.)
-  A slug collision fails too, since one row's check would otherwise silently certify
-  another's. Several checks may share a row-key, which is what lets the five utility
-  functions, the three fuzzy-git verbs and the two word-nav directions each get a needle
-  instead of one standing in for the set. Coverage is row-level, not claim-level — a row
-  that grows a second trigger is still not forced to grow a second needle, and
-  `parity-check.sh` says so rather than overclaiming a second time. Verified the only way
-  a gate can be — negatively, in `test-core.sh`: an uncovered row, an orphaned row-key, a
-  slug collision, a misspelled status and a reclassified-but-still-checked row each produce
-  the right verdict and exit code. The status check matters more than it looks: a typo like
-  `aligend` left the row in the known set (so its check was not orphaned) while dropping it
-  out of the required set, retiring a contract row from enforcement with the gate green.
-  So does the parser's column anchoring: a Markdown-legal row indented one space parsed as
-  nothing at all, so a new `aligned` row could sit there unenforced while the gate reported
-  full coverage. Up to three leading spaces is now a row (CommonMark's limit); four or more
-  is still an indented code block, and both directions are pinned.
-
-  Two needles also proved less than their rows claimed. `Ctrl+R` on pwsh is bound **twice**
-  on purpose — PSFzf's lazy stub, then a re-assertion after atuin's init seizes the chord —
-  and the two lines are identical but for whitespace, so a presence needle was satisfied by
-  either and deleting the re-assertion left the row green while atuin kept `Ctrl+R`. Needles
-  may now demand a minimum match count (`count:2:`), which is the only thing that separates
-  those two. And key-anchoring the **Session picker** row had dropped its pwsh _behaviour_
-  needle, so `Ctrl+G` bound to anything satisfied it; the chord and the target now get a
-  needle each under the shared row-key, rather than one replacing the other.
-
-  Two needles proved less than their rows claimed in a subtler way still. `count:2:` shows
-  both `Ctrl+R` bindings exist but says nothing about **where**, and the re-assertion only
-  means anything _below_ `atuin init` — atuin ignores `ATUIN_NOBIND` on pwsh and seizes the
-  chord on init. Hoisting both bindings above the anchor satisfied the count while breaking
-  the advertised behaviour at runtime, so needles may now also demand position
-  (`after:atuin init:`), which is the one property a count cannot express. And the word-nav
-  needles matched the `vicmd` bindings four lines below the `viins` ones, so deleting the
-  contractual insert-mode binding left the row green; every keybinding needle now pins its
-  keymap (`-M viins '…'`) rather than matching whichever copy survives.
-
-  Two more needles matched something adjacent to their claim rather than the claim.
-  `Invoke-DotfilesSessionizer` appears in `10-tools.ps1`'s `provides:` header and its own
-  function definition as well as in the `Ctrl+G` handler, so the Session picker's target
-  needle proved the function _existed_ and never that the chord invoked it — deleting the
-  handler body left both its checks green. It now needles the insertion expression. And pwsh
-  restores `Ctrl+R` on **two** runtime paths after atuin — the lazy path re-binds the
-  `-Chord` stub, the already-loaded path calls `Set-PsFzfOption` — so deleting the
-  already-loaded branch left the `-Chord` count at two and the position check passing while
-  atuin kept `Ctrl+R` on that path. Both paths are needled now, each for existence _and_
-  position — the already-loaded branch only means anything below `atuin init` too, so
-  hoisting it keeps the count at two and still fails.
-
-- **Three `aligned` rows in `PARITY.md` were claiming more than they could show (#682).**
-  Found by doing the work above, since a contract nothing checks is a contract nothing
-  corrects. The three fail differently: one capability did not exist, one existed on both
-  shells but did different things, and one exists on pwsh only as a framework default.
-  **`Alt+C` never existed on either side** — the issue assumed pwsh had it via
-  PSFzf and zsh had drifted, but zsh never binds `^[c` and never sources fzf's own
-  key-bindings (there is no `eval "$(fzf --zsh)"` anywhere in `zsh/` or `lib/`), and
-  `dotfiles-Windows` sets only PSFzf's `-PSReadlineChordProvider` and
-  `-PSReadlineChordReverseHistory` — `-PSReadlineChordSetLocation` is opt-in and appears
-  nowhere in that repo. Not a divergence and not a `gap`; the claim is simply gone, and
-  the surviving `Alt+Z` needle is now key-anchored (`'^[z' _fzf_zoxide_jump`) like the
-  Ctrl+T row, because the bare widget name it used before passed even if the key moved —
-  as does **Session picker**'s, which had the same shape and was missed in the first pass.
-  **`cheat` is `deliberate`, not `aligned`** — zsh's is `alias cheat='core-help'`, Core's
-  own command index, while pwsh's queries cht.sh; same trigger, different source, and the
-  `alias cheat=` needle passed regardless of target. **Word nav** stays `aligned` but is
-  explicit that its pwsh half is a PSReadLine _default_, not configuration: nothing in
-  `dotfiles-Windows` binds Ctrl+Arrow, so that half reports as a skip carrying the reason
-  rather than a needle that cannot fail.
-
-- **`maint-run` no longer looks wedged while a step is working.** `step()` sent every
-  command's stdout and stderr to `$LOG` alone, while `log()` teed the `▶`/`✓`/`✗` lines to
-  the terminal. A foreground `maint-run` therefore printed `▶ mise upgrade` and then showed
-  **nothing at all** until the step ended. That is survivable when a step takes seconds; it
-  is not on musl, where mise's `all_compile` default (every prebuilt runtime being
-  glibc-linked) means `mise upgrade` COMPILES node/python/ruby from source — tens of minutes
-  of dead terminal, against a `MAINT_MISE_TIMEOUT` ceiling of 45 of them **per step**, three
-  mise steps deep. Nothing on screen separates "compiling V8" from "hung", so the operator
-  interrupts it; mise discards the partial build, nothing is installed, and the next run
-  starts the identical compile over. dotfiles-Alpine sat in that loop, rebuilding node
-  24.20.0 from scratch daily and never finishing it.
-
-  `step()` now MIRRORS the step to the terminal when stdout is a tty (`tee -a "$LOG"`), and
-  keeps the exact log-only path when it is not — so **the scheduled run is unchanged** and
-  only the interactive one gains output. Three properties are preserved deliberately:
-  `</dev/null` still hands every step an EOF (the guard the comment above `step()` explains);
-  the reported rc is `${PIPESTATUS[0]}`, the command's own status, not `tee`'s, because
-  `pipefail` would otherwise blame the step for a `tee` that died on a full disk; and stdout
-  is a pipe in the new arm and a file in the old — never a terminal — so a step that
-  colourizes on `isatty` still sees false and `$LOG` keeps the same clean text.
-
-- **The `mise outdated --bump` probe can no longer block on an invisible prompt.** It is the
-  one command in the run that is not a `step()` call, so it alone inherited the caller's
-  stdin — a terminal, under `maint-run` — while its stderr went to `/dev/null`. A mise that
-  decided to prompt there (an untrusted config path, a credential) asked a question nobody
-  could see and blocked until `MAINT_MISE_TIMEOUT` expired. It now takes `</dev/null` like
-  every other command in the file, which turns that into the fast non-zero rc the
-  "bump check UNAVAILABLE" gate directly below it already knows how to report.
