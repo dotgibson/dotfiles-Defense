@@ -49,10 +49,11 @@ name: lint (reusable)
 #   * Core-owned block duplication (#449). The mirror of audit-core.sh §5c: that gate catches
 #     OS-specifics leaking INTO Core, and nothing caught portable logic stranded OUTSIDE it
 #     — which is how the same direnv/gh/uv/ty block came to be hand-maintained in seven OS
-#     repos, in three drifted variants. ADVISORY for one release cycle, because unlike the
-#     leg above it is red-on-arrival by construction: callers pin the moving @v7 tag, so
-#     they see this leg before they can possibly have vendored the Core that lets them
-#     delete their copy. See the long note on that step.
+#     repos, in three drifted variants. BLOCKING since #961. It shipped ADVISORY because,
+#     unlike the leg above, it was red-on-arrival by construction: callers pin the moving
+#     @v7 tag, so they saw this leg before they could possibly have vendored the Core that
+#     let them delete their copy. It flipped only after every caller was measured clean —
+#     the measurement is on that step.
 #
 # The markdown leg (#452) shipped advisory for one release cycle for that same
 # red-on-arrival reason, and is now BLOCKING (#592). It was measured rather than assumed:
@@ -270,8 +271,8 @@ jobs:
           for f in "${files[@]}"; do echo "zsh -n $f"; zsh -n "$f" || rc=1; done
           exit $rc
 
-      # ── ADVISORY IN THIS RELEASE, BLOCKING IN THE NEXT: portable logic Core already owns,
-      # re-implemented locally. Not a linter and needs no pinned tool — it is a grep.
+      # ── BLOCKING: portable logic Core already owns, re-implemented locally. Not a linter
+      # and needs no pinned tool — it is a grep.
       #
       # Seven OS repos each hand-maintained the same direnv/gh/uv/ty init block and six the
       # same WSL probe: entirely portable zsh, maintained N times, and already drifted into
@@ -290,13 +291,28 @@ jobs:
       # test-core.sh: if Core ever loses a block, the gate stops making nine repos delete a
       # feature nobody provides.
       #
-      # WHY IT WARNS RATHER THAN FAILS, for now. The RETURN-trap leg could land blocking
-      # because the fleet was verified clean first. This one CANNOT: callers pin @v7, a
-      # moving major tag, so every OS repo sees this leg the moment auto-tag moves — and no
-      # repo can delete its copy until it has vendored the Core that replaces it. It is
-      # red-on-arrival by construction. So it warns for one release cycle, and the flip is a
-      # three-line follow-up once fleet-drift shows all nine clean.
-      - name: Core-owned block duplication (repo-owned zsh) — advisory
+      # FLIPPED FROM ADVISORY (#961). It shipped warning-only in #449 because callers pin
+      # @vN, a MOVING tag: every OS repo meets a new leg the moment auto-tag advances the
+      # alias, and none could delete its copy before it had vendored the Core that replaces
+      # it — red-on-arrival by construction. The precondition was that the fleet be measured
+      # clean first, and it is. #960 measured 6 of 8 callers still hand-rolling the WSL
+      # predicate; the six repo PRs that removed it (Alpine#185, Arch#168, Debian#71,
+      # Fedora#171, Gentoo#177, openSUSE#179) landed 2026-09-12, and Fedora#176 removed the
+      # direnv/gh/uv/ty init block that first sweep had missed — it printed two hits per
+      # file, and the WSL lines filled both. That sweep also called Gentoo's predicate dead
+      # code; it gated open/xdg-open/cdwin exactly as Debian's did, and the fix there was a
+      # swap to _core_is_wsl, not a deletion. Re-measured before flipping, with this leg's
+      # own _core_owned_block_hits over the same population this step reads — all EIGHT
+      # callers (dotfiles-MacBook and -Windows do not call this workflow), nine repo-owned
+      # zsh files, Alpine's two and one each elsewhere — through the GitHub API rather than
+      # from whichever clones happened to be local: 0 hits, 0 download failures.
+      #
+      # NOT a major. No caller is in the failing state, so nothing a consumer relies on
+      # changes meaning; tag-release.sh forces X.0.0 on a breaking changelog bullet, and that
+      # would be the wrong number for a gate that reds nobody. V8-PROPOSAL.md §3 counted
+      # three advisory legs that needed the frozen-alias mechanism; #960 took it to one and
+      # this takes it to zero.
+      - name: Core-owned block duplication (repo-owned zsh)
         working-directory: caller
         env:
           CORE_ROOT: ${{ github.workspace }}
@@ -328,20 +344,30 @@ jobs:
             done < <(_core_owned_block_hits "$f")
           done
           if [ "$hits" -ne 0 ]; then
-            echo "::warning::this repo re-implements a block Core owns (see the lines above)"
+            echo "::error::this repo re-implements a block Core owns (see the lines above)"
             echo "These moved into Core in dotgibson/dotfiles-core#449 so they stop being"
             echo "maintained once per OS repo. Delete the local copy and use the vendored one:"
-            echo "  direnv/gh/uv/ty hooks -> already run from core/zsh/00-tools.zsh (direnv)"
-            echo "                           and core/zsh/45-plugins.zsh (the completions)"
+            echo "  direnv/gh/uv/ty       -> all four already run from core/zsh/00-tools.zsh:"
+            echo "                           direnv via _cache_eval, gh/uv/ty via _cache_completion"
+            echo "                           (generated into fpath before compinit — #579)"
             echo "  WSL detection         -> if _core_is_wsl; then ... fi"
             echo "Delete only AFTER this repo has vendored a Core that carries them"
             echo "(check core.lock), or the niceties gated on them go quiet."
-            echo "This warning becomes a BLOCKING failure in the next Core release."
-            exit 0
+            echo "Blocking since dotgibson/dotfiles-core#961 — the whole fleet was measured clean first."
+            exit 1
           fi
           echo "${#files[@]} repo-owned .zsh — none re-implements a Core-owned block"
 
-      # ── ADVISORY: no repo-owned zsh reads an UNDECLARED Core HAVE_* flag.
+      # ── BLOCKING: no repo-owned zsh reads an UNDECLARED Core HAVE_* flag.
+      #
+      # FLIPPED FROM ADVISORY. It shipped warning-only in #892 because callers pin @vN, a
+      # MOVING tag, so a leg that lands blocking is red-on-arrival for every repo the moment
+      # auto-tag advances the alias — before a maintainer could act. The flip was gated on
+      # the fleet being clean, and it is: all eight lint-call callers were scanned with this
+      # leg's own `_core_have_read_hits` against the vendored have-api.txt, and the only flag
+      # any of them reads is HAVE_ATUIN, which is the one row the contract declares.
+      # dotfiles-Debian was measured through the GitHub API rather than skipped for not being
+      # checked out locally — the tightest case is exactly the one a partial sweep omits.
       #
       # THE GAP THIS CLOSES (#866). audit-core.sh §5j direction 2 asserts exactly this, and
       # it has never fired anywhere. Core's own CI checks out this repo alone, so direction 2
@@ -370,7 +396,7 @@ jobs:
       # file rather than restated here, so a flag declared in §5 reaches this leg by the same
       # sync that ships the code — and a caller whose core/ predates the file is told to sync
       # rather than judged against an allowlist it never received.
-      - name: Undeclared Core HAVE_* reads (repo-owned zsh) — advisory
+      - name: Undeclared Core HAVE_* reads (repo-owned zsh)
         working-directory: caller
         env:
           CORE_ROOT: ${{ github.workspace }}
@@ -403,19 +429,30 @@ jobs:
             hits=1
           done
           if [ "$hits" -ne 0 ]; then
-            echo "::warning::this repo reads a Core HAVE_* flag outside the declared surface (see above)"
+            echo "::error::this repo reads a Core HAVE_* flag outside the declared surface (see above)"
             echo "Core may rename or drop an undeclared flag in any release, so a read of one"
             echo "breaks silently: the guard goes false and the feature it gates goes quiet."
             echo "Two ways forward, and the first is the ask rather than a workaround:"
             echo "  1. Declare it — add the row to PORTABILITY.md §5's 'What downstream may"
             echo "     use' table in dotfiles-core, in the same change that reads it."
             echo "  2. Or stop depending on Core's probe: command -v <tool> >/dev/null 2>&1"
-            echo "This warning becomes a BLOCKING failure in the next Core release."
-            exit 0
+            exit 1
           fi
           echo "no repo-owned zsh reads an undeclared Core HAVE_* flag ($(printf '%s' "$declared" | wc -l | tr -d ' ')+1 declared)"
 
-      # ── BLOCKING: the OS capability declaration validates against Core's schema.
+      # ── BLOCKING: the OS capability declaration exists AND validates against the schema.
+      #
+      # THE MISSING CASE FLIPPED FROM ADVISORY. A MALFORMED declaration has always failed
+      # here; an ABSENT one only warned, because this leg landed one Core release before the
+      # declarations themselves did and a gate cannot demand a file the fleet has not written
+      # yet. It has now: every caller with an os/ band carries a declaration, and the two that
+      # carry none (dotfiles-Defense, dotfiles-Offense) have no os/ band either — they layer a
+      # Role band over an OS repo's, which the `[ ! -d os ]` arm above already exempts.
+      #
+      # The warning's own text has also expired and is corrected in the same change: it said
+      # Core "is running its built-in fallback rows here". Since #763 there are no fallback
+      # rows. An undeclared box does not quietly get a default any more — `up` refuses and
+      # names --links-only — so the absent declaration is a hard break, not a degradation.
       #
       # WHY HERE AND NOT IN EACH REPO'S `make lint`. Every declaring repo does have a
       # `capabilities` target, and it runs the SAME script — but no OS repo's CI invokes
@@ -469,15 +506,15 @@ jobs:
               echo "no os/ directory — a Role repo layers on an OS repo and has no OS band to declare for"
               exit 0
             fi
-            # ADVISORY, not blocking, and the same reasoning as the owned-block leg above:
-            # this lands in the fleet one Core release BEFORE the declarations do, so a
-            # blocking check here would be red-on-arrival on every OS repo, which is how a
-            # gate gets switched off. audit-core.sh §9c is the BLOCKING backstop — it sweeps
+            # BLOCKING since #960. This leg landed in the fleet one Core release BEFORE the
+            # declarations did, so it warned until every OS-band caller carried one — a
+            # blocking check on arrival would have been red on every OS repo, which is how a
+            # gate gets switched off. audit-core.sh §9c is the Core-side backstop — it sweeps
             # the fleet from Core, where the declarations cannot be missing unnoticed.
-            echo "::warning::this repo has an os/ band but no os/*.capabilities — Core is running its built-in fallback rows here"
+            echo "::error::this repo has an os/ band but no os/*.capabilities — and since dotgibson/dotfiles-core#763 Core has NO fallback rows left to run here"
             echo "Author one: see core/examples/os.capabilities.example and core/PORTING-MATRIX.md"
             echo "(dotgibson/dotfiles-core#663 defines the schema, #667 stamped the fleet)"
-            exit 0
+            exit 1
           fi
           if [ "$rc" -ne 0 ]; then
             echo "::error::os.capabilities does not satisfy Core's schema (see the FAIL lines above)"
@@ -568,7 +605,9 @@ jobs:
   # so in its own header. Core lints its own markdown (audit-core.sh §7 + a pre-commit
   # hook), so the gap was in the REUSABLE gate specifically, not in Core's hygiene.
   #
-  # ADVISORY IN THIS RELEASE, BLOCKING IN THE NEXT — and unlike the owned-block leg, this
+  # BLOCKING since #592 — it shipped advisory for one cycle, and unlike the owned-block leg this
+  # one was never a judgement call. The measurement below is the state BEFORE that flip, kept
+  # because it is the argument for warning first rather than a description of today:
   # one is not a judgement call. Measured across the fleet before landing, with each repo's
   # own config and excludes:
   #
