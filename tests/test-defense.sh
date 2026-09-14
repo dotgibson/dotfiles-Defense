@@ -912,8 +912,10 @@ contains "--help describes the script" "$out" "role layer"
 
 out="$("$REPO/bootstrap.sh" --nonsense 2>&1)"
 rc=$?
-is "an unknown argument exits non-zero" "1" "$rc"
-contains "an unknown argument is named" "$out" "unknown arg"
+# 2 is the driver's usage-error convention (core/lib/bootstrap-lib.sh :: blib_main, the
+# same split MacBook's bootstrap documents: 1 stays for real failures).
+is "an unknown argument exits 2 (usage error)" "2" "$rc"
+contains "an unknown argument is named" "$out" "unknown flag"
 
 # ─────────────────────────────────────────────────────────────────────────────
 group "check-closing-refs.sh — a PR must not close an issue it disclaims"

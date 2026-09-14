@@ -4,48 +4,27 @@
 # Distro-agnostic: does NOT install OS packages (your OS-native layer does that).
 # Idempotent. Stacks: vendored Core + your OS-native layer + DEFENSE role.
 #
-# The SHARED half of a bootstrap — link-with-backup, the Core symlink surface, the
-# managed ~/.zshrc loader — is CALLED out of core/lib/bootstrap-lib.sh, not copied.
-# That file exists because every OS repo used to hand-roll the same code and then
-# drift; this repo was drifting the same way. What stays here is the genuinely
-# Defense-specific part: the forensics host-tool probe and the band-85 role stage.
+# THE DRIVER FORM (dotgibson/dotfiles-core#976; this repo is the fleet's pilot). The shared
+# half of a bootstrap — the flags, the escalator, the Core symlink surface, the band-85 role
+# stage, the managed ~/.zshrc loader, the closing report — is core/lib/bootstrap-lib.sh ::
+# blib_main, ONE definition instead of nine hand-rolled copies. This file declares what the
+# repo is, defines the hooks that are genuinely Defense's (the forensics host-tool probe and
+# the closing case-data / login-shell notes), and hands over. `--help` prints both halves.
 #
 #   ./bootstrap.sh                 # symlinks + loader + tool/docker checks
-#   ./bootstrap.sh --links-only    # just (re)create symlinks
 #   ./bootstrap.sh --no-check      # skip the host-tool / docker probe
+#   ./bootstrap.sh --links-only    # just (re)create symlinks
 #   ./bootstrap.sh --dry-run       # print the full plan, change nothing
-#   ./bootstrap.sh --only=zsh,git  # wire only these groups
-#   ./bootstrap.sh --skip=tmux     # wire everything except these
+#   ./bootstrap.sh --only zsh,git  # wire only these groups (also --only=zsh,git)
 #   ./bootstrap.sh --strict        # exit 1 if a step the shared scaffold ran did not complete
-#     groups: zsh nvim tmux git prompt tools (the band-85 role stage rides `zsh`)
 set -euo pipefail
 
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# CONFIG and the BOOTSTRAP_* declarations below are read by blib_main in the SOURCED lib,
+# which shellcheck does not follow into — hence the SC2034 waivers on each.
+# shellcheck disable=SC2034
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
-LINKS_ONLY=0
 DO_CHECK=1
-STRICT=0
-ONLY_CSV=""
-SKIP_CSV=""
-
-for a in "$@"; do case "$a" in
-  --links-only) LINKS_ONLY=1 ;;
-  --no-check) DO_CHECK=0 ;;
-  --dry-run) BLIB_DRY=1 ;;
-  --strict) STRICT=1 ;;
-  # Stashed, not applied: the validator (blib_select) lives in the library, which cannot
-  # be sourced until the subtree guard below has run. Applied right after the source.
-  --only=*) ONLY_CSV="${a#*=}" ;;
-  --skip=*) SKIP_CSV="${a#*=}" ;;
-  -h | --help)
-    sed -n '2,20p' "$0"
-    exit 0
-    ;;
-  *)
-    echo "unknown arg: $a" >&2
-    exit 1
-    ;;
-  esac done
 
 # ── core/ subtree present? ────────────────────────────────────────────────────
 # CHICKEN-AND-EGG: this one guard cannot move into the lib — you cannot source a file
@@ -72,10 +51,41 @@ source "$DOTFILES/core/lib/ux.sh"
 # shellcheck source=core/lib/bootstrap-lib.sh
 source "$DOTFILES/core/lib/bootstrap-lib.sh"
 
-# Now that blib_select exists, validate the stashed selectors. It aborts on a malformed
-# selector or an unknown group name, so it must be called directly (never in a subshell).
-if [[ -n "$ONLY_CSV" ]]; then blib_select --only "$ONLY_CSV"; fi
-if [[ -n "$SKIP_CSV" ]]; then blib_select --skip "$SKIP_CSV"; fi
+# ── what this repo is (read by blib_main) ─────────────────────────────────────
+# shellcheck disable=SC2034
+BOOTSTRAP_NAME="Defense"
+# The band-85 role stage and defense/templates, via blib_link_role_layer — the helper
+# Offense already used while this file hand-rolled the same links (the fork the lib's own
+# comment named). No BOOTSTRAP_OS: the 80 band belongs to your OS-native repo, not this one.
+# shellcheck disable=SC2034
+BOOTSTRAP_ROLE=defense
+# Report-only, deliberately: blib_set_login_shell is correct, but it sudo's (chsh, and an
+# append to /etc/shells), and this bootstrap's contract is "does NOT install OS packages",
+# line 4 — so the closing hook names the remedy (blib_login_shell_hint) and lets the
+# operator run it. With no provisioning hook either, the driver resolves no escalator.
+# shellcheck disable=SC2034
+BOOTSTRAP_LOGIN_SHELL=0
+
+# ── hooks (called by blib_main, in its order; shellcheck cannot see that) ─────
+# shellcheck disable=SC2329
+bootstrap_usage() {
+  cat <<'USAGE'
+bootstrap.sh — wire the defensive (blue) role layer onto an already-provisioned box.
+Distro-agnostic: installs no OS packages (your OS-native layer does that). Idempotent.
+
+  --no-check      skip the host-tool / docker probe (the shared flags follow)
+USAGE
+}
+# shellcheck disable=SC2329
+bootstrap_flag() {
+  case "$1" in
+  --no-check)
+    DO_CHECK=0
+    return 0
+    ;;
+  esac
+  return 1
+}
 
 # ── Host-tool / docker probe (report only — never installs) ──────────────────
 # `command -v` answers "is this on $PATH", which is NOT the question "is this tool on
@@ -181,114 +191,21 @@ check_tools() {
   return 0
 }
 
-# ── the DEFENSE role stage (band 85) ─────────────────────────────────────────
-# The one wiring step Core knows nothing about: Core ships bands 00-69, the OS-native
-# repo lands 80-os.zsh, and this repo owns 85. Grouped under `zsh` so --skip zsh drops
-# the role stage with the rest of the shell rather than half-wiring it.
-wire_defense_stage() {
-  blib_want zsh || return 0
-  blib_say "symlinking DEFENSE role layer"
-  # v4: the loader globs NUMBERED fragments ($ZSH_CFG/NN-*.zsh). The defense role stage is
-  # band 85 — it sorts AFTER the OS layer (80-os.zsh, from the OS-native repo) and BEFORE
-  # host-local (99-local.zsh), preserving the old `… os defense local` order. Drop any stale
-  # pre-v4 unnumbered link so the loader doesn't see a dead entry.
-  if [[ -L "$CONFIG/zsh/defense.zsh" ]]; then
-    # BLIB_DRY, not the library's _blib_dry(): the underscore marks that helper private,
-    # and this is the documented public knob. Sole raw mutation in this file — every
-    # other change goes through blib_link, which honours dry-run itself.
-    if [[ "${BLIB_DRY:-0}" != 0 ]]; then
-      blib_say "would drop stale pre-v4 link: $CONFIG/zsh/defense.zsh"
-    else
-      rm -f "$CONFIG/zsh/defense.zsh"
-    fi
-  fi
-  blib_link "$DOTFILES/defense/defense.zsh" "$CONFIG/zsh/85-defense.zsh"
-  if [[ -d "$DOTFILES/defense/templates" ]]; then
-    blib_link "$DOTFILES/defense/templates" "$CONFIG/defense/templates"
-  fi
+# shellcheck disable=SC2329
+bootstrap_check() {
+  if ((DO_CHECK)); then check_tools; fi
 }
 
-wire_links() {
-  # Core's whole shipped surface, one call: the numbered zsh fragments, nvim + the vim
-  # fallback, tmux (+ tpm), starship, git, and the tools group. This repo previously
-  # linked a hand-picked SUBSET of that and silently missed the rest.
-  blib_link_core "$DOTFILES" "$CONFIG"
-  # No blib_link_os_layer: the 80 band belongs to your OS-native repo, not this one.
-  # Writes the managed ~/.zshrc AND seeds $ZDOTDIR/.zshrc — the entry file exports
-  # ZDOTDIR, so without that second file every nested zsh finds no startup files, runs
-  # zsh-newuser-install, and loads none of Core.
-  blib_write_zshrc_loader
-  wire_defense_stage
-  blib_wire_summary
+# What only this repo knows at the end. blib_login_shell_hint is the report-only guard:
+# everything above wires a zsh config, and on a box with no zsh — or with zsh installed but
+# not the login shell — every step still "succeeds" and nothing ever loads. It returns
+# non-zero when zsh is ABSENT, which tells the driver the wiring is inert and to print no
+# "complete" line; with zsh present but not the login shell it names the chsh fix and sets
+# the closing hint to "for this session: exec zsh".
+# shellcheck disable=SC2329
+bootstrap_closing() {
+  blib_say "case data lives in ~/cases (outside this repo) — run \`mkcase <name>\` to start one"
+  blib_login_shell_hint
 }
 
-# --links-only skips the host-tool/docker probe too (it's the "just wire symlinks" path);
-# without consulting LINKS_ONLY here, --links-only would still run the probe and the flag
-# would be dead. --no-check skips it independently.
-((DO_CHECK && !LINKS_ONLY)) && check_tools
-wire_links
-blib_say "case data lives in ~/cases (outside this repo) — run \`mkcase <name>\` to start one"
-
-# Everything above wires a zsh config. On a box with no zsh — or with zsh installed but not
-# the login shell — every step still "succeeds" and nothing ever loads. So this is checked
-# OUTSIDE check_tools: --no-check and --links-only skip a tool probe, but must not silence a
-# correctness guard. Non-fatal, matching how missing host tools are handled — the script is
-# idempotent by design and has to stay re-runnable on a box mid-provisioning.
-#
-# Deliberately NOT blib_set_login_shell: that helper is correct, but it sudo's (chsh, and an
-# append to /etc/shells). This bootstrap's contract is report-only — "does NOT install OS
-# packages", line 4 — so it names the remedy and lets the operator run it.
-#
-# Best-effort, and it MUST NOT abort: this file runs under `set -euo pipefail`, where
-# pipefail makes `getent … | cut` return getent's status rather than cut's. getent exits 2
-# when the user is not in the passwd DB, and is 127 when absent altogether (it is not
-# universal outside glibc) — either would take the whole bootstrap down on its last line,
-# turning the non-fatal guard below into the loudest possible failure. So every lookup is
-# guarded, in descending order of trust: getent, then /etc/passwd, then $SHELL. All three
-# may come up empty; the guard reports that as "unknown" rather than caring.
-detect_login_shell() {
-  local user shell_field=""
-  user="$(id -un 2>/dev/null || true)"
-  if [[ -n "$user" ]]; then
-    if command -v getent >/dev/null 2>&1; then
-      shell_field="$(getent passwd "$user" 2>/dev/null | cut -d: -f7 || true)"
-    fi
-    if [[ -z "$shell_field" && -r /etc/passwd ]]; then
-      shell_field="$(awk -F: -v u="$user" '$1 == u { print $7; exit }' /etc/passwd 2>/dev/null || true)"
-    fi
-  fi
-  printf '%s' "${shell_field:-${SHELL:-}}"
-}
-
-# ── closing report ────────────────────────────────────────────────────────────
-# This bootstrap installs nothing and escalates nothing, so it has no best-effort steps
-# of its own to ledger (the tool probe above is report-only by design, and Core's §5f
-# exempts this repo from blib_note_fail and blib_resolve_su for exactly that reason). But
-# the shared scaffold records ITS failures — a tpm clone behind a proxy — into BLIB_FAILED
-# as it goes, and this file used to close with "complete" over them. blib_failures_report
-# prints them together here and returns non-zero when there were any; --strict turns that
-# into exit 1, otherwise the run stays exit 0 like the rest of this report-only script.
-DEGRADED=0
-blib_failures_report || DEGRADED=1
-
-login_shell="$(detect_login_shell)"
-hint="open a new shell, or: exec zsh"
-if ! command -v zsh >/dev/null 2>&1; then
-  blib_warn "zsh is NOT installed — the config above is wired but inert; nothing reads ~/.zshrc"
-  blib_warn "  your OS-native layer owns package installation (see install/README.md)"
-else
-  if [[ "$login_shell" != *zsh ]]; then
-    blib_warn "zsh is installed, but your login shell is ${login_shell:-unknown}"
-    blib_warn "  fix: chsh -s $(command -v zsh)  — takes effect at next login"
-    hint="for this session: exec zsh"
-  fi
-  if ((DEGRADED)); then
-    blib_warn "Defense bootstrap finished WITH the misses above — the layer is wired; re-run after fixing them, then $hint"
-  else
-    blib_ok "Defense bootstrap complete — $hint"
-  fi
-fi
-if ((DEGRADED && STRICT)); then
-  blib_warn "exiting non-zero (--strict)"
-  exit 1
-fi
+blib_main "$@"

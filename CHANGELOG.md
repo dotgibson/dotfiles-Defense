@@ -228,6 +228,22 @@ under `[Unreleased]` from here.
 
 ### Changed
 
+- **`bootstrap.sh` is the fleet's pilot of Core's bootstrap driver, `blib_main`**
+  (dotgibson/dotfiles-core#976). The shared half of every bootstrap — the flag loop, the
+  escalator, the Core symlink surface, the band-85 role stage, the managed `~/.zshrc`, the
+  closing report — now runs from one definition in `core/lib/bootstrap-lib.sh`; this file
+  declares what it is (`BOOTSTRAP_ROLE=defense`, `BOOTSTRAP_LOGIN_SHELL=0`) and keeps only
+  what is genuinely Defense's: the forensics host-tool probe (`bootstrap_check`, behind
+  `--no-check` via `bootstrap_flag`) and the closing case-data note plus the login-shell
+  guard, which is now Core's `blib_login_shell_hint` (Offense carried the same one). The
+  hand-rolled band-85 stage is gone — `blib_link_role_layer` wires `85-defense.zsh` and
+  `defense/templates` and drops the stale pre-v4 link, exactly as before. Three things the
+  driver gives this repo for free: `--only zsh,git` in the space form (the old `for a in
+  "$@"` loop could only parse `--only=zsh,git`), `-n` for `--dry-run`, and the local `core/`
+  pre-commit guard on a fresh clone. One convention change: an unknown flag exits **2**
+  (usage error), not 1, which stays for real failures. Everything else on the box is
+  byte-identical: same links, same loader, same closing lines, same exit codes.
+
 - **`bootstrap.sh` closes on Core's failure tally instead of over it** (dotgibson/dotfiles-core#973).
   This bootstrap installs nothing and escalates nothing, so it had no failure ledger — and
   none of its own steps needs one; the tool probe is report-only by design. But the shared
