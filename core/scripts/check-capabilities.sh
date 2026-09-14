@@ -135,14 +135,49 @@ CAP_OPTIONAL=(
   PKG_COUNT_REFRESH PKG_COUNT_EXIT_TRUSTED
   PKG_PENDING_MATCH PKG_PENDING_FIELD PKG_PENDING_FS
   SCHEDULER_UNIT_DIR MAINT_UNATTENDED_UPGRADE
+  PROVISIONER PKG_APPLY PKG_PENDING_EXIT_NONE PKG_PENDING_EXIT_SOME
 )
+#   ── the non-mutable host (PROTOTYPE — R2 of NON-MUTABLE-HOST-PROPOSAL.md, #1004) ──
+#   Four OPTIONAL keys, accepted by this validator and READ BY NO CONSUMER YET. They exist
+#   so the three prototype declarations under scripts/research/nonmutable/ can be written
+#   honestly and validated — R2's test was whether a required key ends up a lie on an
+#   atomic, transactional or declarative host, and the answer needed somewhere to put the
+#   truth. Every existing declaration keeps validating unchanged; that is the point.
+#   PROVISIONER          mutable (the default when absent) | atomic (image-based: bootc,
+#                        Silverblue) | transactional (snapshot-based: MicroOS, Aeon) |
+#                        declarative (NixOS). What a consumer WOULD branch on: `up`
+#                        printing "staged — <PKG_APPLY> to apply" after an atomic upgrade,
+#                        core-doctor phrasing an install hint the host's way, the driver
+#                        skipping the login-shell step on declarative.
+#   PKG_APPLY            the verb that makes a STAGED change live — a reboot on atomic and
+#                        transactional hosts (`sudo systemctl reboot`), absent where
+#                        PKG_UPGRADE already activates (mutable, `nixos-rebuild switch`).
+#                        Measured 2026-09-14: `rpm-ostree install` and
+#                        `transactional-update pkg in` both return with the change staged
+#                        and nothing on PATH until the reboot.
+#   PKG_PENDING_EXIT_NONE / PKG_PENDING_EXIT_SOME
+#                        a count verb whose ANSWER IS ITS EXIT STATUS, not its lines:
+#                        `rpm-ostree upgrade --check --unchanged-exit-77` says "nothing
+#                        pending" with 77 (NONE=77); `rpm-ostree status --pending-exit-77`
+#                        says "a deployment is staged" with 77 (SOME=77). Declare ONE of
+#                        the two; the count is then 0 or 1 ("a deployment", not N
+#                        packages) and PKG_COUNT_EXIT_TRUSTED's "non-zero = could not
+#                        answer" no longer applies to that status. Both were the first
+#                        schema gap the research found, from the manual alone.
+#   PROVISIONER=declarative RELAXES ONE REQUIRED KEY: PKG_COUNT_PENDING may be absent. A
+#   declarative host has no truthful unprivileged "packages pending" verb (the answer is
+#   "what a rebuild would change", which needs root's channel), and `up` already reads an
+#   absent count verb as the -1 sentinel that keeps the nudge silent. Every other required
+#   key filled honestly on all three prototypes (nix-env -i / -e are the imperative
+#   install and remove a NixOS box does have), so nothing else relaxes.
+CAP_PROVISIONERS=(mutable atomic transactional declarative)
 # The PKG_* keys whose value is a COMMAND. --packages cross-checks the leading binary of
 # each of these against the repo's package list; the PKG_PENDING_* keys are awk data
 # (`^Inst `, `3`, `|`) and checking their first token as if it were a binary would report
 # nonsense. Kept as an explicit list rather than a `PKG_*` glob for exactly that reason.
 CAP_COMMANDS=(
   PKG_REFRESH PKG_UPGRADE PKG_INSTALL PKG_REMOVE PKG_SEARCH PKG_OWNS PKG_COUNT_PENDING
-  PKG_UPGRADE_PRE PKG_CLEANUP PKG_UPGRADE_PARTIAL PKG_COUNT_REFRESH
+  PKG_UPGRADE_PRE PKG_CLEANUP PKG_UPGRADE_PARTIAL PKG_COUNT_REFRESH PKG_APPLY
 )
 # SCHEDULER's closed enum. `none` is a real answer (a container, a box with neither
 # init), not a placeholder — it is what tells 55-maint.zsh to offer the manual verb
@@ -259,7 +294,14 @@ done < "$FILE"
 
 # Required keys: present AND non-empty. "Declared empty" is how _core_cap spells
 # "not declared", so an empty required verb is the same defect as a missing one.
+prov="$(cap_value PROVISIONER)"
+if [[ -n "$prov" ]] && ! in_list "$prov" "${CAP_PROVISIONERS[@]}"; then
+  bad "-" "PROVISIONER must be one of: ${CAP_PROVISIONERS[*]} (got: $prov)"
+fi
 for k in "${CAP_REQUIRED[@]}"; do
+  # The one relaxation the prototype schema makes (see CAP_OPTIONAL's note): a declarative
+  # host may leave the count verb out, because it has no truthful one.
+  [[ "$k" == PKG_COUNT_PENDING && "$prov" == declarative ]] && continue
   case "$SEEN" in
     *" $k "*)
       v="$(cap_value "$k")"
@@ -268,6 +310,22 @@ for k in "${CAP_REQUIRED[@]}"; do
     *) bad "-" "required key missing: $k" ;;
   esac
 done
+pen_none="$(cap_value PKG_PENDING_EXIT_NONE)"
+pen_some="$(cap_value PKG_PENDING_EXIT_SOME)"
+for pair in "PKG_PENDING_EXIT_NONE=$pen_none" "PKG_PENDING_EXIT_SOME=$pen_some"; do
+  pk="${pair%%=*}"; pv="${pair#*=}"
+  case "$pv" in
+    '') ;;
+    *[!0-9]* | 0) bad "-" "$pk must be an exit status 1-255 (got: $pv)" ;;
+    *) ((pv > 255)) && bad "-" "$pk must be an exit status 1-255 (got: $pv)" ;;
+  esac
+done
+if [[ -n "$pen_none" && -n "$pen_some" ]]; then
+  bad "-" "declare ONE of PKG_PENDING_EXIT_NONE / PKG_PENDING_EXIT_SOME — a verb answers with one status, not two"
+fi
+if [[ -n "$pen_none$pen_some" && -z "$(cap_value PKG_COUNT_PENDING)" ]]; then
+  bad "-" "PKG_PENDING_EXIT_* describes PKG_COUNT_PENDING's exit status, which is not declared"
+fi
 
 # PKG_COUNT_EXIT_TRUSTED is a FLAG, and the only honest value is 1. Anything else would
 # be read as "declared", so a `PKG_COUNT_EXIT_TRUSTED=0` meaning to switch it OFF would
