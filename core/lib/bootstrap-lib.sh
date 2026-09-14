@@ -111,6 +111,28 @@ blib_is_wsl() {
 # disturb the cross-second ordering the sort relies on.
 _blib_backup_suffix() { printf 'pre-dotfiles.%s.%s' "$(date +%Y%m%d-%H%M%S)" "$$"; }
 
+# ── mutate only what is not already right ─────────────────────────────────────
+# A bootstrap is "idempotent" only if its SECOND run invokes no mutating command at all,
+# and the scaffolded test/check-links.sh (scripts/new-os-repo.sh) holds it to exactly
+# that: rm/ln/mv/cp/mkdir/chmod are shimmed on the second run and any invocation is red.
+# An unconditional `chmod +x` or `mkdir -p` is a no-op on disk and a defect under that
+# witness, so the wiring below asks first. `find -prune -perm 700` is the POSIX mode
+# test (no `stat -c`, no `--printf`; this runs on the macOS lane too).
+_blib_ensure_exec() { # _blib_ensure_exec <file>… — chmod +x only what lacks it
+  local f
+  for f in "$@"; do
+    [[ -f "$f" && ! -x "$f" ]] || continue
+    chmod +x "$f" 2>/dev/null || true
+  done
+}
+_blib_private_dir() { # _blib_private_dir <dir>… — mkdir -p and chmod 700, each only when needed
+  local d
+  for d in "$@"; do
+    [[ -d "$d" ]] || mkdir -p "$d"
+    [[ -n "$(find "$d" -prune -perm 700 2>/dev/null)" ]] || chmod 700 "$d"
+  done
+}
+
 # ── symlink with backup ───────────────────────────────────────────────────────
 # blib_link <src> <dst> — replace an existing SYMLINK in place; back up a real file
 # to <dst>.pre-dotfiles.<stamp>.<pid> first (see _blib_backup_suffix), ANNOUNCING the
@@ -549,7 +571,12 @@ blib_migrate_v4() {
     [[ -L "$zdir/$m.zsh" ]] && rm -f "$zdir/$m.zsh" "$zdir/$m.zsh.zwc"
   done
   # stale pre-v4 compdump in the config tree (10-options.zsh now writes it to $XDG_CACHE_HOME).
-  rm -f "$zdir/.zcompdump" "$zdir/.zcompdump.zwc"
+  # Only when one is there: an unconditional rm is a mutating command on every run, which
+  # the scaffolded check-links.sh's second-run witness reads as a change (#999).
+  for m in "$zdir/.zcompdump" "$zdir/.zcompdump.zwc"; do
+    [[ -e "$m" ]] && rm -f "$m"
+  done
+  return 0
 }
 
 # ── symlink the vendored Core surface ─────────────────────────────────────────
@@ -589,7 +616,7 @@ blib_link_core() {
     # the bindings here: this comment named "prefix w/T/f" and had already fallen behind `?`.
     if [[ -d "$dotfiles/core/tmux/scripts" ]]; then
       blib_link "$dotfiles/core/tmux/scripts" "$config/tmux/scripts"
-      _blib_dry || chmod +x "$dotfiles"/core/tmux/scripts/*.sh 2>/dev/null || true
+      _blib_dry || _blib_ensure_exec "$dotfiles"/core/tmux/scripts/*.sh
     fi
     # tmux plugin manager (tpm) — clone once so the theme + resurrect/continuum load.
     # Plugins still need one install pass: `prefix + I` in tmux.
@@ -667,11 +694,11 @@ blib_link_core() {
 
     # cross-OS helper scripts from Core onto PATH (~/.local/bin).
     if [[ -d "$dotfiles/core/bin" ]]; then
-      _blib_dry || mkdir -p "$HOME/.local/bin"
+      _blib_dry || [[ -d "$HOME/.local/bin" ]] || mkdir -p "$HOME/.local/bin"
       for s in clip clip-paste; do
         if [[ -f "$dotfiles/core/bin/$s" ]]; then
           blib_link "$dotfiles/core/bin/$s" "$HOME/.local/bin/$s"
-          _blib_dry || chmod +x "$dotfiles/core/bin/$s" 2>/dev/null || true
+          _blib_dry || _blib_ensure_exec "$dotfiles/core/bin/$s"
         fi
       done
     fi
@@ -698,8 +725,7 @@ blib_link_core() {
         blib_say "would link core/ssh/config into ~/.ssh (0700 ~/.ssh + sockets + config.d)"
       else
         blib_say "symlinking core/ssh/config"
-        mkdir -p "$HOME/.ssh/sockets" "$HOME/.ssh/config.d"
-        chmod 700 "$HOME/.ssh" "$HOME/.ssh/sockets" "$HOME/.ssh/config.d"
+        _blib_private_dir "$HOME/.ssh" "$HOME/.ssh/sockets" "$HOME/.ssh/config.d"
         blib_link "$dotfiles/core/ssh/config" "$HOME/.ssh/config"
         blib_ok "ssh/config linked into ~/.ssh (generate a key with: ssh-keygen -t ed25519)"
       fi
@@ -774,7 +800,7 @@ blib_link_os_layer() {
   # first-match-wins means a lower number beats this one. Directory created here rather
   # than relied upon: `--only zsh` skips blib_link_core, which is what creates it.
   if blib_want tools && [[ -f "$dotfiles/ssh/os.conf" ]]; then
-    _blib_dry || { mkdir -p "$HOME/.ssh/config.d"; chmod 700 "$HOME/.ssh" "$HOME/.ssh/config.d"; }
+    _blib_dry || _blib_private_dir "$HOME/.ssh" "$HOME/.ssh/config.d"
     blib_link "$dotfiles/ssh/os.conf" "$HOME/.ssh/config.d/50-os.conf"
   fi
 }
@@ -1550,10 +1576,23 @@ blib_install_core_guard() {
     blib_warn "core-guard: $root already has a custom pre-commit hook — left as-is"
     return 0
   fi
+  # Already installed, byte for byte, and executable: nothing to do — and nothing to
+  # WRITE. Rewriting an identical hook on every run is invisible on disk but not to an
+  # idempotency witness that logs every mkdir/chmod (the scaffolded check-links.sh).
+  if [[ -x "$hook" ]] && [[ "$(cat "$hook" 2>/dev/null)" == "$_blib_core_guard_hook" ]]; then
+    return 0
+  fi
   # Surface a failure to create the hooks dir instead of silently returning success
   # (a returned 0 would leave the guard uninstalled with no signal to the caller).
-  mkdir -p "$hooks" || { blib_warn "core-guard: $root — could not create $hooks — skipped"; return 1; }
-  cat >"$hook" <<'HOOK'
+  [[ -d "$hooks" ]] || mkdir -p "$hooks" || { blib_warn "core-guard: $root — could not create $hooks — skipped"; return 1; }
+  printf '%s\n' "$_blib_core_guard_hook" >"$hook"
+  _blib_ensure_exec "$hook"
+  blib_ok "core-guard: pre-commit installed in ${root##*/}"
+}
+
+# The hook's text, held once so blib_install_core_guard can compare before it writes;
+# a heredoc into a variable rather than straight into the file, for that reason only.
+_blib_core_guard_hook="$(cat <<'HOOK'
 #!/usr/bin/env bash
 # dotfiles-core-guard — installed by dotfiles-core; do not edit by hand.
 # Refuses commits that modify the vendored core/ tree, which is OVERWRITTEN on the
@@ -1576,9 +1615,7 @@ staged=$(git diff --cached --name-only -- core/ 2>/dev/null) || exit 0
 } >&2
 exit 1
 HOOK
-  chmod +x "$hook"
-  blib_ok "core-guard: pre-commit installed in ${root##*/}"
-}
+)"
 
 # ── the driver ────────────────────────────────────────────────────────────────
 # blib_main "$@" — run a whole OS/Role bootstrap: the shared skeleton every bootstrap.sh in
