@@ -278,6 +278,33 @@ _set_scope() { # _set_scope <comma-list: shell,nvim,atuin | all | none>
     SCOPE_NVIM=1
     SCOPE_ATUIN=1
   }
+  # ── SCOPE_TOOLING: DERIVED from the three axes above, deliberately not a fourth token ──
+  # The cross-cutting bash-tooling fragments (the fan-out, the scaffold, the generators, the
+  # vocabulary register) belong to no single area: they test scripts/ itself, which can
+  # re-gate any shipped module. They were gated by NOTHING, which made `none` — documented as
+  # the cheapest scope — cost 375.3s, of which 311.9s (83%) was five such fragments. That is
+  # what made the --json self-run fixture in scripts/test/52-atuin-autostart.sh expensive
+  # enough to read as a hang on macOS (#467).
+  #
+  # ON FOR ANY AREA, off only for the explicit minimal run. That is the whole rule, and it is
+  # chosen so CI COVERAGE DOES NOT MOVE: ci.yml builds its scope from ci-classify.sh, whose
+  # `scripts/*` arm sets shell=true — so every change that can reach this tooling already
+  # selects an area, and these fragments still run. The one case that changes is a docs-only
+  # diff, where ci-classify yields no area and ci.yml passes `none`; the generators' OUTPUT is
+  # still held by audit-core.sh §9d/§9g/§9h/§9i/§9j, which are static sections outside the
+  # scope system entirely, so what is skipped is behavioural tests of generators that a
+  # markdown edit cannot reach.
+  #
+  # A TOKEN would have been the wrong shape. It would add a fourth axis to ci-classify.sh's
+  # output, whose exact three-line format scripts/test/22-ci-classify.sh pins, and to three
+  # separate scope assemblies in ci.yml — a coordinated five-file change whose failure mode is
+  # a silently narrowed CI run. Derived, the fail-safe paths above carry it for free: an
+  # unknown token and an empty scope both force all three axes on, so they force this on too.
+  # SC2034: assigned here and read by the SOURCED test fragments, which ShellCheck cannot
+  # follow from this file. The three axes above escape the same diagnostic only because
+  # the condition on this very line reads them.
+  # shellcheck disable=SC2034
+  if ((SCOPE_SHELL || SCOPE_NVIM || SCOPE_ATUIN)); then SCOPE_TOOLING=1; else SCOPE_TOOLING=0; fi
 }
 
 # Pre-seed the EMPTY plugin dirs the hermetic zsh tests + bench need so 45-plugins.zsh's
@@ -676,6 +703,34 @@ _core_gitleaks_policy_hits() { # _core_gitleaks_policy_hits <file>
   done <"$f"
 }
 
+# ── _core_vendor_consumer_hits: does a sibling actually RUN a vendored entry script? ──
+# _core_vendor_consumer_hits <repo-dir> <basename> — print each RUNNABLE repo-owned file in
+# <repo-dir> that names <basename> on a non-comment line, one per line, relative to the repo.
+# The population is what a repo EXECUTES: Makefile, .pre-commit-config.yaml, its workflows,
+# test/ and tests/, and top-level *.sh. Prose does not count (README, CHANGELOG), and neither
+# does the vendored core/ tree itself — a mention is not a consumer, which is the finding
+# audit §5l exists for (#975): scripts/check-links.sh shipped to nine boxes for nine releases
+# with its consumer named in core.vendor "as intent rather than as a file", and nothing ran it.
+# Comment lines are skipped the way _core_gitleaks_policy_hits skips them, `@#` included, so
+# a recipe's own explanation of why it calls the script cannot satisfy the check.
+_core_vendor_consumer_hits() { # _core_vendor_consumer_hits <repo-dir> <basename>
+  local dir="${1:-}" name="${2:-}" f line body
+  [[ -d "$dir" && -n "$name" ]] || return 0
+  for f in "$dir"/Makefile "$dir"/.pre-commit-config.yaml "$dir"/.github/workflows/*.yml \
+    "$dir"/.github/workflows/*.yaml "$dir"/test/*.sh "$dir"/tests/*.sh "$dir"/*.sh; do
+    [[ -f "$f" ]] || continue # unmatched glob stays literal (nullglob is off)
+    while IFS= read -r line; do
+      body="${line#"${line%%[![:space:]]*}"}"
+      case "$body" in '#'* | '@#'*) continue ;; esac
+      case "$line" in *"$name"*)
+        printf '%s\n' "${f#"$dir"/}"
+        break
+        ;;
+      esac
+    done <"$f"
+  done
+}
+
 # ── _audit_ls: the file set the CONTENT gates inspect ─────────────────────────
 # Tracked files PLUS untracked-but-not-ignored ones. The distinction matters, and it
 # cost a real round-trip: a brand-new script is invisible to `git ls-files` until the
@@ -1049,7 +1104,7 @@ _core_helper_called() { # _core_helper_called <file> <helper>
 # checkout, and it costs one subprocess rather than a stat per file. Both sides are
 # normalised through `cd`/`pwd -P` before the prefix test: git records the path it was
 # HANDED, which can differ from <repo-root>'s spelling by a symlink, and a textual compare
-# would then silently prune nothing — the vacuous-pass shape §1c's own canary exists for.
+# would then silently prune nothing — the vacuous-pass shape §1f's own canary exists for.
 #
 # SCOPE IS LINKED WORKTREES OF THIS REPO. An unrelated clone parked under this tree is not in
 # git's registry and stays reportable on purpose: nobody registered it, so "is this meant to
