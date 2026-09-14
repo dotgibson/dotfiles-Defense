@@ -1309,7 +1309,41 @@ blib_sudo_keepalive_start() {
     blib_say "would prime sudo and keep its timestamp warm for the run"
     return 0
   }
-  "$su" -v || return 1
+  # THE PRIME, chosen by how this run can answer a prompt (#1018).
+  #
+  # `sudo -v` is the right prime when a person is at a terminal: it authenticates once,
+  # visibly, and refreshes nothing else. It is the WRONG probe for a run with no terminal —
+  # and not only because it cannot read a password. sudoers' `verifypw` defaults to `all`:
+  # `-v` prompts unless EVERY rule matching the user is NOPASSWD, and Fedora's stock
+  # `%wheel ALL=(ALL) ALL` beside a NOPASSWD drop-in is exactly one passworded rule too
+  # many. Measured on a booted bootc host (NON-MUTABLE-HOST-PROPOSAL.md, R1): `sudo -l`
+  # listed NOPASSWD for every command and `sudo -n true` succeeded, and this helper still
+  # died — "a terminal is required to read the password" — and the driver reported
+  # "authentication failed" for a run that had never been asked for a password.
+  #
+  # So, without a terminal: `-n -v` first (validates non-interactively — a warm ticket, or
+  # rules that satisfy verifypw), then `-n true` (a NOPASSWD user whom `-v` alone would
+  # prompt — the case above; the refresher below then keeps failing its `-n -v` harmlessly,
+  # since every command is passwordless anyway). `-n true` is a fallback, not the first
+  # probe, for the same reason the refresher uses `-v`: a sudoers restricted to the
+  # provisioning commands denies `true`. With SUDO_ASKPASS set, `-A -v` is sudo's own
+  # documented non-interactive path. Each failure says which of the three it was; the
+  # driver's line after it ("cannot provision packages") is the consequence, not the cause.
+  # "A terminal" means a CONTROLLING terminal — sudo reads the password from /dev/tty, not
+  # from stdin, so `curl … | bash` at a real terminal must still get the interactive prime.
+  if { : </dev/tty; } 2>/dev/null; then
+    "$su" -v || return 1
+  elif [[ -n "${SUDO_ASKPASS:-}" ]]; then
+    "$su" -A -v || {
+      blib_warn "sudo: the askpass helper did not authenticate (SUDO_ASKPASS=$SUDO_ASKPASS)"
+      return 1
+    }
+  else
+    "$su" -n -v 2>/dev/null || "$su" -n true 2>/dev/null || {
+      blib_warn "sudo needs a password and there is no terminal to ask on — run from a terminal, set SUDO_ASKPASS to a helper, or grant this user NOPASSWD for the run"
+      return 1
+    }
+  fi
   # `kill -0 "$$"`: $$ is the PARENT shell's pid even inside this background subshell, so
   # the refresher stops when the bootstrap exits even if the caller's trap is missed.
   # stdio redirected on purpose: the refresher OUTLIVES the call that started it, and a
