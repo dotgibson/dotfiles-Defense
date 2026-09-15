@@ -134,3 +134,28 @@ _core_cap() {
   local _v="${_CORE_CAP[$1]:-}"
   print -r -- "${_v:-${2-}}"
 }
+
+# _core_cap_staged — the STAGED question a non-mutable host has and a mutable one never
+# had (NON-MUTABLE-HOST-PROPOSAL.md §4.2, R5): is a change already waiting for PKG_APPLY
+# (a reboot)? Returns 0 = staged, 1 = idle, 2 = this host declares no PKG_APPLY_PENDING —
+# the nine mutable repos, and NixOS, where nothing stages. The verb answers by EXIT
+# STATUS: `rpm-ostree status --pending-exit-77` with PKG_APPLY_PENDING_EXIT=77 on bootc,
+# `test -e /run/reboot-needed` (exit 0 = staged, the default) on MicroOS. Both are
+# user-runnable and cheap (measured).
+#
+# It lives HERE, in band 02, because both consumers are behind it — core-doctor's install
+# hint is band 30, `up` and the nudge are band 60 — and because the unit suites source this
+# file beside each of them. The declared value is word-split (`${=cmd}`), never eval'd:
+# a declaration is data. Output is discarded (only the status is the answer) and stdin is
+# pinned, the same unpromptable rule 60-update.zsh's probes follow — this runs from the
+# once-a-day refresh, where a prompt nobody can see would block forever.
+_core_cap_staged() {
+  emulate -L zsh
+  local cmd want rc
+  cmd="${_CORE_CAP[PKG_APPLY_PENDING]:-}"
+  [[ -n "$cmd" ]] || return 2
+  want="${_CORE_CAP[PKG_APPLY_PENDING_EXIT]:-0}"
+  { ${=cmd} >/dev/null 2>&1 } </dev/null
+  rc=$?
+  [[ "$rc" == "$want" ]]
+}

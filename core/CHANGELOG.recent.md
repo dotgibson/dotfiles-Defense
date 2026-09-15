@@ -5,10 +5,82 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v7.5.0 … v7.2.0), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v7.6.0 … v7.3.0), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v7.6.0] - 2026-09-15
+
+### Added
+
+- **`up`, the shell-start nudge, the maint runner and `core-doctor` learn the staged
+  host** (#1049, runbook step 1 of `NON-MUTABLE-HOST-PROPOSAL.md` §4.6). Three optional
+  declaration keys — `PROVISIONER`, `PKG_APPLY`, `PKG_APPLY_PENDING` (+ `_EXIT`) — are read
+  for the first time, and every branch is on a key the nine mutable repos never declare, so
+  their behaviour and their nudge cache are byte-identical. On an atomic (bootc) or
+  transactional (MicroOS) host: `up` closes with `staged — reboot to apply: <PKG_APPLY>`
+  (the verb is printed, never run), `up -n` with no count verb says the host stages instead
+  of "nothing to upgrade", and the nudge prints **`󰚰 update staged — reboot to apply`** in
+  place of a count. The STAGED question is asked by the refresh (`_pkgup_refresh`, and
+  the maint runner after its optional apply) and cached as lines 3–4 of `pkg-updates`
+  (`staged`/`idle` + the kernel's boot id), so the per-shell path stays fork-free and a
+  reboot silences the line at the next shell. `MAINT_UNATTENDED_UPGRADE` under `atomic`
+  is stage-only and logs `staged — reboot to apply (never run by this runner)`;
+  `declarative` (NixOS) is treated as mutable, `_pkgup_mgr` answers the `PROVISIONER`
+  token when no manager is on PATH (so `up` no longer refuses NixOS), and `core-doctor`'s
+  install hint says "reboot to use" over a staged change and "add it to `home.packages` /
+  `environment.systemPackages`" on a declarative host. Unit tests are the R5 shim replay:
+  the research declarations' package half against stub managers answering with the
+  measured exit statuses. (`zsh/02-capabilities.zsh` `_core_cap_staged`,
+  `zsh/60-update.zsh`, `maint/dotfiles-maint.sh`, `zsh/30-functions.zsh`,
+  `scripts/test/{65-functions,73-maint-runner,74-zsh-helpers}.sh`)
+
+- **The R4 harness for the non-mutable host research, and its answer** (#1004). Two
+  prototype patches under `scripts/research/nonmutable/r4/` give `dotfiles-Fedora` and
+  `dotfiles-openSUSE` an atomic / transactional _variant_ (a host marker, a second
+  declaration relinked by `bootstrap_wire_pre_loader`, a staging path, a "reboot to
+  apply" line); `scripts/research/nonmutable-variant.sh` applies and runs them on the
+  booted guests, and `research-nonmutable-vm.yml`'s `r4=true` input drives the run,
+  reboot and re-run. Measured verdict, in `NON-MUTABLE-HOST-PROPOSAL.md` §5: **variant**
+  (118 + 18 and 65 + 10 lines; NixOS stays a new repo). The `trailing-whitespace`
+  pre-commit hook now leaves `*.patch` alone — a blank diff context line is a lone space.
+
+- **`PKG_APPLY_PENDING` / `PKG_APPLY_PENDING_EXIT`, the staged-change probe, for the
+  non-mutable host research** (R5 of `NON-MUTABLE-HOST-PROPOSAL.md`, #1004).
+  `scripts/check-capabilities.sh` accepts the pair (optional; the probe needs `PKG_APPLY`
+  beside it, the exit is 1–255) and lets `PKG_COUNT_PENDING` be absent when it is
+  declared — on an atomic host the "is there something newer" verb is root-only
+  (measured), so the nudge reports the staged state instead. Read by no consumer yet; the
+  bootc and MicroOS prototypes under `scripts/research/nonmutable/` declare it. Also the R5
+  harness (`scripts/research/nonmutable-r5.sh`, the VM legs' `r5=true`, a registry-backed
+  bootc origin). (`scripts/check-capabilities.sh`, `examples/os.capabilities.example`,
+  `scripts/test/55-capabilities.sh`)
+
+- **The R6 harness for the non-mutable host research, and the research phase's close**
+  (#1004). `scripts/research/nonmutable-r6.sh` runs the reusable `bootstrap-test.yml` legs'
+  own recipes inside the three container images against the R4 variant, plus the same
+  stubbed run with `BOOTSTRAP_PROVISIONER` forced — the seam the variant patches carry so
+  a container can reach the staging path at all; `research-nonmutable.yml`'s `r6=true`
+  drives it. `NON-MUTABLE-HOST-PROPOSAL.md` §5 carries the CI matrix a target is born
+  with, the VM-only gap list, and the note that every exit criterion is met — the next
+  step is the §4 rewrite to PROPOSED.
+
+- **`NON-MUTABLE-HOST-PROPOSAL.md` is PROPOSED** (#1004). §4 is now the proposal — a
+  minor, not a major: the six optional capability keys (shipped), three consumer changes
+  (`up` and the nudge, the maint runner, `core-doctor`), one CI input
+  (`bootstrap-test.yml` `provisioner:`), atomic / transactional variants for
+  `dotfiles-Fedora` and `dotfiles-openSUSE`, and a `dotfiles-NixOS` repo with the
+  home-manager boundary written down — with §4.6 as the per-repo runbook and every line
+  citing §5's measurements. The former §6 and §8 stay as the record of what a major would
+  have cost and what was asked.
+
+### Fixed
+
+- **The `~/.zshrc` loader's backup is counted** (#1026). `blib_write_zshrc_loader` backed up
+  a pre-existing real `~/.zshrc` and warned about it, but never bumped `BLIB_BACKED`, so the
+  closing tally said `0 backed up` on the same run that printed the backup (the R3 research
+  run on Fedora exposed it). Every backup site now counts; the bootstrap-lib suite asserts it.
 
 ## [v7.5.0] - 2026-09-14
 
@@ -1170,157 +1242,3 @@ repo-meta and stays upstream:
   every external action in the tree (`actions/checkout`, `actions/cache`,
   `actions/create-github-app-token`) already resolves to `using: node24` at its pinned SHA.
   (#816)
-
-## [v7.2.0] - 2026-09-08
-
-### Added
-
-- **The `core:theme:gen` marker grammar learns a second comment syntax, so the zebar palette
-  — the last hand-authored copy of Core's colours — is generated too (#926, closing #857).**
-  Every consumer up to #857 was `#`-commented (toml, yml, zsh, sh, conf), so the grammar was
-  written for `#` and that looked like a property of the tool rather than an accident of which
-  files happened to carry blocks. **CSS has no `#` comment** — `#` there begins an id selector
-  — so `dotfiles-Windows`' `styles.css` could not carry a marker in any form.
-  **The style is registered nowhere, which is the whole shape of the change.** `build_file`
-  echoes both markers **verbatim** — it never writes them — so the generator never needs to
-  know which syntax a file uses. Only the matchers do, and they simply accept either. The
-  fourth registry column #926 first proposed would have stored a fact in two places, and the
-  copy in the file is the one that decides.
-  The pattern was restated in **three** greps; it is defined once now, which is how the
-  `#`-only assumption survived unnoticed in the first place.
-  **Two defects surfaced only by running it.** `*.css` was missing from the reverse scan's
-  file set, so a stray CSS marker was invisible to the gate that exists to find exactly that.
-  And the scan took the block id as the last whitespace-separated field — which on this syntax
-  is the closing `*/`, so every CSS block would have reported as unregistered under a name no
-  registry could ever carry.
-  An unterminated `/*` is deliberately **not** a marker: a line opening a comment it never
-  closes would swallow the generated block into it, leaving a file that still parses while
-  rendering nothing.
-  Nothing drifted — all eleven values already agreed, so this is pure gating, and a
-  hand-edited hex in the bar now exits 1.
-
-- **`Alt+C` — cd into a subdirectory — is real on both shells, after years of being advertised
-  and bound by neither (#808).** `PARITY.md` listed it as `aligned` beside `Alt+Z`; #682
-  established that **zsh had never bound `^[c`** and never sourced fzf's own key-bindings (the
-  `FZF_ALT_C_*` exports that would have configured fzf's stock widget were deleted in v6.0.0 as
-  dead config), and that `dotfiles-Windows` set only the provider and reverse-history chords.
-  #682 deleted the claim rather than implementing it; this implements it.
-  **It is not a second key for `Alt+Z`.** `Alt+Z` is a frecency jump to anywhere zoxide has
-  seen; `Alt+C` is scoped below `$PWD` and finds directories zoxide has never visited. Different
-  intents, and an operator arriving from stock fzf or PSFzf expects the latter here.
-  `_fzf_cd_dir` follows the three sibling widgets exactly, including the guard: bound
-  unconditionally, so it warns in Core's voice rather than piping an unset `$FD_BIN` into a
-  missing fzf. `.git` is excluded for the file picker's reason — a repo's object store is
-  thousands of directories nobody wants to cd into.
-  **It gets its own `PARITY.md` row, not a widened `Dir jump`.** #808 predates #809, which made
-  every row a single claim precisely so a row could not outgrow its needles; folding `Alt+C`
-  back into `Dir jump` would recreate the shape that let `Alt+C` hide behind `Alt+Z`'s needle
-  for years. The pwsh needle greps the **`Set-PsFzfOption` argument**, not the chord string:
-  `Alt+c` also appears on the lazy-load stub's line, so a chord match would stay green if the
-  real binding were deleted.
-- **`core status --deep` — verify the COMMITTED `core/` against upstream, not just against
-  HEAD (#797).** The existing Integrity row compares the **worktree** to HEAD: it catches the
-  hazard operators actually hit (a hand-edit the next `make sync` clobbers) and is offline and
-  instant, which is most of `core status`'s value. It cannot catch an edit that was
-  **committed** — a bad `git subtree pull`, a hand-edit that got committed, a conflict resolved
-  wrongly. `--deep` fetches the pinned `core_sha` and answers that half.
-  **Tree OIDs, not a file-by-file diff.** `core-integrity.sh` already frames the question as
-  _"the git tree object of `HEAD:core`"_, and git trees are content-addressed — so an OID
-  computed in the fetched clone equals the local one exactly when the content does. No
-  materialisation, no `checkout-index`, and no diff binary (#572).
-  **The filter comes from the fetched commit, never from anything vendored.** #676 removed
-  `core-vendor.sh` from the vendor set because a gate resolving trees in Core's object store
-  cannot run in a repo that has none; reading it out of the commit just fetched sidesteps that,
-  and a `core_sha` predating the allowlist carries no such file, so the comparison falls
-  through to the whole tree and spans the migration with no flag day.
-  **Opt-in, and never on the default path** — it is the only row that touches the network, and
-  it carries a 20s ceiling. It **degrades, never errors**: offline, no git, a sha upstream will
-  not serve → a stated `unverifiable` and exit 0. The one exception is a malformed `core.lock`,
-  which is `broken`: a `core_sha` that is not 40 hex characters is a defect in the checkout,
-  not a fact about the network, and reporting it as "could not check" would launder it.
-  `--json` grows `.integrity.deep` as a **sibling** key with its own token set
-  (`verified`/`differs`/`broken`/`na`/`unverifiable`), leaving `.integrity.status` untouched —
-  the never-widen rule `_core_doctor_json` established. It is `null` when `--deep` was not
-  asked for, so "we did not look" stays distinguishable from "we looked and it was fine".
-- **`gen-theme.sh` reaches `dotfiles-MacBook`'s sketchybar palette, so the last hand-authored
-  copy of the Tokyo Night values is generated (#857).** `theme/palette.toml` is meant to be the
-  only place a hex is authored — the rule `CLAUDE.md` states and `audit-core.sh` §9d enforces.
-  `sketchybar/colors.sh` sat outside it entirely: no `core:theme:gen` block, so §9d had never
-  looked at it, held in step with Core by its own third line reading _"matched to
-  core/starship + core/tmux"_. That is the construction #693 and #682 exist to end, and #679's
-  own note (_"a comment is not a gate"_) was written about this very palette.
-  **Nothing drifted.** All twelve values already agreed with the palette, verified before and
-  after — this is pure gating, which is the good moment for it. A hand-edited hex in the bar
-  now exits 1 where previously nothing anywhere read the file.
-  The registry gained a third column naming the sibling repo a row's path is relative to
-  (empty = Core, which is every pre-existing row), and `--fleet DIR` says where the siblings
-  live — defaulting to Core's parent, the convention `gen-porting-matrix.sh` and
-  `parity-check.sh` already use. `emit_sketchybar_colors` renders sketchybar's `0xAARRGGBB`
-  form, with the alpha **per entry** rather than constant: the bar background is deliberately
-  translucent (`0xee`) over the storm black.
-  **An absent sibling is a reported skip, never a silent pass.** `--check` returns **3** and
-  names the repo it could not open; §9d classifies that through `skip_env`, the way §9h and §9i
-  already classify theirs, so `--strict` reads it as "clone the sibling" rather than "install a
-  tool". Real drift outranks it — 3 is only returned when nothing else went wrong — and that
-  precedence is pinned by a test, because a gate that reported the environment while a defect
-  sat in the tree would be worse than one that reported neither.
-
-### Changed
-
-- **`dotfiles-Windows`' zebar palette is NOT covered by #857, and the reason is worth
-  recording.** The marker grammar is `#`-comment-only —
-  `^[[:space:]]*#[[:space:]]core:theme:gen …` — which every current consumer satisfies (toml,
-  yml, zsh, sh, conf). CSS has no `#` comment, so `styles.css` cannot carry a marker at all.
-  The issue's own scope note asked whether the **renderer** set covered both forms; the actual
-  obstacle is one layer down, in the grammar that `marker_id`, `marker_indent`, preflight and
-  #906's reverse scan all share. Split out rather than bolted on.
-
-### Fixed
-
-- **`PORTING-MATRIX.md`'s `fleet-versions` table was the one generated block that was not a
-  prettier fixed point, so two gates disagreed about it (#836).** `gen-porting-matrix.sh`'s own
-  header states the rule — markdown is emitted in prettier's **aligned** form because conform
-  runs prettierd on save, _"so an unpadded table would be re-padded on the next save and read
-  as drift"_ — and `_table` exists to do it. `render_fleet_versions` (#914) printed raw
-  `printf '| %s | … |'` rows instead, bypassing it.
-  The consequence was a loop, not a cosmetic wart: open `PORTING-MATRIX.md` in Core's own
-  nvim, save, and prettierd re-pads the block; §9h then calls that drift; `make
-  gen-porting-matrix` puts it back unpadded; prettierd re-pads it again. Each gate correct on
-  its own terms. `prettier --check` now reports the file clean and `--check` is green on the
-  same bytes.
-  **This supersedes what #836 recorded.** That issue described "two pre-existing non-fixed-point
-  spots in the hand-written prose … unrelated to the generated regions". Both prose spots are
-  gone, and every remaining complaint was inside a generated block that did not exist when the
-  issue was filed. Three of #836's five items had likewise been closed in passing — the
-  openSUSE `uv` cell now carries its ²¹ mark, `_CORE_DOCTOR_OPTIN` is gated by §9p plus
-  `test/65-functions.sh`, and `dotfiles-Debian`'s workflow no longer hard-codes a footnote
-  number.
-  The regression guard asserts alignment **without prettier**, which the suite cannot depend
-  on: in an aligned table every row of a block renders to the same width, so one unpadded row
-  shows up as a second distinct width. Counted in code points rather than bytes, because the
-  packages table's superscripts would make a byte count call that table ragged the moment the
-  helper is reused. Reverting the generator gives 5 distinct widths and reds.
-  The fleet-versions row assertions also stop matching fixed strings: padding widths move
-  whenever any value in a column changes length, so the test now asserts **cells**, which is
-  what it always meant.
-
-- **The freshness bot's `fleet-versions` job could never finish on a runner (#917).** #914 added
-  a job that re-probes the recorded fleet package versions, writes
-  `scripts/fleet-package-versions.tsv`, then regenerates `PORTING-MATRIX.md` from it. The
-  regeneration reads the **sibling OS checkouts**, defaulting to this repo's parent directory —
-  which on a CI runner is empty. Its first scheduled run probed all 16 rows successfully and
-  then died:
-  `gen-porting-matrix: not checked out under /home/runner/work/dotfiles-core: … !! regeneration failed`.
-  The job now clones the fleet first, public/anonymous/shallow — the idiom `parity-check.yml`
-  already uses — and the list comes from `scripts/os-repos.txt` rather than being spelled in the
-  workflow, because that file is the one place fleet membership lives and a second copy in YAML
-  is the kind that goes stale unnoticed. `update-fleet-versions.sh` gained `--fleet DIR` to pass
-  it through.
-  **Two smaller defects were underneath it.** The updater collapsed every non-zero exit from the
-  generator into one message, discarding the split `gen-porting-matrix.sh` goes out of its way
-  to make — exit **3** for "the fleet is not here" versus **2** for a structural fault — the same
-  split `audit-core.sh` §9h relies on to record an absent fleet as an environment skip rather
-  than a defect. And it wrote the TSV **before** regenerating, so a failed regeneration left the
-  tree carrying a new TSV against a stale matrix: drift that reds §9h for the next person who
-  runs it beside the fleet. The write is now staged behind a backup and rolled back if the
-  matrix cannot follow it, so the two halves of one artifact move together or not at all.

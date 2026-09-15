@@ -20,6 +20,17 @@
 # Config (override in os/local before this is sourced):
 #   UPDATE_CHECK_ENABLED   1        # set 0 to disable the check entirely (e.g. Kali during ops)
 #   UPDATE_CHECK_INTERVAL  86400    # seconds between background checks
+#
+# THE STAGED HOST (NON-MUTABLE-HOST-PROPOSAL.md §4.2, #1049). An atomic (bootc) or
+# transactional (MicroOS) host does not apply an upgrade — it STAGES one, and a reboot makes
+# it live. Three optional declaration keys teach this file that, and every branch on them is
+# on a key the mutable repos do not declare, so those see nothing:
+#   PROVISIONER        atomic | transactional | declarative — `up` prints the "reboot to
+#                      apply" line under the first two; a box with no manager on PATH but a
+#                      PROVISIONER is a declared box, not an unsupported one (NixOS)
+#   PKG_APPLY          the verb that makes a staged change live; PRINTED, never run
+#   PKG_APPLY_PENDING  the STAGED question (+ _EXIT); asked by the refresh, cached, and
+#                      rendered by the nudge as "update staged — reboot to apply"
 # ──────────────────────────────────────────────────────────────────────────────
 
 [[ $- == *i* ]] || return 0
@@ -63,6 +74,15 @@ _pkgup_priv() {
 # `command -v` ladder is the shape PORTABILITY.md blesses, and the token it returns is
 # also the label every user-facing string in `up` interpolates ("via ${mgr}").
 # What it no longer decides is WHAT TO RUN — that is _pkgup_verb, below.
+#
+# THE LADDER'S MISS IS NOT THE LAST WORD. A declarative host (NixOS) has none of the seven
+# on PATH and still has a complete declaration — `nixos-rebuild switch --upgrade` is its
+# PKG_UPGRADE — so `none` there would make `up` refuse a box that can update (measured:
+# "none of brew/pacman/dnf/zypper/apt/apk/emerge is on PATH"). When the declaration names a
+# PROVISIONER, that token is the answer and the label: the declaration is what `up` runs
+# through anyway, and a PROVISIONER is a claim the OS layer made about itself, which is more
+# than a binary on PATH ever was. `none` is reserved for a box that neither has a manager
+# nor says what it is.
 _pkgup_mgr() {
   if command -v brew >/dev/null 2>&1; then
     echo brew
@@ -78,7 +98,23 @@ _pkgup_mgr() {
     echo apk
   elif command -v emerge >/dev/null 2>&1; then
     echo emerge
-  else echo none; fi
+  else
+    local _prov
+    _prov="$(_pkgup_verb PROVISIONER)"
+    echo "${_prov:-none}"
+  fi
+}
+
+# _pkgup_stages — does this host STAGE an upgrade rather than apply it? True under
+# PROVISIONER=atomic (bootc, Silverblue) and =transactional (MicroOS, Aeon), where
+# PKG_UPGRADE returns with the change waiting for PKG_APPLY (a reboot). Deliberately NOT
+# `declarative`: `nixos-rebuild switch --upgrade` activates in place, so NixOS is mutable
+# for every purpose this file has (measured — /run/booted-system stays /run/current-system).
+_pkgup_stages() {
+  emulate -L zsh
+  local _prov
+  _prov="$(_pkgup_verb PROVISIONER)"
+  [[ "$_prov" == (atomic|transactional) ]]
 }
 
 # _pkgup_verb <key> — THE resolution point, and the only thing in this file that decides
@@ -234,6 +270,22 @@ _pkgup_list() { _pkgup_pending; }
 
 # Refresh → writes "<count>\n<epoch>" to the cache. Backgrounded by the startup hook, but
 # `up` calls it in the FOREGROUND after an upgrade — see _pkgup_count on why that matters.
+#
+# ON A STAGED HOST THE CACHE HAS TWO MORE LINES: "<staged|idle>\n<boot-id>". The STAGED
+# question (PKG_APPLY_PENDING — is a change waiting for a reboot?) is asked HERE, at refresh
+# time, and not by the nudge on every shell start: the per-shell path of this file is
+# fork-free by thesis, and `rpm-ostree status` is a fork and an exec. Line 4 is what keeps a
+# cached verdict HONEST across the one event that changes it — the reboot. The kernel's
+# boot id (/proc/sys/kernel/random/boot_id, world-readable, new every boot) is recorded
+# beside the verdict, and the nudge only renders a `staged` whose boot id is still the
+# running one; after the reboot the line is silent at the very next shell instead of a day
+# later, and the refresh that follows rewrites it. Empty on a box with no /proc (no staged
+# host is one), which the reader treats as "cannot tell; trust the verdict".
+#
+# A MUTABLE HOST WRITES TWO LINES EXACTLY AS BEFORE — the extra pair is written only when
+# PKG_APPLY_PENDING is declared, so the nine mutable repos' cache is byte-identical. Both
+# readers split with the QUOTED "${(@f)…}" and index positionally, so a two-line cache and a
+# four-line one are the same shape to them. The maint runner writes the same four lines.
 _pkgup_refresh() {
   local n
   n="$(_pkgup_count 2>/dev/null)"
@@ -242,6 +294,21 @@ _pkgup_refresh() {
   mkdir -p "${_PKGUP_CACHE:h}"
   print -r -- "$n" >|"$_PKGUP_CACHE"       # >| : force past NO_CLOBBER (cache pre-exists)
   print -r -- "${EPOCHSECONDS:-$(date +%s)}" >>"$_PKGUP_CACHE"
+  # The $+functions guard is the standalone-source arm (the unit suite sources this file
+  # alone; see _pkgup_verb) — and _core_cap_staged's 2 is "not declared", which is the
+  # mutable answer: write nothing more.
+  ((${+functions[_core_cap_staged]})) || return 0
+  local _staged
+  _core_cap_staged
+  case $? in
+  0) _staged=staged ;;
+  1) _staged=idle ;;
+  *) return 0 ;;
+  esac
+  local _boot=''
+  [[ -r /proc/sys/kernel/random/boot_id ]] && _boot="$(</proc/sys/kernel/random/boot_id)"
+  print -r -- "$_staged" >>"$_PKGUP_CACHE"
+  print -r -- "$_boot" >>"$_PKGUP_CACHE"
 }
 
 # Capture _pkgup_list into a file so a spinner can wrap the slow, SILENT fetch (brew
@@ -316,6 +383,25 @@ _pkgup_notice() {
   local -a _l
   _l=("${(@f)$(<"$_PKGUP_CACHE")}")
   local count=${_l[1]:-}
+  # THE STAGED LINE COMES FIRST, AND IT REPLACES THE COUNT LINE. On a host where a change
+  # already waits for a reboot there is nothing to "run 'up'" for — MicroOS would otherwise
+  # print "2 updates available" over a snapshot that is about to make them moot. Lines 3
+  # and 4 exist only on a staged host (see _pkgup_refresh), so a mutable box never enters
+  # this branch. Line 4 is the boot id the verdict was recorded under: a `staged` from a
+  # previous boot IS the reboot having happened, and the honest thing is silence until the
+  # next refresh rewrites the cache. An empty line 4 means the box could not say — trust the
+  # verdict. Fork-free, like the rest of this function: $(<file) is a builtin read.
+  if [[ "${_l[3]:-}" == staged ]]; then
+    local _boot=''
+    [[ -r /proc/sys/kernel/random/boot_id ]] && _boot="$(</proc/sys/kernel/random/boot_id)"
+    if [[ -z "${_l[4]:-}" || -z "$_boot" || "${_l[4]}" == "$_boot" ]]; then
+      # Single quotes, not backticks — the PROMPT_SUBST rule the count line states below.
+      # PKG_APPLY's VALUE is deliberately not interpolated into a prompt string here (a
+      # declared value is data, and `%` in one would be a prompt escape); `up` prints it.
+      print -P "%F{$_PKGUP_ACCENT}󰚰 update staged — reboot to apply%f %F{$_PKGUP_MUTED}— run 'up' again after%f"
+    fi
+    return 0
+  fi
   [[ "$count" == <1-> ]] || return 0 # zsh numeric-range glob: only positive ints
   # NOTE: no backticks in a `print -P` string — under PROMPT_SUBST (which starship and
   # any prompt-substitution prompt enable) print -P command-substitutes them, so
@@ -334,17 +420,23 @@ _pkgup_notice() {
 # stays silent there exactly as before.)
 if ((UPDATE_CHECK_ENABLED)); then
   () {
-    local now last=0 count=
+    local now last=0 count= staged= boot=
     now=${EPOCHSECONDS:-$(date +%s)}
     # fork-free read of the 2-line cache ("<count>\n<epoch>") — $(<file) is a builtin.
     # Quoted split (see _pkgup_notice): unquoted, an empty count line is elided and BOTH
     # fields shift — count becomes the epoch and `last` becomes empty, i.e. 0, which also
     # defeats the once-a-day throttle below and re-fires the check on every single shell.
+    # Lines 3–4 (the staged verdict and its boot id) exist only on a staged host and are
+    # CARRIED THROUGH the claim write below: this shell's own _pkgup_notice reads the cache
+    # after the claim, and dropping them would silence "update staged" on exactly the
+    # once-a-day shell that refreshes.
     if [[ -r "$_PKGUP_CACHE" ]]; then
       local -a _l
       _l=("${(@f)$(<"$_PKGUP_CACHE")}")
       count=${_l[1]:-}
       last=${_l[2]:-0}
+      staged=${_l[3]:-}
+      boot=${_l[4]:-}
     fi
     [[ "$last" == <-> ]] || last=0
     # Same fail-closed treatment for the count, because the claim-slot write below persists
@@ -367,6 +459,10 @@ if ((UPDATE_CHECK_ENABLED)); then
       {
         print -r -- "$count"
         print -r -- "$now"
+        if [[ -n "$staged" ]]; then
+          print -r -- "$staged"
+          print -r -- "$boot"
+        fi
       } >|"$_PKGUP_CACHE" 2>/dev/null    # >| : force past NO_CLOBBER (cache pre-exists)
       { _pkgup_refresh; } &|
     fi
@@ -540,10 +636,30 @@ up() {
       "fix: if your OS repo already ships one, re-run its ./bootstrap.sh --links-only"
     return 1
   fi
+  # THE STAGED HOST (#1049). Under PROVISIONER=atomic/transactional PKG_UPGRADE returns with
+  # the change STAGED, and PKG_APPLY (a reboot) is what makes it live. That verb is printed
+  # — here, in the nudge, and by the maint runner, the same sentence in three places — and
+  # NEVER run: the only thing that reboots a box is the operator. `stages` is the branch
+  # every mutable repo misses, so nothing below changes for them.
+  local stages=0 _apply
+  _pkgup_stages && stages=1
+  _apply="$(_pkgup_verb PKG_APPLY)"
   # Dry run: show what WOULD upgrade and exit 0, touching nothing — the non-destructive
   # inspect that the count-only nudge and the (interactive-only) pre-confirm preview
   # didn't offer. Uses the same non-root, no-mutation _pkgup_list as the preview below.
   if ((dry)); then
+    # A staged host with NO count verb (bootc: the AVAILABLE question is root-only,
+    # measured) must not be asked to list — an empty list would be read as an empty ANSWER
+    # and print "nothing to upgrade", the 0-vs-unknown confusion the -1 sentinel exists to
+    # prevent. Say what is known instead: whether something already waits for the reboot.
+    if ((stages)) && [[ -z "$(_pkgup_verb PKG_COUNT_PENDING)" ]]; then
+      if _core_cap_staged; then
+        _core_ok "up: update staged — reboot to apply${_apply:+: ${_apply}}"
+      else
+        _core_ok "up: this host stages — run 'up', then reboot to apply${_apply:+ (${_apply})}"
+      fi
+      return 0
+    fi
     local -a pending
     _up_pending
     if ((${#pending})); then
@@ -552,6 +668,9 @@ up() {
     else
       _core_ok "up: nothing to upgrade (via ${mgr})"
     fi
+    # …and on a staged host that DOES count (MicroOS: `zypper lu`), the list is what the
+    # NEXT snapshot would take; say if one already waits.
+    ((stages)) && _core_cap_staged && _core_ok "up: update staged — reboot to apply${_apply:+: ${_apply}}"
     return 0
   fi
   # ── interactive selection (U2): hand-pick WHICH packages to upgrade. This HONORS the
@@ -680,7 +799,14 @@ up() {
     _core_errbox "up: ${mgr} did not complete (exit ${rc})" \
       "why: most often no network, or another package operation holds the lock" \
       "fix: check connectivity / wait for the other run, then re-run \`up\` (safe to repeat)"
+  elif ((stages)); then
+    # The mutable path says nothing on success — the manager's own output is the report.
+    # A staged host's manager just said "staged" too, in its own words, and this is the
+    # one line Core adds: what makes it live, in the OS layer's words, and not run.
+    _core_ok "up: staged — reboot to apply${_apply:+: ${_apply}}"
   fi
+  # The refresh below records the STAGED verdict (line 3 of the cache), so the nudge on the
+  # next shell says "update staged" rather than counting — see _pkgup_refresh.
   _pkgup_refresh 2>/dev/null
   return $rc
 }

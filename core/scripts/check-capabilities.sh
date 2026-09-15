@@ -136,6 +136,7 @@ CAP_OPTIONAL=(
   PKG_PENDING_MATCH PKG_PENDING_FIELD PKG_PENDING_FS
   SCHEDULER_UNIT_DIR MAINT_UNATTENDED_UPGRADE
   PROVISIONER PKG_APPLY PKG_PENDING_EXIT_NONE PKG_PENDING_EXIT_SOME
+  PKG_APPLY_PENDING PKG_APPLY_PENDING_EXIT
 )
 #   ── the non-mutable host (PROTOTYPE — R2 of NON-MUTABLE-HOST-PROPOSAL.md, #1004) ──
 #   Four OPTIONAL keys, accepted by this validator and READ BY NO CONSUMER YET. They exist
@@ -145,10 +146,11 @@ CAP_OPTIONAL=(
 #   truth. Every existing declaration keeps validating unchanged; that is the point.
 #   PROVISIONER          mutable (the default when absent) | atomic (image-based: bootc,
 #                        Silverblue) | transactional (snapshot-based: MicroOS, Aeon) |
-#                        declarative (NixOS). What a consumer WOULD branch on: `up`
-#                        printing "staged — <PKG_APPLY> to apply" after an atomic upgrade,
-#                        core-doctor phrasing an install hint the host's way, the driver
-#                        skipping the login-shell step on declarative.
+#                        declarative (NixOS). What a consumer branches on (#1049): `up`
+#                        printing "staged — reboot to apply: <PKG_APPLY>" after an atomic
+#                        or transactional upgrade, the maint runner staging only,
+#                        core-doctor phrasing an install hint the host's way, `_pkgup_mgr`
+#                        answering this token when no manager is on PATH.
 #   PKG_APPLY            the verb that makes a STAGED change live — a reboot on atomic and
 #                        transactional hosts (`sudo systemctl reboot`), absent where
 #                        PKG_UPGRADE already activates (mutable, `nixos-rebuild switch`).
@@ -164,12 +166,28 @@ CAP_OPTIONAL=(
 #                        packages) and PKG_COUNT_EXIT_TRUSTED's "non-zero = could not
 #                        answer" no longer applies to that status. Both were the first
 #                        schema gap the research found, from the manual alone.
+#   PKG_APPLY_PENDING / PKG_APPLY_PENDING_EXIT   (R5, measured 2026-09-14)
+#                        a STAGED host asks a second question the count verb never did:
+#                        is a change already waiting for PKG_APPLY? This verb answers with
+#                        its exit status — `rpm-ostree status --pending-exit-77` (user-
+#                        runnable, 0.2 s; EXIT=77), `test -e /run/reboot-needed` on MicroOS
+#                        (EXIT absent = 0). It needs PKG_APPLY beside it (nothing to apply
+#                        otherwise), is asked by the once-a-day refresh and the maint
+#                        runner (#1049: cached with the boot id, so the per-shell path
+#                        stays fork-free), and the nudge prints "update staged — reboot
+#                        to apply" from it instead of a count. Declaring it is the second
+#                        way PKG_COUNT_PENDING may be
+#                        absent: on an atomic host the AVAILABLE verb is root-only
+#                        (`rpm-ostree upgrade --check` → "AutomaticUpdateTrigger not
+#                        allowed for user", measured), so the runner's unattended staging
+#                        does the asking and the user-side nudge reports the staged state.
 #   PROVISIONER=declarative RELAXES ONE REQUIRED KEY: PKG_COUNT_PENDING may be absent. A
 #   declarative host has no truthful unprivileged "packages pending" verb (the answer is
 #   "what a rebuild would change", which needs root's channel), and `up` already reads an
 #   absent count verb as the -1 sentinel that keeps the nudge silent. Every other required
 #   key filled honestly on all three prototypes (nix-env -i / -e are the imperative
-#   install and remove a NixOS box does have), so nothing else relaxes.
+#   install and remove a NixOS box does have), so nothing else relaxes. PKG_APPLY_PENDING
+#   (above) is the other relaxation, for the same reason on the atomic host.
 CAP_PROVISIONERS=(mutable atomic transactional declarative)
 # The PKG_* keys whose value is a COMMAND. --packages cross-checks the leading binary of
 # each of these against the repo's package list; the PKG_PENDING_* keys are awk data
@@ -177,7 +195,7 @@ CAP_PROVISIONERS=(mutable atomic transactional declarative)
 # nonsense. Kept as an explicit list rather than a `PKG_*` glob for exactly that reason.
 CAP_COMMANDS=(
   PKG_REFRESH PKG_UPGRADE PKG_INSTALL PKG_REMOVE PKG_SEARCH PKG_OWNS PKG_COUNT_PENDING
-  PKG_UPGRADE_PRE PKG_CLEANUP PKG_UPGRADE_PARTIAL PKG_COUNT_REFRESH PKG_APPLY
+  PKG_UPGRADE_PRE PKG_CLEANUP PKG_UPGRADE_PARTIAL PKG_COUNT_REFRESH PKG_APPLY PKG_APPLY_PENDING
 )
 # SCHEDULER's closed enum. `none` is a real answer (a container, a box with neither
 # init), not a placeholder — it is what tells 55-maint.zsh to offer the manual verb
@@ -299,9 +317,11 @@ if [[ -n "$prov" ]] && ! in_list "$prov" "${CAP_PROVISIONERS[@]}"; then
   bad "-" "PROVISIONER must be one of: ${CAP_PROVISIONERS[*]} (got: $prov)"
 fi
 for k in "${CAP_REQUIRED[@]}"; do
-  # The one relaxation the prototype schema makes (see CAP_OPTIONAL's note): a declarative
-  # host may leave the count verb out, because it has no truthful one.
+  # The relaxations the prototype schema makes (see CAP_OPTIONAL's note): a declarative
+  # host may leave the count verb out, because it has no truthful one; so may a host that
+  # declares PKG_APPLY_PENDING, because its nudge reports the staged state instead.
   [[ "$k" == PKG_COUNT_PENDING && "$prov" == declarative ]] && continue
+  [[ "$k" == PKG_COUNT_PENDING && -n "$(cap_value PKG_APPLY_PENDING)" ]] && continue
   case "$SEEN" in
     *" $k "*)
       v="$(cap_value "$k")"
@@ -325,6 +345,20 @@ if [[ -n "$pen_none" && -n "$pen_some" ]]; then
 fi
 if [[ -n "$pen_none$pen_some" && -z "$(cap_value PKG_COUNT_PENDING)" ]]; then
   bad "-" "PKG_PENDING_EXIT_* describes PKG_COUNT_PENDING's exit status, which is not declared"
+fi
+# PKG_APPLY_PENDING (R5): a staged-change probe only means something beside PKG_APPLY, and
+# its optional _EXIT is one status in 1-255 (absent = "exit 0 means staged").
+ap_pend="$(cap_value PKG_APPLY_PENDING)"
+ap_exit="$(cap_value PKG_APPLY_PENDING_EXIT)"
+if [[ -n "$ap_pend" && -z "$(cap_value PKG_APPLY)" ]]; then
+  bad "-" "PKG_APPLY_PENDING says a change is waiting for PKG_APPLY, which is not declared"
+fi
+if [[ -n "$ap_exit" ]]; then
+  [[ -n "$ap_pend" ]] || bad "-" "PKG_APPLY_PENDING_EXIT describes PKG_APPLY_PENDING's exit status, which is not declared"
+  case "$ap_exit" in
+    *[!0-9]* | 0) bad "-" "PKG_APPLY_PENDING_EXIT must be an exit status 1-255 (got: $ap_exit)" ;;
+    *) ((ap_exit > 255)) && bad "-" "PKG_APPLY_PENDING_EXIT must be an exit status 1-255 (got: $ap_exit)" ;;
+  esac
 fi
 
 # PKG_COUNT_EXIT_TRUSTED is a FLAG, and the only honest value is 1. Anything else would

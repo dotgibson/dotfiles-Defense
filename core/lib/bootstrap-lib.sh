@@ -938,6 +938,9 @@ blib_write_zshrc_loader() {
     rc_bak="$rc.$(_blib_backup_suffix)"
     cp "$rc" "$rc_bak"
     blib_warn "backed up existing $rc -> $rc_bak"
+    # Counted like every other backup site, so the closing tally cannot say "0 backed up"
+    # beside the warning above (#1026).
+    BLIB_BACKED=$((BLIB_BACKED + 1))
   fi
 
   cat >"$rc" <<'ZRC'

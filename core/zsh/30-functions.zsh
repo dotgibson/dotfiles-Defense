@@ -1371,14 +1371,36 @@ _core_doctor_render() {
   # remedy used to vanish wherever it was, while the rows it explains stayed. Since #763
   # _core_install_prefix reads PKG_INSTALL and nothing else, so the manager token is not
   # consulted at all and the block is silent only on a box with no declaration.
+  #
+  # THE STAGED HOST (#1049). Two declared facts change what "missing" means, and both are
+  # read through the same accessor the prefix is (absent on the nine mutable repos):
+  #   · PKG_APPLY_PENDING says a change is STAGED — on bootc/MicroOS a tool the operator
+  #     already layered is on no PATH until the reboot, so the honest line is "reboot to
+  #     use", not "install with". _core_cap_staged is band 02 and guarded for the
+  #     standalone (ui+functions) harness exactly as _core_cap is in _core_install_prefix.
+  #   · PROVISIONER=declarative — `nix-env -i` (the declared PKG_INSTALL) installs into the
+  #     user profile and the next `nixos-rebuild` does not know about it; the durable fix is
+  #     the declaration. Say so, and keep the imperative verb as the until-then.
   if ((${#missing})); then
-    local _pfx
+    local _pfx _prov=''
+    ((${+functions[_core_cap]})) && _prov="$(_core_cap PROVISIONER)"
     if _pfx="$(_core_install_prefix)"; then
       print -r -- "${c}install missing${r}"
       print -r -- "  ${d}${missing[*]}${r}"
+      if ((${+functions[_core_cap_staged]})) && _core_cap_staged; then
+        local _apply
+        _apply="$(_core_cap PKG_APPLY)"
+        print -r -- "  ${d}an update is staged — a tool it layered is present only after a reboot${_apply:+ (${_apply})};${r}"
+        print -r -- "  ${d}re-run core-doctor then, before installing anything twice${r}"
+      fi
       print -r -- "  ${d}those are command names — the package is often called something else${r}"
       print -r -- "  ${d}(rg=ripgrep, delta=git-delta) and some aren't packaged on every distro,${r}"
-      print -r -- "  ${d}so install per tool: ${_pfx} <pkg>${r}"
+      if [[ "$_prov" == declarative ]]; then
+        print -r -- "  ${d}so declare per tool: add it to home.packages (home-manager) or${r}"
+        print -r -- "  ${d}environment.systemPackages (configuration.nix); ${_pfx} <pkg> installs it imperatively until then${r}"
+      else
+        print -r -- "  ${d}so install per tool: ${_pfx} <pkg>${r}"
+      fi
       print -r -- "  ${d}see core/PORTING-MATRIX.md for the per-tool name and install path${r}"
     fi
   fi
