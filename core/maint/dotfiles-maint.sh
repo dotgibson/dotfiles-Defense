@@ -271,6 +271,48 @@ _pkgcount_decl() {
   fi
 }
 
+# _pkg_apply_pending_write — the STAGED question, asked once per run, AFTER the optional
+# apply below (NON-MUTABLE-HOST-PROPOSAL.md §4.2, #1049). On an atomic (bootc) or
+# transactional (MicroOS) host an upgrade does not apply, it STAGES, and PKG_APPLY (a reboot)
+# makes it live; PKG_APPLY_PENDING (+ _EXIT, default 0) is the declared verb that says
+# whether one is waiting. The verdict goes into the nudge cache as a THIRD line
+# (`staged` / `idle`) with the kernel's boot id as a FOURTH — the same four lines
+# zsh/60-update.zsh's _pkgup_refresh writes, for the same reason: the nudge renders a cached
+# `staged` only while its boot id is the running one, so a reboot silences it at the next
+# shell rather than at the next run. Undeclared (the nine mutable repos, NixOS) writes
+# nothing and the cache keeps its two lines exactly.
+#
+# ASKED AFTER THE APPLY, deliberately: the unattended `rpm-ostree upgrade` above is what
+# stages, and a verdict taken before it would say `idle` over the deployment it just queued.
+# Bounded and gated like _pkgcount_decl (124 / >=128 = no answer): a stalled probe must not
+# assert idle, so it leaves the two-line cache alone and logs UNAVAILABLE.
+_pkg_apply_pending_write() {
+  local _ap _want _rc _verdict _boot _c _e
+  _ap="$(cap PKG_APPLY_PENDING)"
+  [[ -n "$_ap" ]] || return 0
+  _want="$(cap PKG_APPLY_PENDING_EXIT)"
+  : "${_want:=0}"
+  # shellcheck disable=SC2086  # deliberate word-split: the declared value is a command
+  _to "$MAINT_PKGCOUNT_TIMEOUT" $_ap >/dev/null 2>&1 </dev/null
+  _rc=$?
+  if ((_rc == 124 || _rc >= 128)); then
+    log "system packages: staged-state probe UNAVAILABLE (rc=${_rc} — the probe exceeded ${MAINT_PKGCOUNT_TIMEOUT}s) — nudge keeps the last verdict"
+    return 0
+  fi
+  if [[ "$_rc" == "$_want" ]]; then _verdict=staged; else _verdict=idle; fi
+  _boot=""
+  [[ -r /proc/sys/kernel/random/boot_id ]] && read -r _boot </proc/sys/kernel/random/boot_id
+  # Keep the count and epoch the chain above wrote; only lines 3–4 are this function's.
+  _c=-1 _e=""
+  { read -r _c && read -r _e; } <"$PKG_CACHE" 2>/dev/null
+  printf '%s\n%s\n%s\n%s\n' "${_c:--1}" "${_e:-$(date +%s)}" "$_verdict" "$_boot" >"$PKG_CACHE"
+  if [[ "$_verdict" == staged ]]; then
+    log "system packages: update STAGED — reboot to apply (never run by this runner): $(cap PKG_APPLY)"
+  else
+    log "system packages: nothing staged (cache refreshed)"
+  fi
+}
+
 # _priv_decl <word...> — rewrite a declared verb's privilege prefix for UNATTENDED use.
 # A declaration says `sudo dnf upgrade`, naming the intent; this runner needs `sudo -n`, so
 # a verb that would stop at a password prompt fails fast and is logged rather than blocking
@@ -618,7 +660,12 @@ printf '%s\n%s\n' "${count:--1}" "$(date +%s)" >"$PKG_CACHE"
 # only place the difference is visible, and since #763 it is also where an unlinked
 # declaration first shows up in an unattended run. Hence naming --links-only here.
 if [[ "${count:--1}" == -* ]]; then
-  if cap_declared; then
+  if cap_declared && [[ -z "$(cap PKG_COUNT_PENDING)" && -n "$(cap PKG_APPLY_PENDING)" ]]; then
+    # A staged host may declare no count verb at all (bootc: the AVAILABLE question is
+    # root-only, measured) — that is the design, not a gap, and the log should not read as
+    # one. What it reports instead is the STAGED state, after the apply below.
+    log "system packages: no count verb — this host stages; the staged state is recorded below"
+  elif cap_declared; then
     log "system packages: count UNAVAILABLE (no PKG_COUNT_PENDING declared, or the probe exceeded ${MAINT_PKGCOUNT_TIMEOUT}s) — nudge stays silent"
   else
     log "system packages: count UNAVAILABLE (no os.capabilities linked — run ./bootstrap.sh --links-only) — nudge stays silent"
@@ -674,6 +721,15 @@ if [[ "$MAINT_SYSTEM_UPGRADE" == 1 ]]; then
         # shellcheck disable=SC2086  # same deliberate split
         _priv_decl $_up
         step "system: upgrade" "${PRIV_ARGV[@]}" ${_yes_argv[@]+"${_yes_argv[@]}"}
+        # THE STAGED HOST: under PROVISIONER=atomic the step above ran `rpm-ostree upgrade`
+        # exactly as declared, and the box is unchanged until PKG_APPLY (a reboot). Unattended
+        # means STAGE ONLY — this runner prints the verb and never runs it; the operator does.
+        # (`transactional` is named for completeness — MicroOS ships its own timer and
+        # rollback and declares no MAINT_UNATTENDED_UPGRADE; `declarative` activates in place
+        # and is mutable for this runner's purposes.)
+        case "$(cap PROVISIONER)" in
+        atomic | transactional) log "  staged — reboot to apply (never run by this runner): $(cap PKG_APPLY)" ;;
+        esac
         if [[ -n "$_clean" ]]; then
           # shellcheck disable=SC2086  # same deliberate split
           _priv_decl $_clean
@@ -693,5 +749,11 @@ if [[ "$MAINT_SYSTEM_UPGRADE" == 1 ]]; then
     log "system upgrade SKIPPED: no os.capabilities linked — run ./bootstrap.sh --links-only, then apply with \`up\`"
   fi
 fi
+
+# ── Staged host: record whether a change waits for a reboot (after the apply) ─
+# Not a step() call — nothing here may fail the run, and the write is its own record.
+if cap_declared; then
+  _pkg_apply_pending_write
+fi </dev/null
 
 log "═══════════ dotfiles-maint done ═══════════"
