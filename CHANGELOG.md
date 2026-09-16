@@ -24,6 +24,19 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **htpx pin bumped to `7f369ee37ee5` (3.2.0+3), the first pin on an untagged commit
+  (#297).** Upstream's four new entries are two GCP pairs — `gcp-gce-startup-script-exec`
+  ↔ `gcp-gce-metadata-audit` (T1651, Compute Admin Activity) and `gcp-gcs-mass-exfil` ↔
+  `gcp-gcs-exfil-audit` (T1530, GCS Data Access) — and no release tag has reached them, so
+  `version`/`tag` now record `3.2.0+3` and say "none" in words rather than naming a ref
+  that does not exist. The pin file documents that shape for the next time. Nothing was
+  renamed or retired upstream, so every claim still resolves and the gate was green either
+  side: 103 reference URLs, 99 blue entries named, back-refs intact. The report diff is the
+  whole content of the bump — 105 blue entries to 107, with the 99 claimed here unchanged
+  and both new entries landing in "htpx blue entries nothing here claims". That GCP
+  resource-plane gap is recorded, not accepted by default: filed separately so this bump's
+  diff stays the pin and the generated report, the same split #277/#280 used for Azure.
+
 - **`core-verify` asks the integrity question again, and `core-check` gets the freshness
   one back (dotgibson/dotfiles-core#691).** Adopting the fleet vocabulary pointed the
   canonical `core-verify` at this repo's upstream-tag query and demoted `core-check` to an
