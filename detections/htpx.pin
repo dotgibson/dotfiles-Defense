@@ -23,6 +23,14 @@
 # with the corpus at the new sha, and the report diff is the point of bumping deliberately:
 # it is the only place a change in the boundary's shape is visible.
 #
+# A BUMP MAY LAND ON AN UNTAGGED COMMIT, and this one does. htpx cuts release tags on its
+# own cadence, so the entries a bump is owed for can sit on main for weeks before a tag
+# reaches them. Waiting for the tag would park a known-stale pin, so it is fine to pin a
+# bare commit — only `sha` is read, and git's object hashing binds it either way. When
+# that happens `version` reads `<last tag>+<n commits>` and `tag` says so in words rather
+# than naming a ref that does not exist: a plausible-looking `v3.3.0` here would be a lie
+# that survives until someone tries to check it out. First done at 3.2.0+3 (#297).
+#
 # YOU WILL BE TOLD WHEN A BUMP IS OWED. .github/workflows/htpx-drift.yml asks weekly whether
 # upstream's entries/ has moved, and files one issue when it has. It stays quiet for commits
 # that do not touch entries/ — only two gates read this corpus and both read entries/ alone,
@@ -56,6 +64,6 @@
 # is exactly what the pin exists to prevent. dotgibson/dotfiles-Offense#251.
 repo	dotgibson/htpx
 branch	main
-sha	6358a8df86616b1e633df00b8273a2f6fae356ed
-version	3.2.0
-tag	v3.2.0
+sha	7f369ee37ee5013d856dc0bb1c370ab759383273
+version	3.2.0+3
+tag	none — 3 commits past v3.2.0
