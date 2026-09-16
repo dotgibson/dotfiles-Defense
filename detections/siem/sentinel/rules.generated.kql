@@ -241,7 +241,7 @@ key =~ "shadow_read" and (not((comm in~ ("unix_chkpwd", "sshd", "login", "su", "
 key =~ "suid_change" and (not((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/install" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
 
 // linux/systemd_unit_persistence.yml — Systemd unit persistence - unit or timer file written (auditd)
-key =~ "systemd_persist" and (not((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/systemd" or exe endswith "/systemctl" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
+key =~ "systemd_persist" and (not(((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion") or (exe endswith "/systemctl" and name contains ".wants/") or (exe endswith "/systemd" and name startswith "/run/systemd/system/"))))
 
 // npm/npm_maintainer_added.yml — npm maintainer or owner added (durable publish backdoor)
 action in~ ("package.owner_add", "team.user_add")

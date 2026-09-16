@@ -37,6 +37,28 @@ under `[Unreleased]` from here.
   resource-plane gap is recorded, not accepted by default: filed separately so this bump's
   diff stays the pin and the generated report, the same split #277/#280 used for Azure.
 
+- **`systemd_unit_persistence` allowlisted the binary an attacker writes units with
+  (#302).** `filter_provisioning` carried `/systemd` and `/systemctl` by `exe|endswith`
+  under a comment claiming it was the "same list as cron_persistence, same reason" — and
+  cron's list has neither. The claim was false and the two entries were an evasion:
+  `systemctl edit --force --full evil.service` and `systemctl link /tmp/evil.service`
+  both attribute the unit-file write to `/systemctl`, so the rule was silent on two
+  first-class variants of the T1543.002 it exists to catch. Neither entry was justified
+  anywhere — #210 folded them into the package-manager list without a measured reason.
+  Dropping them outright would have reintroduced the `systemctl enable` symlink noise
+  they were presumably there for, so the suppression is now **scoped by path instead of
+  by binary**: `filter_systemctl_wants` matches only the `<target>.wants/` symlink farm
+  that carries the volume, and `filter_systemd_runtime` only PID 1 writing under `/run`.
+  A unit written at the top level of a watched directory alerts again, whoever wrote it.
+  `filter_provisioning` is now cron's eleven entries exactly, so the comment is true.
+  Proved rather than asserted: the two new manifest rows
+  (`linux-systemd-persist-systemctl-edit`, `linux-systemd-persist-runtime-generated`)
+  **fail on the pre-change rule** and pass on this one, and each carries the near-miss
+  true negative showing the narrowed suppression still suppresses. The transient-unit
+  path (`systemd-run`, `StartTransientUnit`) is written by PID 1 under `/run` and is
+  therefore still suppressed — recorded in the rule as the accepted cost of not muting
+  it on every reboot's generator output.
+
 - **`core-verify` asks the integrity question again, and `core-check` gets the freshness
   one back (dotgibson/dotfiles-core#691).** Adopting the fleet vocabulary pointed the
   canonical `core-verify` at this repo's upstream-tag query and demoted `core-check` to an
