@@ -52,10 +52,14 @@ now writes every cell below from the declared `PKG_*` value, verbatim, plus a pl
 and `make audit` (§9h) fails when they differ. **Edit the declaration in the OS repo, then
 run `make gen-porting-matrix`.** The declarations' own headers still say _"Transcribed from
 core/PORTING-MATRIX.md"_ — true of how they were written, no longer of which side is
-edited; issue #837 updates them. Two columns are backed by a **second declaration file**
-their repo's `bootstrap.sh` relinks, because a declaration is data and cannot probe —
-openSUSE's `dup`-vs-`up` split (rendered as both, labelled) and Debian's Kali lane (its
-own column). The table gained its **macOS and Fedora columns** in #664: they had been
+edited; issue #837 updates them. Three columns render **more than one declaration file**,
+because a declaration is data and cannot probe and the repo's `bootstrap.sh` relinks the
+right one at run time: openSUSE's `dup`-vs-`up` split plus its transactional edition
+(three labels), and Fedora's atomic edition beside Workstation (two). Labelled cells
+collapse to one when every declaration agrees, so a column only looks split where it
+genuinely is. Debian's Kali lane is the other shape — a second declaration given its
+**own column** rather than a label, because it is a different distro rather than a
+different edition of one. The table gained its **macOS and Fedora columns** in #664: they had been
 missing since it was written, even though `dotfiles-MacBook` is the reference
 implementation and `dotfiles-Fedora` is the template the other Linux repos stamp from —
 so the two most-copied repos had nothing to copy.
@@ -66,17 +70,29 @@ mutate the system**, which is why Arch counts with `checkupdates` (a user-space 
 the sync DB, never the real one) rather than `-Sy` — and why Gentoo, which cannot answer
 it cheaply at all, pays for a real resolve rather than the fast wrong answer.
 
+It is also the one row where a cell may not be a verb at all, because two families cannot
+answer the question as asked. A **staged** host (Fedora's atomic edition) reads
+`` `<verb>` (staged?) ``: it cannot cheaply say how many packages are pending — that verb
+is root-only there — but it can say whether a change is already staged, which is what the
+nudge actually runs, so the cell shows the verb it has and names the question it answers.
+A **declarative** host (NixOS) reads **—**: packages-pending is not a thing it knows at
+all, and the nearest question needs root and lists derivations rather than packages. Both
+absences are legal — `scripts/check-capabilities.sh` permits `PKG_COUNT_PENDING` to be
+missing in exactly those two cases — and the generator renders a cell only where the
+validator would accept the absence. Anywhere else a missing verb is still a hard failure,
+which is what keeps this table honest for the eight mutable declarations.
+
 <!-- core:porting-matrix:gen commands -->
 
-| Action        | macOS (brew)                  | Fedora (dnf)                    | Arch                                 | openSUSE                                                                                                                       | Alpine                       | Gentoo                          | Kali (apt)                      | Debian/Ubuntu (apt)             |
-| ------------- | ----------------------------- | ------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------- | ------------------------------- | ------------------------------- | ------------------------------- |
-| refresh       | `brew update`                 | `sudo dnf check-update`³⁵       | `sudo pacman -Sy`²³                  | `sudo zypper refresh`                                                                                                          | `doas apk update`            | `sudo emerge --sync`            | `sudo apt-get update`           | `sudo apt-get update`           |
-| upgrade       | `brew upgrade`                | `sudo dnf upgrade --refresh`    | `sudo pacman -Syu`                   | Leap: `sudo zypper up` · Tumbleweed: `sudo zypper dup` · Transactional: `sudo transactional-update dup`                        | `doas apk upgrade`           | `sudo emerge -auvDN @world`     | `sudo apt-get full-upgrade`     | `sudo apt-get full-upgrade`     |
-| count-pending | `brew outdated --quiet`³⁶     | `dnf -q --refresh check-update` | `checkupdates`²³                     | `zypper -q list-updates`                                                                                                       | `apk list -u`                | `gentoo-pkg-pending`³⁷          | `apt-get -s upgrade`            | `apt-get -s upgrade`            |
-| install       | `brew install <pkg>`          | `sudo dnf install -y <pkg>`     | `sudo pacman -S --noconfirm <pkg>`   | Leap: `sudo zypper in <pkg>` · Tumbleweed: `sudo zypper in <pkg>` · Transactional: `sudo transactional-update -n pkg in <pkg>` | `doas apk add <pkg>`         | `sudo emerge <atom>`            | `sudo apt-get install -y <pkg>` | `sudo apt-get install -y <pkg>` |
-| remove        | `brew uninstall <pkg>`        | `sudo dnf remove -y <pkg>`      | `sudo pacman -Rns --noconfirm <pkg>` | Leap: `sudo zypper rm <pkg>` · Tumbleweed: `sudo zypper rm <pkg>` · Transactional: `sudo transactional-update -n pkg rm <pkg>` | `doas apk del <pkg>`         | `sudo emerge --depclean <atom>` | `sudo apt-get remove -y <pkg>`  | `sudo apt-get remove -y <pkg>`  |
-| search        | `brew search <term>`          | `dnf search <term>`             | `pacman -Ss <term>`                  | `zypper se <term>`                                                                                                             | `apk search <term>`          | `emerge -s <term>`              | `apt-cache search <term>`       | `apt-cache search <term>`       |
-| owns-file     | `brew which-formula <path>`³⁸ | `dnf provides <path>`           | `pacman -Qo <path>`                  | `zypper se --provides <path>`                                                                                                  | `apk info --who-owns <path>` | `equery belongs <path>`         | `dpkg -S <path>`                | `dpkg -S <path>`                |
+| Action        | macOS (brew)                  | Fedora (dnf)                                                                                           | Arch                                 | openSUSE                                                                                                                       | Alpine                       | Gentoo                          | NixOS                                                                 | Kali (apt)                      | Debian/Ubuntu (apt)             |
+| ------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------- | ------------------------------- | --------------------------------------------------------------------- | ------------------------------- | ------------------------------- |
+| refresh       | `brew update`                 | Workstation: `sudo dnf check-update` · Atomic: `sudo rpm-ostree refresh-md`³⁵                          | `sudo pacman -Sy`²³                  | `sudo zypper refresh`                                                                                                          | `doas apk update`            | `sudo emerge --sync`            | `sudo nix-channel --update`                                           | `sudo apt-get update`           | `sudo apt-get update`           |
+| upgrade       | `brew upgrade`                | Workstation: `sudo dnf upgrade --refresh` · Atomic: `sudo rpm-ostree upgrade`                          | `sudo pacman -Syu`                   | Leap: `sudo zypper up` · Tumbleweed: `sudo zypper dup` · Transactional: `sudo transactional-update dup`                        | `doas apk upgrade`           | `sudo emerge -auvDN @world`     | `sudo nixos-rebuild switch --upgrade`                                 | `sudo apt-get full-upgrade`     | `sudo apt-get full-upgrade`     |
+| count-pending | `brew outdated --quiet`³⁶     | Workstation: `dnf -q --refresh check-update` · Atomic: `rpm-ostree status --pending-exit-77` (staged?) | `checkupdates`²³                     | `zypper -q list-updates`                                                                                                       | `apk list -u`                | `gentoo-pkg-pending`³⁷          | —                                                                     | `apt-get -s upgrade`            | `apt-get -s upgrade`            |
+| install       | `brew install <pkg>`          | Workstation: `sudo dnf install -y <pkg>` · Atomic: `sudo rpm-ostree install --idempotent <pkg>`        | `sudo pacman -S --noconfirm <pkg>`   | Leap: `sudo zypper in <pkg>` · Tumbleweed: `sudo zypper in <pkg>` · Transactional: `sudo transactional-update -n pkg in <pkg>` | `doas apk add <pkg>`         | `sudo emerge <atom>`            | `nix-env -i <pkg>`                                                    | `sudo apt-get install -y <pkg>` | `sudo apt-get install -y <pkg>` |
+| remove        | `brew uninstall <pkg>`        | Workstation: `sudo dnf remove -y <pkg>` · Atomic: `sudo rpm-ostree uninstall <pkg>`                    | `sudo pacman -Rns --noconfirm <pkg>` | Leap: `sudo zypper rm <pkg>` · Tumbleweed: `sudo zypper rm <pkg>` · Transactional: `sudo transactional-update -n pkg rm <pkg>` | `doas apk del <pkg>`         | `sudo emerge --depclean <atom>` | `nix-env -e <pkg>`                                                    | `sudo apt-get remove -y <pkg>`  | `sudo apt-get remove -y <pkg>`  |
+| search        | `brew search <term>`          | `dnf search <term>`                                                                                    | `pacman -Ss <term>`                  | `zypper se <term>`                                                                                                             | `apk search <term>`          | `emerge -s <term>`              | `nix --extra-experimental-features nix-command search nixpkgs <term>` | `apt-cache search <term>`       | `apt-cache search <term>`       |
+| owns-file     | `brew which-formula <path>`³⁸ | Workstation: `dnf provides <path>` · Atomic: `rpm -qf <path>`                                          | `pacman -Qo <path>`                  | `zypper se --provides <path>`                                                                                                  | `apk info --who-owns <path>` | `equery belongs <path>`         | `nix-locate --top-level <path>`                                       | `dpkg -S <path>`                | `dpkg -S <path>`                |
 
 <!-- core:porting-matrix:end commands -->
 
@@ -534,7 +550,7 @@ escape hatch does not cover for it. The `Windows` row is neither wired nor pendi
 it is out of scope, vendoring no `core/` at all. **Neither role repo has a row here, both
 by the same design** — `Defense` and `Offense` are distro-agnostic and carry no `os/`
 layer, so their atuin exports come from whichever OS repo is underneath them (see "Repo
-status"). Seven machines + `Offense` + `Defense` = the nine Core-vendoring repos in
+status"). Eight machines + `Offense` + `Defense` = the ten Core-vendoring repos in
 `scripts/os-repos.txt`.
 
 That used to read "eight machines + `Defense`", which counted `Offense` as a machine. The
@@ -1370,11 +1386,17 @@ Core itself is unaffected: nothing in Core shells out to jq (detect-only, no ali
 same shape as `sd` and `gron`, both ledger-only probes since #694). This is a note for the role layers and for anyone
 piping untrusted JSON through a distro jq.
 
-³⁵ Fedora `refresh` is `sudo dnf check-update`, and it is **not really a refresh** — dnf has no
-standalone index-refresh verb. Refreshing is a _flag_ on the verb that needs it
-(`dnf upgrade --refresh`), which is why the Fedora `upgrade` and `count-pending` cells both
-carry it and why `os/fedora.capabilities` declares no `PKG_UPGRADE_PRE`. The schema calls
-`PKG_REFRESH` "may be a no-op verb" for exactly this case.
+³⁵ Fedora's **Workstation** `refresh` is `sudo dnf check-update`, and it is **not really a
+refresh** — dnf has no standalone index-refresh verb. Refreshing is a _flag_ on the verb
+that needs it (`dnf upgrade --refresh`), which is why the Workstation `upgrade` and
+`count-pending` cells both carry it and why `os/fedora.capabilities` declares no
+`PKG_UPGRADE_PRE`. The schema calls `PKG_REFRESH` "may be a no-op verb" for exactly this
+case.
+
+The mark sits on the whole cell because a footnote travels with the **verb**, but it is
+about the Workstation half only: the **Atomic** edition genuinely has a standalone one.
+`rpm-ostree refresh-md` refreshes the metadata and does nothing else, so there the declared
+`PKG_REFRESH` means what the schema's name says.
 
 ³⁶ macOS `count-pending` is two commands, and it is the only archive where that is true.
 `brew outdated` reports against the **locally cached** formula index, so without a `brew
@@ -1508,7 +1530,7 @@ are not**, because they are keyed to an Ubuntu series and would break the Debian
 ### Repo status
 
 - **Built:** `core`, `Fedora` (template), `MacBook`, `Arch`, `Debian`, `openSUSE`,
-  `Alpine`, `Gentoo`, `Offense`, `Defense`. That is the nine Core-vendoring repos
+  `Alpine`, `Gentoo`, `NixOS`, `Offense`, `Defense`. That is the ten Core-vendoring repos
   (`scripts/os-repos.txt`) plus `core` itself; `Windows` vendors no `core/` and is
   tracked separately.
 - **Stamp-pending (this doc):** none — all five template stamps are complete.

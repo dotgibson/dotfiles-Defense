@@ -41,5 +41,6 @@ dotfiles-Debian
 dotfiles-Defense
 dotfiles-Fedora
 dotfiles-Gentoo
+dotfiles-NixOS
 dotfiles-Offense
 dotfiles-openSUSE
