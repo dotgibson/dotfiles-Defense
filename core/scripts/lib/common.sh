@@ -2315,9 +2315,9 @@ _core_make_gate_hits() { # _core_make_gate_hits <repo-root>
 # WHY IT KEEPS COMING BACK, and what that means for the pattern. There are three genuinely
 # different correct numbers here, and prose rarely says which is meant:
 #
-#   · 9  — repos that vendor `core/` (scripts/os-repos.txt; 7 OS + 2 Role)
-#   · 8  — OS-native repos, INCLUDING dotfiles-Windows, which vendors nothing
-#   · 11 — the whole system (8 OS + 2 Role + dotfiles-core)
+#   · 10 — repos that vendor `core/` (scripts/os-repos.txt; 8 OS + 2 Role)
+#   · 9  — OS-native repos, INCLUDING dotfiles-Windows, which vendors nothing
+#   · 12 — the whole system (9 OS + 2 Role + dotfiles-core)
 #
 # So "eight" was never simply a stale nine: it is someone correctly counting OS repos and
 # attaching it to the FAN-OUT, which is a different set. A gate keyed on the bare number
@@ -2361,7 +2361,7 @@ _core_fanout_count_hits() { # _core_fanout_count_hits <repo-root> <live-count>
       }
       # claim_num(s) — the repo count a fan-out claim in <s> applies, or -1 for no claim.
       # The verb must GOVERN the count: a short run of words between them is allowed (the
-      # claims in-tree read "fans out to all nine Core-vendoring repos", "vendors into
+      # claims in-tree read "fans out to all ten Core-vendoring repos", "vendors into
       # nine repos", and the older "nine OS repos" the regex still has to catch),
       # but not a sentence boundary, which would let an unrelated later number match.
       function claim_num(s,   claim, tail) {
@@ -2398,7 +2398,7 @@ _core_fanout_count_hits() { # _core_fanout_count_hits <repo-root> <live-count>
           got = claim_num(joined " " $0)
         }
         if (got > 0 && got != want) {
-          printf "%s:%d: a fan-out claim says %s repos; scripts/os-repos.txt lists %d — Core vendors into the %d Core-vendoring repos (7 OS + 2 Role; dotfiles-Windows vendors no core/)\n", \
+          printf "%s:%d: a fan-out claim says %s repos; scripts/os-repos.txt lists %d — Core vendors into the %d Core-vendoring repos (8 OS + 2 Role; dotfiles-Windows vendors no core/)\n", \
             f, FNR, word, want, want
         }
         prev = $0
