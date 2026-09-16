@@ -18,6 +18,15 @@ description: |
   Note user units (~/.config/systemd/user/) are deliberately not watched above: a
   per-user watch does not generalize across home directories, and the user-unit path is
   better served by a recursive watch you scope to your own layout.
+  THREE FILTERS, AND THE TWO SYSTEMD-SPECIFIC ONES ARE SCOPED BY PATH, NOT BY BINARY.
+  filter_provisioning is exactly cron_persistence's list, because the volume argument is
+  the same one. `systemd` and `systemctl` are NOT in it: allowlisting either binary
+  outright suppresses `systemctl edit --force --full evil.service` and
+  `systemctl link /tmp/evil.service`, which attribute the unit-file write to
+  `/systemctl` and are first-class variants of the technique this rule exists to catch.
+  That is what filter_systemctl_wants and filter_systemd_runtime narrow instead - each
+  pins the ONE path shape that carries the noise, so a write anywhere else in a watched
+  directory still alerts.
   Validate (purple): install a systemd service or timer callback from dotfiles-Offense
   (htpx pair systemd-persist).
 references:
@@ -25,6 +34,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/systemd-persist-auditd.md
 author: dotfiles-Defense
 date: 2026-08-26
+modified: 2026-09-16
 tags:
   - attack.persistence
   - attack.t1543.002
@@ -36,9 +46,10 @@ detection:
     key: 'systemd_persist'
   filter_provisioning:
     # DEPLOY-REQUIRED: extend with YOUR package manager and configuration-management
-    # binaries - same list as cron_persistence, same reason. Unit files are written on
-    # essentially every package install, so until this matches your fleet the rule
-    # reports your patch window. Until filled this excludes only the entries below.
+    # binaries. This is cron_persistence's list, entry for entry, and for the same
+    # reason - unit files are written on essentially every package install, so until
+    # this matches your fleet the rule reports your patch window. Until filled this
+    # excludes only the entries below.
     # Run detections/sigma/deploy-required.sh to find this.
     exe|endswith:
       - '/dpkg'
@@ -48,16 +59,39 @@ detection:
       - '/yum'
       - '/dnf'
       - '/zypper'
-      - '/systemd'
-      - '/systemctl'
       - '/ansible-playbook'      # example CM — verify against your fleet
       - '/puppet'                # example CM — verify against your fleet
       - '/chef-client'           # example CM — verify against your fleet
       - '/salt-minion'           # example CM — verify against your fleet
-  condition: selection and not filter_provisioning
+  filter_systemctl_wants:
+    # `systemctl enable` / `disable` maintains a symlink farm under <target>.wants/, and
+    # that is the whole systemctl volume on this key. Scoped to the .wants/ path rather
+    # than to the binary ON PURPOSE: a unit written at the TOP level of a watched
+    # directory still alerts even when systemctl is the writer, which is exactly where
+    # `systemctl edit --force --full` and `systemctl link` land. NOT deploy-required -
+    # the path shape is a systemd invariant, not a property of your fleet.
+    exe|endswith: '/systemctl'
+    name|contains: '.wants/'
+  filter_systemd_runtime:
+    # PID 1 materializing a generated or transient unit under /run, which happens on
+    # every boot and every `daemon-reload`. Reaching this path means going through
+    # systemd's own D-Bus API as root, and /run is tmpfs so nothing written there
+    # survives a reboot. Scoped to /run: a write by PID 1 into /etc or /usr/lib still
+    # alerts.
+    # BLIND SPOT, RECORDED: a transient unit (`systemd-run`, StartTransientUnit) is
+    # written here by PID 1 and is therefore suppressed. That is the accepted cost of
+    # not muting the rule on generator output - the alternative is a rule that fires on
+    # every reboot, and a muted rule is a blind spot for the whole key rather than for
+    # one variant. Catch the transient path on the D-Bus call instead.
+    exe|endswith: '/systemd'
+    name|startswith: '/run/systemd/system/'
+  condition: selection and not 1 of filter_*
 falsepositives:
   - Package installs writing unit files - allowlist the package manager in
     filter_provisioning; what remains is a unit written outside the packaging path.
   - Configuration management deploying application units (expected - allowlist the CM
     agent and triage on the auid).
+  - An operator running `systemctl enable` on a unit shipped by a package - suppressed
+    by filter_systemctl_wants, which matches the symlink it writes under
+    <target>.wants/ and nothing else.
 level: medium

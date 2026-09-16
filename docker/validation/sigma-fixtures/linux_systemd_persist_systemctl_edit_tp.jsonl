@@ -1,0 +1,1 @@
+{"key": "systemd_persist", "comm": "systemctl", "exe": "/usr/bin/systemctl", "name": "/etc/systemd/system/evil.service", "auid": "1000", "uid": "0"}
