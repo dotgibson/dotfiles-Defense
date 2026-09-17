@@ -181,7 +181,7 @@ eventName:authorize AND (scope:(*mail.google.com* OR *auth\/gmail* OR *auth\/dri
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // impact/service_stop_protected_services.yml — Protected service stopped - backup / AV / database teardown (T1489)
-(((Image:(*\\net.exe OR *\\net1.exe OR *\\sc.exe)) AND (CommandLine:(*\ stop\ * OR *start\=\ disabled* OR *start\=disabled*))) OR ((Image:(*\\powershell.exe OR *\\pwsh.exe)) AND (CommandLine:(*Stop\-Service* OR *Set\-Service*)))) AND (CommandLine:(*sql* OR *msexchange* OR *veeam* OR *backup* OR *acronis* OR *memtas* OR *mepocs* OR *sophos* OR *sentinel* OR *defend* OR *vss* OR *sqlwriter* OR *postgres* OR *oracle*))
+(((Image:(*\\net.exe OR *\\net1.exe OR *\\sc.exe)) AND (CommandLine:(*\ stop\ * OR *start\=\ disabled* OR *start\=disabled*))) OR ((Image:(*\\powershell.exe OR *\\pwsh.exe)) AND CommandLine:*Stop\-Service*) OR ((Image:(*\\powershell.exe OR *\\pwsh.exe)) AND (CommandLine:*Set\-Service* AND CommandLine:*Disabled*))) AND (CommandLine:(*msexchange* OR *veeam* OR *acronis* OR *sophos* OR *memtas* OR *mepocs* OR *postgres* OR *oracle* OR *mssql* OR *sqlwriter* OR *sqlserveragent* OR *backupexec* OR *windefend* OR *swprv* OR *\ sql* OR *\"sql* OR *\ vss* OR *\"vss* OR *\ backup* OR *\"backup* OR *\ sentinel* OR *\"sentinel* OR *\ defend* OR *\"defend* OR *\ sense* OR *\"sense*))
 
 // jenkins/jenkins_api_token_created.yml — Jenkins user API token created (durable-access backdoor)
 uri:*ApiTokenProperty\/generateNewToken*

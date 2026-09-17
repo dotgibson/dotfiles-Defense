@@ -181,7 +181,8 @@ docker/validation/sigma-fixtures/rogue_account_4720_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/scheduled_task_4698.jsonl	unverified	-
 docker/validation/sigma-fixtures/service_psexec_7045.jsonl	unverified	-
 docker/validation/sigma-fixtures/service_stop_burst_4688.jsonl	unverified	-
-docker/validation/sigma-fixtures/service_stop_protected_services.jsonl	unverified	-
+docker/validation/sigma-fixtures/service_stop_protected_services.jsonl	unverified	Sysmon EventID 1 process-creation fields; the two lines are a net stop of a named backup service and an sc config start= disabled of a named database service, one per arm of the net/sc selection. Command-line forms are synthetic, written from the shapes ransomware batch scripts use rather than from a captured sample
+docker/validation/sigma-fixtures/service_stop_protected_services_tn.jsonl	unverified	same EventID and EventData key set as the TP, values changed. Two near-misses, one per defect fixed in #307, and BOTH fired on the previous rule - verified by running them against the pre-change rule, so this is a regression test rather than an assertion. Line 1 is a Spooler stop whose redirect target contains C:\\Backup\\, which the unanchored 'backup' keyword matched in a path; line 2 is a Set-Service description edit, which the old PowerShell arm matched because it did not require the disabling form
 docker/validation/sigma-fixtures/shadow_credentials_5136.jsonl	unverified	-
 docker/validation/sigma-fixtures/share_session_enum_5145.jsonl	unverified	-
 docker/validation/sigma-fixtures/share_session_enum_5145_tn.jsonl	unverified	-
