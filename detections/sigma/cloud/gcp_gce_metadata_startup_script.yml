@@ -1,0 +1,118 @@
+title: GCE startup-script metadata written (T1651)
+id: 70ef8abc-2e03-4b1c-b39f-c5ca1d5e3810
+status: experimental
+description: |
+  Detects Cloud Administration Command (T1651) on GCP: a startup-script key written into a
+  Compute Engine instance's metadata. The guest environment agent runs that script as root
+  (Linux) or SYSTEM (Windows) the next time the instance boots, so the attacker needs no SSH
+  key, no open port, no OS credential and no packet the guest's network sensors can see -
+  compute.instances.setMetadata on the instance object is the whole prerequisite, and a
+  stolen Compute Instance Admin token is therefore remote code execution. It is the GCP
+  analogue of azure_vm_run_command, and the FIRST rule this repo has on GCP's resource
+  plane: the three sibling gcp_* rules are all identity or logging plane (T1098, T1098.001,
+  T1685.002), which is the gap DEFENSE-METHODOLOGY.md used to claim did not exist.
+  THE KEY NAMES ARE ENUMERATED, NEVER SUBSTRING-MATCHED. There is no single "startup"
+  spelling: Linux takes startup-script and startup-script-url, Windows takes four more
+  (windows-startup-script-cmd/-bat/-ps1/-url). A contains match on "startup" would read as
+  sufficient and would also sweep in unrelated keys, while missing nothing it needs to -
+  spelling the set out makes an edit that drops one visible in the diff. The URL forms are
+  the reason the key name has to be the signal rather than the script body: with
+  startup-script-url the payload is fetched at boot and its bytes never enter the log at all.
+  ON READING THE KEY DELTA RATHER THAN THE REQUEST. Google redacts this call's payload -
+  "For instance.setMetadata and project.setCommonInstanceMetadata API requests, the metadata
+  portion of the request body is redacted to avoid logging sensitive information sent in the
+  metadata" (Compute Engine audit logging). So gcp.audit.request carries nothing here, by
+  design, and the only surviving signal is the list of key NAMES that the call added or
+  modified, which Cloud Audit Logs emits separately as GceInstanceAuditMetadata.
+  FIELD SPELLING, flagged because upstream spells it two ways and this rule had to choose.
+  A captured Admin Activity entry carries protoPayload.metadata.instanceMetadataDelta with
+  addedMetadataKeys / modifiedMetadataKeys (arrays), under
+  @type: type.googleapis.com/google.cloud.audit.GceInstanceAuditMetadata. Security Command
+  Center's own sample filter for this same detection instead writes
+  protoPayload.metadata.instanceMetaData.addedMetadataKey - singular, and a different
+  capitalisation of the parent. This rule takes the captured spelling, snake_cased to match
+  the method_name / principal_email normalization the sibling GCP rules already use. If your
+  pipeline presents the other spelling, remap there rather than widening this rule, which
+  would make both spellings wrong.
+  METHOD MATCHED BY SUFFIX so beta. and alpha. variants of the same call are covered, the
+  same idiom gcp_iam_policy_backdoor uses for .SetIamPolicy. A version-pinned literal would
+  leave the non-GA path as a silent bypass.
+  RESET IS DELIBERATELY NOT SELECTED. A startup script only executes on boot, so
+  v1.compute.instances.reset from the same principal against the same instance shortly after
+  the write is the attacker choosing not to wait - and it is the corroborating pivot at
+  triage, not a second arm of the rule. Selected on its own it is benign (reset is ordinary
+  operations); ANDed as a requirement it would turn a patient attacker, or one who simply
+  waits for the next maintenance reboot, into a miss. The scoping work is done by the key
+  names: setMetadata alone is noisy because labels, ssh-keys and application config ride the
+  same call, and restricting to the startup-script keys is what removes that noise.
+  PROJECT-WIDE METADATA IS A KNOWN ADJACENT PATH, NOT COVERED HERE.
+  compute.projects.setCommonInstanceMetadata sets a startup-script for every instance in the
+  project and is the larger blast radius, but it emits a different audit-metadata message
+  whose field path this repo has not confirmed against a real event. Guessing it would ship
+  a selection that cannot fire, which is worse than naming the gap - so it is named. Extend
+  here once the path is confirmed.
+  Telemetry cost is zero and cannot be switched off: both calls require an ADMIN_WRITE IAM
+  permission, so they land in Compute Admin Activity audit logs, which are always on and
+  cannot be disabled or excluded. That makes this the cheapest resource-plane telemetry any
+  GCP estate has - the same argument that put azure_vm_run_command first on Azure's resource
+  plane. Contrast the GCS half of the same upstream pair, declined in DEFENSE-METHODOLOGY.md
+  because storage.objects.get is Data Access telemetry that is off by default.
+  Validate (purple): write a startup-script key with "gcloud compute instances add-metadata"
+  and reboot the instance from dotfiles-Offense (htpx pair gcp-gce-startup-script-exec).
+references:
+  - https://attack.mitre.org/techniques/T1651/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/gcp-gce-metadata-audit.md
+author: dotfiles-Defense
+date: 2026-09-16
+tags:
+  - attack.execution
+  - attack.t1651
+logsource:
+  product: gcp
+  service: gcp.audit
+detection:
+  selection_added:
+    gcp.audit.method_name|endswith: '.instances.setMetadata'
+    gcp.audit.metadata.instance_metadata_delta.added_metadata_keys:
+      - 'startup-script'
+      - 'startup-script-url'
+      - 'windows-startup-script-cmd'
+      - 'windows-startup-script-bat'
+      - 'windows-startup-script-ps1'
+      - 'windows-startup-script-url'
+  selection_modified:
+    # Same method and the same key set against the OTHER delta list. Two arms rather than
+    # one because added and modified are distinct fields, and an instance that already
+    # carries a benign startup-script is the case where an attacker OVERWRITES rather than
+    # adds - the stealthier of the two, and the one a rule watching only added_metadata_keys
+    # never sees.
+    gcp.audit.method_name|endswith: '.instances.setMetadata'
+    gcp.audit.metadata.instance_metadata_delta.modified_metadata_keys:
+      - 'startup-script'
+      - 'startup-script-url'
+      - 'windows-startup-script-cmd'
+      - 'windows-startup-script-bat'
+      - 'windows-startup-script-ps1'
+      - 'windows-startup-script-url'
+  filter_iac:
+    # DEPLOY-REQUIRED: replace with your IaC / image-pipeline principal(s) that legitimately
+    # set startup scripts (the Terraform service account, a configuration-management or
+    # golden-image job). Provisioning writes startup scripts by design, so an unfilled list
+    # means every routine instance build alerts at high, someone mutes the rule, and the mute
+    # is the blind spot. Until filled this excludes only the example. Run
+    # detections/sigma/deploy-required.sh to find this.
+    #
+    # Allowlist the CALLER, never the key: the key IS the technique, and there is no
+    # startup-script write that is safe by shape rather than by who made it.
+    gcp.audit.principal_email:
+      - 'compute-terraform@example.iam.gserviceaccount.com'   # example — replace
+  condition: 1 of selection_* and not filter_iac
+falsepositives:
+  - IaC, image-bake, and configuration-management pipelines that set startup scripts as part
+    of provisioning - the reason filter_iac exists; allowlist the automation principal there
+    rather than muting the rule. Prefer OS Config or a baked image over startup scripts for
+    those paths, which shrinks this rule's benign set to nearly nothing.
+  - An operator adding a startup script by hand to debug a boot problem. Legitimate, and it
+    looks identical. Treat a write outside a change window, from a principal that has never
+    written instance metadata before, or followed by an immediate reset as the finding.
+level: high

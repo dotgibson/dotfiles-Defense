@@ -445,9 +445,9 @@ event stream.
 repo covers has two control planes — an *identity* plane (who exists, what they hold) and a
 *resource* plane (what runs, what is read) — and a corpus can be deep on one and empty on
 the other while a per-tactic map like the table above shows nothing wrong. That is what
-happened to Azure. Six pairs of Entra/M365 identity coverage sat in `detections/sigma/cloud/`, AWS and GCP
-both reached their resource planes, and Azure's resource plane had no rule at all: the
-provider read as covered until you sorted by plane.
+happened to Azure. Six pairs of Entra/M365 identity coverage sat in `detections/sigma/cloud/`,
+AWS reached both planes, and Azure's resource plane had no rule at all: the provider read as
+covered until you sorted by plane.
 
 `detections/sigma/cloud/azure_vm_run_command.yml` is the first rule on that plane, and it
 brings a data source the table's prose did not name before — the **Azure Activity Log**,
@@ -469,6 +469,39 @@ a detection one. It counts distinct secrets per object id in a bucketed window r
 read rate, the same breadth-per-identity shape `detections/sigma/vault/vault_bulk_secret_read.yml`
 uses for HashiCorp Vault; the two are deliberately tuned to the same threshold so an analyst
 tuning one credential store starts from the same number in the other.
+
+**It happened to GCP as well, and this document is why it stayed hidden.** The plane sentence
+that opens this section used to read "AWS and GCP both reached their resource planes" - written while the Azure gap
+was being closed, with GCP asserted rather than checked. It was false. All three GCP rules
+were identity or logging plane (`detections/sigma/cloud/gcp_iam_policy_backdoor.yml` T1098,
+`detections/sigma/cloud/gcp_service_account_key_created.yml` T1098.001,
+`detections/sigma/cloud/gcp_audit_log_sink_deleted.yml` T1685.002), and the resource plane was
+as empty as Azure's had been. That made the wrong sentence load-bearing rather than merely
+untidy: a ledger asserting a plane is covered is a reason for the weekly `/coverage-gap` sweep
+not to look there, so the error hid the gap it described. Correcting it is what made the hole
+derivable again (#305). The lesson is about the axis, not about GCP - sort by plane one
+provider short and it returns the same clean bill as the per-tactic map it was invented to
+distrust.
+
+`detections/sigma/cloud/gcp_gce_metadata_startup_script.yml` is the first rule on GCP's
+resource plane, and it is T1651 a second time because the same argument picks it. A
+`startup-script` key written into an instance's metadata is run by the guest environment agent
+as root or SYSTEM at the next boot, so a stolen Compute Instance Admin token is remote code
+execution with no SSH key, no open port and no guest credential - and Compute **Admin Activity**
+logs are always on and cannot be disabled, which makes this the cheapest resource-plane
+telemetry GCP has, exactly as Activity Log was for Azure. Two details are worth carrying out of
+the rule because they generalise. First, Google **redacts the metadata request body** for
+`setMetadata`, so the payload is not in the log and the detection has to read the list of key
+NAMES the call added or modified instead. Second, the key names are enumerated rather than
+substring-matched: there are six spellings across Linux and Windows, and the `-url` forms fetch
+the script at boot so its bytes never enter the log at all. The key name is the whole signal,
+which is why a `contains` on "startup" would be both too loose and, where it matters, no
+better.
+
+The GCS half of the same upstream pair is declined rather than deferred, on telemetry: see
+"Declined coverage" below. The asymmetry inside one provider is the point - Admin Activity is
+free and immutable, Data Access is off until someone turns it on, and a plane is only as
+coverable as the log that records it.
 
 **Impact is the one row that spans both layers**, and it is worth understanding why
 rather than reading `sigma, network` as a formatting quirk. Most of the tactic is host
@@ -628,6 +661,25 @@ re-deriving them, each with the condition that would reopen it:
   the Offense entry ships unpaired because the activity is read-only, low-signal, and lands in
   GCP Data Access telemetry that is off by default. *Reopen when* Data Access logging is
   enabled in the lab project.
+- **T1530 Data from Cloud Storage, on GCS specifically** — declined on telemetry, and the one
+  entry here that is scoped to a PROVIDER rather than to a technique.
+  `detections/sigma/cloud/aws_s3_bulk_exfil.yml` covers T1530 on S3, so the technique is not
+  a hole in the corpus; what is declined is a GCS twin of it. `storage.objects.get` and
+  `storage.objects.list` are **Data Access** logs (`DATA_READ`), off by default and enabled
+  per-service in `auditConfigs`, so the rule would be inert on most estates — the same
+  argument that declines T1526/T1580/T1069.003 above, and the upstream blue entry
+  (`gcp-gcs-exfil-audit`) makes the connection itself, calling it "the same telemetry gap
+  that ships `gcp-enum-recon` unpaired". Note the contrast with its sibling on the same
+  plane: `detections/sigma/cloud/gcp_gce_metadata_startup_script.yml` ships because Compute
+  Admin Activity is always on. One provider, two resource-plane techniques, and the log — not
+  the technique — decides which is coverable. *Reopen when* GCS Data Access logging is
+  enabled in the lab project, the same trigger as the discovery row above.
+
+  **This decline carries no `known-absent` marker id, and that is correct rather than an
+  oversight.** The marker gate reads the Sigma corpus, not the corpus per provider, and
+  `aws_s3_bulk_exfil` already tags `attack.t1530` — so adding T1530 to the list on the next
+  line would fail the build with "declared known-absent … but a rule covers it". A
+  provider-scoped decline can only live in this prose. Do not "fix" the omission.
 
 <!-- methodology-check: known-absent = T1041, T1048, T1069.003, T1071.001, T1071.004, T1078.004, T1090.004, T1095, T1102.002, T1496.001, T1526, T1557.001, T1558.001, T1558.002, T1566.002, T1568.002, T1572, T1573.002, T1580 -->
 <!-- Techniques this document names but the SIGMA corpus does not cover — which is not
@@ -651,6 +703,10 @@ re-deriving them, each with the condition that would reopen it:
            T1090.004, T1102.002, T1526, T1580, T1069.003, and T1041/T1048 (detected in
            effect by zeek/reverse-tunnel.zeek, but not claimed: its shape cannot separate
            exfil from the tunneling it already reports as T1572).
+           NOT every decline appears here: T1530-on-GCS is declined above and carries no
+           id, because aws_s3_bulk_exfil already covers T1530 and this gate would reject
+           it. A decline scoped to one PROVIDER has no representation in a marker keyed
+           on techniques, so the prose is its only home.
      Every other technique id in this file must be tagged by a rule in detections/sigma/.
      Adding an id here is a deliberate act. Remove one only when a SIGMA rule starts
      covering it — and note the gate enforces that in both directions, so the decline

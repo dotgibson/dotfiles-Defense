@@ -6,7 +6,7 @@ A **gap here is not a defect.** htpx spans SaaS and CI/CD platforms this repo ha
 
 Corpus: `dotgibson/htpx` at `7f369ee37ee5` (none — 3 commits past v3.2.0), pinned in `detections/htpx.pin`.
 
-**107 blue entries · 99 claimed here · 23 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
+**107 blue entries · 100 claimed here · 23 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
 
 ## htpx blue entries claimed by detection content here
 
@@ -37,6 +37,7 @@ Corpus: `dotgibson/htpx` at `7f369ee37ee5` (none — 3 commits past v3.2.0), pin
 | `dpapi-backupkey-5145` | T1555 | `dpapi_backupkey_5145` |
 | `entra-role-assign-audit` | T1098.003 | `entra_directory_role_grant` |
 | `gcp-audit-log-tamper-audit` | T1685.002 | `gcp_audit_log_sink_deleted` |
+| `gcp-gce-metadata-audit` | T1651 | `gcp_gce_metadata_startup_script` |
 | `gcp-iam-policy-audit` | T1098 | `gcp_iam_policy_backdoor` |
 | `gcp-sa-key-audit` | T1098.001 | `gcp_service_account_key_created` |
 | `gh-branch-protection-audit` | T1685 | `github_branch_protection_tamper` |
@@ -122,7 +123,6 @@ The other side of the boundary. Each is a detection the corpus documents and thi
 | `dga-nxdomain-entropy` | T1568.002 | Detect DGA beacons (NXDOMAIN burst + label entropy) |
 | `dns-tunnel-sysmon-22` | T1071.004 | Detect DNS tunneling (Sysmon 22 query volume + label length) |
 | `domain-fronting-sni-mismatch` | T1090.004 | Detect domain fronting (CDN edge from a non-browser process; SNI vs Host mismatch) |
-| `gcp-gce-metadata-audit` | T1651 | Detect GCE metadata exec (GCP audit, setMetadata startup-script + reset) |
 | `gcp-gcs-exfil-audit` | T1530 | Detect GCS bulk exfil (GCP Data Access, storage.objects.get volume) |
 | `unconstrained-deleg-4624` | T1558 | Detect unconstrained-deleg abuse (DC machine-account auth to a non-DC, 4624) |
 | `web-service-c2-beacon` | T1102.002 | Detect web-service C2 (non-browser process to SaaS API) |
