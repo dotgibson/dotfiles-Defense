@@ -132,8 +132,8 @@ detection stack up and down with `siemup` / `siemdown`.
 <!-- WHAT'S IN THIS LAYER -->
 ## What's In This Layer
 
-The defense stage loads just before local overrides (`… os defense local`), and
-holds workflow helpers only — all `HAVE_*`-guarded:
+The defense stage loads just before local overrides (`… os defense local`) — band 85,
+linked as `85-defense.zsh` — and holds workflow helpers only, all `HAVE_*`-guarded:
 
 - `defense/defense.zsh` — case workflow (`mkcase`, `gocase`, `note`,
   `siemup` / `siemdown`)

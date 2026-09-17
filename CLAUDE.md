@@ -21,8 +21,8 @@ containers.
   `git subtree` (dotgibson/dotfiles-core#587). A `git subtree pull` would move
   `core/` without `core.lock` and leave `core-integrity` reporting **TAMPERED**;
   `core/VENDORING.md` has the mechanism.
-- The loader adds a **`defense` stage** (`… os defense local`) — keep blue config
-  there, not in `core/`.
+- The loader adds a **`defense` stage** (`… os defense local`) — band 85, linked as
+  `85-defense.zsh`. Keep blue config there, not in `core/`.
 - **Case/evidence data NEVER lives in the repo.** It lives in `~/cases/`; the
   `.gitignore` is only a backstop. `mkcase` scaffolds outside the repo.
 - **Red vs blue is a split, not a merge.** Attacker-authored detections stay in
