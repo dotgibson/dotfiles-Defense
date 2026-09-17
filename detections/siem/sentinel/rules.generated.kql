@@ -42,6 +42,9 @@ OperationName in~ ("Add service principal credentials", "Add application credent
 // cloud/gcp_audit_log_sink_deleted.yml — GCP logging sink deleted / disabled (audit-log tampering)
 (['gcp.audit.method_name'] endswith "ConfigServiceV2.DeleteSink" or ['gcp.audit.method_name'] endswith "ConfigServiceV2.UpdateSink" or ['gcp.audit.method_name'] endswith "ConfigServiceV2.DeleteBucket") and (not(['gcp.audit.principal_email'] =~ "logging-terraform@example.iam.gserviceaccount.com"))
 
+// cloud/gcp_gce_metadata_startup_script.yml — GCE startup-script metadata written (T1651)
+((['gcp.audit.method_name'] endswith ".instances.setMetadata" and (['gcp.audit.metadata.instance_metadata_delta.added_metadata_keys'] in~ ("startup-script", "startup-script-url", "windows-startup-script-cmd", "windows-startup-script-bat", "windows-startup-script-ps1", "windows-startup-script-url"))) or (['gcp.audit.method_name'] endswith ".instances.setMetadata" and (['gcp.audit.metadata.instance_metadata_delta.modified_metadata_keys'] in~ ("startup-script", "startup-script-url", "windows-startup-script-cmd", "windows-startup-script-bat", "windows-startup-script-ps1", "windows-startup-script-url")))) and (not(['gcp.audit.principal_email'] =~ "compute-terraform@example.iam.gserviceaccount.com"))
+
 // cloud/gcp_iam_policy_backdoor.yml — GCP IAM policy binding added (SetIamPolicy backdoor)
 ['gcp.audit.method_name'] endswith ".SetIamPolicy" and (not(['gcp.audit.principal_email'] =~ "iam-terraform@example.iam.gserviceaccount.com"))
 

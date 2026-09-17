@@ -2,14 +2,14 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**116 rules · 136 detection documents · 84 techniques · 12 tactics · 24 logsources.**
+**117 rules · 137 detection documents · 84 techniques · 12 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
 | Tactic | ID | Techniques | Rules |
 | ------ | -- | ---------: | ----: |
 | Initial Access | TA0001 | 1 | 2 |
-| Execution | TA0002 | 9 | 10 |
+| Execution | TA0002 | 9 | 11 |
 | Persistence | TA0003 | 16 | 37 |
 | Privilege Escalation | TA0004 | 9 | 15 |
 | Stealth | TA0005 | 3 | 6 |
@@ -104,7 +104,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1611 | 1 | `k8s_privileged_pod_created` |
 | T1648 | 1 | `cloudflare_worker_deployed` |
 | T1649 | 1 | `adcs_esc1_san_mismatch_4886` |
-| T1651 | 1 | `azure_vm_run_command` |
+| T1651 | 2 | `azure_vm_run_command`, `gcp_gce_metadata_startup_script` |
 | T1685 | 5 | `github_branch_protection_tamper`, `gitlab_protected_branch_tamper`, `npm_publish_2fa_disabled`, `slack_2fa_enforcement_disabled`, `vault_audit_device_disabled` |
 | T1685.002 | 1 | `gcp_audit_log_sink_deleted` |
 | T1685.005 | 2 | `windows_event_log_cleared_104`, `windows_event_log_cleared_1102` |
@@ -114,7 +114,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 
 | Directory | product | Rules |
 | --------- | ------- | ----: |
-| `cloud` | `aws`, `azure`, `gcp` | 14 |
+| `cloud` | `aws`, `azure`, `gcp` | 15 |
 | `cloudflare` | `cloudflare` | 3 |
 | `collection` | `windows` | 2 |
 | `credential_access` | `windows` | 11 |

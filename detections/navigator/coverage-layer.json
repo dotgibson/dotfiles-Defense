@@ -484,9 +484,9 @@
     },
     {
       "techniqueID": "T1651",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): azure_vm_run_command"
+      "comment": "2 rule(s): azure_vm_run_command, gcp_gce_metadata_startup_script"
     },
     {
       "techniqueID": "T1685",
