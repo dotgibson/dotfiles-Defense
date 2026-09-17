@@ -151,6 +151,19 @@ jobs:
         # drift gates above — a second copy of the truth, now checked instead of trusted.
         run: ./detections/check-readme-gates.sh
 
+      - name: README rule/deploy table correspondence (hard gate)
+        # The other half of the README, and the same failure as the step above: nothing
+        # tied its tables to detections/sigma/, so they drifted. By #314 twelve rules
+        # carried a DEPLOY-REQUIRED marker with no row in the deploy-time table, and three
+        # rules had no row in any per-directory table at all.
+        #
+        # The deploy table is the expensive one. Its own preamble says the marker "isn't
+        # enforcement, so this is the discoverable checklist instead" — an operator reads
+        # it before deploying and fills each spot, so a rule missing from it ships with an
+        # unfilled placeholder nobody was told about. A phantom row is worse still: it
+        # sends someone to fill a placeholder that is not there.
+        run: ./detections/check-readme-tables.sh
+
       - name: Splunk precedence gate (hard gate)
         # pySigma's Splunk backend does not parenthesise a top-level OR against a
         # top-level NOT, so `(a) OR (b) NOT (filter)` is correct only under the search

@@ -159,6 +159,7 @@ drift: ## Are the GENERATED artifacts in step with the rules? (the --check gates
 methodology: ## Does DEFENSE-METHODOLOGY.md still describe the rules that exist?
 	@./detections/check-methodology.sh
 	@./detections/check-readme-gates.sh
+	@./detections/check-readme-tables.sh
 
 validation-gates: ## Every rule has validation coverage, and every fixture has provenance
 	@./docker/validation/check-rule-coverage.sh
