@@ -24,6 +24,26 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **`detections/README.md`'s tables had drifted from the corpus (#314).** Adds the ten
+  missing substitution rows — `aws_snapshot_share_external`, `azure_vm_run_command`,
+  `azure_keyvault_bulk_secret_read`, both remaining `gcp_*` rules,
+  `host_enum_srvsvc_wkssvc_5145`, `local_group_enum_sweep_4798_4799`,
+  `gws_illicit_oauth_grant`, `k8s_pod_exec_attach`, `harbor_image_pushed_trusted_tag` —
+  and the three missing rule-table rows: `gcp_iam_policy_backdoor`,
+  `gcp_audit_log_sink_deleted`, `asrep_roast_4768`. The last of those is easy to miss
+  because a differently-named sibling is listed (`asrep_roast_probing_4771`, the
+  correlation); they are separate rules.
+  **Two of the twelve markers were not substitutions at all**, which is why they had no
+  home and is recorded as its own finding rather than papered over.
+  `k8s_privileged_pod_created`'s marker is about how your backend expands JSON arrays;
+  `slack_2fa_enforcement_disabled`'s is about writing a collector mapping so the rule can
+  tell an enable from a disable. Neither has a placeholder to replace, so neither fits a
+  table headed *Substitutions* with `Substitute` / `Until you do` columns. They get a
+  second table — **Deploy-time backend work** — rather than a marker of their own, because
+  `deploy-required.sh` is the one checklist an operator runs before deploying and both
+  belong on it: skip either and the rule ships subtly wrong rather than merely noisy, which
+  is the harder failure to notice.
+
 - **`service_stop_protected_services` matched its keywords anywhere on the command line,
   and `Set-Service` did not require the disable (#307).** Two matching defects underneath
   the `level: high` the #302 review raised; the level itself is defensible and is unchanged.
@@ -102,7 +122,6 @@ under `[Unreleased]` from here.
   Finding 3 of #302 (`okta_mfa_factor_reset` missing a `filter_helpdesk` scaffold) stays
   declined: every Okta sibling is filter-free, as is the cross-platform twin
   `gws_admin_role_grant`, so the absence is the SaaS-audit convention rather than an outlier.
-
 - **`DEFENSE-METHODOLOGY.md` claimed GCP had reached its resource plane. It had not
   (#305).** The plane-axis passage read "AWS and GCP both reached their resource planes" —
   written while the Azure gap was being closed, with GCP asserted rather than checked. The
@@ -452,6 +471,26 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **`check-readme-tables.sh` — the README's rule and deploy-time tables are now gated
+  (#314).** Same argument `check-readme-gates.sh` makes about the other half of the file:
+  *"the README is load-bearing documentation, so it gets a gate like the rest of the
+  load-bearing artifacts."* Nothing tied these tables to `detections/sigma/`, so they
+  drifted — twelve rules carried a `DEPLOY-REQUIRED` marker with no row in the deploy-time
+  table, and three had no row in any per-directory table.
+  Four assertions, both directions on both tables. The deploy direction is the expensive
+  one: the table's own preamble says the marker *"isn't enforcement, so this is the
+  discoverable checklist instead"*, so a rule missing from it ships with an unfilled
+  placeholder nobody was told about — the failure half those rules' comments describe at
+  length. A phantom row is worse, sending an operator to fill a placeholder that is not
+  there. The rule-table direction is about honesty of scale: the `cloud/` table listed one
+  of three GCP rules, so GCP read as a third of what shipped.
+  It locates the tables by heading text and **fails** rather than passing if a heading
+  moves, because a silent pass would report a clean bill for a table it never read — the
+  same posture as keying `splunk-precedence-allowlist.tsv` on stanza title. Each of the
+  four assertions plus the heading guard was verified to fire by mutating the README, so
+  the gate is demonstrated rather than assumed. Wired into `make methodology`, `make
+  sigma` and `sigma.yml` (thirteen hard checks become fourteen), and `check-readme-gates.sh`
+  required it to document itself.
 - **`gcp_gce_metadata_startup_script` — the first rule on GCP's resource plane (T1651,
   #305).** Every GCP rule here was identity or logging plane (T1098, T1098.001,
   T1685.002); the resource plane had nothing, the same hole #280 closed for Azure. A

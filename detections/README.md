@@ -22,7 +22,7 @@ validation note. Real IOC values from cases stay in `~/cases/*/iocs`, never here
 ## CI gate — the rules are validated as code
 
 The Sigma rules are gated on every change by `.github/workflows/sigma.yml` (the
-repo's `lint.yml` only covers shell). Thirteen hard checks, no advisory:
+repo's `lint.yml` only covers shell). Fourteen hard checks, no advisory:
 
 1. **Structural lint** (hermetic) —
    `sigma check --fail-on-issues -c detections/sigma-validation-config.yml`.
@@ -77,7 +77,21 @@ repo's `lint.yml` only covers shell). Thirteen hard checks, no advisory:
    that the block contains no command CI doesn't run, and that these counts match. The
    prose describing each gate is deliberately left alone; that's editorial, the same way
    `check-methodology.sh` leaves the methodology table's judgement columns alone.
-10. **Splunk precedence** — `detections/siem/check-splunk-precedence.sh`. pySigma's
+10. **README rule/deploy table correspondence** — `detections/check-readme-tables.sh`.
+   The gate above covers this section; this one covers the other half of the file, and it
+   exists because that half drifted the same way. By #314 twelve rules carried a
+   `DEPLOY-REQUIRED` marker with no row in the deploy-time table and three rules had no row
+   in any per-directory table. The deploy table is the one with a direct cost: its own
+   preamble says the marker "isn't enforcement, so this is the discoverable checklist
+   instead", so a rule missing from it ships with an unfilled placeholder nobody was told
+   about — the failure half those rules' own comments describe at length. A phantom row is
+   worse, sending an operator to fill a placeholder that is not there. Asserts both
+   directions on both tables. It locates them by heading text and **fails** rather than
+   passing if a heading moves, because a silent pass would report a clean bill for a table
+   it never read. Row widths are not its business — the tables are pinned to fixed pipe
+   offsets and `make markdown`'s MD060 is what fails on an unpadded row.
+
+11. **Splunk precedence** — `detections/siem/check-splunk-precedence.sh`. pySigma's
    Splunk backend does not parenthesise a top-level `OR` against a top-level `NOT`, so
    `(a) OR (b) NOT (filter)` is correct *only* under the search command's documented
    evaluation order (parentheses, NOT, OR, AND). Read with AND binding first — which is
@@ -88,7 +102,7 @@ repo's `lint.yml` only covers shell). Thirteen hard checks, no advisory:
    in `splunk-precedence-allowlist.tsv`. Both instances today are correct and signed off;
    the point is that the third one is a review conversation rather than a silent
    behaviour change (#166).
-11. **ATT&CK id validity** — `detections/check-attack-tags.sh`. Checks every ATT&CK id
+12. **ATT&CK id validity** — `detections/check-attack-tags.sh`. Checks every ATT&CK id
    in the repo against a **pinned** release, in **both** places they are written: the
    `attack.*` tags, and every id cited outside them — prose, and the technique pages
    `references:` entries link to. The second half exists because gating one representation
@@ -108,7 +122,7 @@ repo's `lint.yml` only covers shell). Thirteen hard checks, no advisory:
    `set_url()`. Reproducible, therefore a gate: an ATT&CK release fails the build when
    someone bumps the pin, in a PR that gets read, rather than silently on an unrelated
    Tuesday.
-12. **htpx claim validity** — `detections/check-htpx-pairing.sh`. The promise at the top
+13. **htpx claim validity** — `detections/check-htpx-pairing.sh`. The promise at the top
    of this file is that each rule names the exact Offense fold and **htpx pair** that
    reproduces it, so the purple loop is closed in the file itself. Rules keep it two ways:
    ~80 `references:` URLs pointing at `entries/blue/<id>.md`, and an `htpx pair <id>` in
@@ -121,7 +135,7 @@ repo's `lint.yml` only covers shell). Thirteen hard checks, no advisory:
    `archive-staging-rar` / `local-data-collection` named entries htpx has never had. It
    gates **claims, not coverage** — a name that resolves to nothing is simply wrong, where
    a *gap* is a scope judgement and belongs in the report below.
-13. **htpx coverage report drift** — `detections/gen-htpx-coverage.sh --check`.
+14. **htpx coverage report drift** — `detections/gen-htpx-coverage.sh --check`.
    `HTPX-COVERAGE.md` is *generated* from the rules plus the pinned corpus: which htpx blue
    entries this repo claims, which it does not, which techniques here the corpus has no
    attack for, and which entries htpx declares unpaired (read from its `pair_note:`, so the
@@ -156,6 +170,7 @@ detections/check-methodology.sh                                                 
 docker/validation/check-rule-coverage.sh                                                   # every rule fixtured; every filter_* has a true negative
 docker/validation/check-fixture-provenance.sh                                              # every fixture declares where its schema came from
 detections/check-readme-gates.sh                                                            # this gate list still matches sigma.yml
+detections/check-readme-tables.sh                                                           # the rule and deploy-time tables still match the corpus
 detections/siem/check-splunk-precedence.sh                                                  # no Splunk search leans on OR/NOT precedence
 detections/check-attack-tags.sh                                                             # every ATT&CK tag valid against the pinned release
 detections/check-htpx-pairing.sh                                                            # every htpx entry this repo names still exists upstream
@@ -187,6 +202,7 @@ purple-validatable out of the box.
 | -------------------------------- | ------------------------------------- | --------- | -------------------------------------------- |
 | `kerberoasting_rc4_tgs`          | 4769 RC4 (0x17)                       | T1558.003 | Kerberos · kerberoast-getuserspns            |
 | `asrep_roast_probing_4771`       | 4771 0x18 (correlation)               | T1558.004 | Kerberos · asreproast-getnpusers             |
+| `asrep_roast_4768`               | 4768 PreAuthType 0 (single event)     | T1558.004 | Kerberos · asreproast-getnpusers             |
 | `password_spray_4625`            | 4625 (value_count correlation)        | T1110.003 | Kerberos/Poisoning · password-spray-kerbrute |
 | `dcsync_replication_4662`        | 4662 replication right                | T1003.006 | DCSync/NTDS · dcsync-secretsdump             |
 | `gpp_cpassword_sysvol_5145`      | 5145 SYSVOL prefs XML                 | T1552.006 | SMB · gpp-cpassword                          |
@@ -416,6 +432,8 @@ family tests a pointer against a bitmask on the calls it gets wrong.
 | `aws_data_destruction`            | CloudTrail snapshot/bucket/object/table deletes per principal (event_count correlation) | T1485     | AWS destruction · cloud-snapshot-destroy |
 | `aws_snapshot_share_external`     | CloudTrail EBS/AMI/RDS share grant to an outside account, or `group: all`               | T1537     | AWS exfil · aws-snapshot-share-exfil     |
 | `gcp_service_account_key_created` | GCP audit `CreateServiceAccountKey`                                                     | T1098.001 | GCP IAM · gcp-sa-key                     |
+| `gcp_iam_policy_backdoor`         | GCP audit `SetIamPolicy` - a new IAM binding                                            | T1098     | GCP IAM · gcp-iam-policy-backdoor        |
+| `gcp_audit_log_sink_deleted`      | GCP audit `DeleteSink` / `UpdateSink` / `DeleteBucket`                                  | T1685.002 | GCP logging · gcp-audit-log-disable      |
 | `gcp_gce_metadata_startup_script` | GCP audit `instances.setMetadata` adding/modifying a startup-script key                 | T1651     | GCE meta · gcp-gce-startup-script-exec   |
 
 **`kubernetes/`** (kube-apiserver audit — `product: kubernetes`)
@@ -633,7 +651,32 @@ comment isn't enforcement, so this is the discoverable checklist instead.)
 | `impact/bitlocker_abuse_encryption`                              | `filter_provisioning` → the task-sequence parent of your imaging path                                 | every image build that enables BitLocker is a `high` alert; filled, what remains is manage-bde driven from a shell rather than the build                                                                                     |
 | `discovery/ldap_recon_explicit_creds_4648`                       | `filter_sweep_principals` → your scanners / collectors / jump-host accounts                           | the correlation pages on the vulnerability scanner every cycle — it clears a distinct-target threshold by design, so the threshold is not a substitute for this list                                                         |
 | `github/github_self_hosted_runner_registered`                    | `filter_runner_provisioning` → the actor that registers your runner pool                              | every sanctioned pool scale-out alerts alongside the rogue registration                                                                                                                                                      |
+| `cloud/aws_snapshot_share_external`                              | `filter_own_accounts` → every account id inside your own AWS Organization                             | your nightly cross-account backup share alerts. This is the whole tuning story for the named arm, and the mute it earns takes the public `group: all` arm — which no allowlist can make benign — down with it                |
+| `cloud/azure_vm_run_command`                                     | `filter_ops_automation` → the `Caller` of your config-management / Update Manager identities          | every routine remediation alerts, and the mute takes the Arc and scale-set arms with it. A service principal appears here as an object GUID, never a UPN — a UPN-shaped entry matches nothing while looking filled in        |
+| `cloud/azure_keyvault_bulk_secret_read`                          | `filter_secret_automation` → the object id (`oid`) of your secrets-sync / CI identities               | secrets-sync and CI environment hydration trip the correlation at any threshold, because breadth is their normal shape. Not the `appid`: that is the application, so allowlisting it exempts every principal using it        |
+| `cloud/gcp_iam_policy_backdoor`                                  | `filter_iac` → your IaC / access-management principal(s)                                              | Terraform's routine `SetIamPolicy` calls alert alongside the operator-driven binding                                                                                                                                         |
+| `cloud/gcp_audit_log_sink_deleted`                               | `filter_iac` → your logging IaC principal(s)                                                          | routine sink and bucket lifecycle driven from Terraform alerts alongside deliberate audit-log tampering                                                                                                                      |
+| `discovery/host_enum_srvsvc_wkssvc_5145`                         | `filter_sweep_principals` → your backup / monitoring / file-server-inventory principals               | only a multi-host sweeper can reach the threshold, and those principals are exactly that — so unfilled the correlation reports your own tooling. The list is what makes the rule sharp, not what makes it quiet              |
+| `discovery/local_group_enum_sweep_4798_4799`                     | `filter_sweep_principals` → your inventory / EDR / vulnerability-scan principals                      | same shape as the share-enumeration rule above: the count is over distinct hosts, so ordinary local noise cannot reach it and estate-wide scanners are the only benign source that can                                       |
+| `google_workspace/gws_illicit_oauth_grant`                       | `filter_known_apps` → your sanctioned OAuth client ids                                                | verified LOB apps that legitimately hold mail/drive scopes alert alongside the illicit grant                                                                                                                                 |
+| `kubernetes/k8s_pod_exec_attach`                                 | `filter_sa`, **and** scope `objectRef.namespace` to your production namespaces                        | every developer exec in a dev namespace alerts. Unusually the substitution is a narrowing of the selection rather than an addition to the allowlist — the filter itself ships usable                                         |
+| `registry/harbor_image_pushed_trusted_tag`                       | `filter_ci` → your build service account(s)                                                           | routine CI publishing — the busiest event in the registry — alerts alongside a hand-pushed overwrite of a trusted tag                                                                                                        |
 | `vault/vault_bulk_secret_read`                                   | `filter_secret_automation` → the `auth.entity_id` of deploy / secrets-sync / batch identities         | a deploy identity hydrating config clears the `gte: 20` threshold on its own, so the correlation fires on routine automation and gets muted. Keyed on the entity id because that is what the correlation groups by           |
+
+#### Deploy-time backend work (`DEPLOY-REQUIRED`, but not a substitution)
+
+The same marker, a different kind of job. Two rules carry a `DEPLOY-REQUIRED` note that asks
+you to do something **at the backend** rather than to fill a value in the rule — there is no
+placeholder to replace, so they do not fit the table above, and being a poor fit for it is why
+they were missing from it entirely until #314. They are listed here rather than given a marker
+of their own, because [`sigma/deploy-required.sh`](sigma/deploy-required.sh) is the one
+checklist an operator runs before deploying and both belong on it: skip either and the rule
+ships subtly wrong rather than merely noisy, which is the harder failure to notice.
+
+| Rule                                    | What deploy has to do                                                                              | Until you do                                                                                                                                                                                                                              |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kubernetes/k8s_privileged_pod_created` | confirm how your backend expands JSON **arrays** — `spec.containers` and `spec.volumes` are arrays | two of the three escape branches may silently never match. Sigma has no portable array-index syntax, so the dotted paths rely on the backend, and backends differ — an Elasticsearch index mapping these as `nested` needs a nested query |
+| `slack/slack_2fa_enforcement_disabled`  | gate on the direction in your Slack collector's mapping, pulling the new value out of `details`    | the rule fires on the **enable** as well as the disable, because Sigma cannot reach the structured field that tells them apart. Same posture as `cloud/entra_illicit_consent_grant`, which also leaves the mapping to the SIEM            |
 
 #### What `status:` means here
 
