@@ -23,7 +23,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/entra-role-assign-audit.md
 author: dotfiles-Defense
 date: 2026-08-05
-modified: 2026-09-02
+modified: 2026-09-16
 tags:
   - attack.privilege-escalation
   - attack.persistence
@@ -40,19 +40,42 @@ detection:
       - 'Add member to role completed (PIM activation)'
       - 'Add member to role requested (PIM activation)'
   filter_iga:
-    # DEPLOY-REQUIRED: replace with the identity-governance / lifecycle automation
-    # that legitimately assigns directory roles (the IGA service principal, an
-    # entitlement-management workflow). Do NOT put the PIM service itself here - the
-    # PIM operations above are selected on purpose. Until filled this excludes only
-    # the example, so IGA-driven grants alert with the rest. `Identity` is the
-    # AuditLogs actor display-name column. Run detections/sigma/deploy-required.sh to
+    # DEPLOY-REQUIRED: replace with the identity-governance / lifecycle automation that
+    # legitimately assigns directory roles (the IGA service principal, an
+    # entitlement-management workflow). Do NOT put the PIM service itself here - the PIM
+    # operations above are selected on purpose. Until filled this excludes only the example,
+    # so IGA-driven grants alert with the rest. Run detections/sigma/deploy-required.sh to
     # find this.
-    Identity:
-      - 'svc-iga-provisioning'   # example — replace
+    #
+    # THE VALUE IS AN OBJECT ID, NOT A NAME - and it used to be a name, which is what this
+    # comment exists to stop happening again. `Identity` is the AuditLogs actor DISPLAY-NAME
+    # column: mutable and non-unique, so an allowlist keyed on it stops matching the day IGA
+    # renames the service principal, and it fails OPEN here - a filter that matches nothing
+    # leaves the rule noisy rather than blind, which is the direction that ends in someone
+    # muting it. Keep Identity for triage; allowlist on the id.
+    #
+    # MATCHED WITH `contains` AGAINST THE WHOLE `InitiatedBy` COLUMN, deliberately. The actor
+    # id sits at a DIFFERENT path depending on what the actor is: InitiatedBy.user.id for a
+    # human, InitiatedBy.app.servicePrincipalId for an app - one or the other, never both,
+    # which is why this repo's own hand-written Sentinel queries
+    # (detections/siem/sentinel/entra_illicit_consent_grant.yaml and
+    # entra_sp_credential_backdoor.yaml) coalesce the two arms. Sigma cannot coalesce, so a
+    # single dotted key would silently cover only one kind of actor - and automation, the
+    # case this filter exists for, is the kind it would miss. A contains on the column covers
+    # both. It also keeps the field flat, which is what lets this rule stay in the EVTX
+    # validation plane; a dotted key does not survive the flattener.
+    #
+    # USE THE SERVICE PRINCIPAL'S OBJECT ID, NOT `InitiatedBy.app.appId`. appId is the
+    # APPLICATION, so allowlisting it exempts every principal using that app - the same trap
+    # azure_keyvault_bulk_secret_read documents for identity_claim_appid_g. Resolve it with
+    # `az ad sp show --id <appId> --query id` for a service principal, or
+    # `az ad user show --id <upn> --query id` for a human.
+    InitiatedBy|contains:
+      - '00000000-0000-0000-0000-000000000000'   # example — replace with an object id
   condition: selection and not filter_iga
 falsepositives:
-  - Sanctioned role administration and PIM activations by identity admins (allowlist
-    the IGA automation in filter_iga, reconcile the rest against the IdM workflow;
-    alert on tenant-admin roles and on grants by actors who don't normally administer
-    roles).
+  - Sanctioned role administration and PIM activations by identity admins - allowlist the
+    IGA automation's OBJECT ID in filter_iga, reconcile the rest against the IdM workflow,
+    and alert on tenant-admin roles and on grants by actors who don't normally administer
+    roles. A display name in that list looks filled in and matches nothing.
 level: medium

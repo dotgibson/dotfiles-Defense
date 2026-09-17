@@ -24,6 +24,51 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **`vault_secret_read` had no allowlist, while its own prose told you to use one (#306).**
+  The correlation's description said "batch jobs that read many secrets should be
+  allowlisted" and its `falsepositives` said "allowlist the entity" — and there was no
+  `filter_*` block on either document to allowlist it in. Both cloud twins ship that list on
+  the base rule for exactly this reason (`aws_s3_bulk_exfil` → `filter_bulk_readers`,
+  `azure_keyvault_bulk_secret_read` → `filter_secret_automation`), and the Azure rule names
+  Vault as its model twice while offering the remedy Vault could not. A deploy identity
+  hydrating config reads 20+ distinct `secret/` paths in ten minutes and clears the
+  `gte: 20` threshold on its own, so the rule fired on routine automation with nowhere to
+  send it — the S3 rule's stated failure mode, where someone mutes it and the mute is the
+  blind spot.
+  Adds `filter_secret_automation` to the **base** document, keyed on `auth.entity_id`: the
+  field the correlation already groups by, so allowlist and aggregation agree by
+  construction, and the only stable Vault identity — the entity id survives token renewal,
+  re-auth and rename, where `auth.display_name` is a mutable label and `auth.accessor`
+  changes with every token. The filter sits on the base event rather than the threshold
+  because raising the threshold to clear your largest batch job blunts the rule for every
+  other identity. Both fixtures gain the field so the exclusion is actually proven: the TN's
+  first line is a `secret/` read by the allowlisted entity, and swapping that id back to the
+  TP's makes the line fire, so the filter is demonstrably the only thing silencing it.
+
+- **`entra_directory_role_grant` allowlisted a display name (#306).** `filter_iga` keyed on
+  `Identity`, the AuditLogs actor display-name column — mutable and non-unique, so the
+  allowlist stops matching the day IGA renames the service principal. It fails *open* here,
+  which means noise rather than a miss, and that is the direction that ends in a mute. Its
+  two Azure siblings go out of their way to warn against precisely this
+  (`azure_keyvault_bulk_secret_read`: "The value is an object id (oid), **NOT a name**";
+  `azure_vm_run_command`: a name-shaped entry for a service principal "matches nothing and
+  leaves the rule as noisy as an empty allowlist, **while looking filled in**"); this was
+  the one rule in the set that had not had that treatment.
+  Now matches the actor object id with `InitiatedBy|contains`. The path is not the same for
+  every actor — `InitiatedBy.user.id` for a human, `InitiatedBy.app.servicePrincipalId` for
+  an app, never both, which is why this repo's own hand-written Sentinel queries coalesce
+  the two arms. Sigma cannot coalesce, so a single dotted key would silently cover only one
+  kind of actor, and automation — the case the filter exists for — is the kind it would
+  miss. Matching the column covers both, and keeps the field flat, which is what lets the
+  rule stay in the EVTX validation plane instead of being rewritten into the cloud one. The
+  comment now also warns against `InitiatedBy.app.appId`: that is the *application*, so
+  allowlisting it exempts every principal using it. The fixtures carry one arm each — user
+  on the TP, app on the TN — and the TN's `appId` is deliberately a different guid from its
+  `servicePrincipalId` so the pair shows the two are not interchangeable.
+  Finding 3 of #302 (`okta_mfa_factor_reset` missing a `filter_helpdesk` scaffold) stays
+  declined: every Okta sibling is filter-free, as is the cross-platform twin
+  `gws_admin_role_grant`, so the absence is the SaaS-audit convention rather than an outlier.
+
 - **`DEFENSE-METHODOLOGY.md` claimed GCP had reached its resource plane. It had not
   (#305).** The plane-axis passage read "AWS and GCP both reached their resource planes" —
   written while the Azure gap was being closed, with GCP asserted rather than checked. The
