@@ -25,8 +25,10 @@ description: |
   be useful. Use 7036 as the corroborating signal in triage - the process-creation event
   names the operator and the parent, the 7036 pair proves the services actually went down.
   The keyword list is the scoping: it is the difference between "someone stopped a service"
-  (constant) and "someone stopped the things that protect the data" (an incident). Extend
-  it with your own backup/AV/line-of-business service names.
+  (constant) and "someone stopped the things that protect the data" (an incident). That only
+  holds if the keywords match where a SERVICE NAME sits rather than anywhere on the line -
+  see the block's own comment for the two shapes and for how to extend it, which is the part
+  the earlier "extend it with your own service names" advice left out.
   Validate (purple): run the pre-ransom service-stop batch from dotfiles-Offense (htpx pair
   service-stop-preransom).
 references:
@@ -34,6 +36,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/service-stop-7036.md
 author: dotfiles-Defense
 date: 2026-08-05
+modified: 2026-09-16
 tags:
   - attack.impact
   - attack.t1489
@@ -50,32 +53,79 @@ detection:
       - ' stop '
       - 'start= disabled'
       - 'start=disabled'
-  selection_powershell:
+  selection_powershell_stop:
     # Image-scoped like every other process_creation selection in the corpus: a cmdlet name
     # only reaches a command line via an inline -Command/-c invocation, which runs under
     # these two images by definition.
     Image|endswith:
       - '\powershell.exe'
       - '\pwsh.exe'
-    CommandLine|contains:
-      - 'Stop-Service'
+    CommandLine|contains: 'Stop-Service'
+  selection_powershell_disable:
+    # SPLIT FROM THE STOP ARM because Set-Service is not a teardown verb on its own. It is
+    # equally how you START a service, rename it, or edit its description - so
+    # `Set-Service -Name MSSQLSERVER -Description "nightly maintenance window"` used to match
+    # this selection and the keyword block below, and page at high for a text edit. Requiring
+    # the disabling form makes this arm consistent with its own net/sc sibling, which already
+    # insists on `start= disabled` rather than firing on any `sc config`.
+    # Matched on 'Disabled' rather than the full '-StartupType Disabled' so the parameter's
+    # colon form (-StartupType:Disabled) and PowerShell's unambiguous-prefix abbreviations
+    # still match; the cmdlet name in the same block is what keeps the word scoped.
+    Image|endswith:
+      - '\powershell.exe'
+      - '\pwsh.exe'
+    CommandLine|contains|all:
       - 'Set-Service'
+      - 'Disabled'
   protected_services:
+    # ANCHORING, and it is the point of this block rather than a detail of it. These keywords
+    # are ANDed with a stop/disable verb but matched against the WHOLE command line, so a
+    # short one matched anywhere - including in a redirect target, a log path, or a flag
+    # argument. `sc stop Spooler >> C:\Backup\logs\svc.txt` is a Spooler stop that paged as a
+    # backup-agent teardown, and the analyst could not tell from the alert why it fired.
+    #
+    # Two shapes, and which one a keyword gets depends only on whether it can collide:
+    #   - a distinctive product or service name goes in bare, because a command line that
+    #     happens to contain it somewhere other than the service-name slot is not a realistic
+    #     shape;
+    #   - a short or generic token is GUARDED by the character that precedes a service name.
+    #     A service name follows a space or an opening quote; a path component follows a
+    #     backslash - which is exactly what the guard rejects. Same reasoning as the
+    #     deliberate trailing space on taskkill's '/f ' in service_stop_burst.
+    #
+    # EXTENDING THIS LIST: add the service NAME, and if it is short or a common English word,
+    # add both guarded forms rather than the bare token. The rule's own advice used to be
+    # "extend it" without saying how, and extending an unanchored list makes the false
+    # positives worse, not the coverage better.
     CommandLine|contains:
-      - 'sql'
+      # Distinctive - bare.
       - 'msexchange'
       - 'veeam'
-      - 'backup'
       - 'acronis'
+      - 'sophos'
       - 'memtas'
       - 'mepocs'
-      - 'sophos'
-      - 'sentinel'
-      - 'defend'
-      - 'vss'
-      - 'sqlwriter'
       - 'postgres'
       - 'oracle'
+      - 'mssql'
+      - 'sqlwriter'
+      - 'sqlserveragent'
+      - 'backupexec'
+      - 'windefend'
+      - 'swprv'
+      # Short or generic - guarded to the service-name position.
+      - ' sql'
+      - '"sql'
+      - ' vss'
+      - '"vss'
+      - ' backup'
+      - '"backup'
+      - ' sentinel'
+      - '"sentinel'
+      - ' defend'
+      - '"defend'
+      - ' sense'
+      - '"sense'
   condition: (1 of selection_*) and protected_services
 falsepositives:
   - Sanctioned maintenance - a DBA or backup admin stopping one service during a patch

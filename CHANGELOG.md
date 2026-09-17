@@ -24,6 +24,40 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **`service_stop_protected_services` matched its keywords anywhere on the command line,
+  and `Set-Service` did not require the disable (#307).** Two matching defects underneath
+  the `level: high` the #302 review raised; the level itself is defensible and is unchanged.
+  `protected_services` is ANDed with a stop/disable verb but matched against the WHOLE line,
+  so the short keywords collided with path and flag arguments:
+  `sc stop Spooler >> C:\Backup\logs\svc.txt` is a Spooler stop that paged as a backup-agent
+  teardown, and the analyst could not tell from the alert why it fired. That is the kind of
+  false positive that erodes trust faster than volume does — and the rule's own advice to
+  *extend* the list made it worse rather than better, which is why the advice now says how.
+  Keywords are now split by whether they can collide. A distinctive product or service name
+  goes in bare (`veeam`, `msexchange`, `backupexec`, `windefend`, `mssql`, `sqlserveragent`,
+  `swprv`, …); a short or generic token is guarded by the character that precedes a service
+  name — a space or an opening quote, where a path component is preceded by a backslash
+  (`' backup'` / `'"backup'`, `' vss'`, `' sql'`, `' sentinel'`, `' defend'`, `' sense'`).
+  The guard idiom is the one `service_stop_burst` already uses for taskkill's `'/f '`.
+  `Set-Service` moves into its own selection requiring `Disabled` alongside it, because
+  `Set-Service` is equally how you start a service, rename it, or edit its description —
+  `Set-Service -Name MSSQLSERVER -Description "nightly maintenance window"` used to page at
+  `high` for a text edit. Matched on `Disabled` rather than `-StartupType Disabled` so the
+  colon form and PowerShell's parameter abbreviations still match. This makes the arm
+  consistent with its own net/sc sibling, which already insists on `start= disabled` rather
+  than firing on any `sc config`.
+  The rule gains its first true-negative fixture, carrying one line per defect — and both
+  lines were checked against the pre-change rule and **did** fire there, so it is a
+  regression test rather than an assertion. Eighteen realistic teardown forms were checked
+  the other way for lost coverage: none, and `sc stop swprv` and `sc stop Sense` are newly
+  caught, because naming the real service short names covers cases the generic tokens missed.
+  No `filter_*` block: the defect is positional, and a filter can only exclude named benign
+  shapes, not express "the keyword is in the service-name slot". It also keeps a `NOT` away
+  from the rule's existing top-level `OR`, so the Splunk precedence allowlist is untouched.
+  The third item this issue was filed with — that `' stop '` needs surrounding spaces and so
+  misses `sc stop svc` — was retracted on the issue before any work started, and is correct
+  as written.
+
 - **htpx pin bumped to `7f369ee37ee5` (3.2.0+3), the first pin on an untagged commit
   (#297).** Upstream's four new entries are two GCP pairs — `gcp-gce-startup-script-exec`
   ↔ `gcp-gce-metadata-audit` (T1651, Compute Admin Activity) and `gcp-gcs-mass-exfil` ↔
