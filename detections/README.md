@@ -416,7 +416,7 @@ family tests a pointer against a bitmask on the calls it gets wrong.
 | `aws_data_destruction`            | CloudTrail snapshot/bucket/object/table deletes per principal (event_count correlation) | T1485     | AWS destruction · cloud-snapshot-destroy |
 | `aws_snapshot_share_external`     | CloudTrail EBS/AMI/RDS share grant to an outside account, or `group: all`               | T1537     | AWS exfil · aws-snapshot-share-exfil     |
 | `gcp_service_account_key_created` | GCP audit `CreateServiceAccountKey`                                                     | T1098.001 | GCP IAM · gcp-sa-key                     |
-| `gcp_gce_metadata_startup_script` | GCP audit `instances.setMetadata` adding/modifying a startup-script key                 | T1651     | GCE metadata · gcp-gce-startup-script-exec |
+| `gcp_gce_metadata_startup_script` | GCP audit `instances.setMetadata` adding/modifying a startup-script key                 | T1651     | GCE meta · gcp-gce-startup-script-exec   |
 
 **`kubernetes/`** (kube-apiserver audit — `product: kubernetes`)
 
