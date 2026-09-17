@@ -43,6 +43,23 @@ under `[Unreleased]` from here.
   `deploy-required.sh` is the one checklist an operator runs before deploying and both
   belong on it: skip either and the rule ships subtly wrong rather than merely noisy, which
   is the harder failure to notice.
+- **`DEFENSE-METHODOLOGY.md` claimed GCP had reached its resource plane. It had not
+  (#305).** The plane-axis passage read "AWS and GCP both reached their resource planes" —
+  written while the Azure gap was being closed, with GCP asserted rather than checked. The
+  error was load-bearing rather than cosmetic: a ledger saying a plane is covered is a
+  reason for the weekly `/coverage-gap` sweep not to look there, so the false sentence hid
+  the gap it described, which is why correcting it is listed as the prerequisite on the
+  issue and would have been worth doing even with no rule attached. `CHANGELOG.md`'s own
+  #280 entry carries the same claim; that entry is left as the historical record it is, and
+  this line is the correction.
+  **T1530 on GCS is declined in the same pass**, with its reopen condition:
+  `storage.objects.get` is Data Access telemetry, off by default, so a GCS twin of
+  `aws_s3_bulk_exfil` would be inert on most estates — the argument already used to decline
+  T1526/T1580/T1069.003. It carries **no `known-absent` marker id**, and both the
+  methodology and `detections/README.md` now say why: the marker gate reads the corpus, not
+  the corpus per provider, and `aws_s3_bulk_exfil` already covers T1530, so listing the id
+  would fail the build in the other direction. A decline scoped to a provider rather than a
+  technique can only live in prose.
 
 - **htpx pin bumped to `7f369ee37ee5` (3.2.0+3), the first pin on an untagged commit
   (#297).** Upstream's four new entries are two GCP pairs — `gcp-gce-startup-script-exec`
@@ -395,6 +412,31 @@ under `[Unreleased]` from here.
   the gate is demonstrated rather than assumed. Wired into `make methodology`, `make
   sigma` and `sigma.yml` (thirteen hard checks become fourteen), and `check-readme-gates.sh`
   required it to document itself.
+- **`gcp_gce_metadata_startup_script` — the first rule on GCP's resource plane (T1651,
+  #305).** Every GCP rule here was identity or logging plane (T1098, T1098.001,
+  T1685.002); the resource plane had nothing, the same hole #280 closed for Azure. A
+  `startup-script` key written into an instance's metadata is executed by the guest
+  environment agent as root or SYSTEM at the next boot, so a stolen Compute Instance Admin
+  token is remote code execution with no SSH key, no open port and no guest credential —
+  and Compute **Admin Activity** logs are always on and cannot be disabled, which is the
+  same cheapest-telemetry argument that put `azure_vm_run_command` first on Azure.
+  Two shape decisions worth recording. The rule reads the **key-name delta**
+  (`added_metadata_keys` / `modified_metadata_keys`) rather than the request, because
+  Google redacts this call's metadata body by design — so the payload is not in the log and
+  the key name is the only surviving signal. And the six key spellings are enumerated
+  rather than matched on a `startup` substring: the `-url` forms fetch the script at boot,
+  so its bytes never enter the log at all. `instances.reset` is deliberately *not* a second
+  arm — benign alone, and requiring it would turn a patient attacker into a miss; it is the
+  triage pivot instead, the same treatment `azure_vm_run_command` gives
+  `runCommands/delete`. `project.setCommonInstanceMetadata` is named as a known adjacent
+  path rather than guessed at.
+  The metadata-delta field path is the soft spot and the fixtures say so: a captured Admin
+  Activity entry spells it `instanceMetadataDelta.addedMetadataKeys` while Security Command
+  Center's own sample filter for the same detection writes
+  `instanceMetaData.addedMetadataKey`. The rule takes the captured spelling, snake_cased to
+  the repo's `method_name`/`principal_email` convention, and the provenance rows stay
+  `unverified` for exactly that reason. `gcp-gce-metadata-audit` leaves HTPX-COVERAGE.md's
+  unclaimed table (99 → 100 claimed).
 
 - **Targeted LDAP recon has a detection (#284).** T1087.002 / T1069.002 read as covered,
   but only through `sharphound_ldap_sweep_4662.yml`, a fan-out detector — a handful of

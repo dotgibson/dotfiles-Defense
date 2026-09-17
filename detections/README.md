@@ -434,6 +434,7 @@ family tests a pointer against a bitmask on the calls it gets wrong.
 | `gcp_service_account_key_created` | GCP audit `CreateServiceAccountKey`                                                     | T1098.001 | GCP IAM · gcp-sa-key                     |
 | `gcp_iam_policy_backdoor`         | GCP audit `SetIamPolicy` - a new IAM binding                                            | T1098     | GCP IAM · gcp-iam-policy-backdoor        |
 | `gcp_audit_log_sink_deleted`      | GCP audit `DeleteSink` / `UpdateSink` / `DeleteBucket`                                  | T1685.002 | GCP logging · gcp-audit-log-disable      |
+| `gcp_gce_metadata_startup_script` | GCP audit `instances.setMetadata` adding/modifying a startup-script key                 | T1651     | GCE meta · gcp-gce-startup-script-exec   |
 
 **`kubernetes/`** (kube-apiserver audit — `product: kubernetes`)
 
@@ -644,6 +645,7 @@ comment isn't enforcement, so this is the discoverable checklist instead.)
 | `linux/shadow_file_read`                                         | `filter_auth_stack` → extend with your compliance scanner / backup agents                             | the standard auth stack is already allowlisted, so this is deployable as-is; until extended a nightly compliance scan alerts                                                                                                 |
 | `privilege_escalation/shadow_credentials_keycredentiallink_5136` | `filter_whfb` → your Entra Connect sync account + device-registration / PKI principals                | every Windows Hello for Business enrollment alerts. Only the `MSOL_` prefix is excluded until filled, and on-prem key-trust self-enrollment (Subject == object) needs a SIEM-side field comparison Sigma cannot express      |
 | `cloud/gcp_service_account_key_created`                          | `filter_iac` → your IaC / secrets-automation principal(s)                                             | Terraform's routine SA-key creation alerts alongside the operator-driven one; the sibling GCP rules already carry this stub and this one did not                                                                             |
+| `cloud/gcp_gce_metadata_startup_script`                          | `filter_iac` → your IaC / image-pipeline principal(s) that set startup scripts                        | provisioning writes startup scripts by design, so every routine instance build is a `high` alert; filled, what remains is a startup-script written by a principal that does not build instances                              |
 | `registry/harbor_robot_account_created`                          | `filter_provisioning` → the operator that provisions per-project robots                               | every GitOps/Terraform robot provisioning alerts alongside the backdoor                                                                                                                                                      |
 | `cloud/entra_directory_role_grant`                               | `filter_iga` → your identity-governance / lifecycle automation principal                              | PIM and IGA workflows are among the noisiest AuditLogs operations there are, so unfilled this reports your joiner-mover-leaver traffic. Do NOT allowlist the PIM service itself — the PIM operations are selected on purpose |
 | `impact/bitlocker_abuse_encryption`                              | `filter_provisioning` → the task-sequence parent of your imaging path                                 | every image build that enables BitLocker is a `high` alert; filled, what remains is manage-bde driven from a shell rather than the build                                                                                     |
@@ -929,6 +931,14 @@ point and prefer your own threat intel via `--url`.
   activity is read-only, low-signal, and lands in GCP Data Access logs that are off by
   default). The marker makes this ledger self-policing: ship a Sigma rule tagged with any
   of them and CI fails until the prose is updated.
+- **Declined with no marker: T1530 on GCS (#305).** `storage.objects.get` is GCP **Data
+  Access** telemetry, off by default, so a GCS twin of `aws_s3_bulk_exfil` would be inert on
+  most estates — the same argument as the three techniques above. It is called out
+  separately because it is the one decline the `known-absent` marker cannot hold:
+  `aws_s3_bulk_exfil` already covers T1530, so listing the id would fail the gate in the
+  other direction. A decline scoped to a *provider* rather than a technique lives only in
+  the prose — in `DEFENSE-METHODOLOGY.md`'s "Declined coverage" section, where the reopen
+  condition is recorded.
 - **External Reconnaissance (TA0043) and Resource Development (TA0042)** have no
   detection here and are not meant to: the first is pre-compromise and only nominally in
   `DEFENSE-METHODOLOGY.md`'s "Recon / Discovery" row (which is really *internal*
