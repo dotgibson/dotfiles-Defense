@@ -1,0 +1,2 @@
+{"gcp": {"audit": {"method_name": "v1.compute.instances.setMetadata", "principal_email": "viewer@corp.example", "resource_name": "projects/corp-prod/zones/us-central1-a/instances/web-03", "metadata": {"instance_metadata_delta": {"added_metadata_keys": ["ssh-keys"]}}}}}
+{"gcp": {"audit": {"method_name": "v1.compute.instances.reset", "principal_email": "viewer@corp.example", "resource_name": "projects/corp-prod/zones/us-central1-a/instances/web-03", "metadata": {}}}}
