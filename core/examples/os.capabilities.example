@@ -88,6 +88,31 @@ PKG_PENDING_MATCH=^[a-zA-Z0-9][^ ]*[[:space:]]
 # because most archives overload that status: dnf exits 100 when updates EXIST, and
 # `pacman -Qu` / `checkupdates` exit non-zero when there are NONE.
 
+# ── what --packages must not nag about (optional, #1087) ──────────────────────
+# PKG_UNLISTED_TOOLS — space-separated BINARY names the verbs above run that
+# install/packages.txt deliberately does not name. `check-capabilities.sh --packages`
+# (your `make lint` runs it) warns about every verb whose leading binary is absent from
+# that list; three different things make a binary absent, and only this repo knows which:
+#
+#   the base system ships it     apt-get, dnf, zypper, pacman, apk, rpm, systemctl
+#   a listed package provides it under another name
+#                                checkupdates (from pacman-contrib), equery (gentoolkit)
+#   this repo ships it itself    a helper its own bootstrap symlinks onto PATH
+#
+# Without it the check fired on essentially EVERY verb — Debian 10 warnings, most repos
+# 7-8 — so the one case it exists to catch (a verb naming a tool nothing installs: paru,
+# nala) was buried. Declare the exceptions and the rest mean something.
+#
+# Kept honest from both ends, so it cannot rot into a blanket silencer: a name no declared
+# verb runs is a FAILURE, and so is a name this repo's packages.txt actually installs.
+# Fedora's declaration would read:
+#
+#   PKG_UNLISTED_TOOLS=dnf
+#
+# and the atomic edition's, which runs four base binaries across its verbs:
+#
+#   PKG_UNLISTED_TOOLS=rpm-ostree dnf rpm systemctl
+
 # ── the scheduled runner (optional, #665) ─────────────────────────────────────
 # Set to 1 to permit the daily maint run to apply SYSTEM package upgrades on this box.
 # OMITTING IT REFUSES, and that direction is the point: a fail-open here silently enables
@@ -102,10 +127,14 @@ MAINT_UNATTENDED_UPGRADE=1
 # ── the non-mutable host (NON-MUTABLE-HOST-PROPOSAL.md §4, #1004) ────────────────────
 # Six OPTIONAL keys the validator accepts. They let a declaration for an atomic (bootc,
 # Silverblue), transactional (MicroOS, Aeon) or declarative (NixOS) host be written
-# truthfully; the three prototypes live in scripts/research/nonmutable/ and this Fedora
-# example declares none of them (absent PROVISIONER means mutable). Since #1049 `up`, the
-# shell-start nudge, the maint runner and core-doctor read PROVISIONER, PKG_APPLY and
-# PKG_APPLY_PENDING; the PKG_PENDING_EXIT_* pair is accepted and still read by no consumer.
+# truthfully, and this Fedora example declares none of them (absent PROVISIONER means
+# mutable). Three fleet declarations use them, and they are the ones to copy from:
+# dotfiles-Fedora/os/fedora.atomic.capabilities,
+# dotfiles-openSUSE/os/opensuse.microos.capabilities and dotfiles-NixOS/os/nixos.capabilities
+# (R2's earlier prototypes are kept under scripts/research/nonmutable/, which nothing links).
+# Since #1049 `up`, the shell-start nudge, the maint runner and core-doctor read
+# PROVISIONER, PKG_APPLY and PKG_APPLY_PENDING; the PKG_PENDING_EXIT_* pair is accepted and
+# still read by no consumer.
 #
 #   PROVISIONER=atomic | transactional | declarative   (absent = mutable)
 #   PKG_APPLY=sudo systemctl reboot     the verb that makes a STAGED change live — on an
@@ -125,11 +154,15 @@ MAINT_UNATTENDED_UPGRADE=1
 #                                       maint runner ask it, cache the verdict, and the
 #                                       nudge prints "update staged — reboot to apply".
 #
-# Two relaxations: PKG_COUNT_PENDING may be absent under PROVISIONER=declarative (no
-# truthful unprivileged verb exists) and whenever PKG_APPLY_PENDING is declared (on an
-# atomic host the AVAILABLE verb is root-only, so the maint runner's unattended staging asks
-# it and the nudge reports the staged state instead). `up` reads an absent count as the
-# silent -1 sentinel. Nothing else about the eight required verbs changes on any host.
+# Two relaxations, BOTH gated on PROVISIONER: PKG_COUNT_PENDING may be absent under
+# PROVISIONER=declarative (no truthful unprivileged verb exists) and under
+# PROVISIONER=atomic when PKG_APPLY_PENDING is declared (there the AVAILABLE verb is
+# root-only, so the maint runner's unattended staging asks it and the nudge reports the
+# staged state instead). Declaring PKG_APPLY_PENDING on a mutable or transactional host
+# buys no exemption — a reboot probe is truthful on Debian too, and the count verb is
+# still owed. `up` reads an absent count as the silent -1 sentinel, so an exemption taken
+# where it was not earned makes the nudge go quiet on a host that could have answered.
+# Nothing else about the eight required verbs changes on any host.
 # ── optional ──────────────────────────────────────────────────────────────────
 # Space-separated tools core-doctor reports as OPT-IN rather than MISSING on this OS:
 # things the archive has but this repo deliberately does not install. Omit the key

@@ -753,15 +753,33 @@ _cache_completion ty ty generate-shell-completion zsh
 # above is how a detector silently starts comparing against the wrong number: that paragraph
 # also names 18.16.1, and a re-verification that measures against the wrong version is worse
 # than one that never runs. Editing it is a CLAIM that the premise was re-measured at that
-# version — not a version bump. Last re-measured 2026-09-03: three atuin-guard-verify
-# dispatches against upstream's then-latest 18.21.0, `holds` on both premises (#941).
-# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.21.0
+# version — not a version bump. Last re-measured 2026-09-16: one atuin-guard-verify dispatch
+# against upstream's then-latest 18.22.0 (run 35163334747, checksum + build-provenance
+# verified), `holds` on both premises — both report jobs skipped, which is that verdict (#1045).
 #
-# ONE ANCHOR PER PREMISE. The stand-down below rests on a DIFFERENT upstream fact, measured by
-# a different mode (`--premise autostart`) and reported under its own issue title, so it gets
-# its own line rather than borrowing this one — otherwise re-measuring either premise would
-# silently re-date the claim about the other.
-# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=18.21.0
+# 18.22.0 RAISES THE STAKES; it does not lower them. That release moves history DELETION into
+# the daemon (atuin #4045), moves SYNC into it (#4055), and adds command-output capture with a
+# periodic flush (#4070). More function behind the socket means a dead-socket window costs more
+# than the one history row it cost on 18.19.0 — so the guard is worth more now, not less.
+# It also adds a SECOND socket under /tmp/atuin-$UID (pty-proxy), in the same directory as this
+# guard's first candidate. That is not a collision: the candidate list below names `atuin.sock`
+# explicitly, so it probes the history daemon's socket and no other. Stated because the next
+# reader will otherwise have to re-derive it from the candidate list.
+# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.22.0
+#
+# ONE ANCHOR PER PREMISE. The autostart handling below rests on a DIFFERENT upstream fact,
+# measured by a different mode (`--premise autostart`) and reported under its own issue title,
+# so it gets its own line rather than borrowing this one — otherwise re-measuring either
+# premise would silently re-date the claim about the other.
+#
+# AND AT 18.22.0 THAT PREMISE DOES NOT HOLD, which is why this anchor and the one above carry
+# the same version and opposite verdicts. Re-measured 2026-09-17 with the `wedged` arms the
+# harness had been missing (#1091, run 35171886253): `absent` and `stale` both spawn a daemon
+# and land their row, and `wedged` — a daemon alive but not serving — does not, blocking on the
+# pidfile lock and exiting 1 (atuinsh/atuin#4114, #1102). The anchor still records what was last
+# measured, which is what it is for; the verdict lives in the code below, which no longer stands
+# down under autostart.
+# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=18.22.0
 #
 # So this guard is DATA-LOSS PREVENTION, not a latency optimisation: keep probing (see the
 # throttle below) and, the first time nothing is listening, force the daemon off for THIS shell
@@ -811,8 +829,14 @@ _cache_completion ty ty generate-shell-completion zsh
 # nothing — nothing changed under the user, and the machines that simply do not run the daemon
 # must not learn a new line of startup noise. A shell that HAD a working daemon and lost it prints
 # one _core_warn line, because its history plumbing changed under a session that is still open.
-# _CORE_ATUIN_DAEMON_WAS_UP is the entire discriminator, and "once" is structural (the degrade path
-# unhooks before it warns), not a second flag to keep in sync.
+# _CORE_ATUIN_DAEMON_WAS_UP is the entire discriminator on the DEGRADE path, and "once" is
+# structural (that path unhooks before it warns), not a second flag to keep in sync.
+#
+# The AUTOSTART path warns once too, and structurally for the same reason, but its discriminator
+# has to be a different one. A shell under autostart legitimately finds the socket unreachable at
+# its first prompt — nothing has run yet, so nothing has spawned the daemon — and WAS_UP would
+# stay unset through exactly the wedge that needs announcing. It reads the pidfile instead; see
+# the branch itself for why that is both precise and fork-free.
 #
 # THE CLOCK, at load position 00. $EPOCHSECONDS is a zsh/datetime parameter and 60-update.zsh —
 # fragment 60 — is what loads that module, AFTER this file. It does not matter: the hook's BODY
@@ -882,20 +906,40 @@ _core_atuin_daemon_guard() {
   # mitigation — and it is now MEASURED rather than assumed (#402). It has its own mode, its own
   # anchor above and its own issue title, because its remedy is nothing like the discard premise's:
   # `scripts/research/verify-atuin-guard.sh --premise autostart` spawns a real daemon and owns its teardown,
-  # and the (dispatch-only) atuin-guard-verify workflow runs it as a separate job. On 18.19.0 — and again on
-  # 18.21.0, 2026-09-03 — all four arms spawn and land a
+  # and the (dispatch-only) atuin-guard-verify workflow runs it as a separate job. On 18.19.0, again on
+  # 18.21.0 (2026-09-03) and again on 18.22.0 (2026-09-16) — all four arms spawn and land a
   # row, INCLUDING over the stale socket a crashed daemon leaves — the client unlinks it first,
   # which `atuin daemon start` on its own does not.
   #
-  # If that ever regresses, the fix is NOT to delete this stand-down. The degrade path below
-  # exports ATUIN_DAEMON__ENABLED=false, which under autostart removes the spawn itself and
-  # permanently defeats the only launcher these two machines have — worse than the failure it
-  # would be reacting to. Warn without disabling, or stand down only after N failed spawns.
-  if [[ ${ATUIN_DAEMON__ENABLED:l} != (1|t|true|y|yes|on) ]] ||
-    [[ ${ATUIN_DAEMON__AUTOSTART:l} == (1|t|true|y|yes|on) ]]; then
+  # ...AND THE STAND-DOWN THOSE FOUR ARMS USED TO JUSTIFY IS GONE, because a fifth and sixth
+  # arm measured the shape they could not reach. A daemon whose PID is ALIVE but which is not
+  # serving its socket is neither `absent` (no socket) nor `stale` (a socket file with no
+  # process): atuin decides whether to autostart from the PIDFILE alone, so a live-but-wedged
+  # pid blocks its own replacement indefinitely. Measured on 18.22.0 (#1091, run 35171886253),
+  # and it is worse than upstream's own report: the client does not merely decline to spawn, it
+  # BLOCKS on the pidfile lock and then exits 1 —
+  #     ERROR error=timed out waiting for lock at …/atuin/atuin-daemon.pid
+  # while `absent` and `stale` both still spawn and land their row. So autostart heals every
+  # shape except the one where nothing else is watching, and on Alpine and macOS the old
+  # stand-down meant nothing was.
+  #
+  # WHAT REPLACED IT, and why it is not simply "stop standing down". The degrade path below
+  # exports ATUIN_DAEMON__ENABLED=false, and under autostart that removes the SPAWN ITSELF —
+  # permanently defeating the only launcher those two machines have, which is worse than the
+  # failure it would be reacting to. That trap is still live and still the reason this is not a
+  # one-line deletion. The guard now PROBES under autostart and, when it finds the wedged
+  # shape, WARNS without disabling anything (#1102). Nothing else about the autostart path
+  # changes: a socket that is merely absent is still a cue, not a fault.
+  if [[ ${ATUIN_DAEMON__ENABLED:l} != (1|t|true|y|yes|on) ]]; then
     precmd_functions=(${precmd_functions:#_core_atuin_daemon_guard})
     return $_rc
   fi
+  # Read ONCE per probe, beside the interval below, for the same load-order reason: 80 and 99
+  # are sourced after this file, so a machine that opts into autostart in its OS layer has not
+  # done so yet while 00-tools.zsh is being read. Local, not global — every consumer is inside
+  # this function call.
+  local -i _at_autostart=0
+  [[ ${ATUIN_DAEMON__AUTOSTART:l} == (1|t|true|y|yes|on) ]] && _at_autostart=1
   # Resolve the window HERE rather than at source time, for the same load-order reason the whole
   # probe is deferred to the first precmd: 80/99 have not been sourced yet while this file is,
   # so a per-machine CORE_ATUIN_PROBE_INTERVAL would be invisible to a source-time read. Once per
@@ -980,6 +1024,58 @@ _core_atuin_daemon_guard() {
       typeset -gi _CORE_ATUIN_DAEMON_NEXT=$((now + _CORE_ATUIN_DAEMON_INTERVAL))
       return $_rc
     done
+  fi
+  # ── AUTOSTART: WARN, NEVER DISABLE ──────────────────────────────────────────────────────
+  # Taken before the degrade path below, because that path's first act — exporting
+  # ATUIN_DAEMON__ENABLED=false — is the one thing this branch must never do. Under autostart
+  # it deletes the launcher, and these are the machines with no other one.
+  #
+  # AND IT MUST NOT WARN ON EVERY FRESH SHELL. precmd runs before the first command, so on a
+  # box where the daemon simply has not been spawned yet the socket is legitimately unreachable
+  # at this exact moment — autostart will create it on the first `history start`, which is the
+  # behaviour the `absent` arms measure as healthy. Warning there would put a new line of
+  # startup noise on precisely the two machines this is meant to help.
+  #
+  # So the discriminator is upstream's OWN broken test, read the other way round. atuin asks "is
+  # the recorded pid alive" and treats yes as health; here, a live pid recorded in the pidfile
+  # while nothing answers the socket is the DEFINITION of the wedge, because that is the process
+  # blocking the respawn. No pidfile, or a dead pid, means autostart is simply about to do its
+  # job, and this stays quiet.
+  #
+  # FORK-FREE, like everything else on this path: a `[[ -r ]]`, a `read` from a redirect and a
+  # `kill -0` are all builtins. The numeric-glob guard is load-bearing rather than defensive —
+  # `kill -0 0` signals the whole PROCESS GROUP and always succeeds, so an empty or garbage
+  # pidfile would otherwise read as "wedged" on every box that has one.
+  if ((_at_autostart)); then
+    # Measured at the data-dir path on 18.22.0 (the socket moved in 18.20.0; the pidfile did
+    # not). A path that does not exist simply yields no pid, which is the quiet direction.
+    local _at_pidf="${XDG_DATA_HOME:-$HOME/.local/share}/atuin/atuin-daemon.pid" _at_praw=""
+    [[ -r "$_at_pidf" ]] && read -r _at_praw <"$_at_pidf" 2>/dev/null
+    local -i _at_dpid=0
+    [[ "$_at_praw" == <-> ]] && _at_dpid=$_at_praw
+    if ! ((_at_dpid > 0)) || ! kill -0 $_at_dpid 2>/dev/null; then
+      # NOT wedged: autostart has simply not spawned yet, or the daemon is between lives. Stay
+      # hooked and stay silent — but ARM THE THROTTLE before leaving. Every other exit from
+      # this function either sets the deadline or unhooks, and this is the first that does
+      # neither: without it a box with no daemon yet would fall through the gate and pay a full
+      # candidate-list connect sweep on EVERY prompt, which is exactly the unconditional
+      # syscall this file's whole startup-cost discipline forbids.
+      typeset -gi _CORE_ATUIN_DAEMON_NEXT=$((now + _CORE_ATUIN_DAEMON_INTERVAL))
+      return $_rc
+    fi
+    # Wedged. Unhook FIRST so "once" stays structural, exactly as the degrade path does — but
+    # export NOTHING. The daemon setting is left exactly as the user wrote it, so the moment
+    # that pid is gone the next command spawns a healthy daemon with no further help from us.
+    precmd_functions=(${precmd_functions:#_core_atuin_daemon_guard})
+    typeset -g _CORE_ATUIN_DAEMON_WEDGED=$_at_dpid  # core-doctor reports it, and names the pid
+    local _at_msg="atuin daemon is WEDGED — pid ${_at_dpid} is alive but not serving its socket, and autostart will not replace it"
+    if (($+functions[_core_warn])); then
+      _core_warn "$_at_msg"
+      _core_hint "kill ${_at_dpid} — the next command then starts a fresh daemon (upstream atuinsh/atuin#4114)"
+    else
+      print -u2 -r -- "! $_at_msg"
+    fi
+    return $_rc
   fi
   # DEGRADE — one way, and terminal. Unhook FIRST, so nothing below can leave the hook armed to
   # warn a second time; "once" is structural, not a fourth flag to keep in sync.
