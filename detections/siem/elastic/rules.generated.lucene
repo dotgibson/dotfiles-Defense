@@ -31,7 +31,7 @@ eventSource:iam.amazonaws.com AND (eventName:(CreateLoginProfile OR UpdateLoginP
 (OperationNameValue:(MICROSOFT.COMPUTE\/VIRTUALMACHINES\/RUNCOMMAND\/ACTION OR MICROSOFT.COMPUTE\/VIRTUALMACHINES\/RUNCOMMANDS\/WRITE OR MICROSOFT.COMPUTE\/VIRTUALMACHINESCALESETS\/VIRTUALMACHINES\/RUNCOMMAND\/ACTION OR MICROSOFT.COMPUTE\/VIRTUALMACHINESCALESETS\/VIRTUALMACHINES\/RUNCOMMANDS\/WRITE OR MICROSOFT.HYBRIDCOMPUTE\/MACHINES\/RUNCOMMANDS\/WRITE)) AND (NOT (Caller:(sp\-config\-management@example.onmicrosoft.com OR 00000000\-0000\-0000\-0000\-000000000000)))
 
 // cloud/entra_directory_role_grant.yml — Entra directory role assigned (tenant privilege escalation)
-(OperationName:(Add\ member\ to\ role OR Add\ eligible\ member\ to\ role OR Add\ member\ to\ role\ in\ PIM\ requested\ \(permanent\) OR Add\ member\ to\ role\ completed\ \(PIM\ activation\) OR Add\ member\ to\ role\ requested\ \(PIM\ activation\))) AND (NOT Identity:svc\-iga\-provisioning)
+(OperationName:(Add\ member\ to\ role OR Add\ eligible\ member\ to\ role OR Add\ member\ to\ role\ in\ PIM\ requested\ \(permanent\) OR Add\ member\ to\ role\ completed\ \(PIM\ activation\) OR Add\ member\ to\ role\ requested\ \(PIM\ activation\))) AND (NOT InitiatedBy:*00000000\-0000\-0000\-0000\-000000000000*)
 
 // cloud/entra_illicit_consent_grant.yml — Entra consent grant to a third-party app (illicit-consent triage)
 (OperationName:(Consent\ to\ application OR Add\ delegated\ permission\ grant OR Add\ OAuth2PermissionGrant)) AND (TargetResources:(*Mail.Read* OR *Mail.ReadWrite* OR *Mail.Send* OR *offline_access* OR *Files.Read.All* OR *Files.ReadWrite.All* OR *Sites.Read.All* OR *Directory.Read.All* OR *full_access_as_user*)) AND (NOT TargetResources:*00000000\-0000\-0000\-0000\-000000000000*)
