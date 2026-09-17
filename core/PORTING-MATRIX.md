@@ -215,24 +215,69 @@ work unchanged. `20-aliases.zsh` additionally aliases `bat`/`fd` back to their
 canonical names, so both are typeable as documented upstream, and `core-doctor`
 probes the RESOLVED binary — it reports `✓` for a renamed tool rather than the `✗`
 that once contradicted the `resolved` line in the same report.
-⁵ nvim-treesitter (pinned to `main`) needs tree-sitter-cli ≥ 0.26.1. **Mac:**
-`tree-sitter-cli` via brew — **not** `tree-sitter`, which is now lib-only.
-**Fedora:** `tree-sitter-cli` via dnf (verify ≥ 0.26.1, else mise/cargo).
-**Arch:** `extra` carries 0.26.9 (clears the floor).
-**openSUSE:** the CLI is in the **base `tree-sitter` package** (0.26.8 on Tumbleweed,
-Leap 16.1 and Leap 16.0 — clears the floor); what got split off there is the shared
-_library_, as `libtree-sitter0_26`. There is **no** `tree-sitter-cli` package on openSUSE, and
+⁵ nvim-treesitter (pinned to `main`) needs tree-sitter-cli ≥ 0.26.1. Fleet position,
+generated from `scripts/fleet-package-versions.tsv` — the mechanism footnotes ³³ and ³⁴ use,
+and this note earned it: it quoted `0.26.7` unqualified for a full release cycle, which is the
+Alpine v3.24/edge version read as fleet-wide.
+
+<!-- core:porting-matrix:gen fleet-versions-tree-sitter-cli -->
+
+| Target              | `tree-sitter-cli` | vs ≥ 0.26.1 | verified   |
+| ------------------- | ----------------- | ----------- | ---------- |
+| Homebrew            | 0.27.0            | at or above | 2026-09-17 |
+| Gentoo stable       | 0.26.12           | at or above | 2026-09-17 |
+| Fedora Rawhide      | 0.26.11           | at or above | 2026-09-17 |
+| Fedora 45           | 0.26.11           | at or above | 2026-09-17 |
+| Fedora 44           | 0.26.11           | at or above | 2026-09-17 |
+| Arch                | 0.26.9            | at or above | 2026-09-17 |
+| openSUSE Tumbleweed | 0.26.8            | at or above | 2026-09-17 |
+| openSUSE Leap 16.1  | 0.26.8            | at or above | 2026-09-17 |
+| openSUSE Leap 16.0  | 0.26.8            | at or above | 2026-09-17 |
+| Alpine edge         | 0.26.7            | at or above | 2026-09-17 |
+| Alpine 3.24         | 0.26.7            | at or above | 2026-09-17 |
+| Fedora 43           | 0.25.10           | **below**   | 2026-09-17 |
+| Alpine 3.23         | 0.25.10           | **below**   | 2026-09-17 |
+| Alpine 3.22         | 0.25.10           | **below**   | 2026-09-17 |
+| Alpine 3.21         | 0.24.4            | **below**   | 2026-09-17 |
+
+<!-- core:porting-matrix:end fleet-versions-tree-sitter-cli -->
+
+**The header names the TOOL, not the package, and on two platforms those differ** — see the
+Mac and openSUSE paragraphs below; each row's `<source>` in the TSV records which package its
+number was read from. The **Gentoo** row is the newest **stable-keyworded** ebuild, not the
+newest one in `::gentoo`. There is **no Debian or Ubuntu row**: neither archive carries a
+`tree-sitter-cli` source package at all, which is why the matrix routes that cell through
+`asset`²⁸ — an absent row says that where a guessed one would not. Build suffixes (`-r0`,
+`-2.fc43`) are dropped; the table records the upstream triple, which is what the floor is
+compared against.
+
+**Mac:** `tree-sitter-cli` via brew — **not** `tree-sitter`, which is now lib-only.
+**Fedora:** `tree-sitter-cli` via dnf, and it clears the floor on three of its four
+lanes — F44 reached it in `updates`, F45 and rawhide carry it — but **F43 does not**, and
+F43 is a _blocking_ lane in that repo's CI. On F43 reach past it with `mise use -g tree-sitter` or
+`cargo install tree-sitter-cli`. `dotfiles-Fedora`'s own `install/packages.txt` already
+says this in prose; dotfiles-Fedora#192 is the `# min:` and the warn-only probe that
+would make it checkable, neither of which that repo has. Footnote ³³ carries the matching
+neovim spread — same distro, same lane, **both halves of the one requirement below the
+floor on F43**, which is the shape this footnote and ³³ each caught on Alpine alone.
+**Arch:** `extra` carries it and clears the floor.
+**openSUSE:** the CLI is in the **base `tree-sitter` package**, on Tumbleweed and both Leap
+lanes; what got split off there is the shared _library_, as `libtree-sitter0_26`. There is **no** `tree-sitter-cli` package on openSUSE, and
 searching for that name is precisely why `dotfiles-openSUSE` carried this as `cargo³` and
 cargo-built the CLI on every box until dotfiles-openSUSE#113. **Note the inversion against
 the Mac line two above** — brew's `tree-sitter` is the lib-only formula and `tree-sitter-cli`
 is the one you want; openSUSE is the exact opposite, so the same name means opposite things
 on the two platforms and neither instinct transfers.
-**Gentoo:** `dev-util/tree-sitter-cli` 0.26.11 is **stable on amd64 and arm64**
-(`KEYWORDS="amd64 arm arm64 ~loong ~mips ppc ppc64 ~riscv ~s390 ~sparc x86"`) and clears
-the floor, so it takes no `package.accept_keywords` line and no cargo build —
-`dotfiles-Gentoo` cargo-built the crate until 2026-08-23, when the atom was found to have
-been packaged and stabilised underneath it (dotfiles-Gentoo#116). 0.26.12 and 0.27.0 exist
-but are `~`-keyworded on **every** arch, so 0.26.11 is still the stable one to reason about.
+**Gentoo:** `dev-util/tree-sitter-cli` is **stable-keyworded on amd64, arm, arm64, ppc,
+ppc64 and x86** and clears the floor, so it takes no `package.accept_keywords` line and no
+cargo build — `dotfiles-Gentoo` cargo-built the crate until 2026-08-23, when the atom was
+found to have been packaged and stabilised underneath it (dotfiles-Gentoo#116). The table's
+row is the newest ebuild carrying a **stable** keyword, which is not the newest ebuild:
+0.27.0 is `~` on every arch. That gap is why this row's `<probe>` is `-` and not `gentoo` —
+Repology reports the newest version in `::gentoo` regardless of keyword, so an automated
+re-read would overwrite the one number this paragraph is about. This note said 0.26.11 was
+the stable one and 0.26.12 `~`-only until 2026-09-17, by which time 0.26.12 had stabilised:
+exactly the drift the generated table exists to end.
 **Maintainer-needed as of 2026-08-30** (dotfiles-Gentoo#144): availability is unchanged —
 it is the maintainer that went away, not the package — but orphaning is what precedes a
 treeclean, which is the same hedge `dotfiles-Gentoo` already carries on `w3m` and `lnav`.
@@ -243,9 +288,8 @@ rendered arch table on `packages.gentoo.org`: it reported `app-shells/starship` 
 no stable amd64 keyword where the ebuild says `KEYWORDS="amd64 arm64"`.
 Where unpackaged: `mise use -g tree-sitter` or `cargo install tree-sitter-cli`.
 **Alpine:** the `community` package **is** the musl build on every branch, but it clears
-the floor on only **two of five** — v3.24 (`0.26.7-r0`) and edge (`0.26.7-r1`). v3.21
-carries `0.24.4-r0` and v3.22/v3.23 carry `0.25.10-r0`, all three **below** it. This note
-used to quote 0.26.7 unqualified, which is the v3.24/edge version read as fleet-wide.
+the floor on only **two of five** — v3.24 and edge. v3.21, v3.22 and v3.23 are all **below**
+it, which is the spread this note flattened into one number for a release cycle.
 Prefer the package on the two branches where it clears; on the other three
 `dotfiles-Alpine`'s `bootstrap.sh` supplies a conforming build via cargo, and that guard is
 **version**-checked rather than presence-checked — a presence guard sees apk's 0.25.10,
@@ -520,7 +564,18 @@ would have connected. It now appends the `/tmp` path whenever `$TMPDIR` is set a
 works, so this list may grow again; the candidate-list test in `scripts/test/71-prompt-atuin.sh`
 is where a new path gets pinned. Both anchors were re-dated to 18.21.0 in the same change, on
 the strength of the 2026-09-03 `atuin-guard-verify` dispatches (three runs, `holds` on both
-premises) rather than a changelog read.
+premises) rather than a changelog read, and to 18.22.0 on 2026-09-16 the same way.
+
+**The autostart premise then MOVED, on 2026-09-17, and the guard changed rather than the
+recipe.** A sixth arm — a daemon whose pid is _alive_ while nothing answers its socket — was
+added to the harness and measured against 18.22.0: `absent` and `stale` still spawn and land
+their row, and that shape does not. atuin reads a live pid as health, so it never replaces the
+one process that cannot serve, and the client blocks on the pidfile lock and exits 1
+(`atuinsh/atuin#4114`). The guard **no longer stands down under `autostart`**; it probes, stays
+silent for a socket that is merely waiting to be spawned onto, and prints one warning naming
+the pid to kill when it finds the wedge. Nothing is disabled, because disabling under
+`autostart` would remove the launcher these two rows exist to document. The exports below are
+unchanged.
 
 The exports belong in that repo's `os/<os>.zsh` (loader fragment 80), **never** in the Core
 config: Core is vendored identically to every repo, so a per-machine value there would be
@@ -605,17 +660,20 @@ binary), so a shell started _from_ a degraded shell inherits `ATUIN_DAEMON__ENAB
 stands down as "never opted in" — harmless, since it also writes directly, but it will not pick
 the daemon back up until you start a shell from a clean parent.
 
-**Under `autostart` the probe deliberately does not run** — and that is the Alpine and macOS
-rows above, so on two of the eight machines this safety net is not the thing keeping you out
-of trouble. It stands down because an absent socket is then the client's _cue to start one_,
-not a fault; disabling the daemon there would permanently defeat the only launcher those
-machines have. atuin's own health-checking is what covers them — and that is now **measured
-rather than assumed** (`dotgibson/dotfiles-core#402`). It is a second premise with its own
-mode, its own anchor line in `zsh/00-tools.zsh` and its own issue title:
+**Under `autostart` the probe runs but the degrade does not** — and that is the Alpine and
+macOS rows above. The probe used to be skipped there entirely, because an absent socket is the
+client's _cue to start one_ rather than a fault; what has never been available on those two
+rows is the degrade, since disabling the daemon would permanently defeat the only launcher
+they have. The paragraph above records what changed and why. atuin's own health-checking is
+what covers them, and that is **measured rather than assumed**
+(`dotgibson/dotfiles-core#402`). It is a second premise with its own mode, its own anchor line
+in `zsh/00-tools.zsh` and its own issue title:
 `scripts/research/verify-atuin-guard.sh --premise autostart` (or `make verify-atuin-guard-autostart`)
 spawns a real daemon, checks that one appears and that the entry lands from each unreachable
 shape, and proves the teardown before deleting anything. The `atuin-guard-verify` workflow
-(manual dispatch since #687) runs it as a separate job from the silent-discard one.
+(manual dispatch since #687) runs it as a separate job from the silent-discard one. **It
+reports `moved` today and will keep doing so** while `atuinsh/atuin#4114` is open: the verdict
+is computed from what upstream did, not from what Core does about it.
 
 Two things that measurement established on 18.19.0, both worth knowing before you touch these
 rows. The **stale-socket shape is the load-bearing one** — every `atuin history start` is a
@@ -628,12 +686,16 @@ lives in the **client**: `atuin daemon start` on its own refuses over a stale in
 still open and unreviewed, it makes the **daemon** unlink a stale socket on bind failure. The
 "healing lives in the client" finding is the measured basis of `--premise autostart` and of
 `CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST` in `zsh/00-tools.zsh`; if #3957 merges, the daemon
-heals itself and the premise the stand-down rests on no longer holds. **No action while it is
-unmerged** — and in particular do not edit that anchor, which is a claim the premise was
-re-measured, not a version bump. Re-run `make verify-atuin-guard-autostart` if it lands.
+heals itself and the `stale` arms stop measuring what they were built to measure. That is a
+narrower consequence than it once was: the premise no longer holds a stand-down up, because
+there is no longer a stand-down. **No action while it is unmerged** — and in particular do not
+edit that anchor, which is a claim the premise was re-measured, not a version bump. Re-run
+`make verify-atuin-guard-autostart` if it lands. The one that would change the **guard** is
+`atuinsh/atuin#4114`: health-checking the socket instead of the pidfile is what would leave
+the wedged-daemon warning with nothing to fire on.
 
 Still not covered, so the default `--premise discard` caveats are not the only ones: the
-dispatched job runs on glibc Linux, which is neither of the two machines this premise protects,
+dispatched job runs on glibc Linux, which is neither of the two machines this premise is load-bearing for,
 and a run that is green there is the weakest evidence in the whole arrangement for these rows.
 Running `make verify-atuin-guard-autostart` on the Alpine or macOS box itself is what actually
 speaks for it.
@@ -733,6 +795,22 @@ you:
 This is the same overclaim already corrected once for openSUSE (`ouch`/`ast-grep`): ³ means
 "bootstrap.sh installs it best-effort", so a ³ with no installer behind it reads as "you
 have this" when you do not.
+
+**`ouch` changed its default unpack LOCATION in 0.8.0, and the spread in this table is what
+makes that Core's problem.** Since 0.8.0 (`ouch-org/ouch#962`) `ouch decompress foo.tar.gz`
+unpacks into `./foo/` rather than into the CWD, with a new `--here` for the old behaviour. The
+rows above are not level: openSUSE Leap ships **0.5.1**, Alpine's index **0.6.1**, GURU
+**0.8.2**, Arch **0.8.3** — so the same `extract foo.tar.gz` built two different trees on two
+supported boxes, silently and with no error on either. Core's `extract`
+(`zsh/30-functions.zsh`) pins the old semantics by **probing** `ouch decompress --help` for
+`--here` and passing it where it exists — the ²² rule below, not a version compare, and here
+the probe is also fail-safe: a build without the flag is a build that already extracts into the
+CWD. This is a Core fix, not a matrix one; the rows stay as they are. Two things it keeps
+honest — the hand-rolled `tar`/`unzip` fallback for a box with no `ouch` at all, and `extract`'s
+own tarbomb and clobber guards, both of which are written against the CWD. Separately and
+_not_ a 0.8.0 change: `ouch` writes a single decompressed `.gz`/`.bz2` into the CWD on every
+version, where `gunzip` writes next to the archive, so Core runs it from the archive's
+directory for those two formats.
 
 ²² sd **changed its default in 1.1.0**: it now processes input **line by line**, and the old
 whole-file behaviour moved behind `--across` / `-A`. The failure mode is **silent** — a pattern
@@ -1174,6 +1252,7 @@ Verified against each project's own `go.mod`, and these are the exact strings th
 | `yq`    | `github.com/mikefarah/yq/v4`          |
 | `shfmt` | `mvdan.cc/sh/v3/cmd/shfmt`            |
 | `gron`  | `github.com/tomnomnom/gron`           |
+| `duf`   | `github.com/muesli/duf`               |
 | `glow`  | `charm.land/glow/v3`                  |
 
 **Charm's tools moved off GitHub as a module host** — `glow` is now `charm.land/glow/v3`
@@ -1240,26 +1319,54 @@ output. Every target above clears that floor except `dotfiles-Debian`'s two lane
 2.32.1. It degrades rather than breaks, which is why that repo's `install/packages.txt`
 declares no `# min:` floor for it.
 
-³³ **neovim — "the package exists" is not "the package is usable", and it bites on FOUR
-targets, by three different mechanisms.** Core's nvim pins nvim-treesitter to `main`
+³³ **neovim — "the package exists" is not "the package is usable", and it bites on FIVE
+targets, by four different mechanisms.** Core's nvim pins nvim-treesitter to `main`
 (`nvim/lazy-lock.json`), which hard-requires **Neovim 0.12**. Several cells in the neovim
-row above resolve perfectly and give you something Core's config will not load on:
+row above resolve perfectly and give you something Core's config will not load on.
 
-| Target                 | What `neovim` actually gets you       | Clears 0.12? |
-| ---------------------- | ------------------------------------- | ------------ |
-| **Debian**             | Ubuntu 24.04 `neovim` **0.9.5**       | no — see ²⁸  |
-| **Gentoo**             | newest **stable** ebuild, **0.11.7**  | no           |
-| Gentoo, fixed          | **0.12.3**, via the `>=` keyword line | yes          |
-| **Alpine** 3.21        | `neovim` **0.10.4-r0**                | no           |
-| **Alpine** 3.22        | `neovim` **0.11.1-r1**                | no           |
-| **Alpine** 3.23        | `neovim` **0.11.7-r0**                | no           |
-| Alpine 3.24            | `neovim` **0.12.2-r0**                | yes          |
-| Alpine edge            | `neovim` **0.12.2**                   | yes          |
-| **openSUSE** Leap 16.0 | `neovim` **0.11.3-bp160.2.1**         | no           |
-| openSUSE Leap 16.1     | `neovim` **0.12.4-bp161.1.1**         | yes          |
-| openSUSE Tumbleweed    | `neovim` **0.12.5-1.1**               | yes          |
+Fleet position, generated from `scripts/fleet-package-versions.tsv` — the same mechanism
+footnote ³⁴ uses for jq, and here for a blunter reason: this enumeration was hand-written prose
+and was wrong four times in four months (dotfiles-Gentoo#116, dotfiles-Alpine#170,
+dotfiles-openSUSE#178, dotfiles-Fedora#192). The side of the floor each row falls on is DERIVED
+from its version, so a row cannot assert a verdict its own number contradicts — which is what
+two of those corrections were.
 
-They get there by three different mechanisms and only one of them looks like a problem.
+<!-- core:porting-matrix:gen fleet-versions-neovim -->
+
+| Target              | `neovim` | vs ≥ 0.12.0 | verified   |
+| ------------------- | -------- | ----------- | ---------- |
+| Arch                | 0.12.5   | at or above | 2026-09-17 |
+| openSUSE Tumbleweed | 0.12.5   | at or above | 2026-09-17 |
+| Fedora Rawhide      | 0.12.5   | at or above | 2026-09-17 |
+| Fedora 45           | 0.12.5   | at or above | 2026-09-17 |
+| Fedora 44           | 0.12.5   | at or above | 2026-09-17 |
+| Homebrew            | 0.12.5   | at or above | 2026-09-17 |
+| openSUSE Leap 16.1  | 0.12.4   | at or above | 2026-09-17 |
+| Alpine edge         | 0.12.2   | at or above | 2026-09-17 |
+| Alpine 3.24         | 0.12.2   | at or above | 2026-09-17 |
+| Gentoo stable       | 0.11.7   | **below**   | 2026-09-17 |
+| Alpine 3.23         | 0.11.7   | **below**   | 2026-09-17 |
+| Fedora 43           | 0.11.6   | **below**   | 2026-09-17 |
+| openSUSE Leap 16.0  | 0.11.3   | **below**   | 2026-09-17 |
+| Alpine 3.22         | 0.11.1   | **below**   | 2026-09-17 |
+| Debian 13           | 0.10.4   | **below**   | 2026-09-17 |
+| Alpine 3.21         | 0.10.4   | **below**   | 2026-09-17 |
+| Ubuntu 24.04        | 0.9.5    | **below**   | 2026-09-17 |
+
+<!-- core:porting-matrix:end fleet-versions-neovim -->
+
+Four things the table deliberately does not say. The **Debian** lane is the Ubuntu 24.04 row,
+and its remedy is footnote ²⁸ rather than a newer archive — Debian 13's own `neovim` is 0.10.4,
+also below the floor. The **Gentoo** row is the newest **stable-keyworded** ebuild; 0.12.0
+through 0.12.5 are all in `::gentoo` and all `~arch`, so a stable profile silently picks 0.11.7
+and reports success, and the version-restricted `>=` line below reaches past it — a remedy, not
+an observation, so it is not a row. Distro build suffixes (`-r0`, `-bp160.2.1`, `-1.fc43`) are
+dropped: the table records the upstream triple, which is what the floor is compared against and
+what an upstream probe can confirm. And `verified` is when somebody last **looked**, not when
+the version last **moved** — a row unchecked for 90 days is named on stderr by
+`make gen-porting-matrix`.
+
+They get there by four different mechanisms and only one of them looks like a problem.
 Debian's is a **frozen archive**: the version is simply old, `apt` says so, and
 `dotfiles-Debian` declares a `# min:0.12.0` floor its CI enforces. Gentoo's is
 **keywords**: 0.12.0–0.12.3 are all in `::gentoo` right now, all `~arch`, so a stable
@@ -1271,8 +1378,9 @@ cycle. Alpine is not rolling: it carries four supported stable branches at once 
 each frozen at the version it released with, so "does `apk add neovim` clear the floor?" has
 no single fleet answer — it has five, and **three of them are no**. A check run on a v3.24
 or `edge` box sees a perfectly current 0.12.2 and reports the row healthy for Alpine
-entirely. Sibling footnote ⁵ already spells this spread out correctly for `tree-sitter-cli`;
-this footnote simply never got the same treatment.
+entirely. Sibling footnote ⁵ carries the matching spread for `tree-sitter-cli`, now from the
+same TSV — same five lanes, same floor arithmetic, one dependency apart. Both used to be
+prose, and both flattened those five lanes into one number at least once.
 
 openSUSE Leap is Alpine's shape with two lanes instead of four. Leap 16.0 and 16.1 are both
 supported, each frozen at the Backports build it released with (`bp160` 0.11.3, `bp161`
@@ -1282,6 +1390,19 @@ load Core's config. Neither Debian's nor Gentoo's lever exists there: no newer b
 16.0's OSS or Backports repos, and no keyword to reach past. An earlier revision of this
 footnote exempted openSUSE by name — "though its neovim row is not currently affected" —
 which was true of 15.6 and stopped being true the day 16.0 shipped.
+
+Fedora is the fourth mechanism, and the only one that moves in the fleet's favour on its
+own. It is neither frozen nor keyworded nor branch-spread: Fedora **rebases inside a
+release**, for some packages and not others, at the maintainer's discretion. `neovim`
+crossed 0.11 → 0.12 in F44's `updates`, so a box that installed 0.11 at GA is on 0.12.5
+today without changing release — while F43 stayed on the 0.11 branch and ends its life
+there, at 0.11.6. F43 therefore clears the floor only by **upgrading release**, which is
+the mechanic footnote ³⁴ records for jq on this same distro and the exact inverse of
+Alpine's in-place backport — same floor, opposite levers, one distro apart. Two things
+follow. A check run on F44, F45 or rawhide sees 0.12.5 and reports the Fedora column
+healthy, exactly as sampling Tumbleweed does for openSUSE. And F43 is a **blocking** lane
+in `dotfiles-Fedora`'s `.github/workflows/packages.yml`, so this is a shortfall on a
+release that repo's own CI treats as supported.
 
 `dotfiles-Gentoo` therefore borrows Debian's contract and pairs it with the Portage-native
 fix: `# min:0.12.0` next to the atom in `install/packages.txt`, a **version-restricted**
@@ -1306,13 +1427,31 @@ gate in `test/check-packages.sh` that fails a Tumbleweed shortfall (that would m
 pin outran the fleet) and reports a Leap one. Filed as dotfiles-openSUSE#178, verified
 2026-09-12.
 
-**If you stamp a new source-based or stable/testing-split target, ask the keyword question
-and the branch question, not just the name question.** This trap only shows up on the
-fleet's non-rolling lanes — and "non-rolling" covers three shapes, not one: a frozen archive
-(Debian), a stable/testing keyword split (Gentoo), and a set of concurrently supported
-release branches (Alpine, and openSUSE Leap). A rolling column can be answered once. Each
-of these has to be answered per lane, and a check that samples only the newest lane will
-report all of them healthy.
+`dotfiles-Fedora` has neither guard yet, and it repeats Alpine's asymmetry exactly:
+`install/packages.txt` carries the floor for `tree-sitter-cli` — in prose, already
+naming F43's 0.25.10 as below it — while the `neovim` line beside it is bare, with no
+floor recorded anywhere and no version check in `bootstrap.sh`. It is the last
+**non-rolling** target in the fleet without one — Arch and Homebrew declare no floor
+either, but that is the rolling column answered once, which is the distinction this
+footnote closes on. That prose floor is also invisible to `gen-porting-matrix.sh`, which reads
+`# min:`; it costs nothing here only because the package table above has no Fedora column
+to derive, so the remedy moves no cell. Filed as dotfiles-Fedora#192 — Alpine's
+warn-only probe, the `# min:` pair, and the floor-agreement gate `test/check-packages.sh`
+still lacks. Verified 2026-09-16 against `packages.fedoraproject.org` and
+`mdapi.fedoraproject.org`, after #1010 reported the same shortfall from a
+`fedora-bootc:42` container — a release EOL since 2026-05-13, and not one of this
+fleet's Fedora lanes. **Measure the lanes the repo declares, not the image that happened
+to be handy**: that container was pinned for a research harness's reasons, and its package
+versions were read as if they were the distro's.
+
+**If you stamp a new target that is not rolling, ask the keyword question, the branch
+question and the rebase question, not just the name question.** This trap only shows up on
+the fleet's non-rolling lanes — and "non-rolling" covers four shapes, not one: a frozen
+archive (Debian), a stable/testing keyword split (Gentoo), a set of concurrently supported
+release branches (Alpine, and openSUSE Leap), and a versioned release train that rebases
+inside a release for some packages and not others (Fedora). A rolling column can be
+answered once. Each of these has to be answered per lane, and a check that samples only
+the newest lane will report all of them healthy.
 
 ³⁴ **jq — a recorded security floor of ≥ 1.8.2, and deliberately NOT a version gate.**
 1.8.2 (2026-06-20) fixes **16 CVEs** — heap and stack overflows, out-of-bounds reads, an
@@ -1326,7 +1465,9 @@ Fleet position, generated from `scripts/fleet-package-versions.tsv` — this enu
 prose until it was corrected twice in one day, once for Alpine and once for Fedora, because
 nothing could contradict it. The side of the floor each row falls on is DERIVED from its
 version rather than recorded beside it, which is precisely what both corrections were: a
-version and a verdict that disagreed.
+version and a verdict that disagreed. Footnotes ⁵ and ³³ carry the same kind of block, from the
+same file, for `tree-sitter-cli` and `neovim` (#1082) — so the three floors this document
+enforces are now enumerated by one mechanism rather than three prose styles.
 
 <!-- core:porting-matrix:gen fleet-versions -->
 
@@ -1550,9 +1691,9 @@ are not**, because they are keyed to an Ubuntu series and would break the Debian
   call `blib_link_core` exactly as the OS repos do. Where they differ is the `80`
   band, which belongs to the OS repo underneath: the contract is that a role repo
   skips `blib_link_os_layer` and calls `blib_link_role_layer` instead, wiring the
-  `85` band and `tmux/role.conf`. **`Offense` has adopted it**; `Defense` has not —
-  it still hand-rolls the band in its own `wire_defense_stage`, and migrating it is
-  what remains. Deliberate, not drift — `core.manifest` records the same split.
+  `85` band and `tmux/role.conf`. **Both role repos have adopted it** — `Offense`
+  first, `Defense` in dotgibson/dotfiles-core#976, which retired the
+  `wire_defense_stage` it used to hand-roll. `core.manifest` records the same.
 - `Debian` is stamped from Fedora structurally, but takes its **apt idioms** from
   `Offense` — the fleet's other Debian-family repo. It is the only **frozen** target
   (Ubuntu 24.04 LTS), which is why it carries by far the largest out-of-band install

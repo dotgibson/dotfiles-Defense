@@ -578,6 +578,62 @@ _core_bash4_hits() { # _core_bash4_hits <file>
   ' "$f" 2>/dev/null
 }
 
+# ── _core_bash32_parse_hits: syntax bash 3.2 cannot PARSE ────────────────────
+# _core_bash32_parse_hits <file> — print "<line>:<what>" for every construct bash 3.2's
+# PARSER rejects although bash 4+ accepts it. Silence = clean. §5k calls this beside
+# _core_bash4_hits above, and the two are deliberately NOT merged: that one covers features
+# bash 3.2 does not HAVE, which parse and then fail at run time (or silently misbehave).
+# This one covers a file 3.2 refuses to parse AT ALL — `bash -n` rejects it and nothing in
+# the script runs. Its doc comment promises "a builtin or a syntax bash 3.2 does not have",
+# which this is not, and a gate's contract is worth more than one fewer function.
+#
+# ONE ENTRY, measured rather than reasoned — #1075 hit it, and the boundary was mapped by
+# building bash 3.2.0 and parsing the variants. All four parse on bash 5:
+#
+#   x=$(case $v in a) echo A;; esac)             3.2: syntax error near `;;', ALWAYS
+#   x="$(case $v in a) echo A;; esac)"           3.2: fine — until an arm contains a '
+#   x="$(case $v in a) echo "it's";; esac)"      3.2: unexpected EOF looking for matching '
+#   x="$(case $v in (a) echo "it's";; esac)"     3.2: FINE — the leading ( is the fix
+#
+# So the double quotes are what make it WORK, not what break it, and the quoted form is a
+# TRAP rather than a hazard: it parses for as long as no arm says anything possessive, and
+# starts failing the moment someone writes "the snapshot's copy" in a verdict string. That
+# is how it arrived — a report-writing line in a research script, green on bash 5 through
+# `bash -n`, ShellCheck and three Linux legs, red only on macOS, eleven minutes in.
+#
+# THE NEEDLE IS THE BARE PATTERN, not the apostrophe. A leading `(` on every pattern makes
+# both shapes parse (measured), so the rule has one fix and no judgement call — and keying
+# on the apostrophe would instead make the gate fire on the arm text rather than on the
+# construct, which is the wrong thing to teach. `while`, `if` and `until` bodies inside a
+# substitution are unaffected, and so are backticks: it is `case` alone, because 3.2
+# re-scans an arm looking for the `)` that ends the substitution.
+#
+# WHAT IT DOES NOT COVER, named so a green §5k is not read as promising more:
+#   * a `case` appearing LATER inside a multi-command substitution (`$(setup; case …)`).
+#     The needle anchors on the substitution OPENING with `case`, which is the shape that
+#     occurs; "is this inside $( )" is not a question a line-oriented scan can answer.
+#   * a substitution whose subject holds parentheses (`$(case "$(f)" in a) …)`). The
+#     `[^()]*` below is what excludes it, and it is load-bearing in the other direction:
+#     without it a prose arm — `echo "built in place"` — supplies a second ` in ` and the
+#     rule fires on CORRECT code, which is the one thing a gate must never do.
+#
+# The needle is assembled from fragments for the same reason as _core_bash4_hits: this file
+# is itself scanned, and a rule that reds its own definition is one that gets reverted.
+_core_bash32_parse_hits() { # _core_bash32_parse_hits <file>
+  local f="${1:-}"
+  [ -f "$f" ] || return 0
+  awk -v o='$' -v p='(' '
+    {
+      l = $0
+      sub(/[[:space:]]*#.*$/, "", l)   # comment-stripped, as above: prose about the rule is not the rule
+      if (l ~ /^[[:space:]]*$/) next
+      # <$>( <space>* case <space> …no parens… <space> in <space>+ <not a paren>
+      if (l ~ ("\\" o "\\" p "[[:space:]]*case[[:space:]][^()]*[[:space:]]in[[:space:]]+[^([:space:]]"))
+        print NR ":a case opening a command substitution needs ( on every pattern — bash 3.2 cannot parse the bare form"
+    }
+  ' "$f" 2>/dev/null
+}
+
 # ── _core_owned_block_hits: portable logic that Core owns, re-implemented locally ──
 # _core_owned_block_hits <file> — print `<line>:<rule-id>` for every place <file>
 # re-implements a block Core now owns. Silence = clean. Consumed by the reusable
@@ -2323,7 +2379,7 @@ _core_make_gate_hits() { # _core_make_gate_hits <repo-root>
 # attaching it to the FAN-OUT, which is a different set. A gate keyed on the bare number
 # would therefore red on `85-escalation.sh`'s "eight repos rely on sudo-first" (nine minus
 # Alpine — correct), on #775's "eleven defects across eight repos" (the lint-call callers —
-# correct), and on every "eleven-repo system". That gate would be noise, and noise is how a
+# correct), and on every "twelve-repo system". That gate would be noise, and noise is how a
 # check teaches the fleet to ignore it.
 #
 # KEYED ON THE CLAIM, NOT THE NUMBER. A count is only checkable when the sentence says

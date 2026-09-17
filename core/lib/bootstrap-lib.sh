@@ -828,22 +828,19 @@ blib_link_os_layer() {
 # preserve a ~/.config/kali/ on a repo no longer called Kali) or a namespace parameter
 # (an argument whose only job is to keep a retired name alive).
 #
-# ONE ROLE REPO CALLS THIS, NOT BOTH. Offense does (its bootstrap.sh calls
-# blib_link_role_layer); Defense still hand-rolls the band in its own wire_defense_stage,
-# and adopting the helper there is what remains. core.manifest and PORTING-MATRIX.md both
-# record the same split — this comment used to claim the migration was finished, which was
-# the only one of the three that said so.
+# BOTH ROLE REPOS CALL THIS. Offense adopted it first; Defense followed in #976 (its
+# dotfiles-Defense#292), retiring the wire_defense_stage this comment, core.manifest and
+# PORTING-MATRIX.md all used to describe as outstanding. Nothing hand-rolls the 85 band now.
 #
-# Defense hand-rolls TWO of the three links (85-defense.zsh and templates); there is no
-# tmux/role.conf link because dotfiles-Defense/defense/ ships no defense.conf, whereas
-# Offense does ship offensive.conf. So the migration is low-risk: the tmux branch below is
-# [[ -f ]]-guarded and would simply no-op there.
+# Defense takes TWO of the three links (85-defense.zsh and templates) and not the third:
+# dotfiles-Defense/defense/ ships no defense.conf, whereas Offense does ship
+# offensive.conf, so the tmux branch below is [[ -f ]]-guarded and simply no-ops there.
 #
-# This exists because both role repos hand-rolled the same links and had already drifted:
-# Defense honours BLIB_DRY directly rather than the library's _blib_dry() when dropping the
-# stale pre-v4 link, and Offense did not — so a --dry-run in one repo mutated the box and in
-# the other did not. Present tense on Defense's half, deliberately: that fork is still live
-# and is the thing adopting the helper would retire.
+# This exists because both role repos hand-rolled the same links and had drifted while
+# they did: Defense honoured BLIB_DRY directly rather than the library's _blib_dry() when
+# dropping the stale pre-v4 link, and Offense did not — so a --dry-run in one repo mutated
+# the box and in the other did not. Both now go through the _blib_dry() guard below, which
+# is the divergence this helper existed to end.
 #
 # ONE ROLE PER BOX. Both roles land on band 85, so a machine that wired Offense and
 # then Defense would have 85-offensive.zsh and 85-defense.zsh loading in glob order and
@@ -924,6 +921,17 @@ blib_write_zshrc_loader() {
   fi
   if _blib_dry; then
     blib_say "would write managed ~/.zshrc loader (v4 numbered-fragment glob)"
+    # Announce AND COUNT the displacement, in the order the real run performs it (#1057).
+    # This is the one action in the whole wiring pass that touches a file the user owns,
+    # and it was the only backup site whose dry branch hid it: the plan said "would write"
+    # and the tally closed "0 backed up", then the real run warned that it had moved their
+    # ~/.zshrc. blib_link (would back up + link) and blib_install_system_file (would back
+    # up + write) have both always said it, and the phrase is deliberately theirs so the
+    # library has ONE grep for "a backup was planned".
+    if [[ -f "$rc" ]]; then
+      blib_say "would back up + write: $rc"
+      BLIB_BACKED=$((BLIB_BACKED + 1))
+    fi
     # Preview the seeding too — BLIB_DRY's contract is the FULL plan, and this is a
     # second file the real run creates.
     _blib_seed_zdotdir_rc "$rc"

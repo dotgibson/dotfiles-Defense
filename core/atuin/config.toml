@@ -223,7 +223,18 @@ update_check = false
 # the daemon OFF for that shell, permanently, so atuin writes SQLite directly; a daemon that
 # dies mid-session also prints one warning, since that shell's history plumbing changed under
 # a session still open (dotgibson/dotfiles-core#366). CORE_ATUIN_PROBE_INTERVAL tunes the
-# window. It cannot detect an ACCEPT-BUT-SILENT
+# window.
+#
+# UNDER AUTOSTART — the Alpine/macOS row above — the net is a DIFFERENT one, because turning
+# the daemon off there would delete the very launcher those two machines depend on. The guard
+# probes, and changes nothing: an unreachable socket is normally just a daemon that has not
+# been spawned yet, and the first command spawns it. The exception it does announce is a daemon
+# whose pid is ALIVE while nothing answers — atuin reads that pid as health and never replaces
+# it, so every command blocks on the pidfile lock and then fails (atuinsh/atuin#4114, measured
+# on 18.22.0 in dotgibson/dotfiles-core#1102). One warning, naming the pid to kill; nothing is
+# disabled, so the moment that process is gone the next command starts a healthy daemon.
+#
+# None of it can detect an ACCEPT-BUT-SILENT
 # socket, which is the shape of the indefinite freeze in atuinsh/atuin#3382 — so prefer the
 # plain always-running unit over systemd SOCKET ACTIVATION: activation keeps the socket
 # accepting while the daemon behind it is dead, which is precisely the undetectable state.

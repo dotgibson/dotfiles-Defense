@@ -77,20 +77,39 @@ quiet = false
 # (or `mise lock`) writes mise.lock; commit it. Until it's committed mise resolves
 # floating as before, so this is a safe no-op until the lock lands.
 #
-# READ THIS BEFORE RELYING ON THE PARAGRAPH ABOVE: `lockfile` is PROJECT-SCOPED. mise does
-# not lock a GLOBAL config's tools — and on a provisioned box this file IS the global config
-# (~/.config/mise/config.toml). Measured on mise 2026.5.16, with this exact file as the
-# global config and all 11 tools declared:
+# READ THIS BEFORE RELYING ON THE PARAGRAPH ABOVE: `mise lock` is PROJECT-SCOPED BY DEFAULT,
+# and on a provisioned box this file IS the global config (~/.config/mise/config.toml). This
+# note used to conclude from that that mise "does not lock a GLOBAL config's tools" at all.
+# That conclusion was wrong, and it was wrong when it was written — the measurement behind it
+# was a bare `mise lock`, which by design targets only the active PROJECT config root:
 #
 #     $ mise lock
 #     ! No tools configured to lock            # …and no mise.lock written
 #
-# The identical content as a project mise.toml locks all 7 platforms normally. The fleet
-# corroborates it: `lockfile = true` has been set for some time, real installs have gone
-# through it (ruby 4.0.6, lua 5.5.1 are installed), and there is no mise.lock anywhere in
-# any of the ten repos. So "reproduces the same toolchain everywhere" does NOT hold for the
-# global use today — the floating lts/latest/stable pins above are what a box actually
-# resolves, and two boxes provisioned a month apart can still differ. Here, this is inert.
+# `mise lock --global` is the form that locks this file, and it is not new. Re-measured on the
+# SAME mise 2026.5.16 that line cites, from a directory outside any repo:
+#
+#     $ mise lock --global --dry-run
+#     → Targeting 7 platform(s) for ~/.config/mise/mise.lock: linux-arm64, linux-arm64-musl,
+#       linux-x64, linux-x64-musl, macos-arm64, macos-x64, windows-x64
+#     → Processing 11 tool(s): node@24.20.0, pnpm@12.3.4, python@3.14.7, ruby@4.0.6,
+#       go@1.27.1, rust@stable, java@temurin-21.0.12+8.0.LTS, lua@5.5.1, zig@0.16.0,
+#       terraform@1.16.1, foundry@1.8.1
+#
+# All 11 tools, all 7 platforms. Upstream documents `--global` explicitly, and revision-2
+# global lockfiles — which lock a CLI's transitive dependencies, not just its top-level
+# version — landed in v2026.9.7. So the goal at the top of this block is REACHABLE.
+#
+# IT IS NOT REACHED BY THIS FLAG ALONE, and that is the part of the old note worth keeping.
+# `mise lock --global` writes ~/.config/mise/mise.lock, which is PER BOX — and this file is
+# COPIED, not symlinked (see the header). A lock generated on one machine therefore reaches no
+# other. Fleet-wide reproducibility would need Core to SHIP a lock and bootstrap to adopt it,
+# and that has to answer the header's trade for the lock too: "your local copy always wins" and
+# "this is the pinned toolchain everywhere" cannot both be true of the same file. That is a
+# design decision, not a flag flip, and `CLAUDE.md` gives this file to `/runtime-freshness` —
+# so it is that routine's call, and nothing here has made it. Until it is made, the floating
+# lts/latest/stable pins above are still what a box actually resolves, and two boxes
+# provisioned a month apart can still differ.
 #
 # Where it DOES bite: this repo keeps the file at mise/config.toml, a path mise treats as a
 # PROJECT config — so entering dotfiles-core loads it a second time as a project config (the
@@ -101,7 +120,8 @@ quiet = false
 lockfile = true
 
 # NB: mise's GLOBAL-ONLY settings (paranoid, trusted_config_paths, …) are intentionally
-# NOT set here. This file is symlinked to ~/.config/mise/config.toml (global), but mise
+# NOT set here. This file is COPIED to ~/.config/mise/config.toml (global — the header says
+# why it is a copy and not a symlink), but mise
 # ALSO auto-loads it as a PROJECT config whenever you're inside a dotfiles repo (it treats
 # mise/config.toml as a project path) — and a global-only setting in a non-global config is
 # ignored with a WARN on every `cd`. (`paranoid` was just mise's default of false anyway.)
