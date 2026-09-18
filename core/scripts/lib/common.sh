@@ -501,11 +501,12 @@ _core_return_trap_hits() { # _core_return_trap_hits <file>
 # Silence = clean.
 #
 # PORTABILITY.md §1 sets the shell floor at bash 3.2, because macOS ships 2007's bash and the
-# audit matrix runs a macos-latest leg. TEN scripts here carry a comment saying so — this
+# audit matrix runs a macos-latest leg. NINE scripts here carry a comment saying so — this
 # file, audit-core.sh, gen-theme.sh, gen-aliases.sh, parity-check.sh, check-modern.sh,
-# nvim-reachability.sh, update-plugins.sh, core-lock.sh, research/lib/atuin-db.sh. Ten
-# comments and, until #874, zero checks: a convention enforced only by a CI leg that takes
-# seventeen minutes to answer, on one platform of four, after the fact.
+# update-plugins.sh, core-lock.sh, research/lib/atuin-db.sh — nvim-reachability.sh was the
+# tenth until it retired to dotfiles-nvim (#1125). Nine comments and, until #874, zero
+# checks: a convention enforced only by a CI leg that takes seventeen minutes to answer,
+# on one platform of four, after the fact.
 #
 # That is how #871 shipped one such call into test/73-maint-runner.sh. Every local gate was
 # green — the line is valid syntax so `bash -n` passes, shellcheck does not model bash
@@ -812,10 +813,10 @@ _core_vendor_consumer_hits() { # _core_vendor_consumer_hits <repo-dir> <basename
 #     including it would be meaningless rather than merely noisy.
 #
 # The rule binds every gate script `make audit` consults, not just audit-core.sh:
-# check-modern.sh (workflow/action inventory) and nvim-reachability.sh (lua module
-# inventory) source this lib for the same reason. scripts/test-core.sh asserts the exact
-# split per file, so adding either kind of enumeration anywhere fails the suite until
-# someone picks a side.
+# check-modern.sh (workflow/action inventory) sources this lib for the same reason, and
+# nvim-reachability.sh (lua module inventory) did until it retired to dotfiles-nvim
+# (#1125). scripts/test-core.sh asserts the exact split per file, so adding either kind of
+# enumeration anywhere fails the suite until someone picks a side.
 #
 # The trap to watch for: a gate can READ like a manifest/git question and still be a
 # content one. audit-core.sh's §5c expands `nvim/` from the manifest and then cat|greps

@@ -5,10 +5,604 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v7.10.0 … v7.4.3), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v7.11.0 … v7.4.4), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v7.11.0] - 2026-09-18
+
+### Changed
+
+- **`gen-desktop-parity.sh`'s registry is the placement shape `gen-theme.sh` already has**
+  ([#1144](https://github.com/dotgibson/dotfiles-core/issues/1144), second of two; closes it).
+  The move onto the shared library (#1145) kept its registry as it was: a `repo<TAB>path`
+  array with the one block id held apart in a constant — the same facts as a
+  placement `BLOCKS` (`id path repo`), permuted, because there was exactly one block. It is
+  now that `BLOCKS`: one block, two rows, the same id on both, and the sibling checkout is
+  resolved through the library's `region_block_path` rather than a second copy of the
+  `resolve_repo_dir` + `-e .git` rule. With that, all four region generators declare exactly
+  one registry, named `BLOCKS`, whose first column is the block id — the prefix contract the
+  first half of #1144 documented — and the region-library bullet in `CLAUDE.md` stops saying
+  the registries are "still four different shapes". Both live copies verify byte-identically;
+  what stays this script's is the policy (an absent sibling is exit 3, a present sibling with
+  a missing file or region is exit 1), which no registry column carries.
+
+- **The four region generators' registries are one shape — and the measurement says two,
+  not one** ([#1144](https://github.com/dotgibson/dotfiles-core/issues/1144), first of two).
+  One symptom was left by #1129 deliberately: `gen-theme.sh` and `gen-aliases.sh` each had a
+  `BLOCKS` that meant different things, `gen-porting-matrix.sh`'s registry was three parallel
+  variables (`BLOCK_IDS`, `LOCAL_BLOCKS`, `FV_TOOLS`), and `gen-desktop-parity.sh` held its one
+  block id outside its registry altogether. The issue asked whether the differences were
+  accidental or real before anything converged. Column by column they are **two honest
+  shapes**: a _placement_ registry (`id path repo`) for blocks that live in many files, some
+  in sibling repos — theme has it, desktop-parity has the same facts permuted — and a
+  _descriptor_ registry (`id …`) for a single target document whose rows say how to render
+  each block — aliases has it, porting-matrix had it split three ways. They do not merge: the
+  five-column union would put a constant path on 21 alias rows and two empty columns on 18
+  theme rows, documenting nothing. What they share is a **prefix contract**, now documented
+  and read by `scripts/lib/gen-region.sh`: one registry per generator, named `BLOCKS`, a TSV
+  heredoc, column 1 the block id, the columns declared in the comment above it.
+
+  **What that bought.** `gen-porting-matrix.sh`'s three variables are one
+  `id<TAB>scope<TAB>tool` table, so three of its preflight checks — a subset or a tool naming
+  an unregistered id, a tool mapped twice — are impossible by construction and are gone; the
+  comment warning the suite off matching `LOCAL_BLOCKS` when it grepped `^BLOCK_IDS=` is gone
+  with them, because there is one variable. The behavioural suite's four bespoke `awk`
+  source parsers (five with `PKG_ROWS`) are one library call, `region_registry_from_script`,
+  which lives beside the shape it parses. `gen-theme.sh`'s hand-rolled sibling resolver and
+  by-file preflight grouping are the library's `region_resolve_targets` and
+  `region_preflight_targets`, which `gen-desktop-parity.sh` takes next. `aliases.md`,
+  `PORTING-MATRIX.md` and every themed consumer regenerate byte-identically.
+
+  **One behaviour moved, on purpose.** "Is this sibling checked out?" is now the fleet's one
+  rule everywhere — `resolve_repo_dir`, then `-e <dir>/.git` — where `gen-theme.sh` alone had
+  tested the bare directory, so a same-named directory that was not a clone read as checked
+  out there and as absent in `gen-porting-matrix.sh` and `gen-desktop-parity.sh`. It now
+  reads as absent (exit 3, reported) in all three.
+
+- **The last generator is on the shared library, the last off-grammar marker is gone, and
+  the pair that lived in two other repos was renamed without a red in between**
+  ([#1129](https://github.com/dotgibson/dotfiles-core/issues/1129)).
+  `gen-desktop-parity.sh` was the outlier on both counts: its markers carried no `core:`
+  prefix and no block id — `grep -Fx` against two hardcoded literals, in a file format that
+  could therefore hold exactly one generated region forever — and it kept its own awk
+  renderer, its own count checks and its own atomic install. It now calls
+  `scripts/lib/gen-region.sh` like the other three, and every live copy carries
+  `<!-- core:desktop-parity:gen parity -->`. **There is no second marker regex left in this
+  repo.**
+
+  **The interesting part is the sequencing, not the diff.** This generator's only live
+  marker pairs are in `dotfiles-Windows/desktop/PARITY.md` and
+  `dotfiles-MacBook/sketchybar/PARITY.md`, so Core and those repos could not change a string
+  in one commit — whichever side moved first would red the other, and
+  `.github/workflows/parity-check.yml` clones both siblings from `main` weekly and runs
+  `--check --strict`. So it took three: Core learned the canonical form while still
+  _accepting_ the id-less pair
+  ([#1143](https://github.com/dotgibson/dotfiles-core/pull/1143)), the two siblings were
+  renamed one repo at a time
+  ([dotfiles-Windows#272](https://github.com/dotgibson/dotfiles-Windows/pull/272),
+  [dotfiles-MacBook#259](https://github.com/dotgibson/dotfiles-MacBook/pull/259)), and the
+  legacy arm goes here. The gate was green at every step, including the mixed state where
+  one copy was renamed and the other was not — which was checked, not assumed.
+
+  **A copy left behind now reds, and that is a new assertion rather than a side effect.** A
+  legacy marker no longer matches the grammar at all, so it is not a marker — it is prose.
+  Without a check the walker would pass such a file through untouched, the byte comparison
+  would compare it against itself, and `--check` would report green over a copy it no longer
+  covers: coverage loss reading as health. `region_preflight_file` turns that into
+  `registered block is missing: parity`, and the behavioural suite pins it in the failing
+  direction.
+
+  **Severity is translated on purpose, and the code says so.** The library returns 2 — _this
+  document is structurally broken_. This generator still exits **1**, because an unmarked
+  copy is the drift being gated rather than an absence, and `audit-core.sh` §9i is written
+  around exactly that; propagating the library's return code would file a broken marker as
+  "the gate could not run". No gate id moved, and §9i, §9d, §9g and §9h contain no marker
+  literals at all.
+
+  One user-visible message changed: an `end` before its `gen` is now reported as
+  `unterminated 'core:desktop-parity:gen parity' region` rather than the generator's own
+  _appears before_. That is the point rather than collateral — since
+  [#1141](https://github.com/dotgibson/dotfiles-core/pull/1141) the preflight and the
+  walker report the same faults in the same words, and keeping a hand-written ordering grep
+  for a nicer sentence would have left exactly one hand-written marker check alive in the
+  repo. Two checks the old generator could not express at all came free: a **crossed or
+  nested** pair, and a **block id nobody renders** — the second being unrepresentable under a
+  grammar with no ids.
+
+  **What #1129 did not do, on purpose.** Its third listed symptom was that the registries are
+  per-generator and structurally different, and they still are: two generators call theirs
+  `BLOCKS` and mean different columns, one has three parallel registries, and one holds its
+  block id outside the registry entirely. Four awk parsers in the suite read those registries'
+  _source shape_ — a coupling `gen-porting-matrix.sh` already documents as load-bearing — so a
+  rename there is a suite change first. Landing it on top of a three-repo marker rename would
+  have made any red impossible to attribute. Measured and deferred in
+  [#1144](https://github.com/dotgibson/dotfiles-core/issues/1144), which also asks the prior
+  question: whether those four shapes are one thing wearing four names, or four honest small
+  ones.
+
+- **The docs learned the second vendored line — Core is on _both_ ends of a vendoring
+  contract now**
+  ([#1126](https://github.com/dotgibson/dotfiles-core/issues/1126)).
+  Step 5 of `NVIM-SPLIT-PROPOSAL.md` §3.5, and the last: it describes what steps 1-4 did
+  rather than what they were meant to do. `ARCHITECTURE.md`'s topology section opened with
+  _"Core flows in one direction — authored here, copied out"_ and drew a diagram to match;
+  `CLAUDE.md`, `README.md` and `ARCHITECTURE.md` each listed `nvim` in the column naming
+  what Core **owns**. The diagram now has an arrow pointing _in_, the inbound lock is
+  explained where `core.lock` is (`nvim.lock` names its source because, unlike Core's, that
+  source is not implicit — `dotfiles-Offense/companion.lock` has carried the same shape for
+  the same reason), and the editor is described as reaching a machine in three hops:
+  `dotfiles-nvim` → `dotfiles-core` → that repo's `core/`, with `dotfiles-Windows` skipping
+  the middle one.
+
+  **`RELEASE-RUNBOOK.md` gained a fifth flow.** `## 5. Cut a dotfiles-nvim release` sits
+  beside htpx's — the other repo the fleet vendors _from_ — so the header table, which had
+  said four, now says five and carries a row whose "fans out to" column points inward. The
+  old §5 and §6 shifted to §6 and §7; the one citation of them in the tree
+  (`sync-fanout.yml`) moved with them. §1.1 gained the step it had been missing: the editor
+  pin moves **at a Core release and nowhere else** (§7(3)), which `release-readiness`
+  already told a reader while the runbook itself did not.
+
+  **Two premises in the issue were wrong, and the prose says what is true instead.** htpx
+  was said to "already document the shape" — it does, in exactly one place, so for
+  `VENDORING.md`, `ARCHITECTURE.md`, `README.md` and `CLAUDE.md` this _created_ the inward
+  prose rather than extending a precedent. And _"the colour rule now spans two repos"_ is
+  true for the opposite reason to the obvious one: `nvim/` was never a `gen-theme` target
+  and has never carried a `# core:theme:gen` block, because the editor holds zero hex
+  literals and asks the plugin. What crossed the boundary is the **assertion** —
+  `dotfiles-nvim` vendors `theme/palette.toml` _out_ of Core and runs the tokyonight-pin and
+  `M.style` checks that `gen-theme.sh --refresh` can only make with a live Neovim, so they
+  now run on every pin bump instead of nowhere at all.
+
+  **The sweep went wider than the six files named**, because the same staleness sat
+  elsewhere: `RELEASE-STRATEGY.md` — the _policy_ the runbook answers to — still batched the
+  editor pin into the weekly freshness PR and still said `freshness.yml` rolls it forward,
+  both of which #1123 and §7(3) had already contradicted; it and `RELEASE-RUNBOOK.md` also
+  still sourced `dotfiles-Windows`' `nvim/` mirror from Core, which #1124 changed. Smaller
+  corrections in `GITHUB-APP-AUTH.md`, `SECURITY.md`, `CONTRIBUTING.md`, `PORTABILITY.md`,
+  the two `tool-scout` files (which pointed the scout at a vendored, gate-protected
+  lockfile), the bug-report template (which invited editor bugs into the wrong repo) and
+  `V8-PROPOSAL.md`, whose extract-or-freeze deferral is now resolved. In
+  `PORTING-MATRIX.md` only footnote prose moved: footnotes ⁵ and ³³ attribute the Neovim
+  0.12 floor to the repo that authors the pin. **The floor itself is unchanged**, and the
+  generated blocks were not touched.
+
+  `NVIM-SPLIT-PROPOSAL.md` flips **DECIDED → SHIPPED** with this entry, since §3.5
+  completes here. All five steps ride the same release, so the file still names no version.
+
+- **Core stopped running the editor's tests — and the gate that had been lodging with
+  them moved somewhere it actually runs**
+  ([#1125](https://github.com/dotgibson/dotfiles-core/issues/1125)).
+  Step 4 of `NVIM-SPLIT-PROPOSAL.md` §3.5. `scripts/test/15-nvim.sh` (802 lines of headless
+  Neovim fixtures), `scripts/nvim-reachability.sh` and the nvim half of
+  `scripts/test/80-nvim-reachability.sh` were **byte-identical** to the copies
+  [`dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim) has run since
+  [#1122](https://github.com/dotgibson/dotfiles-core/issues/1122) — there against a pinned,
+  SHA-verified Neovim with the committed plugin pins installed, which is the one thing Core's
+  runners structurally cannot do. Retiring them drops duplicates, not coverage, and that was
+  checked by diffing the files rather than by trusting the plan.
+
+  **The second file was two gates wearing one name.** Below the nvim half sat the `#633`
+  routine `allowed-tools` ⇄ workflow `--allowedTools` mirror, which has nothing to do with
+  the editor and would have been deleted by anyone reading the filename. It survives as
+  `scripts/test/24-routine-allowed-tools.sh` — and _24_, not _80_, because `NN >= 60` is the
+  zsh band: `scripts/test/60-loader.sh` ends the whole run when `SCOPE_SHELL` is off or zsh
+  is missing, so at 80 the mirror never ran under `--scope nvim`, `--scope atuin` or
+  `--scope none`. It is python3 and two file reads, so it now sits in the always-run
+  pure-bash band, ungated.
+
+  **luacheck stays, for a corrected reason.** §7(2) kept it because _it catches a corrupt
+  sync_; since [#1123](https://github.com/dotgibson/dotfiles-core/issues/1123) that is
+  §9q's job, which compares `nvim/`'s committed tree against `nvim.lock` byte for byte,
+  offline and always-on. §4 is defence in depth over a vendored tree and now says so. §4b
+  (the live reachability run) retired with the script it drove; the walk happens in
+  `dotfiles-nvim`'s own audit, on the same tree, before the release `nvim.lock` pins — which
+  is what `core.manifest`, `CONTRIBUTING.md` and `VENDORING.md` now say instead of citing a
+  section that no longer exists. Section ids are stable, so `4b` is retired, never reused.
+
+  `.github/workflows/ci.yml` keeps its Neovim install: the
+  [#829](https://github.com/dotgibson/dotfiles-core/issues/829) regression in
+  `scripts/test/73-maint-runner.sh` still needs a real editor. That step's comment records
+  that its `if:` is keyed on the wrong axis for that consumer — tracked separately rather
+  than changed here. One stale citation found while reading around this: §2 of the proposal
+  gave Core's luacheck gate the id `§2`, which has been `§4` for as long as it has existed.
+
+- **The marker-region walker is one library, and the generator with the most consumers
+  gained the two structural checks it never had**
+  ([#1129](https://github.com/dotgibson/dotfiles-core/issues/1129)).
+  Four generators — `gen-theme.sh`, `gen-aliases.sh`, `gen-porting-matrix.sh` and
+  `gen-desktop-parity.sh` — each re-derived "find the markers, replace what is between
+  them, write the file atomically", and each detected a _different subset_ of the ways a
+  marker pair can be malformed. `scripts/lib/gen-region.sh` is now that walker, the
+  grammar, the structural preflight and the install, once. This release moves
+  `gen-theme.sh` onto it; the other three follow.
+
+  **The duplication was the symptom; the gap was the defect.** `gen-theme.sh` renders 16
+  blocks across files that are symlinked into `$HOME` on every box, plus two in sibling
+  repos — and it was the one generator that could not see a **crossed or nested** marker
+  pair, and never checked that every `gen` had exactly one matching `end`.
+  `gen A, gen B, end A, end B` has one marker of each kind per id, so its per-block count
+  could not notice, and its walker consumed the inner `gen` as stale body — silently
+  dropping block B from the file. `gen-aliases.sh` and `gen-porting-matrix.sh` had both
+  checks; the script whose output ships to every host had neither. Both now fail with
+  exit 2 and name themselves, which is a **behaviour change**: input that used to pass
+  quietly is now refused loudly.
+
+  The second fix is structural. `gen-theme.sh`'s preflight counted markers with a
+  _second, hand-written regex_ rather than the one its walker used, which is how it came
+  to count `gen` markers alone while the walker honoured both kinds. `region_markers`
+  derives its answer by running the walker's own matcher, so a marker the walker would
+  honour can no longer be one the structural checks overlook.
+
+  **No marker string changed, and none will here.** `core:theme`, `core:aliases` and
+  `core:porting-matrix` are already the `core:<ns>:gen <id>` grammar, and `core:theme` in
+  particular is a cross-language contract: `dotfiles-Windows` runs its own
+  `gen-theme.ps1` over the same markers, with its own palette, registry and Pester suite,
+  which Core neither calls nor gates. The one off-grammar namespace is
+  `desktop-parity` — no `core:` prefix, no block id — and its only live marker pairs sit
+  in two sibling repos, so it is sequenced separately.
+
+  The gate ids are untouched: §9d, §9g, §9h and §9i classify each generator's `--check`
+  exit code and contain no marker literals at all. `scripts/test/43-gen-region.sh` tests
+  the grammar and the walker once, and each generator's fragment keeps the cases that
+  prove it still wires the library up in its own namespace.
+
+- **The next major is policy now: triggered by a non-empty Breaking Backlog, never
+  scheduled — and the cost of cutting one lives beside the commands that cut it**
+  ([#1118](https://github.com/dotgibson/dotfiles-core/issues/1118)).
+  Scoping `v8.0.0` at `v7.10.0` found nothing to scope: no open PRs, nothing **breaking**
+  under `[Unreleased]`, and every milestone at `open_issues = 0` — the **Breaking Backlog**
+  included. That is the third time. `V8-PROPOSAL.md` was written in exactly this state at `7.3.0` and closed
+  _DECIDED — no major comes out of this proposal_; `NON-MUTABLE-HOST-PROPOSAL.md` was then
+  named the right next major until R2 measured the `os.capabilities` schema **additive**,
+  and shipped as four minors instead. Each time the answer was re-derived from scratch,
+  because it was recorded in a closed proposal rather than in policy.
+
+  `RELEASE-STRATEGY.md` now states the rule the repo has been following without saying so:
+  a major is cut **when the Breaking Backlog is non-empty and a release is due**, and an
+  empty backlog means there is no major to scope — a healthy state, not a gap. The three
+  dissolved themes are cited as the record. What settles it every time is the second
+  tiebreaker in `RELEASE-RUNBOOK.md` §1.0 — _if nothing a host already uses changes
+  meaning, it is at most a MINOR_ — and a candidate that dissolves under it was never major
+  content.
+
+  `RELEASE-RUNBOOK.md` gains the other half: the five costs of actually cutting one,
+  promoted out of `V8-PROPOSAL.md` §7, which says outright that they _belong to **any**
+  major_ and which has been stranded inside a closed record for a release that never
+  happened. The `@vN` sweep and why it goes first; the `dotfiles-Windows` hand bump no gate
+  catches, where forgetting cost a full major behind for five releases; Core's own in-tree
+  `vN` strings behind §8a, §8a-bis and §8a-ter — the entry counts them with a snippet rather
+  than a frozen number, because §7's _"roughly thirty"_ is **52 across 13 files** today; the
+  `core_lock_expected_tree` ordering rule measured at `v6.0.0`; and the fleet App
+  installation list that is not in git, which 403'd at the end of `v7.9.0`.
+
+  Neither file is in `core.manifest` or `core.vendor`, so none of this ships to a host.
+
+- **Two more generators lost their hand-rolled walkers, and `--local` kept the one
+  behaviour only it uses**
+  ([#1129](https://github.com/dotgibson/dotfiles-core/issues/1129)).
+  `gen-aliases.sh` and `gen-porting-matrix.sh` now call `scripts/lib/gen-region.sh` for the
+  marker grammar, the block walker and the structural preflight, leaving them the parts
+  that are actually theirs: the alias extractor and the matrix's fleet readers. Between
+  them that is **180 lines deleted against 68 added**, and `aliases.md` and
+  `PORTING-MATRIX.md` both regenerate byte-identically.
+
+  The two were already copies — `gen-aliases.sh`'s walker was labelled _"gen-theme.sh's
+  build_file, HTML-comment markers"_ and `gen-porting-matrix.sh`'s _"gen-aliases.sh's,
+  HTML-comment markers"_ — so the diagnostics were already identical but for a prefix.
+  That is exactly why the library takes the namespace, the program name and the
+  registry-hint as parameters: every message these two emit is unchanged to the byte,
+  including the remediation that names `BLOCKS` in one and `BLOCK_IDS` in the other, and
+  the ~35 exact-string assertions in `scripts/test/41-gen-matrix-parity.sh` needed no edit.
+
+  **The subset render is the one thing that was not shared, and now is.**
+  `gen-porting-matrix.sh --local` re-renders only the blocks whose inputs are in-repo and
+  passes every other block's on-disk body through verbatim, so the region is a no-op in the
+  byte comparison rather than an empty one — the seam that lets `--check` answer on a lone
+  clone. It is still the only caller of that arm, which makes it the library feature most
+  likely to be quietly broken later, so `scripts/test/43-gen-region.sh` pins both it and
+  the direction that matters more: a crossed pair is still refused when **neither** block
+  is in the render subset. `--local` narrows what is rendered, never what is checked.
+
+- **`dotgibson/dotfiles-nvim` exists, and one of §7's answers was corrected while shipping
+  it** ([#1122](https://github.com/dotgibson/dotfiles-core/issues/1122)).
+  Step 1 of `NVIM-SPLIT-PROPOSAL.md` §3.5. The editor is now authored in
+  [`dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim) with its history preserved:
+  the `nvim/` tree object is **identical on both sides**, so step 2's non-negotiable —
+  Core's first sync back must be byte-identical
+  ([#1123](https://github.com/dotgibson/dotfiles-core/issues/1123)) — is true by
+  construction rather than by inspection. That repo's gate does what Core's structurally
+  cannot: it installs the committed pins with `:Lazy! restore`, starts the editor, and runs
+  `:checkhealth gerrrt`. **Core has not changed yet** — it still authors `nvim/`, nothing is
+  vendored, and steps 2–5 are untouched.
+
+  **§7(1) was written against a premise that does not hold.** It says `gen-theme.sh` writes
+  a `# core:theme:gen` block into the nvim colours. There is no such block and there never
+  was — `scripts/gen-theme.sh:11` and `theme/palette.toml:9` both say why, in the same
+  words: _nvim never had the problem; it holds zero hex literals and asks the plugin._ The
+  editor was the exception that proved _"colour is generated, not typed"_, not a consumer
+  of it.
+
+  The coupling §7(1) was reaching for is real and runs the other way. `gen-theme.sh
+  --refresh` resolves the palette **from** the tokyonight revision pinned in
+  `nvim/lazy-lock.json`, at the style in `palette.lua`, and refuses unless
+  `theme/palette.toml`'s `source_commit` and `style` agree with those two — the only machine
+  check tying the palette to the editor, and one that is maintainer-only, needs a live nvim,
+  and never runs on the `--check` path. Across the whole fleet it ran **nowhere**. After the
+  split the pin moves in one repo while the palette lives in another, so that check now runs
+  in the repo where the pin moves: `dotfiles-nvim` vendors `palette.toml` beside a
+  `theme/.core-ref` — the shape `dotfiles-Windows` already uses — and asserts both values in
+  pure bash on every pin bump, reading an empty parse as its own failure because two empty
+  strings compare equal.
+
+  `NVIM-SPLIT-PROPOSAL.md` records the correction in §7(1) and in §2.1, §2.3, §3.2 and §3.4,
+  which each repeated the same wrong claim. `scripts/os-repos.txt` gains the
+  DELIBERATELY-ABSENT note the proposal's closing paragraph asked for: the arrow points the
+  other way, and the name belongs in `fleet-app-scope.sh`'s `EXTRA_REPOS` if the App is ever
+  installed there — not in the fleet list.
+
+- **The last off-grammar marker learns its canonical form, and accepts both while the two
+  sibling repos catch up**
+  ([#1129](https://github.com/dotgibson/dotfiles-core/issues/1129)).
+  `desktop-parity` was the one namespace outside the `core:<ns>:gen <id>` grammar — no
+  `core:` prefix, no block id, matched with `grep -Fx` against two hardcoded literals, in a
+  file format that could therefore hold exactly one block forever.
+  `scripts/gen-desktop-parity.sh` now writes `<!-- core:desktop-parity:gen parity -->` and
+  **accepts the old pair as well**.
+
+  **The prefix is provenance, not tidiness.** `core:` names the repo whose generator owns
+  the region, and these blocks live in `dotfiles-Windows/desktop/PARITY.md` and
+  `dotfiles-MacBook/sketchybar/PARITY.md` — files whose only clue that _dotfiles-core_
+  rewrites them is the marker itself. By the same rule `dotfiles-Offense`'s own
+  `gen-views.sh` is correctly `companion:` and always was.
+
+  **Both forms, because the targets are in other repos.** Core and the two siblings cannot
+  change a string in one commit: whichever side moved first would red the other, and
+  `.github/workflows/parity-check.yml` clones both siblings from `main` weekly and runs
+  `--check --strict`. So Core learns the new form first, the siblings are renamed next, and
+  the legacy arm goes once no live copy carries it.
+
+  The asymmetry is the mechanism: the legacy pair is **accepted on read and never emitted
+  on write**. A render echoes whichever marker the target file carries, verbatim, so a
+  sibling still on the old pair stays green and nothing rewrites a marker in another repo's
+  file — which would be a cross-repo edit disguised as a render. A **mixed** pair is
+  refused, though, because it renders perfectly and is therefore invisible to every other
+  check: one marker claiming an id while the other does not is a file disagreeing with
+  itself, and a count of one `gen` and one `end` is valid in every combination.
+
+  Severity is unchanged: a malformed marker here is exit **1**, not 2, because _an unmarked
+  copy is the drift being gated, not an absence_ — the contract §9i classifies on.
+
+- **The nvim split is decided: A2 — extract into `dotfiles-nvim`, Core keeps vendoring it**
+  ([#1120](https://github.com/dotgibson/dotfiles-core/issues/1120)).
+  `NVIM-SPLIT-PROPOSAL.md` had sat at `DECISION PENDING` since 2026-09-14, after three
+  earlier deferrals (v4, `V5-PROPOSAL.md` §11, `V8-PROPOSAL.md` §10), and its own gate said
+  the author picks A2 or B _on the file_. Nothing downstream could be filed until that
+  happened — the milestone's issue queue did not exist yet, by design. A2 is picked, and
+  **none of the three conditions §5 named as recommendation-flipping fired**: the editor has
+  not settled, the drift check needs no second integrity model, and §7(1) resolves cleanly.
+
+  The four open questions are answered rather than left to the migration, because they were
+  the conditions on the recommendation. The theme answer is the one that mattered:
+  `dotfiles-nvim` **vendors `theme/palette.toml`**, so _"colour is generated, not typed"_
+  stays true on both sides of the vendor boundary. (The mechanism was **corrected while
+  step 1 shipped** — see the entry above: the generated block this originally described
+  does not exist, and what the nvim repo carries is the assertion `--refresh` makes, not a
+  generator run.) luacheck stays in Core over the vendored copy as an integrity check;
+  Core bumps `nvim.lock` **with the next Core release**, never on every nvim release, or the
+  churn returns through the lock.
+
+  Deciding is not shipping: nothing has moved, §3.5 is now the runbook, and the file flips
+  to SHIPPED when it has. A2 is a **minor** — `core/nvim` keeps its path, `core.manifest`
+  keeps its entry and `blib_link_core` is untouched (§3.4), which per `RELEASE-STRATEGY.md`
+  is the whole test. One consequence recorded up front: `dotfiles-nvim` is a repo Core
+  vendors _from_, not one Core fans out _to_, so it does not belong in
+  `scripts/os-repos.txt`.
+
+- **`dotfiles-Windows` vendors the editor from `dotfiles-nvim` directly, and the fleet-drift
+  row that judged it became a two-lock compare** ([#1124](https://github.com/dotgibson/dotfiles-core/issues/1124),
+  [dotfiles-Windows#271](https://github.com/dotgibson/dotfiles-Windows/pull/271)).
+  `NVIM-SPLIT-PROPOSAL.md` §3.5 step 3. Windows vendors no `core/`, but it always consumed
+  the editor alone through a bespoke mirror pinned to a Core ref that had nothing to do with
+  when the editor changed — §3.1 called that the tell. It now pins `dotgibson/dotfiles-nvim`
+  releases in a root-level `nvim.lock` wearing _this_ repo's field names, so the two are peers
+  on one release line rather than a mirror and its source. That sync moved **no editor bytes**:
+  the same byte-identical guarantee step 2 met, now observed on the second consumer.
+
+  **The Core-side change was forced, not cosmetic.** `fleet-drift.sh`'s Windows row ran
+  `_classify_subtree`, which asked — inside _Core's_ object store — whether the recorded sha
+  contained Core's latest `nvim/` change. A `dotfiles-nvim` sha is not in Core's history at
+  all, so the moment Windows re-pinned, that check would have fallen through to `_classify`
+  and reported `DIFFERS (sha not in local history)` on a perfectly healthy repo: red forever,
+  with remediation advice that could not help. The ancestry question also stopped being the
+  right one — both sides now pin the same upstream, so `_classify_nvim_pin` compares the two
+  recorded releases instead. Offline: no `dotfiles-nvim` objects, no network, no clone.
+
+  **Ahead is a note, not drift**, for the reason [#371](https://github.com/dotgibson/dotfiles-core/issues/371)
+  established on the Unix side. Windows' bot syncs weekly; Core adopts an editor release only
+  with a Core release (§7(3)). Windows carrying a _newer_ editor than `nvim.lock` is therefore
+  the ordinary between-releases state, and reddening it would make the dashboard cry wolf most
+  weeks. `BEHIND` is the signal that the weekly bot stopped. Ordering is a three-field numeric
+  compare — `v1.9.0` sorts after `v1.10.0` lexically, and a string compare would call a
+  genuinely newer editor stale, then advise a re-sync that changes nothing.
+
+  `_classify_subtree` is **deleted**: Windows was its only caller, and its whole rationale
+  (_"a release that changed no `nvim/` files"_) evaporated once the two sides stopped being
+  measured against each other's history. Seven new legs in `scripts/test/31-fleet-drift.sh`
+  cover the replacement, added deliberately **after** the `--strict` legs, which assert on the
+  row rather than the exit code precisely because the fixture root had no `dotfiles-Windows`
+  clone. (`scripts/fleet-drift.sh`, `scripts/test/31-fleet-drift.sh`,
+  `.github/workflows/fleet-drift.yml`, `.github/workflows/freshness-dashboard.yml`,
+  `RELEASE-RUNBOOK.md`, `.claude/commands/drift-triage.md`, `NVIM-SPLIT-PROPOSAL.md`)
+
+- **Core vendors the editor instead of authoring it: `nvim/` is now a pinned copy of
+  `dotfiles-nvim`, behind `nvim.lock`**
+  ([#1123](https://github.com/dotgibson/dotfiles-core/issues/1123)).
+  Step 2 of `NVIM-SPLIT-PROPOSAL.md` §3.5, and the one that actually moves the boundary.
+  `nvim.lock` records which `dotgibson/dotfiles-nvim` revision this Core carries;
+  `scripts/sync-nvim.sh` refreshes the pair. The direction is the whole point: `core.lock`
+  is written **by** this repo **into** each OS repo, this one is written **into** this repo
+  by a source it does not control — `dotfiles-Offense`'s `companion.lock` is the same shape
+  for the same reason, which is why it carries `nvim_repo` and `nvim_branch` that
+  `core.lock` has no need of.
+
+  **The first sync moved nothing, and that was the requirement.** Core's `nvim/` tree object
+  and `dotfiles-nvim`'s were already the same `60fe8d8`, so `git diff --stat -- nvim/`
+  across the first `sync-nvim.sh` is empty — which is what keeps the fleet's next `core.lock`
+  bump free of editor content, so the extraction reaches every host invisibly. Nothing an OS
+  repo consumes changed: `core/nvim` keeps its path, `core.manifest` keeps its single
+  directory entry, `blib_link_core` is untouched.
+
+  The transport is `git read-tree --prefix=nvim/`, not `git subtree` and not a copy loop.
+  `dotfiles-nvim`'s history was rewritten by `filter-repo` at extraction, so it shares no
+  commit with this repo and there is no subtree to pull; staging the upstream tree _object_
+  is also the only transport that cannot perturb bytes or modes, without which the
+  byte-identical assertion would not mean anything.
+
+  **The drift gate is §9q**, and it needs no network, no tool and no object store: the lock
+  records `nvim_tree` — the tree hash itself — so the check is `git rev-parse HEAD:nvim`
+  against one line of a file. `core-integrity.sh` answers the same question for an OS repo's
+  `core/` by resolving the pinned commit, which it can because that repo fetched it; Core
+  holds no `dotfiles-nvim` objects, and a gate that self-skips offline would be
+  green-because-absent in exactly the clone where a corrupt sync landed. So it is the same
+  tree-hash integrity model §5 asked for rather than a second one — made always-on. luacheck
+  **stays** over the vendored copy (§7(2)): it is the cheapest leg in the gate, and a corrupt
+  sync is a failure a vendored tree has and a source tree cannot.
+
+  **The freshness job traded a leg for a nudge.** Rolling the editor's plugin pins moved to
+  `dotfiles-nvim`, which has a real Neovim to test a bump against; `scripts/update-nvim-plugins.sh`
+  and its `nvim-plugins` job are gone from here. In their place `scripts/check-nvim-freshness.sh`
+  reports how many editor _releases_ `nvim.lock` is behind — releases, because that is the unit
+  §7(3) decided in: Core adopts the editor **with a Core release**, never on every nvim release,
+  and without something measuring the lag _"at Core's pace"_ decays into _"never"_. It opens no
+  PR by design. Two things fall out: the freshness dashboard no longer installs a Neovim it
+  had stopped needing, and `freshness-triage` may now run the check itself — the old script was
+  denied a token-bearing job because `:Lazy! sync` executes upstream build hooks, and the new
+  one only `git ls-remote`s.
+
+### Removed
+
+- **Two capability keys the schema accepted and nothing ever read**
+  ([#1128](https://github.com/dotgibson/dotfiles-core/issues/1128)).
+  `PKG_PENDING_EXIT_NONE` and `PKG_PENDING_EXIT_SOME` arrived with R2's non-mutable-host
+  prototype keys (`NON-MUTABLE-HOST-PROPOSAL.md` §4.1) to describe a count verb whose
+  answer is its exit status — `rpm-ostree upgrade --check --unchanged-exit-77`. They were
+  declared optional, validated properly (numeric, 1-255, no leading zero, never both, only
+  beside `PKG_COUNT_PENDING`), and **the consumer that would have read them was never
+  written**. `PKG_APPLY_PENDING_EXIT` covers the staged question that did ship, and it is
+  the key `zsh/02-capabilities.zsh` and the maint runner actually read.
+
+  **Why a schema removal is a minor here and would not be in general.**
+  `scripts/check-capabilities.sh` is vendored, seven OS repos run it from their own
+  `core/`, and an unknown key is a hard failure — so dropping a name is normally the
+  reverse-ratchet shape [#1104](https://github.com/dotgibson/dotfiles-core/issues/1104)
+  documents, where Core breaks a repo that was doing nothing wrong. It is safe in this one
+  case for one measured reason: **nothing declares them.** Re-verified before merging
+  rather than taken from the issue — all twelve `os/*.capabilities` across the fleet, in
+  both the working trees and `origin/main`, plus the three R2 prototypes under
+  `scripts/research/nonmutable/`. Zero hits, so no repo's declaration changes validity and
+  all twelve still validate unchanged.
+
+  **The retirement is pinned, not merely absent.** `scripts/test/55-capabilities.sh` loses
+  eight assertions that existed only for these keys and gains one asserting the name now
+  lands on the unknown-key arm — because "we deleted it" and "it cannot come back without
+  its consumer" are different claims, and only the second is worth a test. The `#1057`
+  leading-zero rationale moved rather than died: it was written once and cited from both
+  copies of the check, and `PKG_APPLY_PENDING_EXIT` is the only copy now.
+
+  Prose was corrected where it describes the tree as it **is** — the validator's own
+  header, `examples/os.capabilities.example`, `scripts/research/README.md` — and left
+  where it records what R2 and R5 **measured**, which is still true as written. The §4.1
+  table keeps the row, marked retired, because six later passages in that document cite
+  the key by name and a table that never introduces it would leave them dangling.
+
+### Fixed
+
+- **The reusable showcase-dispatch header promised a tolerance it had already
+  withdrawn** ([#1127](https://github.com/dotgibson/dotfiles-core/issues/1127)).
+  `.github/workflows/notify-web-call.yml`'s AUTH paragraph told readers that
+  `WEBHOOK_SECRET` _"survives as a deprecated no-op purely so callers still passing it keep
+  working"_. There is no such input. `v7.0.0` removed the declaration — the one removal that
+  was genuinely waiting on a MAJOR, recorded as discharged in `GITHUB-APP-AUTH.md` and in
+  `scripts/sync-core.sh:390`.
+
+  **Stale would have been the benign version; this was inverted.** Removing an accepted
+  `workflow_call` secret is a breaking change to a published contract precisely because a
+  caller that keeps passing it _fails workflow validation before its own code runs_ — the
+  reason the removal was held for v7 in the first place. A maintainer opening the reusable
+  to decide whether their caller was safe to leave alone read the opposite of the truth, and
+  this file is the contract the fleet's callers consume at `@v7`. The header now names the
+  removal and its consequence, and points at the section that owns the reasoning.
+
+  `.github/workflows/notify-web.yml` carries the same paragraph but stops at the PAT's
+  deletion and claims nothing about a surviving input — it is not a reusable and never
+  declared one. Checked rather than assumed; unchanged. The declaration was the only wrong
+  site: the `FLEET_APP_PRIVATE_KEY` description twelve lines below it already called itself
+  _the SOLE active dispatch credential_.
+
+- **The `#829` regression ran on vendored-editor bumps and was skipped on the diffs that
+  can break it** ([#1136](https://github.com/dotgibson/dotfiles-core/issues/1136)).
+  `.github/workflows/ci.yml` installs Neovim only when the `nvim` axis is true. Until
+  [#1125](https://github.com/dotgibson/dotfiles-core/issues/1125) that was right — the
+  binary's main consumer was `scripts/test/15-nvim.sh`, which genuinely was about `nvim/`.
+  With that retired upstream the sole remaining consumer is
+  `scripts/test/73-maint-runner.sh`'s
+  [#829](https://github.com/dotgibson/dotfiles-core/issues/829) regression, whose subject is
+  `maint/dotfiles-maint.sh` — and `ci-classify.sh` maps `maint/*` to `shell`. So editing the
+  test installed the editor; editing the code it guards did not.
+
+  It could not go red, either: the fragment skips on `have nvim` alone, and the behavioral
+  suite reaches the audit as _one_ backgrounded pass/fail (`scripts/audit-core.sh:270`), so
+  its skips never reach `--strict`'s tool-skip counter.
+
+  The Linux install now fires on `nvim OR shell`, which is seconds of pinned tarball. **macOS
+  stays on the nvim axis**, deliberately asymmetric: `brew install neovim` is minutes, and
+  paying it on every macOS shell leg would buy a second run of an OS-agnostic test. The
+  narrower trigger still earns its keep — that fragment is written to the bash 3.2 floor on
+  purpose, and macOS is the only leg that executes it on 2007's bash.
+
+  Teaching `ci-classify.sh` to set `nvim=true` for `maint/*` was rejected: that axis means
+  _"the editor tree changed"_ and also drives audit `§4` and every `SCOPE_NVIM` section, so
+  overloading it to mean _"install a tool"_ would make it lie — and
+  `scripts/test/22-ci-classify.sh` pins its behaviour with fixtures.
+
+- **`V8-PROPOSAL.md` §7 said where its cost list went, instead of quietly disagreeing with it**
+  ([#1130](https://github.com/dotgibson/dotfiles-core/issues/1130)).
+  Promoting the MAJOR cost list into `RELEASE-RUNBOOK.md` §1.1 left §7 a frozen duplicate of a
+  living checklist — the worse failure mode, because a reader who finds §7 first gets numbers
+  that were already wrong. It had drifted twice over: _"roughly thirty"_ in-tree `v7` strings
+  were **52 across 13 files** by `v7.10.0`, and it predates the fleet App installation cost
+  altogether. §7's status note now points at the runbook and names its own drift, rather than
+  promising a sync a closed record cannot keep — the lesson `GITHUB-APP-MIGRATION.md` already
+  draws about frozen files that track live state.
+
+- **The App-installation register named the wrong failure for a missing self-PR install**
+  ([#1116](https://github.com/dotgibson/dotfiles-core/issues/1116)).
+  `scripts/fleet-app-scope.sh` printed one sentence over every fatal `MISSING` row —
+  _"is a push target and the App cannot reach it — this is the v7.9.0 403"_ — and
+  `fleet-app-scope.yml`'s job summary and the issue it files said the same. That is true of
+  the fan-out targets and false of the three installs that exist for a repo's _own_
+  self-PRs. It went wrong the first time it mattered. PR #1111 added `dotfiles-Windows` to
+  the expected set on the strength of an install that, it turns out, had never existed, and
+  the register then told its reader that a release was about to 403 on a repo the fan-out
+  has never pushed to.
+
+  The row now classifies against the fan-out list before it composes. A fan-out target
+  keeps the 403, said precisely: it lands on the _push_, at the end of a release. A self-PR
+  install reports its own failure instead — the mint _inside_ that repo answers `404` on
+  `/repos/<owner>/<repo>/installation`, its bots fall back to `GITHUB_TOKEN`, and their PRs
+  go back to sitting `BLOCKED`, **while every one of those jobs stays green**. That is the
+  shape issue #1110 predicted, and the shape that had been running unwatched since
+  `dotgibson/dotfiles-Windows#268`. The non-fatal `!` arm carries the class too, and
+  `scripts/test/90-policy-gates.sh` holds the derivation — matched on the `CORE_OS_REPOS[*]`
+  membership test, not on the English — so the two kinds cannot be collapsed back into one
+  sentence by a later edit.
+
+  `GITHUB-APP-AUTH.md` takes the general lesson under _A new fleet repo is TWO
+  registrations_: it is a rule about this whole install list, not only about fan-out
+  targets, and **the org half goes first**. Either order leaves the register red for a
+  while; only one of them leaves real machinery quietly broken while it is.
 
 ## [v7.10.0] - 2026-09-17
 
@@ -1370,36 +1964,3 @@ repo-meta and stays upstream:
   now asks first (`_blib_ensure_exec`, `_blib_private_dir`, a byte compare against the
   hook text held in `_blib_core_guard_hook`) and the hook's bytes are unchanged.
   (`lib/bootstrap-lib.sh`)
-
-## [v7.4.3] - 2026-09-13
-
-### Changed
-
-- **Alpine is on the bootstrap driver, MacBook is exempt by design — the `blib_main` row
-  closes at 8/9 + 1 exempt** (closes #986; dotgibson/dotfiles-Alpine#194, on v7.4.2). Alpine
-  declares doas-first (`BOOTSTRAP_SU_PREFER=doas`) and the driver resolves with it; its
-  `~/.zshenv` ZDOTDIR shim takes the post-loader slot, and its root-probe test now pins the
-  declaration plus the hand-over instead of a literal `blib_resolve_su` call. MacBook's
-  `--json`/`--uninstall`/`--quiet` surface and its own reporting channel are a consumed
-  contract the driver does not model, so §5f records the exemption with that reason
-  rather than a gap — the assertion is that no bootstrap in the fleet is on the pre-driver
-  shape by accident. Eight repos run on the driver; the starter that `new-os-repo.sh`
-  writes is the one bootstrap still in the old shape (#999).
-  (`scripts/audit/40-fleet-registers.sh`)
-
-- **Arch is on the bootstrap driver — the `blib_main` row reads 7/9** (#986;
-  dotgibson/dotfiles-Arch#174, on v7.4.2). The rolling-release repo declares its
-  exit-1-on-any-miss contract (`BOOTSTRAP_STRICT_DEFAULT=1`) instead of hand-rolling it;
-  the Arch check is `bootstrap_guard`, the pacman phase is `bootstrap_provision` with the
-  body unchanged, the dry-run preview is `bootstrap_check`, and its `-E` ERR trap stays,
-  stepping aside for the driver's own `return` verdicts. 446 → 421 lines.
-  (`scripts/audit/40-fleet-registers.sh`)
-
-- **Offense and Gentoo are on the bootstrap driver — the `blib_main` row reads 6/9** (#986;
-  dotgibson/dotfiles-Offense#328, dotgibson/dotfiles-Gentoo#187, both on v7.4.2). The two
-  lazy-escalation repos: Offense declares `BOOTSTRAP_ROLE=offensive`, no login shell and
-  `BOOTSTRAP_SU=lazy`, so only `--install` escalates, inside its own hook; Gentoo declares
-  lazy too and keeps its `--user` fallback — the guard resolves an escalator and downgrades
-  to user mode when there is none, the provision hook primes the keepalive itself, and
-  `provision_user` folds into `bootstrap_provision`. Both keep their package bodies verbatim.
-  619 + 1316 → 551 + 1236 lines. (`scripts/audit/40-fleet-registers.sh`)

@@ -47,6 +47,21 @@
 #   dotfiles-Windows — the native Windows host layer is replicated from scratch
 #     (PowerShell; not a one-to-one port of the Unix Core), so it carries no
 #     vendored core/ subtree and sync-core.sh must never fan out into it.
+#   dotfiles-nvim — THE ARROW POINTS THE OTHER WAY. Core vendors the editor tree FROM
+#     that repo; it is not a repo Core fans out TO, and it has no core/ and no core.lock
+#     and never will (NVIM-SPLIT-PROPOSAL.md §7, closing note). Adding the name here
+#     would enlist it in every gate that reads this file through load_os_repos — the
+#     fan-out, core-integrity, fleet-drift, fleet-vocabulary, fleet-vendor-guidance and
+#     the audit's fleet registers — each of which would then demand a vendored tree that
+#     does not exist. It also has its own consequence in a place git cannot see: the
+#     fleet App's installation list is compared against THIS file plus three exceptions
+#     (scripts/fleet-app-scope.sh), so a repo with App access belongs in that script's
+#     EXTRA_REPOS, not here — and dotfiles-nvim belongs in neither, because Core only
+#     ever clones and reads it over a public URL and mints no token against it.
+#
+#     Where its facts DO live, now that #1123 has vendored it: the revision in nvim.lock,
+#     the staleness report in scripts/check-nvim-freshness.sh, the refresh in
+#     scripts/sync-nvim.sh, and the tree-vs-pin gate in audit-core.sh §9q.
 # ──────────────────────────────────────────────────────────────────────────────
 dotfiles-MacBook
 dotfiles-Alpine
