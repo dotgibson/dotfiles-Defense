@@ -125,26 +125,22 @@ PKG_PENDING_MATCH=^[a-zA-Z0-9][^ ]*[[:space:]]
 MAINT_UNATTENDED_UPGRADE=1
 
 # ── the non-mutable host (NON-MUTABLE-HOST-PROPOSAL.md §4, #1004) ────────────────────
-# Six OPTIONAL keys the validator accepts. They let a declaration for an atomic (bootc,
+# Four OPTIONAL keys the validator accepts. They let a declaration for an atomic (bootc,
 # Silverblue), transactional (MicroOS, Aeon) or declarative (NixOS) host be written
 # truthfully, and this Fedora example declares none of them (absent PROVISIONER means
 # mutable). Three fleet declarations use them, and they are the ones to copy from:
 # dotfiles-Fedora/os/fedora.atomic.capabilities,
 # dotfiles-openSUSE/os/opensuse.microos.capabilities and dotfiles-NixOS/os/nixos.capabilities
 # (R2's earlier prototypes are kept under scripts/research/nonmutable/, which nothing links).
-# Since #1049 `up`, the shell-start nudge, the maint runner and core-doctor read
-# PROVISIONER, PKG_APPLY and PKG_APPLY_PENDING; the PKG_PENDING_EXIT_* pair is accepted and
-# still read by no consumer.
+# Since #1049 `up`, the shell-start nudge, the maint runner and core-doctor read every one
+# of them. (R2 prototyped six; PKG_PENDING_EXIT_NONE / _SOME were retired unread in #1128 —
+# the validator refuses them as unknown keys now.)
 #
 #   PROVISIONER=atomic | transactional | declarative   (absent = mutable)
 #   PKG_APPLY=sudo systemctl reboot     the verb that makes a STAGED change live — on an
 #                                       atomic or transactional host `PKG_INSTALL` and
 #                                       `PKG_UPGRADE` return with the change staged and
 #                                       nothing on PATH until this runs (measured)
-#   PKG_PENDING_EXIT_SOME=77            the count verb answers with its EXIT STATUS, not its
-#   PKG_PENDING_EXIT_NONE=77            lines (`rpm-ostree status --pending-exit-77` = SOME;
-#                                       `rpm-ostree upgrade --check --unchanged-exit-77` =
-#                                       NONE) — declare one, never both
 #
 #   PKG_APPLY_PENDING=rpm-ostree status --pending-exit-77   (R5) is a change already
 #   PKG_APPLY_PENDING_EXIT=77           STAGED, waiting for PKG_APPLY? Answered by exit

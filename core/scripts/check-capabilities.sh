@@ -167,21 +167,30 @@ CAP_OPTIONAL=(
   PKG_COUNT_REFRESH PKG_COUNT_EXIT_TRUSTED
   PKG_PENDING_MATCH PKG_PENDING_FIELD PKG_PENDING_FS
   SCHEDULER_UNIT_DIR MAINT_UNATTENDED_UPGRADE
-  PROVISIONER PKG_APPLY PKG_PENDING_EXIT_NONE PKG_PENDING_EXIT_SOME
+  PROVISIONER PKG_APPLY
   PKG_APPLY_PENDING PKG_APPLY_PENDING_EXIT
   PKG_UNLISTED_TOOLS
 )
 #   ── the non-mutable host (SHIPPED — NON-MUTABLE-HOST-PROPOSAL.md §4, #1004) ────────
-#   Six OPTIONAL keys. They were born as R2's prototype — its test was whether a required
-#   key ends up a lie on an atomic, transactional or declarative host, and the answer
-#   needed somewhere to put the truth — and they are now the schema three fleet repos
-#   declare against: dotfiles-Fedora's fedora.atomic, dotfiles-openSUSE's opensuse.microos
-#   and dotfiles-NixOS's nixos. FOUR OF THE SIX ARE READ (#1049, Core v7.6.0): PROVISIONER,
+#   Four OPTIONAL keys, and ALL FOUR ARE READ (#1049, Core v7.6.0): PROVISIONER,
 #   PKG_APPLY, PKG_APPLY_PENDING and PKG_APPLY_PENDING_EXIT, by `up` and the shell-start
-#   nudge, the maint runner and core-doctor. The PKG_PENDING_EXIT_* pair is accepted and
-#   still read by no consumer — it describes a count verb no shipped declaration pairs it
-#   with. Every existing declaration keeps validating unchanged; that was the point, and
-#   the measured verdict (R2) was that the schema is ADDITIVE, so no repo re-authored.
+#   nudge, the maint runner and core-doctor. They were born as R2's prototype — its test
+#   was whether a required key ends up a lie on an atomic, transactional or declarative
+#   host, and the answer needed somewhere to put the truth — and they are now the schema
+#   three fleet repos declare against: dotfiles-Fedora's fedora.atomic, dotfiles-openSUSE's
+#   opensuse.microos and dotfiles-NixOS's nixos. Every existing declaration keeps
+#   validating unchanged; that was the point, and the measured verdict (R2) was that the
+#   schema is ADDITIVE, so no repo re-authored.
+#
+#   R2 PROTOTYPED SIX; TWO WERE RETIRED UNREAD (#1128). PKG_PENDING_EXIT_NONE and
+#   PKG_PENDING_EXIT_SOME described a count verb whose answer is its EXIT STATUS rather
+#   than its lines. The consumer that would have read them was never written,
+#   PKG_APPLY_PENDING_EXIT covers the staged question that did ship, and no repo in the
+#   fleet had ever declared either — which is the only reason dropping them from a
+#   VENDORED validator was a minor and not a break. They are unknown keys now, and
+#   refused as such. DO NOT ADD A NAME HERE WITHOUT ITS CONSUMER: an accepted key is a key
+#   an OS repo may author, and an accepted key nobody reads is a declaration the box
+#   silently ignores.
 #   PROVISIONER          mutable (the default when absent) | atomic (image-based: bootc,
 #                        Silverblue) | transactional (snapshot-based: MicroOS, Aeon) |
 #                        declarative (NixOS). What a consumer branches on (#1049): `up`
@@ -195,15 +204,6 @@ CAP_OPTIONAL=(
 #                        Measured 2026-09-14: `rpm-ostree install` and
 #                        `transactional-update pkg in` both return with the change staged
 #                        and nothing on PATH until the reboot.
-#   PKG_PENDING_EXIT_NONE / PKG_PENDING_EXIT_SOME
-#                        a count verb whose ANSWER IS ITS EXIT STATUS, not its lines:
-#                        `rpm-ostree upgrade --check --unchanged-exit-77` says "nothing
-#                        pending" with 77 (NONE=77); `rpm-ostree status --pending-exit-77`
-#                        says "a deployment is staged" with 77 (SOME=77). Declare ONE of
-#                        the two; the count is then 0 or 1 ("a deployment", not N
-#                        packages) and PKG_COUNT_EXIT_TRUSTED's "non-zero = could not
-#                        answer" no longer applies to that status. Both were the first
-#                        schema gap the research found, from the manual alone.
 #   PKG_APPLY_PENDING / PKG_APPLY_PENDING_EXIT   (R5, measured 2026-09-14)
 #                        a STAGED host asks a second question the count verb never did:
 #                        is a change already waiting for PKG_APPLY? This verb answers with
@@ -388,30 +388,6 @@ for k in "${CAP_REQUIRED[@]}"; do
     *) bad "-" "required key missing: $k" ;;
   esac
 done
-pen_none="$(cap_value PKG_PENDING_EXIT_NONE)"
-pen_some="$(cap_value PKG_PENDING_EXIT_SOME)"
-# A LEADING ZERO IS REJECTED, NOT NORMALISED (#1057). `(( ))` re-expands a named variable
-# as an arithmetic expression, where an all-digit string starting with 0 is OCTAL: 077 was
-# silently accepted AS 63 — a declaration whose author wrote one status and got another —
-# and 099 was an invalid-octal-digit ERROR that `(( ))` reported by returning false, which
-# this script (no `set -e`) discarded. The `| 0` arm below only ever caught the literal 0,
-# so 00 and 000 walked through the "omit it to mean zero" rule too. An exit status is
-# written 77, never 077, so the whole class is refused rather than decoded; 10# on the
-# survivors keeps the comparison decimal no matter what a later edit lets past.
-for pair in "PKG_PENDING_EXIT_NONE=$pen_none" "PKG_PENDING_EXIT_SOME=$pen_some"; do
-  pk="${pair%%=*}"; pv="${pair#*=}"
-  case "$pv" in
-    '') ;;
-    *[!0-9]* | 0 | 0?*) bad "-" "$pk must be an exit status 1-255, with no leading zero (got: $pv)" ;;
-    *) ((10#$pv > 255)) && bad "-" "$pk must be an exit status 1-255, with no leading zero (got: $pv)" ;;
-  esac
-done
-if [[ -n "$pen_none" && -n "$pen_some" ]]; then
-  bad "-" "declare ONE of PKG_PENDING_EXIT_NONE / PKG_PENDING_EXIT_SOME — a verb answers with one status, not two"
-fi
-if [[ -n "$pen_none$pen_some" && -z "$(cap_value PKG_COUNT_PENDING)" ]]; then
-  bad "-" "PKG_PENDING_EXIT_* describes PKG_COUNT_PENDING's exit status, which is not declared"
-fi
 # PKG_APPLY_PENDING (R5): a staged-change probe only means something beside PKG_APPLY, and
 # its optional _EXIT is one status in 1-255 (absent = "exit 0 means staged").
 ap_pend="$(cap_value PKG_APPLY_PENDING)"
@@ -421,8 +397,16 @@ if [[ -n "$ap_pend" && -z "$(cap_value PKG_APPLY)" ]]; then
 fi
 if [[ -n "$ap_exit" ]]; then
   [[ -n "$ap_pend" ]] || bad "-" "PKG_APPLY_PENDING_EXIT describes PKG_APPLY_PENDING's exit status, which is not declared"
-  # Same shape, same reason as the PKG_PENDING_EXIT_* loop above: no leading zero, and 10#
-  # on the comparison (#1057).
+  # A LEADING ZERO IS REJECTED, NOT NORMALISED (#1057). `(( ))` re-expands a named variable
+  # as an arithmetic expression, where an all-digit string starting with 0 is OCTAL: 077 was
+  # silently accepted AS 63 — a declaration whose author wrote one status and got another —
+  # and 099 was an invalid-octal-digit ERROR that `(( ))` reported by returning false, which
+  # this script (no `set -e`) discarded. The `| 0` arm below only ever caught the literal 0,
+  # so 00 and 000 walked through the "omit it to mean zero" rule too. An exit status is
+  # written 77, never 077, so the whole class is refused rather than decoded; 10# on the
+  # survivor keeps the comparison decimal no matter what a later edit lets past. This was
+  # one of TWO copies of the check until #1128 retired PKG_PENDING_EXIT_NONE / _SOME; it is
+  # the only one now, so a second copy is something to fold into it, not to write beside it.
   case "$ap_exit" in
     *[!0-9]* | 0 | 0?*) bad "-" "PKG_APPLY_PENDING_EXIT must be an exit status 1-255, with no leading zero (got: $ap_exit)" ;;
     *) ((10#$ap_exit > 255)) && bad "-" "PKG_APPLY_PENDING_EXIT must be an exit status 1-255, with no leading zero (got: $ap_exit)" ;;

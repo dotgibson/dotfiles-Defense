@@ -215,7 +215,8 @@ work unchanged. `20-aliases.zsh` additionally aliases `bat`/`fd` back to their
 canonical names, so both are typeable as documented upstream, and `core-doctor`
 probes the RESOLVED binary — it reports `✓` for a renamed tool rather than the `✗`
 that once contradicted the `resolved` line in the same report.
-⁵ nvim-treesitter (pinned to `main`) needs tree-sitter-cli ≥ 0.26.1. Fleet position,
+⁵ nvim-treesitter (pinned to `main` by `dotfiles-nvim`, which owns the editor — see ³³)
+needs tree-sitter-cli ≥ 0.26.1. Fleet position,
 generated from `scripts/fleet-package-versions.tsv` — the mechanism footnotes ³³ and ³⁴ use,
 and this note earned it: it quoted `0.26.7` unqualified for a full release cycle, which is the
 Alpine v3.24/edge version read as fleet-wide.
@@ -1320,9 +1321,18 @@ output. Every target above clears that floor except `dotfiles-Debian`'s two lane
 declares no `# min:` floor for it.
 
 ³³ **neovim — "the package exists" is not "the package is usable", and it bites on FIVE
-targets, by four different mechanisms.** Core's nvim pins nvim-treesitter to `main`
-(`nvim/lazy-lock.json`), which hard-requires **Neovim 0.12**. Several cells in the neovim
-row above resolve perfectly and give you something Core's config will not load on.
+targets, by four different mechanisms.** The editor pins nvim-treesitter to `main`, which
+hard-requires **Neovim 0.12**. Several cells in the neovim row above resolve perfectly and
+give you something the editor will not load on.
+
+**Where that floor comes from, since #1123.** It is a property of
+[`dotfiles-nvim`](https://github.com/dotgibson/dotfiles-nvim), which owns the editor and
+authors the pin; `nvim/lazy-lock.json` in this repo is a **vendored** copy of it, and audit
+§9q fails on a hand-edit, so the floor cannot be raised or lowered from here. The matrix
+keeps rendering it because the fleet still has to _package_ a Neovim that satisfies it —
+that half is an OS-repo problem and is what the rest of this footnote is about. A floor
+change therefore arrives as a `dotfiles-nvim` release, reaches Core when `nvim.lock` moves
+at a Core release, and lands in this table on the next refresh.
 
 Fleet position, generated from `scripts/fleet-package-versions.tsv` — the same mechanism
 footnote ³⁴ uses for jq, and here for a blunter reason: this enumeration was hand-written prose
