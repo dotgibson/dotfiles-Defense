@@ -223,9 +223,9 @@ Project Link: [dotgibson](https://github.com/dotgibson/)
 [docker-url]: https://github.com/moby/moby
 [sigma-shield]: https://img.shields.io/github/v/release/SigmaHQ/sigma?style=plastic&logo=gnometerminal&logoColor=24283B&label=Sigma&labelColor=BB9AF7&color=3D59A1
 [sigma-url]: https://github.com/SigmaHQ/sigma
-[sysmon-shield]: https://img.shields.io/badge/Sysmon-0078D6?style=plastic&logo=windows&logoColor=white
+[sysmon-shield]: https://img.shields.io/badge/Sysmon-0078D6?style=plastic
 [sysmon-url]: https://learn.microsoft.com/sysinternals/downloads/sysmon
 [zeek-shield]: https://img.shields.io/github/v/release/zeek/zeek?style=plastic&logo=gnometerminal&logoColor=24283B&label=Zeek&labelColor=BB9AF7&color=3D59A1
 [zeek-url]: https://github.com/zeek/zeek
-[suricata-shield]: https://img.shields.io/badge/Suricata-EF3B2D?style=plastic&logo=suricata&logoColor=white
+[suricata-shield]: https://img.shields.io/badge/Suricata-EF3B2D?style=plastic
 [suricata-url]: https://suricata.io
