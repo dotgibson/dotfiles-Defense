@@ -1,0 +1,19 @@
+# zircolite-constraints.txt — pip constraints for the Sigma-over-events engine's deps.
+# ──────────────────────────────────────────────────────────────────────────────
+# run-sigma-validation.sh drives zircolite, and zircolite's own requirements.txt asks for
+# `pysigma>=0.10.10` — fully floating. So the engine that decides whether every host-plane
+# detection FIRES was resolving its Sigma parser to whatever PyPI had that morning, which
+# makes a red run un-bisectable: nothing in this repo records which parser produced it.
+#
+# That is not hypothetical. pyparsing 3.3.3 rewrote infix_notation as a shunting-yard
+# algorithm and broke pySigma's handling of nested boolean operands — `selection and not
+# filter`, most of this corpus — with `TypeError: 'str' object is not callable`. pySigma
+# 1.5.1 fixes it (SigmaHQ/pySigma#548). Between those two releases this job would have gone
+# red with nothing in the repo changed, and today it is green only because the float
+# happens to land past the fix. Same reasoning as the pins in .github/workflows/sigma.yml.
+#
+# Constrains ONLY the two packages whose pairing broke. zircolite's pipeline and backend
+# versions stay its own business: pinning those here would silently override the engine's
+# own compatibility choices, which is a different (and upstream's) call to make.
+pysigma==1.5.1
+pyparsing==3.3.3
