@@ -29,8 +29,10 @@
 #   ZIRCOLITE=/path/to/zircolite.py run-sigma-validation.sh
 #   PYTHON=python3.11 ZIRCOLITE=... run-sigma-validation.sh
 #
-# Requires a python3 with zircolite's deps (pysigma + pipelines; see its requirements),
-# and ZIRCOLITE pointing at zircolite.py. CI clones a pinned zircolite and sets both (see
+# Requires a python3 with zircolite's deps (pysigma + pipelines; see its requirements,
+# installed under docker/validation/zircolite-constraints.txt — zircolite floats its Sigma
+# parser and a bad pair silently changes what "fires" means), and ZIRCOLITE pointing at
+# zircolite.py. CI clones a pinned zircolite and sets both (see
 # .github/workflows/sigma-validation.yml).
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -48,7 +50,7 @@ fail_preflight() {
 [[ -f "$MANIFEST" ]] || fail_preflight "manifest not found: $MANIFEST"
 command -v "$PYTHON" >/dev/null 2>&1 || fail_preflight "python3 not found"
 [[ -n "$ZIRCOLITE" && -f "$ZIRCOLITE" ]] || fail_preflight "set ZIRCOLITE to the path of zircolite.py"
-"$PYTHON" -c 'import sigma' 2>/dev/null || fail_preflight "pysigma not importable (pip install -r <zircolite>/requirements.txt)"
+"$PYTHON" -c 'import sigma' 2>/dev/null || fail_preflight "pysigma not importable (pip install -c docker/validation/zircolite-constraints.txt -r <zircolite>/requirements.txt)"
 
 # zircolite resolves its field-mapping config relative to its own dir; pass it explicitly
 # so the tool works from the isolated per-row run dirs below.

@@ -22,6 +22,7 @@ on:
       - "docker/validation/sigma_eval.py"
       - "docker/validation/run-sigma-validation.sh"
       - "docker/validation/run-cloud-validation.sh"
+      - "docker/validation/zircolite-constraints.txt"
       - ".github/workflows/sigma-validation.yml"
   pull_request:
     paths:
@@ -32,6 +33,7 @@ on:
       - "docker/validation/sigma_eval.py"
       - "docker/validation/run-sigma-validation.sh"
       - "docker/validation/run-cloud-validation.sh"
+      - "docker/validation/zircolite-constraints.txt"
       - ".github/workflows/sigma-validation.yml"
 
 concurrency:
@@ -60,7 +62,12 @@ jobs:
           python-version: "3.14"
 
       - name: Install zircolite deps (pysigma + pipelines)
-        run: pip install -r .zircolite/requirements.txt
+        # -c: zircolite's requirements.txt floats `pysigma>=0.10.10`, so the engine that
+        # decides whether every host-plane rule FIRES was picking its Sigma parser at
+        # install time. The constraints file pins that pair and says why (a pyparsing
+        # release broke condition parsing for most of this corpus); everything else in
+        # zircolite's requirements stays zircolite's call.
+        run: pip install -c docker/validation/zircolite-constraints.txt -r .zircolite/requirements.txt
 
       - name: Validate sigma rules (attack events -> rule fires)
         run: ZIRCOLITE="$PWD/.zircolite/zircolite.py" bash docker/validation/run-sigma-validation.sh
@@ -75,8 +82,16 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Install pysigma (the evaluator's only dependency, pinned for determinism)
-        run: pip install pysigma==1.4.0
+      - name: Install pysigma + pyparsing (the evaluator's only deps, pinned for determinism)
+        # sigma_eval.py walks pySigma's OWN parsed condition tree, so it breaks exactly
+        # where the parser does. pyparsing was never pinned here and 1.4.0 predates the
+        # fix, so most of these rows were erroring out — invisibly, because the path filter
+        # above meant the job had not run since before the bad release landed. An evaluator
+        # error is NOT counted as a passing true-negative (see run-cloud-validation.sh on
+        # why that distinction is load-bearing), so this would have surfaced as a hard fail
+        # the moment anyone touched detections/sigma/, on a PR that changed none of it.
+        # See .github/workflows/sigma.yml for the full story and SigmaHQ/pySigma#548.
+        run: pip install "pysigma==1.5.1" "pyparsing==3.3.3"
 
       - name: Validate cloud sigma rules (TP fires + TN silent, nested fields preserved)
         run: bash docker/validation/run-cloud-validation.sh

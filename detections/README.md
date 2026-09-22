@@ -159,7 +159,7 @@ Run it locally (any pySigma backend):
 
 ```sh
 # pinned, matching CI (splunk + elasticsearch + kusto backends)
-pip install "pysigma==1.5.0" "sigma-cli==3.0.2" "pysigma-backend-splunk==2.1.0" \
+pip install "pysigma==1.5.1" "pyparsing==3.3.3" "sigma-cli==3.0.2" "pysigma-backend-splunk==2.1.0" \
             "pysigma-backend-elasticsearch==2.1.0" "pysigma-backend-kusto==1.0.1"
 sigma check --fail-on-issues -c detections/sigma-validation-config.yml detections/sigma/   # lint
 detections/sigma/convert.sh splunk                                                         # compile → SPL

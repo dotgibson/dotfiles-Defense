@@ -72,7 +72,20 @@ jobs:
         # pySigma itself is pinned too, not just the CLI and backends. It used to float,
         # and 1.5.0 is the release that swapped the static ATT&CK table for a download —
         # so the tag gate's behaviour changed underneath CI with no repo change (#172).
-        run: pip install "pysigma==1.5.0" "sigma-cli==3.0.2" "pysigma-backend-splunk==2.1.0" "pysigma-backend-elasticsearch==2.1.0" "pysigma-backend-kusto==1.0.1"
+        #
+        # pyparsing is pinned for that same reason one dependency level DEEPER, and the pin
+        # above is precisely why it had to be. pyparsing is transitive — pySigma asks only
+        # for `>=3.2.5,<4.0.0` — so 3.3.3 arrived under a job that called itself pinned. It
+        # rewrote infix_notation as a shunting-yard algorithm, changing the shape handed to
+        # parse actions for nested operands, and every `selection and not filter` rule (most
+        # of this corpus) then died on `TypeError: 'str' object is not callable` in
+        # sigma/conditions.py. THE detection-content gate went red on a Tuesday with nothing
+        # in the repo changed — the #172 failure again, on the one dep the pin did not name.
+        #
+        # Fixed upstream in pySigma 1.5.1 (SigmaHQ/pySigma#548), so the bump alone would be
+        # green today. The pin stays anyway: a hard gate's verdict has to be reproducible,
+        # and pyparsing just demonstrated it is a dep that can change the verdict on its own.
+        run: pip install "pysigma==1.5.1" "pyparsing==3.3.3" "sigma-cli==3.0.2" "pysigma-backend-splunk==2.1.0" "pysigma-backend-elasticsearch==2.1.0" "pysigma-backend-kusto==1.0.1"
 
       - name: Structural lint (hard gate, hermetic)
         # --fail-on-issues: `sigma check` exits 0 on validator *issues* by default
