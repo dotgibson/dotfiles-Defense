@@ -69,3 +69,10 @@ core.[0-9]*
 # Python bytecode (sigma_eval.py)
 __pycache__/
 *.pyc
+
+# Agent worktrees. Claude Code checks its worktrees out INSIDE the repo, so each live
+# session shows up as an untracked directory in `git status` here and in every other
+# worktree sharing this checkout. Scoped to `worktrees/` and NOT `.claude/`: this repo
+# tracks .claude/commands/*.md on purpose, and a blanket rule would hide the next command
+# someone added. A worktree is disposable session state; its commits live on a branch.
+.claude/worktrees/
