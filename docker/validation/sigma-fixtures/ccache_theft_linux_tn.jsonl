@@ -1,0 +1,3 @@
+{"Image":"/usr/bin/klist","CommandLine":"klist -c /tmp/krb5cc_1000"}
+{"Image":"/usr/bin/kinit","CommandLine":"kinit -c /tmp/krb5cc_1000 administrator@CORP.LOCAL"}
+{"Image":"/usr/bin/kdestroy","CommandLine":"kdestroy -c /home/svc/app.ccache"}

@@ -36,6 +36,8 @@ docker/validation/sigma-fixtures/asrep_roast_4768.jsonl	unverified	-
 docker/validation/sigma-fixtures/asrep_roast_4768_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/bitlocker_abuse_4688.jsonl	unverified	-
 docker/validation/sigma-fixtures/ccache_theft_linux.jsonl	unverified	-
+docker/validation/sigma-fixtures/ccache_theft_linux_renamed.jsonl	unverified	flat process_creation fields, same key set as ccache_theft_linux.jsonl. Regression line for #324: a copied/renamed binary (/tmp/.x) moving a ccache, which the old Image|endswith tool-list gate did NOT match - verified NOFIRE against the pre-change rule. Synthetic
+docker/validation/sigma-fixtures/ccache_theft_linux_tn.jsonl	unverified	same key set as the TP. Near-misses for filter_krb5_clients: klist/kinit/kdestroy naming a ccache with -c, which is legitimate. All three FIRE with the filter removed, so the filter is what silences them. Synthetic
 docker/validation/sigma-fixtures/cloud/aws_data_destruction_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud/aws_data_destruction_tp.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud_aws_iam_access_key_created.jsonl	unverified	-
@@ -57,6 +59,7 @@ docker/validation/sigma-fixtures/cloud_entra_directory_role_grant.jsonl	vendor-d
 docker/validation/sigma-fixtures/cloud_entra_illicit_consent_grant.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud_entra_illicit_consent_grant_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud_entra_sp_credential_backdoor.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_entra_sp_credential_backdoor_tn.jsonl	unverified	same shape as the TP; InitiatedBy rendered as a flat string the way cloud_entra_directory_role_grant's fixtures render it. App arm carrying the example object id in filter_app_automation; fired on the pre-change rule (#324). Synthetic
 docker/validation/sigma-fixtures/cloud/gcp_audit_log_sink_deleted_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud/gcp_audit_log_sink_deleted_tp.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud/gcp_iam_policy_backdoor_tn.jsonl	unverified	-
@@ -85,6 +88,7 @@ docker/validation/sigma-fixtures/cloud/harbor_robot_account_created_tp.jsonl	unv
 docker/validation/sigma-fixtures/cloud_jenkins_api_token_created.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud_jenkins_job_backdoor.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud_jenkins_script_console.jsonl	unverified	-
+docker/validation/sigma-fixtures/cloud_jenkins_script_console_tn.jsonl	unverified	same uri field as the TP. Two In-Process Script Approval requests, both of which FIRED on the pre-change rule's /script substring (#324). Paths from the Jenkins script-security plugin's UI; the Audit Trail rendering is not captured
 docker/validation/sigma-fixtures/cloud/k8s_clusteradmin_binding_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud/k8s_clusteradmin_binding_tp.jsonl	unverified	-
 docker/validation/sigma-fixtures/cloud/k8s_pod_exec_attach_tn.jsonl	unverified	-
@@ -163,6 +167,7 @@ docker/validation/sigma-fixtures/mass_read_4663_combined_tp.jsonl	vendor-documen
 docker/validation/sigma-fixtures/mass_read_4663_tn.jsonl	vendor-documented	field names + the %%NNNN token table from Microsoft's 4663 reference (learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4663), whose own example event pairs AccessList "%%4417 %%4418" with AccessMask "0x6"; isolated-bit read form, filter_indexers near-miss of the TP. every AccessMask here is the OR of its own AccessList tokens per that page's Table 15. Token ORDER within the string is not confirmed against a capture, which is why the rule matches single tokens with |contains. See #159
 docker/validation/sigma-fixtures/mass_read_4663_tp.jsonl	vendor-documented	field names + the %%NNNN token table from Microsoft's 4663 reference (learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4663), whose own example event pairs AccessList "%%4417 %%4418" with AccessMask "0x6"; isolated-bit read form (0x1 / %%4416). every AccessMask here is the OR of its own AccessList tokens per that page's Table 15. Token ORDER within the string is not confirmed against a capture, which is why the rule matches single tokens with |contains. See #159
 docker/validation/sigma-fixtures/ntds_dump_4688.jsonl	unverified	-
+docker/validation/sigma-fixtures/ntds_dump_vssadmin_4688.jsonl	unverified	Sysmon EventID 1 fields, same key set as ntds_dump_4688.jsonl. Regression line for #324: argv[0] carries the full path and .exe, which the old selection_shadow token ('vssadmin create shadow') did NOT match - verified NOFIRE against the pre-change rule. Command-line form synthetic
 docker/validation/sigma-fixtures/passthehash_4624.jsonl	unverified	-
 docker/validation/sigma-fixtures/passthehash_4624_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/password_spray_4625.jsonl	unverified	-
@@ -181,6 +186,7 @@ docker/validation/sigma-fixtures/rogue_account_4720_tn.jsonl	unverified	-
 docker/validation/sigma-fixtures/scheduled_task_4698.jsonl	unverified	-
 docker/validation/sigma-fixtures/service_psexec_7045.jsonl	unverified	-
 docker/validation/sigma-fixtures/service_stop_burst_4688.jsonl	unverified	-
+docker/validation/sigma-fixtures/service_stop_burst_4688_tn.jsonl	unverified	Sysmon EventID 1, same key set as the TP. Six distinct stops on one host - past the gte-5 threshold - all from the example parent in filter_maintenance_parent, so the filter is the only thing keeping it silent; it FIRED on the pre-change rule (#324). Synthetic
 docker/validation/sigma-fixtures/service_stop_protected_services.jsonl	unverified	Sysmon EventID 1 process-creation fields; the two lines are a net stop of a named backup service and an sc config start= disabled of a named database service, one per arm of the net/sc selection. Command-line forms are synthetic, written from the shapes ransomware batch scripts use rather than from a captured sample
 docker/validation/sigma-fixtures/service_stop_protected_services_tn.jsonl	unverified	same EventID and EventData key set as the TP, values changed. Two near-misses, one per defect fixed in #307, and BOTH fired on the previous rule - verified by running them against the pre-change rule, so this is a regression test rather than an assertion. Line 1 is a Spooler stop whose redirect target contains C:\\Backup\\, which the unanchored 'backup' keyword matched in a path; line 2 is a Set-Service description edit, which the old PowerShell arm matched because it did not require the disabling form
 docker/validation/sigma-fixtures/shadow_credentials_5136.jsonl	unverified	-
