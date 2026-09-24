@@ -1,6 +1,6 @@
 title: Kerberoasting - RC4 service ticket for a user SPN
 id: f61b8f0e-d702-42e6-8c4b-7a96f166b44f
-status: experimental
+status: test
 description: |
   Detects the Kerberoasting invariant: an RC4 (0x17) TGS-REQ for a non-machine,
   non-krbtgt SPN. The encryption downgrade is the tell even when ticket flags look

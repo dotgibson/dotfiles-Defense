@@ -37,7 +37,7 @@ eventSource =~ "iam.amazonaws.com" and (eventName in~ ("CreateLoginProfile", "Up
 (OperationName in~ ("Consent to application", "Add delegated permission grant", "Add OAuth2PermissionGrant")) and (TargetResources contains "Mail.Read" or TargetResources contains "Mail.ReadWrite" or TargetResources contains "Mail.Send" or TargetResources contains "offline_access" or TargetResources contains "Files.Read.All" or TargetResources contains "Files.ReadWrite.All" or TargetResources contains "Sites.Read.All" or TargetResources contains "Directory.Read.All" or TargetResources contains "full_access_as_user") and (not(TargetResources contains "00000000-0000-0000-0000-000000000000"))
 
 // cloud/entra_sp_credential_backdoor.yml — Entra service-principal credential added (app backdoor)
-OperationName in~ ("Add service principal credentials", "Add application credentials", "Update application - Certificates and secrets management", "Update application – Certificates and secrets management")
+(OperationName in~ ("Add service principal credentials", "Add application credentials", "Update application - Certificates and secrets management", "Update application – Certificates and secrets management")) and (not(InitiatedBy contains "00000000-0000-0000-0000-000000000000"))
 
 // cloud/gcp_audit_log_sink_deleted.yml — GCP logging sink deleted / disabled (audit-log tampering)
 (['gcp.audit.method_name'] endswith "ConfigServiceV2.DeleteSink" or ['gcp.audit.method_name'] endswith "ConfigServiceV2.UpdateSink" or ['gcp.audit.method_name'] endswith "ConfigServiceV2.DeleteBucket") and (not(['gcp.audit.principal_email'] =~ "logging-terraform@example.iam.gserviceaccount.com"))
@@ -94,7 +94,7 @@ EventType =~ "ConnectPipe" and PipeName contains "efsrpc"
 (TargetImage endswith "\\lsass.exe" and (GrantedAccess in~ ("0x1010", "0x1410", "0x1438", "0x143a", "0x1fffff"))) and (not((SourceImage endswith "\\MsMpEng.exe" or SourceImage endswith "\\MsSense.exe" or SourceImage endswith "\\wininit.exe" or SourceImage endswith "\\csrss.exe" or SourceImage endswith "\\CSFalconService.exe" or SourceImage endswith "\\SentinelAgent.exe" or SourceImage endswith "\\RepMgr.exe")))
 
 // credential_access/ntds_dump_ntdsutil_vss_4688.yml — NTDS.dit theft via ntdsutil / VSS on a domain controller
-(Image endswith "\\ntdsutil.exe" and (CommandLine contains "ifm" or CommandLine contains "create full")) or ((CommandLine contains "vssadmin create shadow" or CommandLine contains "wbadmin start backup") and (Image endswith "\\vssadmin.exe" or Image endswith "\\wbadmin.exe")) or Image endswith "\\diskshadow.exe"
+(Image endswith "\\ntdsutil.exe" and (CommandLine contains "ifm" or CommandLine contains "create full")) or ((CommandLine contains "create shadow" or CommandLine contains "start backup") and (Image endswith "\\vssadmin.exe" or Image endswith "\\wbadmin.exe")) or Image endswith "\\diskshadow.exe"
 
 // credential_access/password_spray_4625.yml — Password spray base - failed network logon (4625)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -190,7 +190,7 @@ uri contains "ApiTokenProperty/generateNewToken"
 uri contains "/createItem" or (uri contains "/job/" and uri contains "/configSubmit")
 
 // jenkins/jenkins_script_console.yml — Jenkins Script Console accessed (controller RCE / credential dump)
-uri contains "/scriptText" or uri contains "/script"
+uri contains "/script" and (not(uri contains "/scriptApproval"))
 
 // kubernetes/k8s_clusteradmin_binding.yml — Kubernetes cluster-admin role binding created or modified
 (verb in~ ("create", "update", "patch")) and (['objectRef.resource'] in~ ("clusterrolebindings", "rolebindings")) and ['requestObject.roleRef.name'] =~ "cluster-admin"
@@ -219,8 +219,8 @@ EventType =~ "ConnectPipe" and Image =~ "System" and (PipeName contains "svcctl"
 // lateral_movement/wmiexec_wmiprvse_child_4688.yml — WMI remote exec - shell spawned by WmiPrvSE
 (ParentImage endswith "\\WmiPrvSE.exe" and (Image endswith "\\cmd.exe" or Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe")) and (CommandLine contains "/Q" and CommandLine contains "/c" and CommandLine contains "127.0.0.1\\ADMIN$")
 
-// linux/ccache_theft_staging.yml — Kerberos ccache file staged by a copy/transfer/interpreter process
-(CommandLine contains "/tmp/krb5cc_" or CommandLine contains ".ccache" or CommandLine contains "krb5.ccache") and (Image endswith "/cp" or Image endswith "/mv" or Image endswith "/dd" or Image endswith "/cat" or Image endswith "/tac" or Image endswith "/tar" or Image endswith "/gzip" or Image endswith "/bzip2" or Image endswith "/xz" or Image endswith "/zip" or Image endswith "/base64" or Image endswith "/xxd" or Image endswith "/scp" or Image endswith "/rsync" or Image endswith "/sftp" or Image endswith "/nc" or Image endswith "/ncat" or Image endswith "/socat" or Image endswith "/curl" or Image endswith "/wget" or Image endswith "/openssl" or Image endswith "/python" or Image endswith "/python3" or Image endswith "/perl" or Image endswith "/ruby")
+// linux/ccache_theft_staging.yml — Kerberos ccache file named on a command line (theft / staging)
+(CommandLine contains "/tmp/krb5cc_" or CommandLine contains ".ccache" or CommandLine contains "krb5.ccache") and (not((Image endswith "/kinit" or Image endswith "/klist" or Image endswith "/kdestroy" or Image endswith "/kvno" or Image endswith "/kswitch" or Image endswith "/kpasswd")))
 
 // linux/cron_persistence.yml — Cron persistence - scheduled-job file written (auditd)
 key =~ "cron_persist" and (not((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
@@ -274,7 +274,7 @@ EventID == 4720 and (not(SubjectUserName =~ "svc_iam_provisioning"))
 EventID == 4698 and (TaskContent contains "-enc " or TaskContent contains "-EncodedCommand" or TaskContent contains "-w hidden" or TaskContent contains "-WindowStyle Hidden" or TaskContent contains "FromBase64String" or TaskContent contains "\\mshta.exe" or TaskContent contains "\\regsvr32.exe" or TaskContent contains "\\rundll32.exe" or TaskContent contains "DownloadString" or TaskContent contains "IEX(" or TaskContent contains "IEX " or TaskContent contains "| IEX")
 
 // persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line or script consumer
-(EventID == 20 and (Destination contains "powershell" or Destination contains "cmd.exe" or Destination contains "mshta" or Destination contains "wscript" or Destination contains "cscript" or Destination contains "rundll32" or Destination contains "-enc" or Destination contains "FromBase64String")) or (EventID == 20 and Type contains "Script")
+(EventID == 20 and (Destination contains "powershell" or Destination contains "cmd.exe" or Destination contains "mshta" or Destination contains "wscript" or Destination contains "cscript" or Destination contains "rundll32" or Destination contains "-enc " or Destination contains "-ec " or Destination contains "-EncodedCommand" or Destination contains "FromBase64String")) or (EventID == 20 and Type contains "Script")
 
 // privilege_escalation/adcs_esc1_san_mismatch_4886.yml — AD CS certificate request (ESC1 triage surface)
 EventID in~ ("4886", "4887")

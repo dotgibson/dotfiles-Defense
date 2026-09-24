@@ -406,7 +406,7 @@ family tests a pointer against a bitmask on the calls it gets wrong.
 
 | Rule                        | Event / source                                               | ATT&CK    | Validate with                                  |
 | --------------------------- | ------------------------------------------------------------ | --------- | ---------------------------------------------- |
-| `ccache_theft_staging`      | ccache path in argv of a copy/transfer/interpreter process   | T1558.005 | Kerberos · cp/base64 an `*.ccache`             |
+| `ccache_theft_staging`      | ccache path in any argv except the krb5 client utilities     | T1558.005 | Kerberos · cp/base64 an `*.ccache`             |
 | `cron_persistence`          | auditd `cron_persist` — write to a cron drop dir / crontab   | T1053.003 | Linux persistence · cron callback              |
 | `systemd_unit_persistence`  | auditd `systemd_persist` — write into a unit directory       | T1543.002 | Linux persistence · unit or timer              |
 | `ssh_authorized_keys_write` | auditd `ssh_authkeys` — write to an `authorized_keys` file   | T1098.004 | Linux persistence · append attacker key        |
@@ -494,11 +494,11 @@ family tests a pointer against a bitmask on the calls it gets wrong.
 
 **`jenkins/`** (Jenkins Audit Trail plugin — `product: jenkins`, `service: audit`; keyword/URI matches)
 
-| Rule                        | Event / source                                     | ATT&CK | Validate with                    |
-| --------------------------- | -------------------------------------------------- | ------ | -------------------------------- |
-| `jenkins_script_console`    | `/script` / `/scriptText` request                  | T1059  | Jenkins · jenkins-script-console |
-| `jenkins_api_token_created` | `ApiTokenProperty/generateNewToken` request        | T1098  | Jenkins · jenkins-api-token      |
-| `jenkins_job_backdoor`      | `/createItem` / `/job/<name>/configSubmit` request | T1072  | Jenkins · jenkins-job-backdoor   |
+| Rule                        | Event / source                                           | ATT&CK | Validate with                    |
+| --------------------------- | -------------------------------------------------------- | ------ | -------------------------------- |
+| `jenkins_script_console`    | `/script` / `/scriptText` request, not `/scriptApproval` | T1059  | Jenkins · jenkins-script-console |
+| `jenkins_api_token_created` | `ApiTokenProperty/generateNewToken` request              | T1098  | Jenkins · jenkins-api-token      |
+| `jenkins_job_backdoor`      | `/createItem` / `/job/<name>/configSubmit` request       | T1072  | Jenkins · jenkins-job-backdoor   |
 
 **`snowflake/`** (Snowflake `ACCOUNT_USAGE.QUERY_HISTORY` — `product: snowflake`, `service: audit`; fields `query_type`/`query_text`)
 
@@ -656,6 +656,8 @@ comment isn't enforcement, so this is the discoverable checklist instead.)
 | `cloud/azure_keyvault_bulk_secret_read`                          | `filter_secret_automation` → the object id (`oid`) of your secrets-sync / CI identities               | secrets-sync and CI environment hydration trip the correlation at any threshold, because breadth is their normal shape. Not the `appid`: that is the application, so allowlisting it exempts every principal using it        |
 | `cloud/gcp_iam_policy_backdoor`                                  | `filter_iac` → your IaC / access-management principal(s)                                              | Terraform's routine `SetIamPolicy` calls alert alongside the operator-driven binding                                                                                                                                         |
 | `cloud/gcp_audit_log_sink_deleted`                               | `filter_iac` → your logging IaC principal(s)                                                          | routine sink and bucket lifecycle driven from Terraform alerts alongside deliberate audit-log tampering                                                                                                                      |
+| `impact/service_stop_burst`                                      | `filter_maintenance_parent` → the specific restart / uninstall tooling that cycles a suite            | a suite that restarts five services on patch night trips the burst. Name the specific tool — never a deployment agent (ccmexec, PSEXESVC, RMM) or a host, since those are how the real teardown is pushed                    |
+| `cloud/entra_sp_credential_backdoor`                             | `filter_app_automation` → the **object id** of your secret-rotation / CI/CD principal(s)              | every scheduled secret rotation alerts, which is how this rule gets muted. Object id, not display name or `appId` — same reasoning as `entra_directory_role_grant`                                                           |
 | `discovery/host_enum_srvsvc_wkssvc_5145`                         | `filter_sweep_principals` → your backup / monitoring / file-server-inventory principals               | only a multi-host sweeper can reach the threshold, and those principals are exactly that — so unfilled the correlation reports your own tooling. The list is what makes the rule sharp, not what makes it quiet              |
 | `discovery/local_group_enum_sweep_4798_4799`                     | `filter_sweep_principals` → your inventory / EDR / vulnerability-scan principals                      | same shape as the share-enumeration rule above: the count is over distinct hosts, so ordinary local noise cannot reach it and estate-wide scanners are the only benign source that can                                       |
 | `google_workspace/gws_illicit_oauth_grant`                       | `filter_known_apps` → your sanctioned OAuth client ids                                                | verified LOB apps that legitimately hold mail/drive scopes alert alongside the illicit grant                                                                                                                                 |

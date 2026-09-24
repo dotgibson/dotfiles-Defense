@@ -14,6 +14,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/ntds-ntdsutil-4688.md
 author: dotfiles-Defense
 date: 2026-06-30
+modified: 2026-09-23
 tags:
   - attack.credential-access
   - attack.t1003.003
@@ -27,13 +28,23 @@ detection:
       - 'ifm'
       - 'create full'
   selection_shadow:
+    # Verbs only: the Image already names the binary, so repeating it inside the
+    # CommandLine token ('vssadmin create shadow') only added a way to miss - a full path
+    # or a .exe suffix on argv[0] broke the match. Each verb belongs to one binary, so the
+    # cross-product the two lists form is harmless.
     CommandLine|contains:
-      - 'vssadmin create shadow'
-      - 'wbadmin start backup'
+      - 'create shadow'
+      - 'start backup'
     Image|endswith:
       - '\vssadmin.exe'
       - '\wbadmin.exe'
   selection_diskshadow:
+    # Deliberately the binary alone, unlike its siblings. diskshadow is driven by a script
+    # (`diskshadow /s x.dsh`) and the `set context persistent` / `add volume` / `expose`
+    # commands that stage NTDS.dit live in the .dsh, not on the command line, so a verb
+    # gate here would miss the real attack and catch only the interactive form. The bar is
+    # the same one the `ifm` branch justifies: diskshadow is a backup-admin tool with no
+    # routine use on a DC, so any run there is worth a look. Scope to DC hosts.
     Image|endswith: '\diskshadow.exe'
   condition: 1 of selection_*
 falsepositives:
