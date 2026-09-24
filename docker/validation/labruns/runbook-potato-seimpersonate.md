@@ -191,10 +191,16 @@ hand-editing a fixture into agreement — hand-editing is how `token_theft_sysmo
 up `unverified`.
 
 Then run the shipped rules against the capture with the same engine the gate uses: zircolite
-v3.7.6 and its own pinned requirements (`git clone --branch v3.7.6`, then
-`pip install -r requirements.txt`), which is what `sigma-validation.yml` does. That workflow pins
-zircolite but not pySigma — `pysigma==1.5.0` is the *compile* gate's pin in `sigma.yml`, and the
-cloud evaluator pins 1.4.0 — so record the pySigma version the install resolved to.
+v3.7.6, installed from its own `requirements.txt` under the repo's constraints file
+(`git clone --branch v3.7.6`, then `pip install -r requirements.txt -c
+docker/validation/zircolite-constraints.txt`) — which is what `sigma-validation.yml` does.
+zircolite's `requirements.txt` floats `pysigma>=0.10.10`, so that constraints file is what
+actually fixes the parser: it pins `pysigma==1.5.1` and `pyparsing==3.3.3` — the same pair the
+*compile* gate pins in `sigma.yml` and the cloud evaluator pins in `run-cloud-validation.sh`.
+`pyparsing` is load-bearing, not incidental: pySigma delegates condition parsing to it, and
+3.3.3's shunting-yard `infix_notation` rewrite can change a rule's verdict, which is why #321
+pinned it beside pySigma. Confirm the install resolved to that pinned pair rather than recording
+whatever floated in.
 
 Assign the paths, do not prefix them onto the command. In `VAR=x cmd "$VAR"` the shell expands
 `"$VAR"` *before* applying the assignment, so the prefix form silently runs `python` with no script
