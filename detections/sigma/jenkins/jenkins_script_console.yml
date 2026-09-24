@@ -16,6 +16,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/jenkins-script-console-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
+modified: 2026-09-23
 tags:
   - attack.execution
   - attack.t1059
@@ -24,10 +25,22 @@ logsource:
   service: audit
 detection:
   selection:
-    uri|contains:
-      - '/scriptText'
-      - '/script'
-  condition: selection
+    # One substring covers both the /script form and the /scriptText API - `/script` is a
+    # prefix of `/scriptText`, so listing both was redundant.
+    uri|contains: '/script'
+  # ...but the same substring also matched /scriptApproval, the In-Process Script Approval
+  # page an admin visits every time they approve a pipeline's Groovy signature - routine in
+  # any active Jenkins, and it paged at high (#324). Excluded as a filter rather than by
+  # anchoring the selection with endswith, because nothing here pins what `uri` holds: a
+  # parsed request path, or the Audit Trail line ("/scriptText by admin") it was parsed
+  # from, and an anchored match silently stops firing on the second shape. The filter's own
+  # risk is the inverse: a request that really routes to the console never has
+  # "/scriptApproval" in its PATH, but if your collector appends the query string to `uri`,
+  # `/scriptText?x=/scriptApproval` would be suppressed - in that case scope this filter to
+  # the path component in your SIEM mapping.
+  filter_script_approval:
+    uri|contains: '/scriptApproval'
+  condition: selection and not filter_script_approval
 falsepositives:
   - Legitimate administrator break-glass use of the Script Console - allowlist the
     expected admins and change windows; treat service-account or off-hours use as an alert.

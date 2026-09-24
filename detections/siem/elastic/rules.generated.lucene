@@ -37,7 +37,7 @@ eventSource:iam.amazonaws.com AND (eventName:(CreateLoginProfile OR UpdateLoginP
 (OperationName:(Consent\ to\ application OR Add\ delegated\ permission\ grant OR Add\ OAuth2PermissionGrant)) AND (TargetResources:(*Mail.Read* OR *Mail.ReadWrite* OR *Mail.Send* OR *offline_access* OR *Files.Read.All* OR *Files.ReadWrite.All* OR *Sites.Read.All* OR *Directory.Read.All* OR *full_access_as_user*)) AND (NOT TargetResources:*00000000\-0000\-0000\-0000\-000000000000*)
 
 // cloud/entra_sp_credential_backdoor.yml — Entra service-principal credential added (app backdoor)
-OperationName:(Add\ service\ principal\ credentials OR Add\ application\ credentials OR Update\ application\ \-\ Certificates\ and\ secrets\ management OR Update\ application\ –\ Certificates\ and\ secrets\ management)
+(OperationName:(Add\ service\ principal\ credentials OR Add\ application\ credentials OR Update\ application\ \-\ Certificates\ and\ secrets\ management OR Update\ application\ –\ Certificates\ and\ secrets\ management)) AND (NOT InitiatedBy:*00000000\-0000\-0000\-0000\-000000000000*)
 
 // cloud/gcp_audit_log_sink_deleted.yml — GCP logging sink deleted / disabled (audit-log tampering)
 (gcp.audit.method_name:(*ConfigServiceV2.DeleteSink OR *ConfigServiceV2.UpdateSink OR *ConfigServiceV2.DeleteBucket)) AND (NOT gcp.audit.principal_email:logging\-terraform@example.iam.gserviceaccount.com)
@@ -94,7 +94,7 @@ EventType:ConnectPipe AND PipeName:*efsrpc*
 (TargetImage:*\\lsass.exe AND (GrantedAccess:(0x1010 OR 0x1410 OR 0x1438 OR 0x143a OR 0x1fffff))) AND (NOT (SourceImage:(*\\MsMpEng.exe OR *\\MsSense.exe OR *\\wininit.exe OR *\\csrss.exe OR *\\CSFalconService.exe OR *\\SentinelAgent.exe OR *\\RepMgr.exe)))
 
 // credential_access/ntds_dump_ntdsutil_vss_4688.yml — NTDS.dit theft via ntdsutil / VSS on a domain controller
-(Image:*\\ntdsutil.exe AND (CommandLine:(*ifm* OR *create\ full*))) OR ((CommandLine:(*vssadmin\ create\ shadow* OR *wbadmin\ start\ backup*)) AND (Image:(*\\vssadmin.exe OR *\\wbadmin.exe))) OR Image:*\\diskshadow.exe
+(Image:*\\ntdsutil.exe AND (CommandLine:(*ifm* OR *create\ full*))) OR ((CommandLine:(*create\ shadow* OR *start\ backup*)) AND (Image:(*\\vssadmin.exe OR *\\wbadmin.exe))) OR Image:*\\diskshadow.exe
 
 // credential_access/password_spray_4625.yml — Password spray base - failed network logon (4625)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -190,7 +190,7 @@ uri:*ApiTokenProperty\/generateNewToken*
 uri:*\/createItem* OR (uri:*\/job\/* AND uri:*\/configSubmit*)
 
 // jenkins/jenkins_script_console.yml — Jenkins Script Console accessed (controller RCE / credential dump)
-uri:(*\/scriptText* OR *\/script*)
+uri:*\/script* AND (NOT uri:*\/scriptApproval*)
 
 // kubernetes/k8s_clusteradmin_binding.yml — Kubernetes cluster-admin role binding created or modified
 (verb:(create OR update OR patch)) AND (objectRef.resource:(clusterrolebindings OR rolebindings)) AND requestObject.roleRef.name:cluster\-admin
@@ -219,8 +219,8 @@ EventType:ConnectPipe AND Image:System AND (PipeName:(*svcctl* OR *atsvc*))
 // lateral_movement/wmiexec_wmiprvse_child_4688.yml — WMI remote exec - shell spawned by WmiPrvSE
 (ParentImage:*\\WmiPrvSE.exe AND (Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe))) AND (CommandLine:*\/Q* AND CommandLine:*\/c* AND CommandLine:*127.0.0.1\\ADMIN$*)
 
-// linux/ccache_theft_staging.yml — Kerberos ccache file staged by a copy/transfer/interpreter process
-(CommandLine:(*\/tmp\/krb5cc_* OR *.ccache* OR *krb5.ccache*)) AND (Image:(*\/cp OR *\/mv OR *\/dd OR *\/cat OR *\/tac OR *\/tar OR *\/gzip OR *\/bzip2 OR *\/xz OR *\/zip OR *\/base64 OR *\/xxd OR *\/scp OR *\/rsync OR *\/sftp OR *\/nc OR *\/ncat OR *\/socat OR *\/curl OR *\/wget OR *\/openssl OR *\/python OR *\/python3 OR *\/perl OR *\/ruby))
+// linux/ccache_theft_staging.yml — Kerberos ccache file named on a command line (theft / staging)
+(CommandLine:(*\/tmp\/krb5cc_* OR *.ccache* OR *krb5.ccache*)) AND (NOT (Image:(*\/kinit OR *\/klist OR *\/kdestroy OR *\/kvno OR *\/kswitch OR *\/kpasswd)))
 
 // linux/cron_persistence.yml — Cron persistence - scheduled-job file written (auditd)
 key:cron_persist AND (NOT (exe:(*\/dpkg OR *\/rpm OR *\/apt OR *\/apt\-get OR *\/yum OR *\/dnf OR *\/zypper OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)))
@@ -274,7 +274,7 @@ EventID:4720 AND (NOT SubjectUserName:svc_iam_provisioning)
 EventID:4698 AND (TaskContent:(*\-enc\ * OR *\-EncodedCommand* OR *\-w\ hidden* OR *\-WindowStyle\ Hidden* OR *FromBase64String* OR *\\mshta.exe* OR *\\regsvr32.exe* OR *\\rundll32.exe* OR *DownloadString* OR *IEX\(* OR *IEX\ * OR *\|\ IEX*))
 
 // persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line or script consumer
-(EventID:20 AND (Destination:(*powershell* OR *cmd.exe* OR *mshta* OR *wscript* OR *cscript* OR *rundll32* OR *\-enc* OR *FromBase64String*))) OR (EventID:20 AND Type:*Script*)
+(EventID:20 AND (Destination:(*powershell* OR *cmd.exe* OR *mshta* OR *wscript* OR *cscript* OR *rundll32* OR *\-enc\ * OR *\-ec\ * OR *\-EncodedCommand* OR *FromBase64String*))) OR (EventID:20 AND Type:*Script*)
 
 // privilege_escalation/adcs_esc1_san_mismatch_4886.yml — AD CS certificate request (ESC1 triage surface)
 EventID:(4886 OR 4887)

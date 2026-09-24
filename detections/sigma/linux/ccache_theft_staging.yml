@@ -1,22 +1,27 @@
-title: Kerberos ccache file staged by a copy/transfer/interpreter process
+title: Kerberos ccache file named on a command line (theft / staging)
 id: 2eefd732-05eb-45cd-b50b-e0d3946d5ee3
 status: experimental
 description: |
   Detects the T1558.005 (Ccache Files) theft invariant on Linux: a Kerberos
-  credential-cache file handled by a copy/archive/transfer/encode/interpreter
-  process. On Linux a TGT lives on disk as a ccache - the default MIT path is
-  /tmp/krb5cc_<uid> (or a named *.ccache when KRB5CCNAME points at one). Legitimate
-  Kerberos consumers (kinit, sssd, sshd, the owning app) reach the ccache through
-  libkrb5 using the default/KRB5CCNAME location - they do NOT name the path on a
-  command line. So a ccache path appearing in the argv of cp/tar/base64/scp/curl/
-  python is the tell: someone is collecting the ticket off disk to replay it
-  (Pass-the-Ticket, T1550.003) as the user without their password. This keys on the
-  handling process, not a tool name, so it fires on hand-rolled exfil the same as on
-  tooling. It is the first-class *nix half of the Kerberos-forgery coverage whose
+  credential-cache file named in a process's argv. On Linux a TGT lives on disk as a
+  ccache - the default MIT path is /tmp/krb5cc_<uid> (or a named *.ccache when
+  KRB5CCNAME points at one). The processes that use a ccache (sssd, sshd, the owning
+  app) reach it through libkrb5 via the default/KRB5CCNAME location and do not put the
+  path on a command line; the exception is the krb5 client utilities themselves
+  (kinit/klist/kdestroy/kvno/kswitch/kpasswd take `-c <ccache>`), which filter_krb5_clients
+  excludes. So a ccache path in anyone else's argv - cp, tar, base64, scp, curl, python,
+  or a renamed or static binary - is the tell: someone is collecting the ticket off disk
+  to replay it (Pass-the-Ticket, T1550.003) as the user without their password. This
+  keys on the path, not on a list of handling tools, so it fires on hand-rolled and
+  renamed exfil the same as on stock tooling. It is the first-class *nix half of the
+  Kerberos-forgery coverage whose
   Windows/AD side lives in the credential_access Sigma rules and the Golden/Silver
   absence searches - the forged tickets in dotfiles-Offense's golden-ticket / silver-
   ticket flows are written to and used from an Administrator.ccache, which is exactly
   what this catches when it is copied or exfiltrated.
+  Blind spot, stated: argv-only telemetry cannot see a process that opens the ccache
+  without naming it (a glob expanded in-process, a path read from a file, KRB5CCNAME
+  inherited from the environment).
   Complementary hardening (not this rule): enable an auditd file watch on the ccache
   directory (e.g. -w /tmp -p r -k ccache) to also see plain reads, and alert on
   KRB5CCNAME / /etc/krb5.conf tampering.
@@ -28,6 +33,7 @@ references:
   - https://attack.mitre.org/detectionstrategies/DET0024/
 author: dotfiles-Defense
 date: 2026-07-29
+modified: 2026-09-23
 tags:
   - attack.credential-access
   - attack.t1558.005
@@ -40,37 +46,34 @@ detection:
       - '/tmp/krb5cc_'
       - '.ccache'
       - 'krb5.ccache'
-  selection_handling:
+  # This rule used to AND selection_ccache with an Image|endswith list of 25 handling
+  # tools (cp, tar, base64, curl, python, ...) while its description said it keyed on the
+  # handling process "not a tool name". It did not: `cp $(which cp) /tmp/.x; /tmp/.x
+  # /tmp/krb5cc_0 /tmp/out`, or any static exfil binary off the list, walked past it
+  # (#324). The ccache path in argv is the signal on its own, so the tool list is gone
+  # and the only exclusion is the short, closed set of programs that name a ccache
+  # legitimately.
+  #
+  # The trade, stated: this filter is keyed on Image, so a binary renamed to `klist`
+  # evades it. That is one name out of six, chosen by the attacker on purpose, where the
+  # old gate let through every name that was not one of 25 - a far narrower hole, and
+  # the narrowest argv-only telemetry allows. Do not grow this list with general tools
+  # (rm, chown, ls): a cleanup script that names the ccache is an allowlist-by-parent
+  # problem, see falsepositives, and every general tool added here is a free rename.
+  filter_krb5_clients:
     Image|endswith:
-      - '/cp'
-      - '/mv'
-      - '/dd'
-      - '/cat'
-      - '/tac'
-      - '/tar'
-      - '/gzip'
-      - '/bzip2'
-      - '/xz'
-      - '/zip'
-      - '/base64'
-      - '/xxd'
-      - '/scp'
-      - '/rsync'
-      - '/sftp'
-      - '/nc'
-      - '/ncat'
-      - '/socat'
-      - '/curl'
-      - '/wget'
-      - '/openssl'
-      - '/python'
-      - '/python3'
-      - '/perl'
-      - '/ruby'
-  condition: selection_ccache and selection_handling
+      - '/kinit'
+      - '/klist'
+      - '/kdestroy'
+      - '/kvno'
+      - '/kswitch'
+      - '/kpasswd'
+  condition: selection_ccache and not filter_krb5_clients
 falsepositives:
   - Backup, migration, or SSO troubleshooting tooling that legitimately archives or
     copies ccache files (allowlist the specific parent process or path).
+  - Logout / PAM / tmp-cleanup scripts that rm or chown a /tmp/krb5cc_* by name
+    (allowlist by parent process, not by adding rm to filter_krb5_clients).
   - Automation that base64/tar's whole directories (e.g. /tmp) for support bundles -
     scope by the exact ccache path if this is noisy.
 level: high

@@ -1,6 +1,6 @@
 title: AS-REP roast - TGT issued without pre-authentication (4768 type 0)
 id: 8334b896-9247-4716-b33e-eca7d1e0e883
-status: experimental
+status: test
 description: |
   Detects the AS-REP roast invariant itself: a Kerberos TGT (4768) issued for a
   non-machine account with Pre-Authentication Type 0 - i.e. the account has "do not

@@ -10,11 +10,13 @@ description: |
   security agent watching it) are unlocked and unwatched first. That shape is
   expressed by the correlation rule.
   Generic `category: process_creation` so it matches both Security-4688 and Sysmon-1;
-  it names only Image and CommandLine, which both channels carry.
+  it names only Image, CommandLine, and (in the filter) ParentImage, which both channels
+  carry - 4688 as ParentProcessName, mapped by the windows-audit pipeline.
 references:
   - https://attack.mitre.org/techniques/T1489/
 author: dotfiles-Defense
 date: 2026-08-05
+modified: 2026-09-23
 name: service_stop_command
 tags:
   - attack.impact
@@ -47,10 +49,30 @@ detection:
     CommandLine|contains:
       - 'Stop-Service'
       - 'Stop-Process'
-  condition: 1 of selection_*
+  filter_maintenance_parent:
+    # DEPLOY-REQUIRED: replace with the SPECIFIC maintenance tooling in YOUR estate that
+    # legitimately tears down many services at once - an application suite's restart
+    # script host, a vendor uninstaller. Until filled this excludes only the example, so a
+    # suite that cycles five services on every patch night trips the burst below.
+    # Run detections/sigma/deploy-required.sh to find this.
+    #
+    # On the BASE event rather than as a raised threshold: raising gte to clear your
+    # noisiest suite blunts the rule for every host. And deliberately a parent list, never
+    # a host list - an allowlisted host is a host where ransomware is free to run.
+    #
+    # DO NOT put general-purpose deployment agents here (ccmexec.exe, PSEXESVC.exe,
+    # gpscript.exe, your RMM agent). Those are exactly how ransomware operators push the
+    # teardown script across an estate, so allowlisting one blinds this rule to the attack
+    # it exists for. A parent is also inherited: anything the allowlisted binary can be
+    # made to spawn is suppressed with it, which is why the list must stay narrow.
+    ParentImage|endswith:
+      - '\app-suite-maintenance.exe' # example — replace with your maintenance tooling
+  condition: 1 of selection_* and not filter_maintenance_parent
 falsepositives:
   - Patching, application restarts, and troubleshooting stop services one at a time -
     which is why the base is informational and the burst count below carries the signal.
+  - Suite maintenance that cycles many services at once - allowlist its specific parent
+    in filter_maintenance_parent.
 level: informational
 ---
 title: Mass service stop - the ransomware pre-encryption teardown (T1489)
@@ -95,7 +117,8 @@ correlation:
     gte: 5
     field: CommandLine
 falsepositives:
-  - Scripted maintenance / deployment that cycles an application's whole service set
-    (allowlist the host or the parent process, or raise the threshold there).
+  - Scripted maintenance that cycles an application's whole service set - allowlist its
+    specific parent in the base rule's filter_maintenance_parent (not a deployment agent,
+    and not the host; see the comment there for why).
   - Uninstall routines for suites that register many services.
 level: high

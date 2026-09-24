@@ -24,6 +24,51 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **Weekly detection review (#324): one rule contradicted its own description, five
+  scoping fixes, two status corrections.** The review found no coverage holes and no
+  unpaired red attacks. Each change below that has a new near-miss fixture was checked
+  against the pre-change rule first, so the fixtures are regression tests, not assertions.
+  - **`ccache_theft_staging` claimed tool-name independence it did not have.** Its
+    description said it keyed on the handling process "not a tool name", but the condition
+    ANDed an `Image|endswith` list of 25 tools. A copied or renamed `cp`, or any static
+    exfil binary not on the list, walked past it. The ccache path in argv is now the whole
+    signal. The only exclusion is `filter_krb5_clients`, the six krb5 utilities that name a
+    ccache legitimately with `-c`. The description no longer says those never do. The
+    trade is stated in the rule: a binary renamed to `klist` evades an Image filter, which
+    is one attacker-chosen name out of six where the old gate let through every name not
+    among 25. The renamed-binary TP did not fire on the old rule.
+  - **`jenkins_script_console` paged on `/scriptApproval`.** `uri|contains: '/script'` also
+    matched the In-Process Script Approval page, which is routine admin activity, and it
+    fired at `high`. That page is now excluded with `filter_script_approval`, not by
+    anchoring with `endswith`: nothing pins whether `uri` holds a parsed path or the
+    Audit Trail line it came from, and an anchored match silently dies on the second shape.
+    The redundant `/scriptText` entry is gone, since `/script` is its prefix.
+  - **`service_stop_burst` had nowhere to put the allowlist its prose asked for.** The
+    base event gains `filter_maintenance_parent` (DEPLOY-REQUIRED), with a comment saying
+    never to list a deployment agent (ccmexec, PSEXESVC, gpscript, RMM) or a host, because
+    that is how the real teardown gets pushed. Its TN is six distinct stops from the
+    allowlisted parent, past the `gte: 5` threshold. The generated Splunk search mixes
+    `OR` and `NOT` the same way the BitLocker rule's does, and is recorded in the
+    precedence allowlist with the same reading.
+  - **`ntds_dump_ntdsutil_vss_4688`**: `selection_shadow` put the binary name inside its
+    CommandLine tokens (`'vssadmin create shadow'`), so
+    `C:\Windows\System32\vssadmin.exe create shadow` did not match. It now uses the verbs
+    alone, with a new regression fixture. The bare-Image `selection_diskshadow` branch is
+    kept on purpose and now says why: diskshadow runs from a `.dsh` script, so a verb gate
+    would miss the real attack.
+  - **`wmi_event_subscription_consumer`**: the bare `-enc` keyword also matched
+    `-encoding`. It is now anchored as `'-enc '`, `'-ec '` and `-EncodedCommand`.
+  - **`entra_sp_credential_backdoor`** gains `filter_app_automation` (DEPLOY-REQUIRED),
+    keyed on the rotation principal's **object id** via `InitiatedBy|contains`. That is the
+    `entra_directory_role_grant` shape, for the same reasons. Its own top false positive is
+    CI/CD secret rotation, and it was the one credential-backdoor rule with neither a
+    filter nor a reason for lacking one. The hand-written Sentinel form is unchanged,
+    matching its `entra_illicit_consent_grant` sibling, which also leaves the allowlist
+    to the Sigma rule.
+  - **`asrep_roast_4768` and `kerberoasting_rc4_tgs` are now `status: test`.** Both are
+    invariant tripwires with committed TP and TN fixtures and no placeholder, which is
+    what `test` means here.
+
 - **`detections/README.md`'s tables had drifted from the corpus (#314).** Adds the ten
   missing substitution rows — `aws_snapshot_share_external`, `azure_vm_run_command`,
   `azure_keyvault_bulk_secret_read`, both remaining `gcp_*` rules,

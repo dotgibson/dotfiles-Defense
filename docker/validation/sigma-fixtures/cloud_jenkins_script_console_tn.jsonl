@@ -1,0 +1,2 @@
+{"Event": {"System": {"Channel": "jenkins"}, "EventData": {"uri": "/scriptApproval/approveSignature"}}}
+{"Event": {"System": {"Channel": "jenkins"}, "EventData": {"uri": "/manage/scriptApproval/"}}}
