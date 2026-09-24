@@ -24,7 +24,7 @@ manual Kali box. Two planes:
   [`sigma-cloud-manifest.tsv`](sigma-cloud-manifest.tsv)
   (`name / rule / tp-fixture / tn-fixture / expected-id`). Each rule is checked both ways —
   the true-positive fires the expected id, the true-negative (a benign near-miss) does not.
-  Pure Python, no engine: `pip install "pysigma==1.5.1" "pyparsing==3.3.3" &&
+  Pure Python, no engine: `pip install -c detections/requirements.txt pysigma pyparsing &&
   docker/validation/run-cloud-validation.sh`. Both pins matter — pyparsing is a
   transitive dep pySigma leaves floating, and 3.3.3 broke the condition parser this
   evaluator walks (SigmaHQ/pySigma#548); an unpinned `pip install pysigma` can still

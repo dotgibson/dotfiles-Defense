@@ -16,7 +16,7 @@
 #
 #   check-readme-gates.sh       # exit non-zero, with a specific reason, on a stale section
 #
-# Three assertions:
+# Four assertions:
 #
 #   1. COVERED — every hard gate in sigma.yml appears in the README's local block. This is
 #      the direction that bit us: a gate added to CI and never documented.
@@ -26,6 +26,12 @@
 #   3. COUNTS — the "N hard checks, one advisory" sentence and the numbered list both match
 #      the number of steps actually classified. A count is the cheapest thing to leave
 #      stale and the first thing a reader trusts.
+#   4. SAME INSTALL — the block's `pip install` reads the same `-r` requirements file(s) as
+#      sigma.yml's setup step. Matching on the command key alone would call any two
+#      `pip install` lines equal, and since the pins moved into detections/requirements.txt
+#      (#322) the block no longer shows versions inline — a block pointing at a different
+#      or stale file would install another toolchain than CI while every other check here
+#      stayed green.
 #
 # Steps are classified from sigma.yml itself, not from a list kept here — a hard-coded
 # list would be a third copy to drift:
@@ -165,6 +171,26 @@ for k, cmd in sorted(block_keys.items()):
             "detections/README.md's local block runs '{}', which is not a step in "
             "sigma.yml. Either it was retired from CI and should come out of the block, or "
             "it should be a gate and isn't.".format(k))
+
+# ── 4. SAME INSTALL ───────────────────────────────────────────────────────────
+def req_files(cmd):
+    """The files a pip command reads with -r / --requirement, in order."""
+    words, out = cmd.split(), []
+    for i, w in enumerate(words):
+        if w in ("-r", "--requirement") and i + 1 < len(words):
+            out.append(words[i + 1].strip("\"'"))
+        elif w.startswith("--requirement="):
+            out.append(w.split("=", 1)[1].strip("\"'"))
+    return out
+
+ci_reqs = sorted({f for s in setup for f in req_files(s["run"])})
+block_pip = block_keys.get("pip install")
+if ci_reqs and block_pip is not None and sorted(set(req_files(block_pip))) != ci_reqs:
+    failures.append(
+        "sigma.yml installs from {} but detections/README.md's block installs from {}. "
+        "The block is 'matching CI' only if it reads the same pins — point it at the same "
+        "requirements file.".format(", ".join(ci_reqs),
+                                    ", ".join(req_files(block_pip)) or "inline versions"))
 
 # ── 3. COUNTS ─────────────────────────────────────────────────────────────────
 # Spelled-out counts only — the README writes "Thirteen hard checks", not "13". The table

@@ -14,8 +14,8 @@
 #   run-cloud-validation.sh
 #   PYTHON=python3.11 run-cloud-validation.sh
 #
-# Requires a python3 with pysigma importable (pip install "pysigma==1.5.1"
-# "pyparsing==3.3.3" — the parser pin matters, see sigma-validation.yml). No engine download and
+# Requires a python3 with pysigma importable (pip install -c detections/requirements.txt
+# pysigma pyparsing — the parser pin matters, see that file's header). No engine download and
 # no pipeline: the evaluator is pure Python. CI installs pysigma and runs this directly
 # (see .github/workflows/sigma-validation.yml).
 # ──────────────────────────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ fail_preflight() {
 [[ -f "$MANIFEST" ]] || fail_preflight "manifest not found: $MANIFEST"
 [[ -f "$EVAL" ]] || fail_preflight "evaluator not found: $EVAL"
 command -v "$PYTHON" >/dev/null 2>&1 || fail_preflight "python3 not found"
-"$PYTHON" -c 'import sigma' 2>/dev/null || fail_preflight "pysigma not importable (pip install \"pysigma==1.5.1\" \"pyparsing==3.3.3\")"
+"$PYTHON" -c 'import sigma' 2>/dev/null || fail_preflight "pysigma not importable (pip install -c detections/requirements.txt pysigma pyparsing)"
 
 pass=0
 fail=0

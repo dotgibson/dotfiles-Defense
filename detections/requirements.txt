@@ -1,0 +1,38 @@
+# detections/requirements.txt — the Sigma toolchain the detection-content gate runs.
+# ──────────────────────────────────────────────────────────────────────────────
+# .github/workflows/sigma.yml installs exactly this (`pip install -r`), and so does the
+# local block in detections/README.md — check-readme-gates.sh asserts they name the same
+# file. The cloud validation plane takes its pysigma + pyparsing from here too, as
+# constraints (`-c`), so there is one copy of these versions, not three.
+#
+# splunk drives the compile gate + savedsearches deploy form; elasticsearch (lucene) and
+# kusto (Sentinel KQL) drive the multi-SIEM deploy forms in gen-siem.sh.
+#
+# EVERYTHING IS PINNED, including what is only transitive, because this is a hard gate and
+# its verdict has to be reproducible:
+#   - pySigma used to float, and 1.5.0 is the release that swapped the static ATT&CK table
+#     for a download — the tag gate's behaviour changed underneath CI with no repo change
+#     (#172).
+#   - pyparsing is transitive (pySigma asks only for `>=3.2.5,<4.0.0`), so 3.3.3 arrived
+#     under a job that called itself pinned. It rewrote infix_notation as a shunting-yard
+#     algorithm and every `selection and not filter` rule — most of this corpus — died on
+#     `TypeError: 'str' object is not callable` in sigma/conditions.py. Fixed upstream in
+#     pySigma 1.5.1 (SigmaHQ/pySigma#548); the pin stays because pyparsing just showed it
+#     can change the verdict on its own (#321).
+#
+# A pin nothing watches is the quieter failure: the gate keeps passing against a toolchain
+# that ages out of the ecosystem, and the eventual forced bump is large and unreviewed. So
+# these live in a real requirements file, where Renovate's pip_requirements manager reads
+# them, and renovate.json groups every bump into ONE `ci(deps)` PR — pySigma, pyparsing and
+# the backends are coupled, and separate PRs would each go red waiting for the others.
+# That PR runs the whole corpus through every gate. A bump that turns it red is the
+# INTENDED outcome — it is the conversation, not noise to close (#322).
+#
+# docker/validation/zircolite-constraints.txt pins the same pysigma + pyparsing pair for
+# the host validation plane; Renovate bumps both files in the same grouped PR.
+pysigma==1.5.1
+pyparsing==3.3.3
+sigma-cli==3.0.2
+pysigma-backend-splunk==2.1.0
+pysigma-backend-elasticsearch==2.1.0
+pysigma-backend-kusto==1.0.1

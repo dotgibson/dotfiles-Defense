@@ -155,12 +155,15 @@ for a reader while CI is still green. It stays quiet for upstream commits that d
 `entries/`, since nothing here reads anything else. Not in the list above because it is
 scheduled, not part of the per-change gate.
 
-Run it locally (any pySigma backend):
+Run it locally (any pySigma backend). The toolchain versions live in
+[`requirements.txt`](requirements.txt), the same file CI installs — every one pinned,
+pyparsing included, with the reasons in its header. Renovate watches it and raises bumps as
+one grouped `ci(deps)` PR that runs the whole corpus through these gates; a bump that turns
+them red is that PR doing its job (#322).
 
 ```sh
 # pinned, matching CI (splunk + elasticsearch + kusto backends)
-pip install "pysigma==1.5.1" "pyparsing==3.3.3" "sigma-cli==3.0.2" "pysigma-backend-splunk==2.1.0" \
-            "pysigma-backend-elasticsearch==2.1.0" "pysigma-backend-kusto==1.0.1"
+pip install -r detections/requirements.txt
 sigma check --fail-on-issues -c detections/sigma-validation-config.yml detections/sigma/   # lint
 detections/sigma/convert.sh splunk                                                         # compile → SPL
 detections/siem/gen-siem.sh --check                                                        # deploy-form drift (Splunk/Sentinel/Elastic)
