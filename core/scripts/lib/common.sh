@@ -2408,6 +2408,11 @@ _core_fanout_count_hits() { # _core_fanout_count_hits <repo-root> <live-count>
     CHANGELOG*.md | V[0-9]-PROPOSAL.md) continue ;;
     esac
     [[ -f "$root/$file" ]] || continue
+    # Binaries hold no claim, and gawk in a UTF-8 locale warns on their bytes (assets/demo.gif).
+    # A NUL byte marks one. Counted, not `grep -I`: BusyBox grep accepts -I and ignores it, so
+    # the Alpine leg still read a PNG fixture's bytes as prose. LC_ALL=C because BSD tr in a
+    # UTF-8 locale rejects those same bytes ("Illegal byte sequence") on the macOS leg.
+    [[ "$(LC_ALL=C tr -d '\000' <"$root/$file" | wc -c)" -eq "$(wc -c <"$root/$file")" ]] || continue
     awk -v f="$file" -v want="$want" '
       # Number words the fleet actually writes, plus bare digits. An unknown word is not a
       # count and is skipped rather than guessed at.

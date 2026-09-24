@@ -43,9 +43,9 @@ ZPLUGINDIR="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins"
 typeset -gA ZPLUGIN_PINS=(
   romkatv/zsh-defer                          53a26e287fbbe2dcebb3aa1801546c6de32416fa
   jeffreytse/zsh-vi-mode                      91cafe4a09b6670cb8e761aa413e5f7b9e00816f
-  zsh-users/zsh-history-substring-search      14c8d2e0ffaee98f2df9850b19944f32546fdea5
+  zsh-users/zsh-history-substring-search      a0bdb0d47dbaba31dba2db7af8c48a5d9c74049a
   zsh-users/zsh-autosuggestions               85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
-  zsh-users/zsh-syntax-highlighting           2fc57d63067c18b1100ecdbf684fa5baf49459d1
+  zsh-users/zsh-syntax-highlighting           0bfcb582e71d3abe604ce67bc0fe5a21f377507e
   Aloxaf/fzf-tab                              24105b15714bfec37989ed5c5b6e60f572253019
   MichaelAquilina/zsh-you-should-use          5f3d129864ee4505043d88c3486224f1d75b692e
   olets/zsh-transient-prompt                 bdd5917f38db4b4995134e8fb0251ce01cd9a068

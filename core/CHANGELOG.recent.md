@@ -5,10 +5,160 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v7.11.0 … v7.4.4), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v7.12.0 … v7.5.0), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v7.12.0] - 2026-09-24
+
+### Security
+
+- **The CI floor's template-injection rule now covers push-trigger ref names and workflow
+  inputs.** Rule 7 of `scripts/modern-baseline.yml` bans an attacker-influenced `${{ }}`
+  expression inside a `run:` body, and it named `github.head_ref` — the fork branch on a
+  pull request — but not `github.ref_name`, which on a `push` or tag event is the same
+  attacker-chosen string by another trigger (git refnames allow `$ ; & | ( ) { }`). It now
+  bans `github.ref_name` and, for uniformity, `github.base_ref`. And its `inputs.` exemption,
+  earned by the composite `setup-core-tools/action.yml`, was applied to every gated file,
+  which left bare `inputs.*` ungated in the workflows — where it is `workflow_dispatch` free
+  text or a value a sibling repo feeds one of Core's `*-call.yml@vN` workflows. A new rule
+  7b (`banned_run_interpolation_contexts_workflow_only`) bans it under `.github/workflows/`
+  alone. Both were free: every occurrence in the tree was already routed through `env:`
+  (#1160).
+
+- **The CI floor bans `secrets: inherit`, and Core stops documenting it.** The caller
+  example at the top of `claude-routines-call.yml`, the shape the seven OS repos were told
+  to copy, passed `secrets: inherit`. That hands the called `@v7` workflow every secret the
+  caller repo holds, declared or not, at a moving tag the caller does not pin. The seven live
+  callers had already moved to the explicit `CLAUDE_CODE_OAUTH_TOKEN:` mapping, so only the
+  comment was wrong, and it now shows the mapping. A new rule 9 in `scripts/modern-baseline.yml`
+  (`banned_call_secrets`) reads the value the way rule 5b reads `write-all`: anchored to the
+  key, bare or quoted, a trailing comment tolerated. It was green on arrival, and no workflow
+  in the fleet passes it (#1160).
+
+### Changed
+
+- **Two zsh plugin pins roll forward in `zsh/45-plugins.zsh`** (#1156, the freshness bot):
+  `zsh-history-substring-search` `14c8d2e0ffae` → `a0bdb0d47dba` and `zsh-syntax-highlighting`
+  `2fc57d63067c` → `0bfcb582e71d`. This is the one change in the release that reaches a
+  host, so it is recorded here even though a bot landed it — `CONTRIBUTING.md` has no
+  carve-out for automation. Both ranges were read against the upstream compare: the first is
+  two commits touching only `README.md` (+2/-2, a zplug snippet fix), the second one commit
+  adding an Arch install path to `INSTALL.md` (+8/-0). So the pins move and no plugin code
+  does; the other six pins were already current.
+- **The scaffold's README is now linted for real, and held to Core's.** The suite drove the
+  scaffolded repo's markdown leg through a shim that records argv and exits 0, so the README
+  `new-os-repo.sh` writes was never judged by the `.markdownlint.jsonc` it writes beside it,
+  and its hand-copied shield block could drift from Core's unnoticed (#1162).
+  `35-new-os-repo.sh` now runs the real `markdownlint-cli2` on it wherever the tool is
+  installed (CI's main leg installs the pinned one), and asserts the header and every
+  shield link definition match Core's `README.md` with the repo name swapped. `dotgibson-*`
+  (Core's release, on purpose) and `ci-url` (`lint.yml`, not `ci.yml`) are the stated
+  exceptions.
+- **`new-os-repo.sh` writes the fleet's shield row into the README it scaffolds.** A checkup
+  that fetched every badge and link target across the fifteen public READMEs found the two
+  newest repos opening with no shield row at all — `dotfiles-NixOS` because this scaffold
+  wrote none, and its generated `.markdownlint.jsonc` deliberately left out the MD033
+  allowance the row needs ("a fresh OS repo has no showcase page"). The scaffold now writes
+  the eight-badge row above the title, the link definitions at the end, the CI badge pointing
+  at the `lint.yml` it also writes, and the scoped `MD033` `allowed_elements` stanza the
+  siblings carry — so the next repo starts where dotfiles-NixOS had to be brought to by hand
+  ([dotfiles-NixOS#11](https://github.com/dotgibson/dotfiles-NixOS/pull/11)). The same
+  checkup fixed a dead bash link here (#1151), two logo slugs simple-icons no longer ships in
+  each of `dotfiles-Windows` and `dotfiles-Defense`, and `dotfiles-Offense`'s Python badge,
+  which read CPython's GitHub releases — it publishes tags — and rendered "no releases or repo
+  not found".
+- **Two tool pins roll forward: `markdownlint-cli2` 0.23.2 → 0.23.3 and the maintenance
+  bots' Claude Code CLI 2.1.273 → 2.1.281.** The weekly freshness review (#1159) found them
+  the only pins behind upstream that are not deliberately held. `markdownlint-cli2` 0.23.3
+  only updates dependencies, and both versions pin the `markdownlint` library at 0.41.1, so
+  no rule is added, renamed or given a new default in Core or in the `lint-call.yml`
+  consumers. The pre-commit hook's `rev` moves with it, because §9 keeps the two in step.
+  Both are registry installs, so there is no `*_SHA256` to refresh. `shfmt` stays held at
+  3.13.1 (#813).
+- **Both atuin guard premises re-measured against 18.23.0; both `VERIFIED_AGAINST` anchors move**
+  ([#1158](https://github.com/dotgibson/dotfiles-core/issues/1158), run 35956975589). Upstream
+  released 18.23.0 on 2026-09-22, one minor past the 18.22.0 the anchors in `zsh/00-tools.zsh`
+  carried. One `atuin-guard-verify` dispatch, checksum and build-provenance verified:
+  silent discard `holds` (its report job skipped), and autostart self-healing is `moved`
+  exactly as it was on 18.22.0. `absent` and `stale` spawn a daemon and land their row, and
+  `wedged` blocks on the pidfile lock and loses it (upstream `atuinsh/atuin#4114`, still open).
+  That is the shape #1102 already answers by probing and warning rather than standing down, so
+  the auto-filed #1177 asks nothing new of Core. Editing an anchor is a claim that the premise
+  was re-measured at that version, so this is that claim and not a version bump.
+
+  18.23.0 continues 18.22.0's direction, and the block now says so: an FTS index over captured
+  command output and a sync engine replacing the event bus both sit behind the socket, with no
+  client-side spool or direct-write fallback (the one PR that would have changed the client's
+  connect shape, atuin #4168, closed unmerged). A dead socket still discards, and
+  `atuinsh/atuin#3382` (accept-but-silent) is still open, so the steer away from socket
+  activation stays.
+
+### Fixed
+
+- **The test suite no longer writes to the developer's real `~/.config/zsh/.zshrc`.** Every
+  fixture moves `HOME` into the sandbox, but an interactive fleet shell also exports
+  `ZDOTDIR=~/.config/zsh`, and the driver defaults `ZDOTDIR` only when it is unset. So a
+  `make audit` (or `make release`) run from such a shell had the driver and scaffold
+  fixtures re-point the real `$ZDOTDIR/.zshrc` into a temp dir, deleted at exit, and the
+  next shell started bare. The same inherited mise activation state made sandboxed shells
+  error on an untrusted `mise/config.toml`, so the audit went red locally while CI stayed
+  green. `test-core.sh` now unsets `ZDOTDIR`, the four `XDG_*_HOME` dirs and every
+  `MISE_*`/`__MISE_*` variable before any fragment runs, and `05-suite-shape.sh` asserts
+  that none survive. The `test/check-links.sh` that `new-os-repo.sh` scaffolds clears the
+  same variables itself.
+- **The fan-out count gate no longer reads binary files.** `_core_fanout_count_hits` ran its
+  awk over every tracked file, `assets/demo.gif` included, so every `make audit` printed a
+  gawk `Invalid multibyte data detected` warning under a UTF-8 locale. It now skips any file
+  containing a NUL byte. It does not use `grep -I`, because BusyBox grep accepts that flag
+  and ignores it. The verdict never changed (a GIF makes no fan-out claim); the audit's
+  output is quieter.
+- **`new-os-repo.sh` writes the `LICENSE` its README shield advertises.** The shield row
+  added above carries an MIT License badge linking `blob/main/LICENSE`, but nothing wrote
+  that file (it is in neither `core.manifest` nor `core.vendor`), so a new repo's first
+  push would show `license | not identified` and a link that 404s. The scaffold now writes
+  Core's `LICENSE` (the whole fleet's, byte for byte) with the birth year, and the
+  generated `.markdownlint.jsonc` names the real reason `MD041` is off: the README opens
+  with the back-to-top anchor and shield row, not an H1.
+
+### Documentation
+
+- **`PORTING-MATRIX.md` and the README stop contradicting the fleet**
+  ([#1174](https://github.com/dotgibson/dotfiles-core/issues/1174), from the #1157 sweep).
+  The sesh row's Arch cell asserted `AUR⁹`, but `dotfiles-Arch` go-installs sesh and says
+  the AUR `sesh-bin` is not needed; it is now `go⁹`, and footnote ⁹ names Arch among the
+  go-install consumers. Footnote ³³ gave Gentoo's `~arch` neovim range two ways eleven lines
+  apart (0.12.5 and 0.12.3); both now read 0.12.5, as the TSV does. Footnote ³⁴ said jq 1.8.2
+  reached "all three" supported Alpine stable branches; Alpine carries four, and 3.21 is
+  still on 1.7.1. The README's install steps gain the Defense clone and name Debian and
+  NixOS among the Linux distros, matching the "all ten bootstraps" line beneath them.
+
+- **Every registered README hero is now filmed** — the tenth, `dotfiles-NixOS`'s, landed as
+  [dotfiles-NixOS#8](https://github.com/dotgibson/dotfiles-NixOS/pull/8), so the "still to
+  be filmed" prose in `CLAUDE.md`, `assets/hero-repos.txt` and `assets/README.md` is retired.
+  It was the one row no rootless chroot could film — its host guard asserts
+  `sudo nixos-rebuild switch --upgrade` and `up -n` probes `$PATH` for it — so it was filmed
+  on NixOS-WSL, and `assets/README.md` gains "Filming the NixOS hero": the two-rebuild
+  install, nixpkgs' own render kit (vhs 0.11.0, not the 0.12.0 that writes no gif), the
+  Adwaita Mono rejection the `❖` fallback needs, and the trap that is NixOS-WSL's alone — a
+  `nixos-rebuild switch` resets the kernel-global `binfmt_misc` table, which every distro on
+  the machine shares, so the distro you drive from loses `wsl.exe` until it is re-registered
+  (the recipe is there). The install also surfaced
+  [dotfiles-NixOS#6](https://github.com/dotgibson/dotfiles-NixOS/issues/6): `home.nix` named
+  two attributes nixpkgs does not have, invisible to that repo's parse-only gate. `§9k`'s
+  rule stands: a registered tape with no gif is a skip, so a re-render that has not landed
+  never blocks the gate.
+- **`PORTING-MATRIX.md` gains an eza fleet-version table (footnote ³⁹), against a 0.23.5
+  floor.** 0.23.5 added `--hyperlink=auto` and lines-of-code counting, and an older eza
+  rejects the flag outright. The `/tool-scout` scan in
+  [#1158](https://github.com/dotgibson/dotfiles-core/issues/1158) held it on a watch that ends
+  only when every lane is at or above that version, and until now nothing recorded where the
+  lanes sit. `scripts/fleet-package-versions.tsv` now carries seventeen rows, each read from
+  the distro's own index. Seven are at or above; Alpine edge/3.24/3.23 and Gentoo stable are
+  one patch short on 0.23.4; Ubuntu 24.04 (0.18.2), both Leap backports (0.20.4), Debian 13
+  (0.21.0) and Alpine 3.22/3.21 are further back. `gen-porting-matrix.sh` registers the block
+  and marks the eza row. Core enforces no eza floor, and `zsh/` passes no flag that needs one.
 
 ## [v7.11.0] - 2026-09-18
 
@@ -1936,31 +2086,3 @@ repo-meta and stays upstream:
   otherwise `-n -v`, then `-n true`, then a warning that names the actual problem (no
   terminal and a password required) before the driver's "cannot provision packages" line.
   (`lib/bootstrap-lib.sh`, `scripts/test/85-escalation.sh`)
-
-## [v7.4.4] - 2026-09-13
-
-### Changed
-
-- **`new-os-repo.sh` scaffolds the starter bootstrap in the driver form** (#999). A repo
-  born from the generator declares what it is (`BOOTSTRAP_NAME`, `BOOTSTRAP_OS`,
-  `BOOTSTRAP_LOGIN_SHELL=0` — a starter must not `chsh`), links its ZDOTDIR entry pair in
-  `bootstrap_wire_post_loader`, and hands over to `blib_main` — the shape all eight fleet
-  repos on the driver have (#986) rather than the one they just left. The starter's hand
-  copy of the link step (and of `blib_link`'s backup suffix, "keep the two in step") goes,
-  and so does its `zsh/zshrc.zsh` copy of the loader: the driver writes the managed
-  `~/.zshrc` and seeds `$ZDOTDIR/.zshrc` as a symlink to it, one definition for the fleet.
-  The generated `test/check-links.sh` asserts that shape, stands a placeholder in for the
-  tpm clone (the one network fetch in the wiring; the suite tests links, not GitHub), and
-  keeps its three idempotency witnesses — which now hold the driver to the same bar.
-  (`scripts/new-os-repo.sh`, `scripts/test/35-new-os-repo.sh`)
-
-### Fixed
-
-- **A second bootstrap run invokes no mutating command** (#999, found by holding the
-  driver to the scaffold's idempotency witness). `blib_link_core` ran `chmod +x` on Core's
-  tmux scripts and `bin/` tools and `mkdir -p`/`chmod 700` on `~/.ssh` on EVERY run, and
-  `blib_install_core_guard` rewrote an identical pre-commit hook every time — no-ops on
-  disk, but a witness that logs every `mkdir`/`chmod` reads each as a change. Every one
-  now asks first (`_blib_ensure_exec`, `_blib_private_dir`, a byte compare against the
-  hook text held in `_blib_core_guard_hook`) and the hook's bytes are unchanged.
-  (`lib/bootstrap-lib.sh`)
