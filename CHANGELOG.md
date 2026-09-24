@@ -379,6 +379,16 @@ under `[Unreleased]` from here.
 
 ### Changed
 
+- **The Sigma toolchain pins moved where Renovate can see them (#322).** pySigma,
+  pyparsing, sigma-cli and the three backends were strings inside `sigma.yml`'s `run:` line,
+  so nothing noticed when they aged. They now live in `detections/requirements.txt`, which
+  the sigma gate installs with `-r`, the cloud validation plane with `-c`, and the README's
+  local block with `-r`. `check-readme-gates.sh` gains a fourth assertion that the block
+  reads the same file as CI, because the block no longer shows versions inline.
+  `renovate.json` also watches `docker/validation/zircolite-constraints.txt` and groups every
+  bump into one `ci(deps)` PR, since the packages are coupled. A bump that turns the hard
+  gate red is that PR's intended outcome.
+
 - **`bootstrap.sh` is the fleet's pilot of Core's bootstrap driver, `blib_main`**
   (dotgibson/dotfiles-core#976). The shared half of every bootstrap — the flag loop, the
   escalator, the Core symlink surface, the band-85 role stage, the managed `~/.zshrc`, the

@@ -23,6 +23,7 @@ on:
       - "docker/validation/run-sigma-validation.sh"
       - "docker/validation/run-cloud-validation.sh"
       - "docker/validation/zircolite-constraints.txt"
+      - "detections/requirements.txt"
       - ".github/workflows/sigma-validation.yml"
   pull_request:
     paths:
@@ -34,6 +35,7 @@ on:
       - "docker/validation/run-sigma-validation.sh"
       - "docker/validation/run-cloud-validation.sh"
       - "docker/validation/zircolite-constraints.txt"
+      - "detections/requirements.txt"
       - ".github/workflows/sigma-validation.yml"
 
 concurrency:
@@ -90,8 +92,12 @@ jobs:
         # error is NOT counted as a passing true-negative (see run-cloud-validation.sh on
         # why that distinction is load-bearing), so this would have surfaced as a hard fail
         # the moment anyone touched detections/sigma/, on a PR that changed none of it.
-        # See .github/workflows/sigma.yml for the full story and SigmaHQ/pySigma#548.
-        run: pip install "pysigma==1.5.1" "pyparsing==3.3.3"
+        # See detections/requirements.txt for the full story and SigmaHQ/pySigma#548.
+        #
+        # -c, not -r: the versions come from the sigma gate's requirements file, so there
+        # is one copy for Renovate to bump (#322), but only these two get installed — the
+        # evaluator needs no CLI and no backends.
+        run: pip install -c detections/requirements.txt pysigma pyparsing
 
       - name: Validate cloud sigma rules (TP fires + TN silent, nested fields preserved)
         run: bash docker/validation/run-cloud-validation.sh

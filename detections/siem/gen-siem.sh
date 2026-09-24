@@ -23,7 +23,7 @@
 #   gen-siem.sh            # (re)write all three generated artifacts from sigma/
 #   gen-siem.sh --check    # exit 1 (with a diff) if any committed artifact is out of date
 #
-# Deps: sigma-cli + the pinned backends (splunk, elasticsearch, kusto) — see the CI job.
+# Deps: sigma-cli + the pinned backends (splunk, elasticsearch, kusto) — detections/requirements.txt.
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -55,7 +55,7 @@ esac
 # detections/check-attack-tags.sh.
 SIGMA_BIN="${SIGMA_BIN:-$(command -v sigma 2>/dev/null || command -v sigma-cli 2>/dev/null || true)}"
 if [[ -z "$SIGMA_BIN" ]]; then
-  echo "neither 'sigma' nor 'sigma-cli' found — pip install sigma-cli pysigma-backend-splunk pysigma-backend-elasticsearch pysigma-backend-kusto" >&2
+  echo "neither 'sigma' nor 'sigma-cli' found — pip install -r detections/requirements.txt (the pinned toolchain CI runs)" >&2
   exit 1
 fi
 

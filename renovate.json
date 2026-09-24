@@ -1,4 +1,17 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["local>dotgibson/.github"]
+  "extends": ["local>dotgibson/.github"],
+  "pip_requirements": {
+    "managerFilePatterns": ["/(^|/)zircolite-constraints\\.txt$/"]
+  },
+  "packageRules": [
+    {
+      "description": "The Sigma toolchain (detections/requirements.txt + docker/validation/zircolite-constraints.txt) moves as ONE PR: pySigma, pyparsing and the backends are coupled, so per-package PRs would each go red waiting for the others. Every bump runs the corpus through the hard gates; a red one is the intended conversation, so it is never automerged (#322).",
+      "matchManagers": ["pip_requirements"],
+      "groupName": "sigma toolchain",
+      "semanticCommitType": "ci",
+      "semanticCommitScope": "deps",
+      "automerge": false
+    }
+  ]
 }

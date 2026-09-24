@@ -15,5 +15,10 @@
 # Constrains ONLY the two packages whose pairing broke. zircolite's pipeline and backend
 # versions stay its own business: pinning those here would silently override the engine's
 # own compatibility choices, which is a different (and upstream's) call to make.
+#
+# Renovate watches this file through a managerFilePatterns entry in renovate.json — the
+# name is deliberately not *requirements*, because it is not our dependency list — and
+# bumps the pair in the same grouped PR as detections/requirements.txt, which pins the
+# same two for the sigma gate. Keep the two files agreeing (#322).
 pysigma==1.5.1
 pyparsing==3.3.3
