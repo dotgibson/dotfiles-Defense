@@ -161,7 +161,6 @@ pyparsing included, with the reasons in its header. Renovate watches it and rais
 one grouped `ci(deps)` PR that runs the whole corpus through these gates; a bump that turns
 them red is that PR doing its job (#322).
 
-
 ```sh
 # pinned, matching CI (splunk + elasticsearch + kusto backends)
 pip install -r detections/requirements.txt
