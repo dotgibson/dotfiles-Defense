@@ -137,7 +137,7 @@ and a footnote here.** The footnotes below stay hand-written.
 
 | Tool             | Arch              | openSUSE          | Alpine                     | Gentoo (atom)                       | Kali (apt)²¹ᵃ              | Debian/Ubuntu |
 | ---------------- | ----------------- | ----------------- | -------------------------- | ----------------------------------- | -------------------------- | ------------- |
-| eza              | `eza`             | `eza`             | `eza`                      | `sys-apps/eza`                      | `eza`                      | `eza`         |
+| eza³⁹            | `eza`             | `eza`             | `eza`                      | `sys-apps/eza`                      | `eza`                      | `eza`         |
 | bat              | `bat`             | `bat`             | `bat`                      | `sys-apps/bat`                      | `bat`⁴                     | `bat`⁴        |
 | fd               | `fd`              | `fd`              | `fd`                       | `sys-apps/fd`                       | `fd-find`⁴                 | `fd-find`⁴    |
 | ripgrep          | `ripgrep`         | `ripgrep`         | `ripgrep`                  | `sys-apps/ripgrep`                  | `ripgrep`                  | `ripgrep`     |
@@ -179,7 +179,7 @@ and a footnote here.** The footnotes below stay hand-written.
 | shfmt⁷ ²¹        | `shfmt`           | `shfmt`           | `shfmt`                    | go²¹                                | `shfmt`⁷                   | `shfmt`       |
 | ouch²¹           | `ouch`            | `ouch`¹⁸          | testing¹⁴                  | GURU¹² ²¹                           | cargo²¹                    | —²⁹           |
 | jujutsu (jj)⁸    | `jujutsu`         | `jujutsu`         | `jujutsu`                  | `dev-vcs/jj`²¹                      | cargo²¹                    | —²⁹           |
-| sesh⁹            | AUR⁹              | go⁹               | go⁹                        | go⁹                                 | go⁹                        | go³           |
+| sesh⁹            | go⁹               | go⁹               | go⁹                        | go⁹                                 | go⁹                        | go³           |
 | difftastic¹⁰     | `difftastic`      | `difftastic`      | `difftastic`               | `dev-util/difftastic`               | asset²⁸                    | asset²⁸       |
 | git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb`      | `git-absorb`               | `dev-vcs/git-absorb`                | `git-absorb`               | `git-absorb`  |
 | ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸      | `ast-grep`                 | cargo²¹                             | cargo²¹                    | —²⁹           |
@@ -279,12 +279,11 @@ Repology reports the newest version in `::gentoo` regardless of keyword, so an a
 re-read would overwrite the one number this paragraph is about. This note said 0.26.11 was
 the stable one and 0.26.12 `~`-only until 2026-09-17, by which time 0.26.12 had stabilised:
 exactly the drift the generated table exists to end.
-**Maintainer-needed as of 2026-08-30** (dotfiles-Gentoo#144): availability is unchanged —
-it is the maintainer that went away, not the package — but orphaning is what precedes a
-treeclean, which is the same hedge `dotfiles-Gentoo` already carries on `w3m` and `lnav`.
-Between this, the openSUSE paragraph above (dotfiles-openSUSE#113) and the Alpine one below
-(dotfiles-Alpine#122), **three distros in this one footnote moved in a fortnight** —
-re-query this row on every stamp. Read the `.json` endpoint or the ebuild, **not** the
+Gentoo's maintainer-needed flag from 2026-08-30 (dotfiles-Gentoo#144) was lifted by
+2026-09-23 — a person maintainer is back in `metadata.xml` — and between that, the openSUSE
+paragraph above (dotfiles-openSUSE#113) and the Alpine one below (dotfiles-Alpine#122),
+**three distros in this one footnote moved within a month** — re-query this row on every
+stamp. Read the `.json` endpoint or the ebuild, **not** the
 rendered arch table on `packages.gentoo.org`: it reported `app-shells/starship` as having
 no stable amd64 keyword where the ebuild says `KEYWORDS="amd64 arm64"`.
 Where unpackaged: `mise use -g tree-sitter` or `cargo install tree-sitter-cli`.
@@ -349,7 +348,8 @@ Packaged in the AUR as `sesh-bin` (which
 `provides`/`conflicts` `sesh`, so `paru -S sesh` still resolves — there is no
 AUR package under the bare name), Homebrew
 (`sesh`), and nixpkgs (`sesh`); **not** in Arch-official, openSUSE, Alpine,
-Gentoo, Fedora, or Debian/Kali apt — so most of the fleet uses
+Gentoo, Fedora, or Debian/Kali apt — so most of the fleet, Arch included (its
+`bootstrap.sh` builds from source and skips the AUR `sesh-bin`), uses
 `go install github.com/joshmedeski/sesh/v2@latest` (note the **v2** module path),
 the same build path as starship/yazi/atuin where unpackaged. `go` is already a
 pinned mise runtime, so the install works everywhere; `mise use -g go` first on a
@@ -866,28 +866,30 @@ least one lane — openSUSE only on Tumbleweed, **not** Leap 16.0/16.1 — and t
 ask for it.
 
 Versions **verified against each distro's own package pages** on 2026-08-12, every row
-re-verified the same way on 2026-09-06, not taken from a repology snapshot. Upstream is
-0.14.1 (2026-09-05). Rolling targets get one query each, because that query is the complete
+re-verified the same way on 2026-09-06 and again on 2026-09-23, not taken from a repology
+snapshot. Upstream is 0.14.1 (2026-09-05). Rolling targets get one query each, because that query is the complete
 answer; **Fedora is versioned, so every supported stable release is named separately**
 rather than collapsed into one unqualified ✓:
 
 | Target          | Release                                      | lnav              |
 | --------------- | -------------------------------------------- | ----------------- |
 | Arch            | `extra` (rolling)                            | 0.14.1-1          |
-| openSUSE        | Tumbleweed (rolling); **not** Leap 16.0/16.1 | 0.14.0            |
+| openSUSE        | Tumbleweed (rolling); **not** Leap 16.0/16.1 | 0.14.1            |
 | Alpine          | `edge/community` — **native musl build**     | 0.14.1-r0         |
 | Homebrew        | rolling                                      | 0.14.1            |
-| **Fedora**      | **Rawhide / F45**                            | **0.14.0-3.fc45** |
+| Fedora          | Rawhide (F46)                                | 0.14.1-1.fc46     |
+| **Fedora**      | **F45**                                      | **0.14.0-3.fc45** |
 | **Fedora**      | **F44**                                      | **0.13.2-2.fc44** |
 | **Fedora**      | **F43**                                      | **0.12.4-2.fc43** |
 | **Kali/Debian** | rolling / sid                                | **0.13.2**        |
 | **Gentoo**      | `app-admin/lnav`                             | **0.11.2**        |
 
-So "Fedora has it" is true, but as of the 2026-09-06 re-check "Fedora is current" is no
-longer true anywhere: 0.14.1 landed on 2026-09-05 and Rawhide/F45 still carries 0.14.0-3, one
-patch back, while F44 and F43 track one and two minors back respectively. The rolling three —
-Arch, Alpine and Homebrew — picked 0.14.1 up within a day; nothing else has. Two targets lag
-enough to be worth naming:
+So "Fedora has it" is true, and as of the 2026-09-23 re-check "Fedora is current" is true
+only on Rawhide: 0.14.1 landed on 2026-09-05 and Rawhide (F46) now carries 0.14.1-1, but F45
+branched before it and still carries 0.14.0-3, one patch back, while F44 and F43 track one and
+two minors back respectively. The rolling targets — Arch, Alpine and Homebrew within a day,
+Tumbleweed and Fedora Rawhide since — have all picked 0.14.1 up; no versioned stable release
+has. Two targets lag enough to be worth naming:
 
 - **Gentoo `app-admin/lnav` is 0.11.2** — the only version in the tree, stable on amd64/x86,
   and the package is flagged as **needing a new maintainer**, so do not expect it to close
@@ -913,11 +915,11 @@ including macOS"; Alpine falsified the first half, and Gentoo — checked agains
 rather than `packages.txt` alone — falsified what was left of it.) Availability, verified
 2026-08-12, Linux-repo coverage re-verified 2026-08-21 against both files, versions
 re-verified 2026-08-30 against each repo's own package pages, the Arch/Homebrew pair
-alone re-verified again 2026-09-06, and the Alpine row re-verified 2026-09-13 on all five
+alone re-verified again 2026-09-23, and the Alpine row re-verified 2026-09-13 on all five
 branches — the stables it had never named (the remaining rows still carry the 08-30 stamp):
 
-- **Arch `extra` and Homebrew** — 2.7.2 (Arch's package revision is `2.7.2-1`). Still the
-  same version on both, re-checked 2026-09-06: Arch shipped `2.7.2-1` that morning.
+- **Arch `extra` and Homebrew** — 2.7.3 (Arch's package revision is `2.7.3-1`). Still the
+  same version on both, re-checked 2026-09-23 (dotfiles-Arch#187).
 - **openSUSE Tumbleweed and nixpkgs** — 2.5.1, still current there. (These two shared a
   line with Arch and Homebrew while all four sat at 2.5.1; the split is what that line looks
   like once two of the four move and two do not.)
@@ -1379,7 +1381,7 @@ the version last **moved** — a row unchecked for 90 days is named on stderr by
 They get there by four different mechanisms and only one of them looks like a problem.
 Debian's is a **frozen archive**: the version is simply old, `apt` says so, and
 `dotfiles-Debian` declares a `# min:0.12.0` floor its CI enforces. Gentoo's is
-**keywords**: 0.12.0–0.12.3 are all in `::gentoo` right now, all `~arch`, so a stable
+**keywords**: 0.12.0–0.12.5 are all in `::gentoo` right now, all `~arch`, so a stable
 profile silently picks 0.11.7 and reports success. Nothing in an availability check can
 see it — the atom exists, installs, and is the wrong version.
 
@@ -1504,9 +1506,9 @@ enforces are now enumerated by one mechanism rather than three prose styles.
 <!-- core:porting-matrix:end fleet-versions -->
 
 The two mechanics behind that table are the part worth reading. Alpine backported
-`jq 1.8.2-r0` into `main` on all three of its supported stable branches rather than leaving
-them on the version they shipped with — exactly the behaviour a `# min:` floor is supposed
-to reward.
+`jq 1.8.2-r0` into `main` on three of its four supported stable branches (3.22–3.24; 3.21
+still carries 1.7.1) rather than leaving them on the version they shipped with — exactly the
+behaviour a `# min:` floor is supposed to reward.
 
 Fedora reaches that floor by the opposite mechanic, and it is the one crossing with a date
 on it. F45 branched from Rawhide on 2026-08-11 and goes GA **2026-10-20**. F43/F44 sit at
@@ -1590,6 +1592,44 @@ same question as "which package owns this path" that every other column answers.
 has no path-ownership index; the nearest real equivalent is grepping the install receipts
 under the Homebrew prefix, which is neither a stable interface nor something Core may name.
 Treat this cell as "the closest available", and prefer not to build a gate on it.
+
+³⁹ **eza — every target packages it, but not every target packages the one Core would want
+to use next.** 0.23.5 (2026-07-09) added `--hyperlink=auto` and lines-of-code counting.
+Plain `--hyperlink` is older; the `=auto` value is not, and an older eza **rejects** it
+rather than ignoring it. That matters because the flag would land in `ls`/`ll`/`la`, the
+most-used commands on the box, in the one file whose contract is graceful degradation. So
+0.23.5 is not a floor Core enforces today — `zsh/` passes no flag that needs it — it is the
+floor `.claude/tool-decisions.md`'s `eza --hyperlink=auto` watch row is waiting on, recorded
+here so that watch has a table to read rather than a guess.
+
+<!-- core:porting-matrix:gen fleet-versions-eza -->
+
+| Target              | `eza`   | vs ≥ 0.23.5 | verified   |
+| ------------------- | ------- | ----------- | ---------- |
+| Arch                | 0.23.5  | at or above | 2026-09-24 |
+| openSUSE Tumbleweed | 0.23.5  | at or above | 2026-09-24 |
+| Fedora Rawhide      | 0.23.5  | at or above | 2026-09-24 |
+| Fedora 45           | 0.23.5  | at or above | 2026-09-24 |
+| Fedora 44           | 0.23.5  | at or above | 2026-09-24 |
+| Fedora 43           | 0.23.5  | at or above | 2026-09-24 |
+| Homebrew            | 0.23.5  | at or above | 2026-09-24 |
+| Alpine edge         | 0.23.4  | **below**   | 2026-09-24 |
+| Alpine 3.24         | 0.23.4  | **below**   | 2026-09-24 |
+| Alpine 3.23         | 0.23.4  | **below**   | 2026-09-24 |
+| Gentoo stable       | 0.23.4  | **below**   | 2026-09-24 |
+| Alpine 3.22         | 0.21.3  | **below**   | 2026-09-24 |
+| Debian 13           | 0.21.0  | **below**   | 2026-09-24 |
+| Alpine 3.21         | 0.20.12 | **below**   | 2026-09-24 |
+| openSUSE Leap 16.1  | 0.20.4  | **below**   | 2026-09-24 |
+| openSUSE Leap 16.0  | 0.20.4  | **below**   | 2026-09-24 |
+| Ubuntu 24.04        | 0.18.2  | **below**   | 2026-09-24 |
+
+<!-- core:porting-matrix:end fleet-versions-eza -->
+
+Read it as the watch's answer: the watch ends when every row reads "at or above". The long
+tail is the frozen and slow-moving lanes — Ubuntu 24.04, both openSUSE Leap backports, Debian
+13 and the older Alpine stables — and the Alpine and Gentoo-stable rows one patch release
+short, which are the ones likely to move first.
 
 ## Clipboard packages to install (backends for Core's `clip`)
 

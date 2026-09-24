@@ -753,9 +753,9 @@ _cache_completion ty ty generate-shell-completion zsh
 # above is how a detector silently starts comparing against the wrong number: that paragraph
 # also names 18.16.1, and a re-verification that measures against the wrong version is worse
 # than one that never runs. Editing it is a CLAIM that the premise was re-measured at that
-# version — not a version bump. Last re-measured 2026-09-16: one atuin-guard-verify dispatch
-# against upstream's then-latest 18.22.0 (run 35163334747, checksum + build-provenance
-# verified), `holds` on both premises — both report jobs skipped, which is that verdict (#1045).
+# version — not a version bump. Last re-measured 2026-09-24: one atuin-guard-verify dispatch
+# against upstream's then-latest 18.23.0 (run 35956975589, checksum + build-provenance
+# verified), `holds` — the report job skipped, which is that verdict (#1158; 18.22.0 was #1045).
 #
 # 18.22.0 RAISES THE STAKES; it does not lower them. That release moves history DELETION into
 # the daemon (atuin #4045), moves SYNC into it (#4055), and adds command-output capture with a
@@ -765,21 +765,29 @@ _cache_completion ty ty generate-shell-completion zsh
 # guard's first candidate. That is not a collision: the candidate list below names `atuin.sock`
 # explicitly, so it probes the history daemon's socket and no other. Stated because the next
 # reader will otherwise have to re-derive it from the candidate list.
-# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.22.0
+#
+# 18.23.0 goes further the same way: an FTS index over captured command output, and a sync
+# engine in place of the event bus, both behind the socket. It adds no client-side spool and no
+# fallback to a direct write (the one PR that would have changed the client's connect shape,
+# atuin #4168, closed unmerged), so a dead socket still discards, and this guard is still the
+# only thing that notices. atuin #3382 (accept-but-silent) is still open too, so the steer away
+# from socket activation below stands.
+# CORE_ATUIN_GUARD_VERIFIED_AGAINST=18.23.0
 #
 # ONE ANCHOR PER PREMISE. The autostart handling below rests on a DIFFERENT upstream fact,
 # measured by a different mode (`--premise autostart`) and reported under its own issue title,
 # so it gets its own line rather than borrowing this one — otherwise re-measuring either
 # premise would silently re-date the claim about the other.
 #
-# AND AT 18.22.0 THAT PREMISE DOES NOT HOLD, which is why this anchor and the one above carry
-# the same version and opposite verdicts. Re-measured 2026-09-17 with the `wedged` arms the
-# harness had been missing (#1091, run 35171886253): `absent` and `stale` both spawn a daemon
+# AND AT 18.23.0 THAT PREMISE STILL DOES NOT HOLD, which is why this anchor and the one above
+# carry the same version and opposite verdicts. First measured on 18.22.0 with the `wedged` arms
+# the harness had been missing (#1091, run 35171886253); re-measured 2026-09-24 on 18.23.0 (run
+# 35956975589, #1177), unchanged: `absent` and `stale` both spawn a daemon
 # and land their row, and `wedged` — a daemon alive but not serving — does not, blocking on the
 # pidfile lock and exiting 1 (atuinsh/atuin#4114, #1102). The anchor still records what was last
 # measured, which is what it is for; the verdict lives in the code below, which no longer stands
 # down under autostart.
-# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=18.22.0
+# CORE_ATUIN_AUTOSTART_VERIFIED_AGAINST=18.23.0
 #
 # So this guard is DATA-LOSS PREVENTION, not a latency optimisation: keep probing (see the
 # throttle below) and, the first time nothing is listening, force the daemon off for THIS shell
