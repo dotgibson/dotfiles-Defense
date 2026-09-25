@@ -32,7 +32,7 @@
 # the host validation plane; Renovate bumps both files in the same grouped PR.
 pysigma==1.5.1
 pyparsing==3.3.3
-sigma-cli==3.0.2
+sigma-cli==3.1.0
 pysigma-backend-splunk==2.1.0
-pysigma-backend-elasticsearch==2.1.0
+pysigma-backend-elasticsearch==2.1.1
 pysigma-backend-kusto==1.0.1
