@@ -83,7 +83,7 @@ jobs:
     # points at today" decides what executes with push access to this repo. dotfiles-Windows
     # already pins this same caller for this same reason (RELEASE-STRATEGY.md, auto-tag row).
     # Renovate bumps the SHA; the trailing comment is the human-readable version.
-    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@12bf3df6d0cec6dd6b5d5f9f2a47598f008c1001 # v7.12.0
+    uses: dotgibson/dotfiles-core/.github/workflows/auto-tag-call.yml@1c85891e82b930a0ae4e853e932ce34dc0ee9ef7 # v7.13.0
     # `inputs` is empty on a push event, so this reads `patch` there and the chosen
     # component on a dispatch. One caller, both flows.
     with:

@@ -20,6 +20,7 @@
 # Config (override in os/local before this is sourced):
 #   UPDATE_CHECK_ENABLED   1        # set 0 to disable the check entirely (e.g. Kali during ops)
 #   UPDATE_CHECK_INTERVAL  86400    # seconds between background checks
+#   CORE_RELINK_NUDGE      1        # set 0 to silence the "relink pending" line (#1154)
 #
 # THE STAGED HOST (NON-MUTABLE-HOST-PROPOSAL.md §4.2, #1049). An atomic (bootc) or
 # transactional (MicroOS) host does not apply an upgrade — it STAGES one, and a reboot makes
@@ -561,6 +562,39 @@ _core_whatsnew_nudge() {
 # TTY gate at the CALL SITE, like _core_welcome above: the function stays pure
 # compare+stamp+print logic the unit suite can drive with captured stdout.
 if ((CORE_WHATSNEW_NUDGE)) && [[ -t 1 ]]; then _core_whatsnew_nudge; fi
+
+# ── Relink nudge: the checkout moved, the box's symlinks did not (#1154) ─────────────
+# The whatsnew nudge above says Core CHANGED; this one says the box has not caught up with
+# it. bootstrap.sh stamps which Core it last wired against, and when the checkout's
+# core.lock names a different one a contract change (a new link, a moved destination) is
+# not live here yet. Every shell until it is, like the staged-host line: the fix is one
+# idempotent command, and once run the nudge is gone. SILENT on everything but `pending` —
+# no stamp (a box bootstrapped before it existed), a stamp from another checkout, and Core
+# itself (no core.lock) all print nothing, so a bare box stays quiet.
+#
+# Standalone-source safe exactly as the nudge above: the reader is band 30. Fork-free, so it
+# costs the startup path two small builtin reads.
+: "${CORE_RELINK_NUDGE:=1}"
+
+_core_relink_nudge() {
+  emulate -L zsh
+  ((${+functions[_core_relink_state]})) || return 0
+  local REPLY REPLY2
+  local -a reply
+  _core_relink_state
+  [[ "$REPLY2" == pending ]] || return 0
+  if [[ -z ${NO_COLOR:-} ]]; then
+    # print -P WITHOUT interpolating the detail: it quotes the stamp's core_tag, which is
+    # data from a file on disk, and a % in it would be a prompt escape. The fixed text is
+    # prompt-expanded; the detail is printed raw between the colour escapes.
+    print -Pn "%F{$_PKGUP_ACCENT}󰑓 relink pending%f %F{$_PKGUP_MUTED}— "
+    print -rn -- "$REPLY"
+    print -P "%f"
+  else
+    print -r -- "󰑓 relink pending — $REPLY"
+  fi
+}
+if ((CORE_RELINK_NUDGE)) && [[ -t 1 ]]; then _core_relink_nudge; fi
 
 # ══════════════════════════════════════════════════════════════════════════════
 # up — apply updates. INTERACTIVE by design, and now a DISPATCHER: the verb is Core's

@@ -5,10 +5,51 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v7.12.0 … v7.5.0), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v7.13.0 … v7.6.0), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v7.13.0] - 2026-09-25
+
+### Added
+
+- **Each box now records which Core it last relinked against, and says when it is behind.**
+  `core.lock` records what a repo vendored, and nothing recorded what a box had relinked. So
+  the fallback deletion in #763 had to guess when the fleet had re-bootstrapped, and the only
+  check was a one-liner typed on each host. `bootstrap.sh` (via `blib_main`, or
+  `blib_write_relink_stamp` for a bootstrap off the driver) now writes
+  `${XDG_STATE_HOME:-~/.local/state}/dotfiles-core/bootstrap.lock`, host state in
+  `core.lock`'s read-never-sourced shape. It holds `core_sha`, `core_tag`, the lib that ran,
+  the mode and when. A dry run, an `--only`/`--skip` partial wiring or an aborted run leaves
+  the previous stamp. An identical re-run touches nothing, so the scaffolded `check-links.sh`
+  idempotency witness stays silent. `core-doctor` gains a `relink` row and a `.relink` key in
+  `--json`, which print `relinked at v7.11.0 — repo vendors v7.12.0, run ./bootstrap.sh
+  --links-only`. A "relink pending" line fires at shell start only on a real mismatch
+  (`CORE_RELINK_NUDGE=0` silences it). A box bootstrapped before this reads `unknown`, never
+  red. `bootstrap-test.yml`'s links-only leg asserts the stamp wherever the vendored lib knows
+  it (#1154).
+- **`CORE_SHADOW_CLASSICS=0` stops Core taking over standard command names.** An operator
+  who works on other people's machines trains habits on Core that fail elsewhere.
+  `cd`→`z` jumps by frecency where `cd` would have errored on a typo, and `rm -i` teaches
+  you to expect a prompt that no foreign box gives. Exported before the shell loads Core
+  (in `~/.zshenv`), the knob skips every alias in `zsh/20-aliases.zsh` that takes over a
+  standard name: `ls`, `cat`, `cd`, `vim`, `diff`, `rm`/`cp`/`mv`, `mkdir`, `tree`, `du`,
+  `ps`, `top`/`htop`, `watch`, `df`, `ping` and `help`. The names that collide with
+  nothing (`ll`, `la`, `lt`, `llt`, `catp`, `cdi`, `bat`) stay. It is unset by default,
+  so nothing changes for anyone who does not set it. In `aliases.md` each governed row now
+  has a Note that starts with _shadow_, and the suite reads the shadow set from those
+  comments, so a new shadow without the gate fails. Removing the shadows outright was
+  decided against until a real incident is recorded, the same bar as #692 (#1155).
+
+### Documentation
+
+- **The bash 3.2 floor stays, and `PORTABILITY.md` §1 now says why.** Retiring it for
+  `lib/*.sh` behind a re-exec stage-0 was costed first (#1153). It would shed about 30
+  lines of `lib/`. The injection guard stays because namerefs still expand a subscript, the
+  §5k gate stays re-scoped, and a `blib_main` stage-0 misses `dotfiles-MacBook`, the only
+  host on 3.2. `RELEASE-STRATEGY.md` §2 records it as a candidate declined before it reached
+  the Breaking Backlog.
 
 ## [v7.12.0] - 2026-09-24
 
@@ -2047,42 +2088,3 @@ repo-meta and stays upstream:
   a pre-existing real `~/.zshrc` and warned about it, but never bumped `BLIB_BACKED`, so the
   closing tally said `0 backed up` on the same run that printed the backup (the R3 research
   run on Fedora exposed it). Every backup site now counts; the bootstrap-lib suite asserts it.
-
-## [v7.5.0] - 2026-09-14
-
-### Added
-
-- **Four prototype `os.capabilities` keys, for the non-mutable host research** (R2 of
-  `NON-MUTABLE-HOST-PROPOSAL.md`, #1004). `scripts/check-capabilities.sh` accepts
-  `PROVISIONER` (`mutable` | `atomic` | `transactional` | `declarative`), `PKG_APPLY` (the
-  verb that makes a staged change live), and `PKG_PENDING_EXIT_SOME` / `_NONE` (a count
-  verb whose answer is its exit status) — all optional, all read by no consumer yet — and
-  lets `PKG_COUNT_PENDING` be absent under `PROVISIONER=declarative`. Every existing
-  declaration validates unchanged. The three prototype declarations they were written for
-  live under `scripts/research/nonmutable/`, each validated, with the R2 verdict
-  (additive — no schema version, no re-author) in their README. (`scripts/check-capabilities.sh`,
-  `examples/os.capabilities.example`, `scripts/test/55-capabilities.sh`)
-- **The R3 harness for the non-mutable host research, and its answer** (#1004).
-  `scripts/research/nonmutable/home.nix` is a home-manager module that tries to own
-  everything the driver wires as out-of-store links into the vendored `core/`;
-  `scripts/research/nonmutable-home-manager.sh` applies it, runs the repo's
-  `bootstrap.sh --links-only` over the result, switches again and records who owns each
-  path. `research-nonmutable.yml` gained a `homemanager` leg (Fedora 42, standalone) and
-  `research-nonmutable-vm.yml`'s NixOS guest applies it as a NixOS module. Measured
-  verdict, in `NON-MUTABLE-HOST-PROPOSAL.md` §5: **coexist** — the driver overwrites
-  home-manager's links silently, home-manager tolerates the driver's links but refuses to
-  activate over its zsh entry, so a fleet `home.nix` owns packages, the shell declaration,
-  tpm and PATH and declares no files.
-
-### Fixed
-
-- **The sudo keepalive no longer dies on a non-interactive run whose sudo needs no
-  password** (#1018, found by the non-mutable-host research on a booted bootc guest). The
-  prime was a bare `sudo -v`, and sudoers' default `verifypw=all` makes `-v` prompt unless
-  _every_ rule matching the user is NOPASSWD — Fedora's stock wheel rule beside a NOPASSWD
-  drop-in is one passworded rule too many, so a run with no terminal ended "authentication
-  failed" on a host where every command was passwordless. `blib_sudo_keepalive_start` now
-  primes by how the run can answer: `-v` at a terminal; `-A -v` when `SUDO_ASKPASS` is set;
-  otherwise `-n -v`, then `-n true`, then a warning that names the actual problem (no
-  terminal and a password required) before the driver's "cannot provision packages" line.
-  (`lib/bootstrap-lib.sh`, `scripts/test/85-escalation.sh`)
