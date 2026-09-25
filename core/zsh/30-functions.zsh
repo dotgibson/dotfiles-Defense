@@ -37,6 +37,12 @@ typeset -g _CORE_WHATSNEW_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles-
 # checkout root from it. _core_status_provenance is where that gate lives.
 typeset -g _CORE_LOCK_FILE="${${(%):-%x}:A:h:h:h}/core.lock"
 
+# The HOST's relink stamp (#1154) — which Core this box's symlinks were last wired against,
+# written by bootstrap.sh (core/lib/bootstrap-lib.sh :: blib_write_relink_stamp). core.lock
+# above is what the REPO vendored; this is what the BOX relinked. _core_relink_state
+# compares the two.
+typeset -g _CORE_RELINK_STAMP="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles-core/bootstrap.lock"
+
 # _core_install_prefix → the copy-pasteable "install" command prefix for this box.
 # Used by core-doctor (U2) and the command-not-found handler (U1) to turn a missing tool
 # into an actionable line instead of a bare ✗. Non-zero when it cannot answer, and the
@@ -156,6 +162,65 @@ _core_status_root() {
   emulate -L zsh
   [[ -r "$_CORE_LOCK_FILE" ]] || return 1
   print -r -- "${_CORE_LOCK_FILE:h}"
+}
+
+# _core_relink_state — has THIS BOX relinked against the Core its checkout vendors (#1154)?
+# Sets REPLY to a verdict, REPLY2 to a machine token (the _core_status_integrity convention),
+# and reply to (stamp_sha mode linked_at) for the JSON emitter. Tokens:
+#   current   the stamp's core_sha is core.lock's
+#   pending   it is not — the repo moved and the box has not re-run bootstrap
+#   unknown   no stamp (bootstrapped before it existed) or a malformed one — never red
+#   other     the stamp was written from a different checkout; informational
+#   na        no core.lock: this is Core itself, or not a consumer
+# FORK-FREE, because the shell-start nudge calls it on every interactive shell: both files
+# are read with the builtin `read`, never `$(_core_status_kv …)`, which forks per key.
+_core_relink_state() {
+  emulate -L zsh
+  local _l _k _v l_sha='' l_tag='' s_sha='' s_tag='' s_mode='' s_at='' s_dir=''
+  reply=('' '' '')
+  if [[ ! -r "$_CORE_LOCK_FILE" ]]; then
+    REPLY="no core.lock — not a vendored consumer"; REPLY2=na; return 0
+  fi
+  while IFS= read -r _l || [[ -n "$_l" ]]; do
+    _k="${_l%%=*}" _v="${_l#*=}"
+    case "$_k" in
+    core_sha) [[ -n "$l_sha" ]] || l_sha="$_v" ;;
+    core_tag) [[ -n "$l_tag" ]] || l_tag="$_v" ;;
+    esac
+  done <"$_CORE_LOCK_FILE"
+  if [[ ! -r "$_CORE_RELINK_STAMP" ]]; then
+    REPLY="unknown — bootstrapped before the relink stamp existed; re-run ./bootstrap.sh --links-only to record it"
+    REPLY2=unknown; return 0
+  fi
+  while IFS= read -r _l || [[ -n "$_l" ]]; do
+    [[ "$_l" == \#* ]] && continue
+    _k="${_l%%=*}" _v="${_l#*=}"
+    case "$_k" in
+    core_sha) [[ -n "$s_sha" ]] || s_sha="$_v" ;;
+    core_tag) [[ -n "$s_tag" ]] || s_tag="$_v" ;;
+    mode) [[ -n "$s_mode" ]] || s_mode="$_v" ;;
+    linked_at) [[ -n "$s_at" ]] || s_at="$_v" ;;
+    dotfiles) [[ -n "$s_dir" ]] || s_dir="$_v" ;;
+    esac
+  done <"$_CORE_RELINK_STAMP"
+  reply=("$s_sha" "$s_mode" "$s_at")
+  if (( ${#s_sha} != 40 )) || [[ "$s_sha" == *[^[:xdigit:]]* ]]; then
+    REPLY="unknown — the relink stamp is malformed (core_sha: ${s_sha:-empty}); re-run ./bootstrap.sh --links-only"
+    REPLY2=unknown; return 0
+  fi
+  if [[ -n "$s_dir" && "$s_dir" != "${_CORE_LOCK_FILE:h}" ]]; then
+    REPLY="last relinked from another checkout (${s_dir})"; REPLY2=other; return 0
+  fi
+  if [[ "$s_sha" == "$l_sha" ]]; then
+    REPLY="relinked at ${s_tag:-${s_sha[1,12]}}${s_at:+ (${s_at})}"; REPLY2=current
+  else
+    # Same tag, different sha: a fan-out of an untagged Core commit. Name the shas then, or
+    # the line reads "relinked at v7.12.0 — repo vendors v7.12.0".
+    local _from="${s_tag:-${s_sha[1,12]}}" _to="${l_tag:-${l_sha[1,12]}}"
+    [[ "$_from" == "$_to" ]] && _from="${s_sha[1,12]}" _to="${l_sha[1,12]}"
+    REPLY="relinked at ${_from} — repo vendors ${_to}, run ./bootstrap.sh --links-only"
+    REPLY2=pending
+  fi
 }
 
 # _core_status_os — the OS layer's NAME on stdout ("fedora"), non-zero when undeclarable.
@@ -1236,6 +1301,18 @@ _core_doctor_json() {
   # The wedged pid, or 0. A NUMBER rather than a boolean because the pid is the actionable part
   # — "wedged" tells you to go looking, the pid tells you what to kill.
   print -rn -- ",\"wedged_pid\":${_CORE_ATUIN_DAEMON_WEDGED:-0}"
+  # The host's relink stamp against core.lock (#1154) — a NEW key, so no published shape
+  # widens. `status` is the token set of _core_relink_state (current/pending/unknown/other/
+  # na); a release gate asks each box `jq -e '.relink.status == "current"'`. The stamp's own
+  # values are data a hand-edit could have put anything into, so they go through the escaper.
+  local REPLY2
+  local -a reply
+  _core_relink_state
+  print -rn -- "},\"relink\":{\"status\":"; _core_status_jstr "$REPLY2"
+  print -rn -- ",\"detail\":"; _core_status_jstr "$REPLY"
+  print -rn -- ",\"core_sha\":"; _core_status_jstr "${reply[1]}"
+  print -rn -- ",\"mode\":"; _core_status_jstr "${reply[2]}"
+  print -rn -- ",\"linked_at\":"; _core_status_jstr "${reply[3]}"
   print -rn -- "},\"resolved\":{\"fd\":\"${FD_BIN:-}\",\"bat\":\"${BAT_BIN:-}\""
   (($+functions[_pkgup_mgr])) && print -rn -- ",\"pkg_manager\":\"$(_pkgup_mgr)\""
   print -r -- "}}"
@@ -1522,6 +1599,24 @@ _core_doctor_render() {
   if [[ -n "$wline" ]]; then
     print -r -- "${c}integrations wired${r}"
     print -r -- " $wline"
+  fi
+
+  # Has THIS BOX relinked against the Core its checkout vendors (#1154)? core.lock says what
+  # the repo holds; only bootstrap's stamp says what the symlinks were wired against. Past
+  # "\nopt-in" like the blocks above, and glyph-free, so the parity test cannot see it. Silent
+  # on `na` (Core itself, or no consumer checkout): there is nothing to compare.
+  local REPLY2 _rl_tok
+  local -a reply
+  _core_relink_state; _rl_tok=$REPLY2
+  if [[ "$_rl_tok" != na ]]; then
+    print -r -- "${c}relink${r}"
+    if [[ "$_rl_tok" == pending ]]; then
+      print -r -- "  ${y}${REPLY}${r}"
+    else
+      print -r -- "  ${d}${REPLY}${r}"
+    fi
+    [[ "$_rl_tok" == unknown ]] &&
+      print -r -- "  ${d}until then the live check is: CORE_CAP_LOUD=1 zsh -i -c 'print -r -- \${#_CORE_CAP}'${r}"
   fi
 
   # Resolved binary names + the detected package manager — the behaviour-affecting bits

@@ -6,14 +6,27 @@
 # Anything offensive/engagement-flavoured lives in dotfiles-Offense, not here.
 # ──────────────────────────────────────────────────────────────────────────────
 
+# ── classic-name shadows: CORE_SHADOW_CLASSICS=0 opts out (#1155) ────────────
+# Some aliases below take over a STANDARD command name (ls, cat, cd, vim, diff, rm/cp/mv
+# -i, mkdir -p, tree, du, ps, top, watch, df, ping, help). Each one's trailing comment
+# starts with `shadow`, which is also its Note in aliases.md. Two of them are not just
+# cosmetic: `cd`→`z` changes how a typo FAILS (it jumps by frecency instead of erroring),
+# and `rm -i` trains you to expect a prompt that no foreign box will give. Set
+# CORE_SHADOW_CLASSICS=0 in the ENVIRONMENT (e.g. ~/.zshenv) to keep the classic
+# meanings. The host-local 95-99 modules load too late to set it; there, unalias instead.
+# The names that collide with nothing stay: ll la lt llt catp cdi bat, and the tools
+# under their own names (eza, bat, z, nvim, dust, …). Removing the shadows outright
+# is a MAJOR that waits for a real incident — V8-PROPOSAL.md's non-goals, next to #692.
+_core_shadow() { [[ ${CORE_SHADOW_CLASSICS:-1} != 0 ]] }
+
 # ── ls -> eza ─────────────────────────────────────────────────────────────────
 if [[ -n ${HAVE_EZA:-} ]]; then
-  alias ls='eza --group-directories-first --icons=auto'
+  _core_shadow && alias ls='eza --group-directories-first --icons=auto'  # shadow
   alias ll='eza -lah --group-directories-first --icons=auto --git'
   alias la='eza -a  --group-directories-first --icons=auto'
   alias lt='eza --tree --level=2 --icons=auto'
   alias llt='eza --tree --level=3 -l --icons=auto'
-  alias tree='eza --tree --icons=auto'
+  _core_shadow && alias tree='eza --tree --icons=auto'  # shadow
   (($+functions[compdef])) && compdef eza=ls # reuse ls completion for eza
 else
   alias ll='ls -lah'
@@ -22,7 +35,7 @@ fi
 
 # ── cat -> bat (resolved name from 00-tools.zsh) ────────────────────────────────
 if [[ -n ${HAVE_BAT:-} ]]; then
-  alias cat="$BAT_BIN --paging=never"
+  _core_shadow && alias cat="$BAT_BIN --paging=never"  # shadow
   alias catp="$BAT_BIN"   # paged, full bat
   # …and `bat` under its CANONICAL name, mirroring the fd line below. Debian/Ubuntu/Kali
   # ship the binary as `batcat`, so without this the tool was installed and fully wired
@@ -44,18 +57,25 @@ fi
 
 # ── cd -> zoxide (z), interactive jump (zi), `-` to previous dir ─────────────
 if [[ -n ${HAVE_ZOXIDE:-} ]]; then
-  alias cd='z'    # zoxide: frecency-ranked directory jump
+  _core_shadow && alias cd='z'  # shadow · zoxide: frecency-ranked directory jump
   alias cdi='zi'  # interactive jump (pick from matches)
 fi
 alias -- -='cd -'  # previous directory
 
 # ── disk / process / monitor ──────────────────────────────────────────────────
-[[ -n ${HAVE_DUST:-} ]]  && alias du='dust'
-[[ -n ${HAVE_PROCS:-} ]] && alias ps='procs'
-[[ -n ${HAVE_BTOP:-} ]]  && alias top='btop' && alias htop='btop'
-[[ -n ${HAVE_VIDDY:-} ]] && alias watch='viddy'
+[[ -n ${HAVE_DUST:-} ]]  && _core_shadow && alias du='dust'  # shadow
+[[ -n ${HAVE_PROCS:-} ]] && _core_shadow && alias ps='procs'  # shadow
+[[ -n ${HAVE_BTOP:-} ]]  && _core_shadow && alias top='btop'  # shadow
+[[ -n ${HAVE_BTOP:-} ]]  && _core_shadow && alias htop='btop'  # shadow
+[[ -n ${HAVE_VIDDY:-} ]] && _core_shadow && alias watch='viddy'  # shadow
 # df → duf (modern, mountpoint-aware); classic `df -h` stays the bare-box fallback.
-if [[ -n ${HAVE_DUF:-} ]]; then alias df='duf'; else alias df='df -h'; fi
+if _core_shadow; then
+  if [[ -n ${HAVE_DUF:-} ]]; then
+    alias df='duf'  # shadow
+  else
+    alias df='df -h'  # shadow
+  fi
+fi
 
 # ── file manager ──────────────────────────────────────────────────────────────
 [[ -n ${HAVE_YAZI:-} ]] && {
@@ -97,7 +117,7 @@ fi
 #  timer" with "re-run on a change" would silently give you the wrong one.)
 
 # ── editor + misc QoL ─────────────────────────────────────────────────────────
-alias vim='nvim'
+_core_shadow && alias vim='nvim'  # shadow
 # diff: colourise ONLY when this box's diff actually supports `--color` (GNU does;
 # BSD/macOS diff — the dotfiles-MacBook target — and busybox diff on Alpine do NOT,
 # where an unconditional alias would make every `diff` invocation error). `--color`
@@ -110,16 +130,17 @@ alias vim='nvim'
 () {
   emulate -L zsh
   local bin="${commands[diff]}" cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/diff-color"
+  _core_shadow || return             # CORE_SHADOW_CLASSICS=0 → no alias, no probe
   [[ -z "$bin" ]] && return          # no diff at all → no alias
   if [[ -e "$cache" && ! "$bin" -nt "$cache" ]]; then
     # fresh cache: zero forks
-    [[ -s "$cache" ]] && alias diff='diff --color=auto'
+    [[ -s "$cache" ]] && alias diff='diff --color=auto'  # shadow
     return
   fi
   # (re)probe once, then persist the verdict (non-empty = supported) for next start.
   # `>|` forces the write past 10-options.zsh's NO_CLOBBER (loaded before 20-aliases.zsh).
   if diff --color=auto /dev/null /dev/null >/dev/null 2>&1; then
-    alias diff='diff --color=auto'
+    alias diff='diff --color=auto'  # shadow
     mkdir -p "${cache:h}" 2>/dev/null && print -rn -- 1 >| "$cache" 2>/dev/null
   else
     mkdir -p "${cache:h}" 2>/dev/null && print -rn -- '' >| "$cache" 2>/dev/null
@@ -187,18 +208,21 @@ alias notes='cd "$NOTES_DIR" && nvim .'
 
 # ── safety nets (POSIX, intentionally NOT modernized) ────────────────────────
 # rm: macOS overrides this to `trash` in os/macos.zsh when trash(1) is available.
-alias rm='rm -i'  # interactive
-alias cp='cp -i'  # interactive
-alias mv='mv -i'  # interactive
-alias mkdir='mkdir -p'  # create parents
+_core_shadow && alias rm='rm -i'  # shadow · interactive
+_core_shadow && alias cp='cp -i'  # shadow · interactive
+_core_shadow && alias mv='mv -i'  # shadow · interactive
+_core_shadow && alias mkdir='mkdir -p'  # shadow · create parents
 
 # ── help / docs ───────────────────────────────────────────────────────────────
 # tealdeer: `help <cmd>` → community-curated quick-reference (complement to man).
-[[ -n ${HAVE_TLDR:-} ]] && alias help='tldr'
+[[ -n ${HAVE_TLDR:-} ]] && _core_shadow && alias help='tldr'  # shadow
 
 # ── network conveniences (stay in Core; engagement-flavored -> Offense) ──────
 alias myip='curl -fsS https://ifconfig.me 2>/dev/null && echo'  # your public IP
 alias ports='ss -tulpn 2>/dev/null || netstat -tulpn'  # listening sockets (netstat fallback)
-[[ -n ${HAVE_GPING:-} ]] && alias ping='gping'
+[[ -n ${HAVE_GPING:-} ]] && _core_shadow && alias ping='gping'  # shadow
 # NOTE: `serve` is now a function in 30-functions.zsh (prints the reachable URL and
 # takes an optional port), replacing the old `python3 -m http.server` alias.
+
+# The shadow predicate is load-time only; do not leave it in the interactive namespace.
+unfunction _core_shadow
