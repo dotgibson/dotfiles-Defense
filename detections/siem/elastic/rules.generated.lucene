@@ -31,13 +31,13 @@ eventSource:iam.amazonaws.com AND (eventName:(CreateLoginProfile OR UpdateLoginP
 (OperationNameValue:(MICROSOFT.COMPUTE\/VIRTUALMACHINES\/RUNCOMMAND\/ACTION OR MICROSOFT.COMPUTE\/VIRTUALMACHINES\/RUNCOMMANDS\/WRITE OR MICROSOFT.COMPUTE\/VIRTUALMACHINESCALESETS\/VIRTUALMACHINES\/RUNCOMMAND\/ACTION OR MICROSOFT.COMPUTE\/VIRTUALMACHINESCALESETS\/VIRTUALMACHINES\/RUNCOMMANDS\/WRITE OR MICROSOFT.HYBRIDCOMPUTE\/MACHINES\/RUNCOMMANDS\/WRITE)) AND (NOT (Caller:(sp\-config\-management@example.onmicrosoft.com OR 00000000\-0000\-0000\-0000\-000000000000)))
 
 // cloud/entra_directory_role_grant.yml — Entra directory role assigned (tenant privilege escalation)
-(OperationName:(Add\ member\ to\ role OR Add\ eligible\ member\ to\ role OR Add\ member\ to\ role\ in\ PIM\ requested\ \(permanent\) OR Add\ member\ to\ role\ completed\ \(PIM\ activation\) OR Add\ member\ to\ role\ requested\ \(PIM\ activation\))) AND (NOT InitiatedBy:*00000000\-0000\-0000\-0000\-000000000000*)
+(OperationName:("Add member to role" OR "Add eligible member to role" OR "Add member to role in PIM requested \(permanent\)" OR "Add member to role completed \(PIM activation\)" OR "Add member to role requested \(PIM activation\)")) AND (NOT InitiatedBy:*00000000\-0000\-0000\-0000\-000000000000*)
 
 // cloud/entra_illicit_consent_grant.yml — Entra consent grant to a third-party app (illicit-consent triage)
-(OperationName:(Consent\ to\ application OR Add\ delegated\ permission\ grant OR Add\ OAuth2PermissionGrant)) AND (TargetResources:(*Mail.Read* OR *Mail.ReadWrite* OR *Mail.Send* OR *offline_access* OR *Files.Read.All* OR *Files.ReadWrite.All* OR *Sites.Read.All* OR *Directory.Read.All* OR *full_access_as_user*)) AND (NOT TargetResources:*00000000\-0000\-0000\-0000\-000000000000*)
+(OperationName:("Consent to application" OR "Add delegated permission grant" OR "Add OAuth2PermissionGrant")) AND (TargetResources:(*Mail.Read* OR *Mail.ReadWrite* OR *Mail.Send* OR *offline_access* OR *Files.Read.All* OR *Files.ReadWrite.All* OR *Sites.Read.All* OR *Directory.Read.All* OR *full_access_as_user*)) AND (NOT TargetResources:*00000000\-0000\-0000\-0000\-000000000000*)
 
 // cloud/entra_sp_credential_backdoor.yml — Entra service-principal credential added (app backdoor)
-(OperationName:(Add\ service\ principal\ credentials OR Add\ application\ credentials OR Update\ application\ \-\ Certificates\ and\ secrets\ management OR Update\ application\ –\ Certificates\ and\ secrets\ management)) AND (NOT InitiatedBy:*00000000\-0000\-0000\-0000\-000000000000*)
+(OperationName:("Add service principal credentials" OR "Add application credentials" OR "Update application \- Certificates and secrets management" OR "Update application – Certificates and secrets management")) AND (NOT InitiatedBy:*00000000\-0000\-0000\-0000\-000000000000*)
 
 // cloud/gcp_audit_log_sink_deleted.yml — GCP logging sink deleted / disabled (audit-log tampering)
 (gcp.audit.method_name:(*ConfigServiceV2.DeleteSink OR *ConfigServiceV2.UpdateSink OR *ConfigServiceV2.DeleteBucket)) AND (NOT gcp.audit.principal_email:logging\-terraform@example.iam.gserviceaccount.com)
@@ -307,7 +307,7 @@ TargetUserSid:S\-1\-5\-18 AND (NOT SubjectUserSid:S\-1\-5\-18)
 action:(add\ Owner* OR add\ Maintainer*)
 
 // pypi/pypi_token_release_upload.yml — PyPI release uploaded via token, not trusted publishing (supply-chain implant)
-action:new\ release AND (NOT publisher_type:trusted_publisher)
+action:"new release" AND (NOT publisher_type:trusted_publisher)
 
 // pypi/pypi_trusted_publisher_added.yml — PyPI trusted publisher added (credential-less publish backdoor)
 action:add* AND action:*trusted\ publisher*
