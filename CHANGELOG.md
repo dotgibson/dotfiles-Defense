@@ -24,6 +24,17 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **The host validation plane went red overnight with nothing in the repo changed: every
+  correlation rule stopped firing.** zircolite 3.7.6 floats `pysigma-backend-sqlite>=0.1.1`,
+  and 2.0.0 (2026-09-26) started enforcing correlation `timespan` on a `timestamp` column
+  that the synthetic fixtures do not carry, where 1.2.x compiled a bare `GROUP BY`/`HAVING`
+  and ignored the window. All 20 `value_count`/`event_count` cases went silent (72/92),
+  bisected to that one package. zircolite 4.1.0, which requires sqlite >=2.0.0, fails the
+  same 20, so the fix is a pin, not an engine bump: `zircolite-constraints.txt` now holds
+  `pysigma-backend-sqlite==1.2.4` (92/92), reversing its old "backends stay zircolite's
+  business" line with the reason. Lifting the pin means timestamp-aware fixtures, so the
+  gate exercises the windows it currently never tested.
+
 - **Weekly detection review (#324): one rule contradicted its own description, five
   scoping fixes, two status corrections.** The review found no coverage holes and no
   unpaired red attacks. Each change below that has a new near-miss fixture was checked
