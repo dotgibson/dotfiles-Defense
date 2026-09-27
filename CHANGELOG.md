@@ -24,6 +24,16 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **The host validation gate now tests correlation `timespan`, and runs the current SQL
+  backend.** #333 pinned `pysigma-backend-sqlite` to 1.2.4 because 2.0.0 windows each
+  correlation on the event time and the fixtures had none. The 34 correlation fixtures now
+  carry `Event.System.TimeCreated` (one second apart, inside the shortest 5m window), and
+  each of the 16 correlation rules gains an `-outside-window` case: the same TP events
+  re-timed so no window holds the threshold (a burst that is simply too slow). Those 16
+  cases fail on 1.2.4, which ignores the window, and pass on 2.0.0, so the pin moves to
+  `==2.0.0` rather than floating: the backend version decides whether half of every
+  correlation rule is tested. 108/108 on a fresh install.
+
 - **The host validation plane went red overnight with nothing in the repo changed: every
   correlation rule stopped firing.** zircolite 3.7.6 floats `pysigma-backend-sqlite>=0.1.1`,
   and 2.0.0 (2026-09-26) started enforcing correlation `timespan` on a `timestamp` column

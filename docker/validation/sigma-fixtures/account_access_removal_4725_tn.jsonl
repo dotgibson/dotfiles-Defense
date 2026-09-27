@@ -1,5 +1,5 @@
-{"Event": {"System": {"EventID": 4725, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver1"}}}
-{"Event": {"System": {"EventID": 4725, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver2"}}}
-{"Event": {"System": {"EventID": 4726, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver3"}}}
-{"Event": {"System": {"EventID": 4726, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver4"}}}
-{"Event": {"System": {"EventID": 4724, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver5"}}}
+{"Event": {"System": {"EventID": 4725, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:00.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver1"}}}
+{"Event": {"System": {"EventID": 4725, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:01.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver2"}}}
+{"Event": {"System": {"EventID": 4726, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:02.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver3"}}}
+{"Event": {"System": {"EventID": 4726, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:03.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver4"}}}
+{"Event": {"System": {"EventID": 4724, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:04.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_jml", "TargetUserName": "leaver5"}}}
