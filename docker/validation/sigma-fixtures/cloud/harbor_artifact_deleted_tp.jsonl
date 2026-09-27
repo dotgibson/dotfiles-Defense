@@ -1,1 +1,1 @@
-{"operation": "delete", "resource_type": "artifact"}
+{"operation": "delete", "resource_type": "artifact", "resource": "library/app:latest", "username": "mallory", "is_successful": true}

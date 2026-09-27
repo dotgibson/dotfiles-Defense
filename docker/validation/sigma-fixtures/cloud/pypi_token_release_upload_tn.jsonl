@@ -1,1 +1,1 @@
-{"action": "new release", "publisher_type": "trusted_publisher"}
+{"tag": "project:release:add", "additional": {"submitted_by": "OpenID created token", "canonical_version": "2.4.1", "publisher_url": "https://github.com/acme/acme-sdk/commit/4f2c0e1", "uploaded_via_trusted_publisher": true}}

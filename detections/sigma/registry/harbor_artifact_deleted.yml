@@ -17,6 +17,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/harbor-artifact-delete-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
+modified: 2026-09-27
 tags:
   - attack.stealth
   - attack.t1070
@@ -35,7 +36,9 @@ detection:
     # routine housekeeping that clears old tags alerts alongside the anti-forensics
     # delete this rule is for. Until filled this excludes only the example robot.
     # Run detections/sigma/deploy-required.sh to find this.
-    operator:
+    # The actor is `username` in the audit API / database record (AuditLogExt); the
+    # syslog-forward format calls it `operator` - normalize to the API shape first.
+    username:
       - 'robot$harbor-gc'   # example GC robot account — replace
   condition: selection and not filter_gc
 falsepositives:

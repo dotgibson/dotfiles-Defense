@@ -1,1 +1,2 @@
-{"Event": {"System": {"Channel": "slack"}, "EventData": {"action": "shared_channel_invite_sent"}}}
+{"Event": {"System": {"Channel": "slack"}, "EventData": {"action": "external_shared_channel_invite_created"}}}
+{"Event": {"System": {"Channel": "slack"}, "EventData": {"action": "external_shared_channel_connected"}}}

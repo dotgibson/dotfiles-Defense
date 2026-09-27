@@ -1,1 +1,2 @@
-{"operation": "push", "resource_type": "artifact", "operator": "mallory", "resource": "library/app:latest"}
+{"operation": "create", "resource_type": "artifact", "resource": "library/app:latest", "username": "mallory", "operation_description": "push artifact: library/app@sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "is_successful": true}
+{"operation": "create", "resource_type": "tag", "resource": "library/app:latest", "username": "mallory", "operation_description": "create tag: latest", "is_successful": true}

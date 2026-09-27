@@ -1,1 +1,2 @@
+{"Event": {"System": {"Channel": "google_workspace"}, "EventData": {"eventName": "GRANT_ADMIN_PRIVILEGE"}}}
 {"Event": {"System": {"Channel": "google_workspace"}, "EventData": {"eventName": "GRANT_DELEGATED_ADMIN_PRIVILEGES"}}}

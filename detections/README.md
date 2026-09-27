@@ -435,7 +435,7 @@ family tests a pointer against a bitmask on the calls it gets wrong.
 | `aws_data_destruction`            | CloudTrail snapshot/bucket/object/table deletes per principal (event_count correlation) | T1485     | AWS destruction · cloud-snapshot-destroy |
 | `aws_snapshot_share_external`     | CloudTrail EBS/AMI/RDS share grant to an outside account, or `group: all`               | T1537     | AWS exfil · aws-snapshot-share-exfil     |
 | `gcp_service_account_key_created` | GCP audit `CreateServiceAccountKey`                                                     | T1098.001 | GCP IAM · gcp-sa-key                     |
-| `gcp_iam_policy_backdoor`         | GCP audit `SetIamPolicy` - a new IAM binding                                            | T1098     | GCP IAM · gcp-iam-policy-backdoor        |
+| `gcp_iam_policy_backdoor`         | GCP audit `SetIamPolicy` / `setIamPermissions` (any casing) - a new IAM binding         | T1098     | GCP IAM · gcp-iam-policy-backdoor        |
 | `gcp_audit_log_sink_deleted`      | GCP audit `DeleteSink` / `UpdateSink` / `DeleteBucket`                                  | T1685.002 | GCP logging · gcp-audit-log-disable      |
 | `gcp_gce_metadata_startup_script` | GCP audit `instances.setMetadata` adding/modifying a startup-script key                 | T1651     | GCE meta · gcp-gce-startup-script-exec   |
 
@@ -457,19 +457,19 @@ family tests a pointer against a bitmask on the calls it gets wrong.
 
 **`github/`** (GitHub Enterprise audit log — `product: github`, `service: audit`; field `action`)
 
-| Rule                                   | Event / source                                                    | ATT&CK | Validate with                     |
-| -------------------------------------- | ----------------------------------------------------------------- | ------ | --------------------------------- |
-| `github_self_hosted_runner_registered` | `self_hosted_runner.created`                                      | T1543  | GitHub · gh-self-hosted-runner    |
-| `github_branch_protection_tamper`      | `protected_branch.destroy` / `protected_branch.policy_override`   | T1685  | GitHub · gh-branch-protection-off |
-| `github_credential_backdoor`           | `repo.create_deploy_key` / `personal_access_token.access_granted` | T1098  | GitHub · gh-deploy-key-backdoor   |
+| Rule                                   | Event / source                                                            | ATT&CK | Validate with                     |
+| -------------------------------------- | ------------------------------------------------------------------------- | ------ | --------------------------------- |
+| `github_self_hosted_runner_registered` | `*.register_self_hosted_runner` / `*.configure_self_hosted_jit_runner`    | T1543  | GitHub · gh-self-hosted-runner    |
+| `github_branch_protection_tamper`      | `protected_branch.destroy` / `protected_branch.policy_override`           | T1685  | GitHub · gh-branch-protection-off |
+| `github_credential_backdoor`           | `public_key.create` (deploy key) / `personal_access_token.access_granted` | T1098  | GitHub · gh-deploy-key-backdoor   |
 
 **`registry/`** (Harbor container-registry audit log — `product: harbor`, `service: audit`; field `operation`)
 
-| Rule                              | Event / source                            | ATT&CK | Validate with                   |
-| --------------------------------- | ----------------------------------------- | ------ | ------------------------------- |
-| `harbor_image_pushed_trusted_tag` | `operation=push` `resource_type=artifact` | T1525  | Harbor · harbor-image-backdoor  |
-| `harbor_robot_account_created`    | `operation=create` `resource_type=robot`  | T1098  | Harbor · harbor-robot-backdoor  |
-| `harbor_artifact_deleted`         | `operation=delete` artifact/repository    | T1070  | Harbor · harbor-artifact-delete |
+| Rule                              | Event / source                                      | ATT&CK | Validate with                   |
+| --------------------------------- | --------------------------------------------------- | ------ | ------------------------------- |
+| `harbor_image_pushed_trusted_tag` | `operation=create` `resource_type=artifact` / `tag` | T1525  | Harbor · harbor-image-backdoor  |
+| `harbor_robot_account_created`    | `operation=create` `resource_type=robot`            | T1098  | Harbor · harbor-robot-backdoor  |
+| `harbor_artifact_deleted`         | `operation=delete` artifact/repository              | T1070  | Harbor · harbor-artifact-delete |
 
 **`gitlab/`** (GitLab audit events — `product: gitlab`, `service: audit`; field `event_type`)
 
@@ -513,11 +513,11 @@ family tests a pointer against a bitmask on the calls it gets wrong.
 
 **`google_workspace/`** (Google Workspace admin/token/user audit — `product: google_workspace`; field `eventName`)
 
-| Rule                           | Event / source                                     | ATT&CK    | Validate with                |
-| ------------------------------ | -------------------------------------------------- | --------- | ---------------------------- |
-| `gws_illicit_oauth_grant`      | token `authorize`                                  | T1528     | Workspace · gws-oauth-grant  |
-| `gws_admin_role_grant`         | `GRANT_DELEGATED_ADMIN_PRIVILEGES` / `ASSIGN_ROLE` | T1098.003 | Workspace · gws-super-admin  |
-| `gws_external_mail_forwarding` | `email_forwarding_out_of_domain`                   | T1114.003 | Workspace · gws-mail-forward |
+| Rule                           | Event / source                                                               | ATT&CK    | Validate with                |
+| ------------------------------ | ---------------------------------------------------------------------------- | --------- | ---------------------------- |
+| `gws_illicit_oauth_grant`      | token `authorize`                                                            | T1528     | Workspace · gws-oauth-grant  |
+| `gws_admin_role_grant`         | `GRANT_ADMIN_PRIVILEGE` / `GRANT_DELEGATED_ADMIN_PRIVILEGES` / `ASSIGN_ROLE` | T1098.003 | Workspace · gws-super-admin  |
+| `gws_external_mail_forwarding` | `email_forwarding_out_of_domain`                                             | T1114.003 | Workspace · gws-mail-forward |
 
 **`cloudflare/`** (Cloudflare account audit log — `product: cloudflare`, `service: audit`; fields `resource.type`/`action.type`)
 
@@ -537,18 +537,18 @@ family tests a pointer against a bitmask on the calls it gets wrong.
 
 **`pypi/`** (PyPI project journal — `product: pypi`, `service: audit`; field `action`)
 
-| Rule                           | Event / source                          | ATT&CK    | Validate with                 |
-| ------------------------------ | --------------------------------------- | --------- | ----------------------------- |
-| `pypi_token_release_upload`    | `new release` not via trusted publisher | T1195.002 | PyPI · pypi-malicious-publish |
-| `pypi_collaborator_added`      | `add Owner` / `add Maintainer`          | T1098     | PyPI · pypi-role-add          |
-| `pypi_trusted_publisher_added` | add `trusted publisher` entry           | T1098     | PyPI · pypi-trusted-publisher |
+| Rule                           | Event / source                                    | ATT&CK    | Validate with                 |
+| ------------------------------ | ------------------------------------------------- | --------- | ----------------------------- |
+| `pypi_token_release_upload`    | `project:release:add` not via trusted publisher   | T1195.002 | PyPI · pypi-malicious-publish |
+| `pypi_collaborator_added`      | `invite` / `accepted` / `add` Owner or Maintainer | T1098     | PyPI · pypi-role-add          |
+| `pypi_trusted_publisher_added` | `project:oidc:publisher-added` event              | T1098     | PyPI · pypi-trusted-publisher |
 
 **`slack/`** (Slack Enterprise Grid audit logs — `product: slack`, `service: audit`; field `action`)
 
 | Rule                             | Event / source                                                                                 | ATT&CK | Validate with                |
 | -------------------------------- | ---------------------------------------------------------------------------------------------- | ------ | ---------------------------- |
 | `slack_app_installed`            | `app_installed` (broad read scopes)                                                            | T1098  | Slack · slack-malicious-app  |
-| `slack_external_shared_channel`  | `shared_channel_invite_sent` / `_accepted`                                                     | T1567  | Slack · slack-external-share |
+| `slack_external_shared_channel`  | `external_shared_channel_invite_*` / `_connected`                                              | T1567  | Slack · slack-external-share |
 | `slack_2fa_enforcement_disabled` | `pref.two_factor_auth_changed` (fires on the change; the direction lives in Slack's `details`) | T1685  | Slack · slack-2fa-disable    |
 
 `password_spray`, `asrep_roast_probing`, `sharphound_ldap_sweep`,
@@ -670,18 +670,20 @@ comment isn't enforcement, so this is the discoverable checklist instead.)
 
 #### Deploy-time backend work (`DEPLOY-REQUIRED`, but not a substitution)
 
-The same marker, a different kind of job. Two rules carry a `DEPLOY-REQUIRED` note that asks
+The same marker, a different kind of job. Four rules carry a `DEPLOY-REQUIRED` note that asks
 you to do something **at the backend** rather than to fill a value in the rule — there is no
 placeholder to replace, so they do not fit the table above, and being a poor fit for it is why
 they were missing from it entirely until #314. They are listed here rather than given a marker
 of their own, because [`sigma/deploy-required.sh`](sigma/deploy-required.sh) is the one
-checklist an operator runs before deploying and both belong on it: skip either and the rule
+checklist an operator runs before deploying and all four belong on it: skip any and the rule
 ships subtly wrong rather than merely noisy, which is the harder failure to notice.
 
-| Rule                                    | What deploy has to do                                                                              | Until you do                                                                                                                                                                                                                              |
-| --------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kubernetes/k8s_privileged_pod_created` | confirm how your backend expands JSON **arrays** — `spec.containers` and `spec.volumes` are arrays | two of the three escape branches may silently never match. Sigma has no portable array-index syntax, so the dotted paths rely on the backend, and backends differ — an Elasticsearch index mapping these as `nested` needs a nested query |
-| `slack/slack_2fa_enforcement_disabled`  | gate on the direction in your Slack collector's mapping, pulling the new value out of `details`    | the rule fires on the **enable** as well as the disable, because Sigma cannot reach the structured field that tells them apart. Same posture as `cloud/entra_illicit_consent_grant`, which also leaves the mapping to the SIEM            |
+| Rule                                    | What deploy has to do                                                                                     | Until you do                                                                                                                                                                                                                              |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kubernetes/k8s_privileged_pod_created` | confirm how your backend expands JSON **arrays** — `spec.containers` and `spec.volumes` are arrays        | two of the three escape branches may silently never match. Sigma has no portable array-index syntax, so the dotted paths rely on the backend, and backends differ — an Elasticsearch index mapping these as `nested` needs a nested query |
+| `slack/slack_2fa_enforcement_disabled`  | gate on the direction in your Slack collector's mapping, pulling the new value out of `details`           | the rule fires on the **enable** as well as the disable, because Sigma cannot reach the structured field that tells them apart. Same posture as `cloud/entra_illicit_consent_grant`, which also leaves the mapping to the SIEM            |
+| `jenkins/jenkins_script_console`        | widen the Audit Trail plugin's URL pattern to include `script` (and consider enabling *log script usage*) | the rule never fires: the plugin's default keyword list does not log `/script` or `/scriptText`                                                                                                                                           |
+| `jenkins/jenkins_api_token_created`     | widen the Audit Trail plugin's URL pattern to include `generateNewToken`                                  | the rule never fires: the plugin's default keyword list does not log token generation                                                                                                                                                     |
 
 #### What `status:` means here
 

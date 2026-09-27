@@ -1,1 +1,1 @@
-{"action": "add trusted publisher openid-connect for project acme"}
+{"tag": "project:oidc:publisher-added", "additional": {"publisher": "GitHub", "id": "6b1f0c1e-2c1e-4a8e-9d3b-0f6f5c1d2e3a", "specifier": "mallory-org/evil @ .github/workflows/release.yml", "url": "https://github.com/mallory-org/evil", "submitted_by": "alice"}}

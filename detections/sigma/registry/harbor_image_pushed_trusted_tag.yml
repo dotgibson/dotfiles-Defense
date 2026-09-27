@@ -2,8 +2,11 @@ title: Harbor image push (backdoored image / trusted-tag poisoning)
 id: 3afe0d4d-b997-4a87-821d-83328a205dd2
 status: experimental
 description: |
-  Surfaces artifact pushes in the Harbor registry audit log (operation=push,
-  resource_type=artifact) for supply-chain triage. The abuse is a trojanized image
+  Surfaces artifact pushes and tag creations in the Harbor registry audit log for
+  supply-chain triage. Harbor records a push as operation=create on resource_type=artifact
+  (PushArtifactEvent resolves to rbac.ActionCreate - there is no "push" operation), and
+  re-pointing a tag at an existing digest as operation=create on resource_type=tag, which
+  swaps what a trusted tag serves without any artifact push. The abuse is a trojanized image
   pushed over a trusted tag (:latest, a release tag, or a common base image) so every
   downstream build/deploy that pulls it runs the implant - MITRE T1525, Implant
   Internal Image. Most pushes are benign CI, so triage on the actor and target: a push
@@ -18,6 +21,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/harbor-image-push-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
+modified: 2026-09-27
 tags:
   - attack.persistence
   - attack.t1525
@@ -26,13 +30,18 @@ logsource:
   service: audit
 detection:
   selection:
-    operation: 'push'
-    resource_type: 'artifact'
+    operation: 'create'
+    resource_type:
+      - 'artifact'
+      - 'tag'
   filter_ci:
     # DEPLOY-REQUIRED: replace with your build service account(s) so routine CI pushes -
     # the busiest event in the registry - don't alert. Until filled this excludes only the
     # example robot. Run detections/sigma/deploy-required.sh to find this.
-    operator:
+    # The actor is `username` in the audit API / database record (AuditLogExt). The
+    # syslog-forward format names it `operator` and embeds the operation in message text,
+    # so it is a different schema - normalize to the API shape before this rule.
+    username:
       - 'robot$ci-pipeline'   # example CI robot account — replace
   condition: selection and not filter_ci
 falsepositives:

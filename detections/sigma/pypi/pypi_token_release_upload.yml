@@ -3,7 +3,10 @@ id: c3b50e57-6fb4-426c-92c0-184304009593
 status: experimental
 description: |
   Detects a PyPI release published with a long-lived API token rather than OIDC trusted
-  publishing (journal action="new release", publisher_type not trusted_publisher). Trusted
+  publishing: a project:release:add event whose additional.uploaded_via_trusted_publisher
+  is false. The flag lives on the project security event, not the "new release" journal
+  row - the journal records no publisher at all, so a journal-based filter on it can never
+  suppress anything and every release alerts. Trusted
   publishing is the secure norm, so a token-based upload is the higher-signal case: it is how
   a stolen token ships a trojanized release whose code runs downstream when an sdist is built
   or the package is imported (T1195.002), and it bypasses the OIDC path entirely. Alert on
@@ -16,6 +19,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/pypi-publish-audit.md
 author: dotfiles-Defense
 date: 2026-07-03
+modified: 2026-09-27
 tags:
   - attack.initial-access
   - attack.t1195.002
@@ -24,9 +28,9 @@ logsource:
   service: audit
 detection:
   selection:
-    action: 'new release'
+    tag: 'project:release:add'
   filter_trusted:
-    publisher_type: 'trusted_publisher'
+    additional.uploaded_via_trusted_publisher: true
   condition: selection and not filter_trusted
 falsepositives:
   - Projects that legitimately still publish with API tokens - migrate them to trusted

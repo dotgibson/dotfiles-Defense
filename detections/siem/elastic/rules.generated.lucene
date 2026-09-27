@@ -46,7 +46,7 @@ eventSource:iam.amazonaws.com AND (eventName:(CreateLoginProfile OR UpdateLoginP
 ((gcp.audit.method_name:*.instances.setMetadata AND (gcp.audit.metadata.instance_metadata_delta.added_metadata_keys:(startup\-script OR startup\-script\-url OR windows\-startup\-script\-cmd OR windows\-startup\-script\-bat OR windows\-startup\-script\-ps1 OR windows\-startup\-script\-url))) OR (gcp.audit.method_name:*.instances.setMetadata AND (gcp.audit.metadata.instance_metadata_delta.modified_metadata_keys:(startup\-script OR startup\-script\-url OR windows\-startup\-script\-cmd OR windows\-startup\-script\-bat OR windows\-startup\-script\-ps1 OR windows\-startup\-script\-url)))) AND (NOT gcp.audit.principal_email:compute\-terraform@example.iam.gserviceaccount.com)
 
 // cloud/gcp_iam_policy_backdoor.yml — GCP IAM policy binding added (SetIamPolicy backdoor)
-gcp.audit.method_name:*.SetIamPolicy AND (NOT gcp.audit.principal_email:iam\-terraform@example.iam.gserviceaccount.com)
+(gcp.audit.method_name:(*SetIamPolicy OR *setIamPolicy OR *SetIAMPolicy OR *setIamPermissions)) AND (NOT gcp.audit.principal_email:iam\-terraform@example.iam.gserviceaccount.com)
 
 // cloud/gcp_service_account_key_created.yml — GCP user-managed service-account key created
 (gcp.audit.method_name:(google.iam.admin.v1.CreateServiceAccountKey OR google.iam.admin.v1.UploadServiceAccountKey)) AND (NOT gcp.audit.principal_email:iam\-terraform@example.iam.gserviceaccount.com)
@@ -124,7 +124,7 @@ EventID:1102
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // discovery/ldap_recon_search_filter_1644.yml — Targeted LDAP recon - revealing search filter (1644)
-EventID:1644 AND (SearchFilter:(*servicePrincipalName* OR *userAccountControl\:1.2.840.113556.1.4.803* OR *adminCount* OR *msDS\-AllowedToDelegateTo* OR *trustedForDelegation*))
+EventID:1644 AND (SearchFilter:(*servicePrincipalName* OR *userAccountControl\&* OR *userAccountControl\ \&* OR *userAccountControl\:1.2.840.113556.1.4.803* OR *adminCount* OR *msDS\-AllowedToDelegateTo*))
 
 // discovery/local_group_enum_sweep_4798_4799.yml — Local SAM enumeration base - local group membership was enumerated
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -136,10 +136,10 @@ EventID:1644 AND (SearchFilter:(*servicePrincipalName* OR *userAccountControl\:1
 action:(protected_branch.destroy OR protected_branch.policy_override)
 
 // github/github_credential_backdoor.yml — GitHub deploy-key, PAT, or App-install credential backdoor
-action:(repo.create_deploy_key OR personal_access_token.access_granted OR integration_installation.create)
+action:(public_key.create OR personal_access_token.access_granted OR integration_installation.create)
 
 // github/github_self_hosted_runner_registered.yml — GitHub self-hosted runner registered (job/secret capture)
-action:self_hosted_runner.created AND (NOT actor:svc\-runner\-provisioner)
+(action:(*.register_self_hosted_runner OR *.configure_self_hosted_jit_runner)) AND (NOT actor:svc\-runner\-provisioner)
 
 // gitlab/gitlab_protected_branch_tamper.yml — GitLab protected-branch tampered (unreviewed merge)
 event_type:protected_branch_removed
@@ -151,7 +151,7 @@ event_type:set_runner_associated_projects
 event_type:(project_access_token_created OR group_access_token_created OR personal_access_token_created OR deploy_token_created OR group_deploy_token_created)
 
 // google_workspace/gws_admin_role_grant.yml — Google Workspace admin/super-admin role granted (tenant persistence)
-eventName:(GRANT_DELEGATED_ADMIN_PRIVILEGES OR ASSIGN_ROLE)
+eventName:(GRANT_ADMIN_PRIVILEGE OR GRANT_DELEGATED_ADMIN_PRIVILEGES OR ASSIGN_ROLE)
 
 // google_workspace/gws_external_mail_forwarding.yml — Google Workspace external mail forwarding enabled (BEC exfil)
 eventName:email_forwarding_out_of_domain
@@ -304,22 +304,22 @@ User:*SYSTEM* AND (ParentUser:(*APPPOOL* OR *NETWORK\ SERVICE* OR *LOCAL\ SERVIC
 TargetUserSid:S\-1\-5\-18 AND (NOT SubjectUserSid:S\-1\-5\-18)
 
 // pypi/pypi_collaborator_added.yml — PyPI project collaborator added (durable publish backdoor)
-action:(add\ Owner* OR add\ Maintainer*)
+action:(invite\ Owner* OR invite\ Maintainer* OR accepted\ Owner* OR accepted\ Maintainer* OR add\ Owner* OR add\ Maintainer*)
 
 // pypi/pypi_token_release_upload.yml — PyPI release uploaded via token, not trusted publishing (supply-chain implant)
-action:"new release" AND (NOT publisher_type:trusted_publisher)
+tag:project\:release\:add AND (NOT additional.uploaded_via_trusted_publisher:true)
 
 // pypi/pypi_trusted_publisher_added.yml — PyPI trusted publisher added (credential-less publish backdoor)
-action:add* AND action:*trusted\ publisher*
+tag:(project\:oidc\:publisher\-added OR organization\:oidc\:publisher\-added)
 
 // registry/harbor_artifact_deleted.yml — Harbor artifact deleted (force re-pull / anti-forensics)
-(operation:delete AND (resource_type:(artifact OR repository))) AND (NOT operator:robot$harbor\-gc)
+(operation:delete AND (resource_type:(artifact OR repository))) AND (NOT username:robot$harbor\-gc)
 
 // registry/harbor_image_pushed_trusted_tag.yml — Harbor image push (backdoored image / trusted-tag poisoning)
-(operation:push AND resource_type:artifact) AND (NOT operator:robot$ci\-pipeline)
+(operation:create AND (resource_type:(artifact OR tag))) AND (NOT username:robot$ci\-pipeline)
 
 // registry/harbor_robot_account_created.yml — Harbor robot account created (durable registry credential)
-(operation:create AND resource_type:robot) AND (NOT operator:svc\-terraform\-harbor)
+(operation:create AND resource_type:robot) AND (NOT username:svc\-terraform\-harbor)
 
 // slack/slack_2fa_enforcement_disabled.yml — Slack workspace 2FA enforcement setting changed
 action:pref.two_factor_auth_changed
@@ -328,7 +328,7 @@ action:pref.two_factor_auth_changed
 action:app_installed
 
 // slack/slack_external_shared_channel.yml — Slack Connect external shared channel (channel exfiltration)
-action:(shared_channel_invite_sent OR shared_channel_invite_accepted)
+action:(external_shared_channel_invite_created OR external_shared_channel_invite_accepted OR external_shared_channel_invite_approved OR external_shared_channel_connected)
 
 // snowflake/snowflake_data_unload.yml — Snowflake data unload (COPY INTO external stage — exfil triage)
 query_type:UNLOAD AND (NOT ((query_text:(*@%* OR *@\~*)) OR query_text:*MY_SANCTIONED_STAGE*))

@@ -3,8 +3,9 @@ id: a5dfde3d-3def-41ee-9be9-87e011bf8172
 status: test
 description: |
   Detects an admin-role grant in the Google Workspace admin audit:
-  GRANT_DELEGATED_ADMIN_PRIVILEGES (a user made super admin) or ASSIGN_ROLE (a privileged
-  admin role assigned). After a tenant compromise an attacker promotes their own account to
+  GRANT_ADMIN_PRIVILEGE ("Admin privileges granted to <user>" - super admin),
+  GRANT_DELEGATED_ADMIN_PRIVILEGES ("<user> assigned <role> admin privileges" - a delegated
+  admin role), or ASSIGN_ROLE (a custom or prebuilt admin role assigned). After a tenant compromise an attacker promotes their own account to
   gain durable, full-tenant control - user/role management, security settings, every mailbox
   - surviving the victim admin's password reset (T1098.003). Admin grants are rare and
   high-impact, so one by an unexpected actor, or a grant quickly following a new-user
@@ -16,6 +17,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/gws-admin-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
+modified: 2026-09-27
 tags:
   - attack.persistence
   - attack.t1098.003
@@ -25,6 +27,7 @@ logsource:
 detection:
   selection:
     eventName:
+      - 'GRANT_ADMIN_PRIVILEGE'
       - 'GRANT_DELEGATED_ADMIN_PRIVILEGES'
       - 'ASSIGN_ROLE'
   condition: selection
