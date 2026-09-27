@@ -571,8 +571,8 @@ explanation was wrong on the facts.** It is worth stating what is actually true,
 this paragraph is cited as precedent elsewhere in this file.
 
 What was claimed: that naming `SubjectUserName` or `User` in `group-by` would *null* the
-rule under the other channel's pipeline. Measured with the CI pins (`sigma-cli 3.0.2`,
-`pysigma 1.5.0`), it does not. `group-by` fields are passed through **completely unmapped** —
+rule under the other channel's pipeline. Measured with the CI pins (`sigma-cli 3.1.0`,
+`pysigma 1.5.1`), it does not. `group-by` fields are passed through **completely unmapped** —
 `SubjectUserName` survives verbatim under the `sysmon` pipeline, `User` under
 `windows-audit` — while detection fields *are* mapped (`Image` → `NewProcessName`). Nothing
 nulls and nothing is dropped. The rule compiles cleanly and then groups by a field the

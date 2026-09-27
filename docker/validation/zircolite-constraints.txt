@@ -12,9 +12,18 @@
 # red with nothing in the repo changed, and today it is green only because the float
 # happens to land past the fix. Same reasoning as the pins in .github/workflows/sigma.yml.
 #
-# Constrains ONLY the two packages whose pairing broke. zircolite's pipeline and backend
-# versions stay its own business: pinning those here would silently override the engine's
-# own compatibility choices, which is a different (and upstream's) call to make.
+# This used to constrain ONLY that pair, leaving zircolite's pipeline and backend versions
+# to its own requirements. That held until the SQL backend changed the verdict on its own:
+# zircolite 3.7.6 asks for `pysigma-backend-sqlite>=0.1.1`, and 2.0.0 (2026-09-26) started
+# enforcing correlation `timespan` — 1.2.x compiled a correlation to a bare GROUP BY/HAVING
+# and ignored the window, 2.0.0 windows on a `timestamp` column. The synthetic fixtures
+# carry no timestamp it can use, so every threshold rule (all 20 value_count/event_count
+# cases) went silent overnight with nothing in the repo changed — 72/92, bisected to this
+# one package (1.2.4 → 92/92). zircolite 4.1.0, which requires sqlite >=2.0.0, fails the
+# same 20, so upgrading the engine is not the fix. The pin holds the gate at the behaviour
+# it was written against; lifting it means making the fixtures timestamp-aware so the
+# windows are really exercised. Renovate will offer the bump in the grouped PR; while the
+# fixtures lack timestamps that PR goes red, which is the intended conversation (#322).
 #
 # Renovate watches this file through a managerFilePatterns entry in renovate.json — the
 # name is deliberately not *requirements*, because it is not our dependency list — and
@@ -22,3 +31,4 @@
 # same two for the sigma gate. Keep the two files agreeing (#322).
 pysigma==1.5.1
 pyparsing==3.3.3
+pysigma-backend-sqlite==1.2.4
