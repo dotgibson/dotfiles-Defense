@@ -13,7 +13,9 @@ manual Kali box. Two planes:
   JSONL under `sigma-fixtures/`. Covers single-selection, filtered, and
   `value_count`-correlation rules across the `windows-audit` and `sysmon` pipelines, and —
   where a row names a true-negative — asserts the rule stays **silent** on a benign
-  near-miss too (`-` for none). Run it:
+  near-miss too (`-` for none). Correlation fixtures carry `TimeCreated`, and each
+  correlation rule has an `-outside-window` row (its TP re-timed so no window holds the
+  threshold), so the `timespan` is tested, not just the count. Run it:
   `ZIRCOLITE=/path/to/zircolite.py docker/validation/run-sigma-validation.sh` (CI clones a
   pinned zircolite — see `.github/workflows/sigma-validation.yml`). Gated the same way the
   network plane is: a rule that stops firing turns it red, and so does a filter that stops

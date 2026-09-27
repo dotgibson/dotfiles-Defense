@@ -1,0 +1,4 @@
+{"Event": {"System": {"EventID": 4741, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:00.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "attacker", "TargetUserName": "PC0$"}}}
+{"Event": {"System": {"EventID": 4741, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:15:01.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "attacker", "TargetUserName": "PC1$"}}}
+{"Event": {"System": {"EventID": 4741, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:30:02.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "attacker", "TargetUserName": "PC2$"}}}
+{"Event": {"System": {"EventID": 4741, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:45:03.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "attacker", "TargetUserName": "PC3$"}}}

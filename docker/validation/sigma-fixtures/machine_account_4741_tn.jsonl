@@ -1,4 +1,4 @@
-{"Event": {"System": {"EventID": 4741, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_iam_provisioning", "TargetUserName": "PC0$"}}}
-{"Event": {"System": {"EventID": 4741, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_iam_provisioning", "TargetUserName": "PC1$"}}}
-{"Event": {"System": {"EventID": 4741, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_iam_provisioning", "TargetUserName": "PC2$"}}}
-{"Event": {"System": {"EventID": 4741, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_iam_provisioning", "TargetUserName": "PC3$"}}}
+{"Event": {"System": {"EventID": 4741, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:00.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_iam_provisioning", "TargetUserName": "PC0$"}}}
+{"Event": {"System": {"EventID": 4741, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:01.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_iam_provisioning", "TargetUserName": "PC1$"}}}
+{"Event": {"System": {"EventID": 4741, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:02.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_iam_provisioning", "TargetUserName": "PC2$"}}}
+{"Event": {"System": {"EventID": 4741, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:03.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"SubjectUserName": "svc_iam_provisioning", "TargetUserName": "PC3$"}}}

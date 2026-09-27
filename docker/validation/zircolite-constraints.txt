@@ -15,15 +15,17 @@
 # This used to constrain ONLY that pair, leaving zircolite's pipeline and backend versions
 # to its own requirements. That held until the SQL backend changed the verdict on its own:
 # zircolite 3.7.6 asks for `pysigma-backend-sqlite>=0.1.1`, and 2.0.0 (2026-09-26) started
-# enforcing correlation `timespan` — 1.2.x compiled a correlation to a bare GROUP BY/HAVING
-# and ignored the window, 2.0.0 windows on a `timestamp` column. The synthetic fixtures
-# carry no timestamp it can use, so every threshold rule (all 20 value_count/event_count
-# cases) went silent overnight with nothing in the repo changed — 72/92, bisected to this
-# one package (1.2.4 → 92/92). zircolite 4.1.0, which requires sqlite >=2.0.0, fails the
-# same 20, so upgrading the engine is not the fix. The pin holds the gate at the behaviour
-# it was written against; lifting it means making the fixtures timestamp-aware so the
-# windows are really exercised. Renovate will offer the bump in the grouped PR; while the
-# fixtures lack timestamps that PR goes red, which is the intended conversation (#322).
+# enforcing correlation `timespan`. 1.2.x compiled a correlation to a bare GROUP BY/HAVING
+# and ignored the window; 2.0.0 windows on the time field zircolite hands it (`SystemTime`,
+# from Event.System.TimeCreated). The fixtures carried no timestamp, so every threshold
+# rule went silent overnight with nothing in the repo changed (72/92, bisected to this one
+# package), and 1.2.4 was pinned to hold the line (#333).
+#
+# The fixtures now carry TimeCreated, and every correlation rule has an `-outside-window`
+# case: its TP's events re-timed so no window holds the threshold. Those 16 cases FAIL on
+# 1.2.4, because a backend that ignores the window fires on them. So the backend is pinned
+# at 2.0.0, not left to float: which version runs decides whether the timespan half of
+# every correlation rule is tested at all, and a float would move that verdict silently.
 #
 # Renovate watches this file through a managerFilePatterns entry in renovate.json — the
 # name is deliberately not *requirements*, because it is not our dependency list — and
@@ -31,4 +33,4 @@
 # same two for the sigma gate. Keep the two files agreeing (#322).
 pysigma==1.5.1
 pyparsing==3.3.3
-pysigma-backend-sqlite==1.2.4
+pysigma-backend-sqlite==2.0.0

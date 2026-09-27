@@ -1,6 +1,6 @@
-{"Event": {"System": {"EventID": 4771, "Channel": "Security", "Computer": "DC01"}, "EventData": {"Status": "0x18", "IpAddress": "10.9.9.7", "TargetUserName": "user0"}}}
-{"Event": {"System": {"EventID": 4771, "Channel": "Security", "Computer": "DC01"}, "EventData": {"Status": "0x18", "IpAddress": "10.9.9.7", "TargetUserName": "user1"}}}
-{"Event": {"System": {"EventID": 4771, "Channel": "Security", "Computer": "DC01"}, "EventData": {"Status": "0x18", "IpAddress": "10.9.9.7", "TargetUserName": "user2"}}}
-{"Event": {"System": {"EventID": 4771, "Channel": "Security", "Computer": "DC01"}, "EventData": {"Status": "0x18", "IpAddress": "10.9.9.7", "TargetUserName": "user3"}}}
-{"Event": {"System": {"EventID": 4771, "Channel": "Security", "Computer": "DC01"}, "EventData": {"Status": "0x18", "IpAddress": "10.9.9.7", "TargetUserName": "user4"}}}
-{"Event": {"System": {"EventID": 4771, "Channel": "Security", "Computer": "DC01"}, "EventData": {"Status": "0x18", "IpAddress": "10.9.9.7", "TargetUserName": "user5"}}}
+{"Event": {"System": {"EventID": 4771, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:00.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"Status": "0x18", "IpAddress": "10.9.9.7", "TargetUserName": "user0"}}}
+{"Event": {"System": {"EventID": 4771, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:01.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"Status": "0x18", "IpAddress": "10.9.9.7", "TargetUserName": "user1"}}}
+{"Event": {"System": {"EventID": 4771, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:02.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"Status": "0x18", "IpAddress": "10.9.9.7", "TargetUserName": "user2"}}}
+{"Event": {"System": {"EventID": 4771, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:03.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"Status": "0x18", "IpAddress": "10.9.9.7", "TargetUserName": "user3"}}}
+{"Event": {"System": {"EventID": 4771, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:04.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"Status": "0x18", "IpAddress": "10.9.9.7", "TargetUserName": "user4"}}}
+{"Event": {"System": {"EventID": 4771, "TimeCreated": {"#attributes": {"SystemTime": "2026-08-04T10:00:05.000000Z"}}, "Channel": "Security", "Computer": "DC01"}, "EventData": {"Status": "0x18", "IpAddress": "10.9.9.7", "TargetUserName": "user5"}}}
