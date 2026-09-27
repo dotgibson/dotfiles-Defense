@@ -4,9 +4,11 @@ status: experimental
 description: |
   Detects a new service install (7045) whose binary path is the psexec/remote-exec
   shape: a service whose "binary" is a shell or scripting interpreter, or one served
-  straight off the admin share. psexec-class lateral movement (impacket-psexec, smbexec)
-  leaves this even when the service name is randomized - detect on the binary path shape
-  and allowlist your known services.
+  straight off the admin share. psexec-class lateral movement leaves one of three shapes,
+  and each is matched here: smbexec's %COMSPEC% command-line service (the path list),
+  Sysinternals PsExec's PSEXESVC, and impacket-psexec's randomly named binary in
+  %systemroot% (an 8-letter .exe behind a 4-letter service name). An earlier revision
+  matched only the first while describing all three. Allowlist your known services.
   Scoped to the interpreter/ADMIN$ shapes on purpose: a drop-directory match (\Users\,
   \Temp\) catches the same intrusions but also every third-party installer and updater
   that registers a service from a temp path, and a rule that fires on routine software
@@ -25,7 +27,7 @@ references:
   - https://github.com/dotgibson/dotfiles-Offense/blob/main/PURPLE-TEAM.md
 author: dotfiles-Defense
 date: 2026-06-30
-modified: 2026-08-28
+modified: 2026-09-27
 tags:
   # PsExec's remote service creation IS the lateral-movement step — the service is
   # created on the TARGET by an operator who is already elsewhere. ATT&CK files
@@ -59,7 +61,27 @@ detection:
       - 'wscript'
       - 'rundll32'
       - 'mshta'
-  condition: selection and suspicious_path
+  sysinternals_psexec:
+    # Sysinternals PsExec installs PSEXESVC from %SystemRoot%\PSEXESVC.exe. `-r` renames
+    # the service and binary, so the default name is a floor, not the whole tool.
+    - ServiceName: 'PSEXESVC'
+    - ImagePath|endswith: '\PSEXESVC.exe'
+  impacket_psexec_binary:
+    # impacket-psexec (impacket/examples/serviceinstall.py) uploads an 8-random-letter .exe
+    # and installs it as %systemroot%\<8 letters>.exe via ADMIN$, or \\host\share\<8
+    # letters>.exe on another writable share. Neither contains \ADMIN$\ or an interpreter.
+    # DEPLOY-REQUIRED (Elastic only): Lucene regexes match the whole term implicitly, have
+    # no (?i) flag, and read ^ and $ as literals, so the generated Lucene form of this
+    # branch never matches. Rewrite it in your Elastic rule as
+    #   ImagePath:/%systemroot%\\[a-zA-Z]{8}\.exe/ AND ServiceName:/[a-zA-Z]{4}/
+    # (impacket writes the lowercase %systemroot% literally). Splunk and Sentinel need
+    # nothing: both take the anchored, case-insensitive pattern as written.
+    ImagePath|re: '(?i)^(%systemroot%|\\\\[^\\]+\\[^\\]+)\\[a-z]{8}\.exe$'
+  impacket_psexec_name:
+    # ...paired with its 4-random-letter service name, so a legitimate 8-letter binary in
+    # %SystemRoot% does not match on the path alone.
+    ServiceName|re: '^[A-Za-z]{4}$'
+  condition: selection and (suspicious_path or sysinternals_psexec or (impacket_psexec_binary and impacket_psexec_name))
 falsepositives:
   - Legitimate management agents that install transient services (allowlist by
     service name and signed binary path).

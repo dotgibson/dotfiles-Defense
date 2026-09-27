@@ -10,6 +10,8 @@ description: |
   (pull the requested UPN from the 4886 and compare to Requester). It is therefore
   a broad triage surface, not a high-fidelity alert on its own - pair it with a
   baseline of enrollment agents and watch 5136 writes to userCertificate.
+  The filename's "san_mismatch" names the question this surface exists to answer, not a
+  comparison the rule performs; it is kept so the htpx pair and manifest references hold.
   Levelled informational deliberately: with no SAN-vs-Requester comparison this selects
   every certificate request in the domain, and the corpus already reserves informational
   for exactly that shape - see the computer_account_created_4741 and 4625/4771

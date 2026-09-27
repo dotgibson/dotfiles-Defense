@@ -6,7 +6,7 @@ A **gap here is not a defect.** htpx spans SaaS and CI/CD platforms this repo ha
 
 Corpus: `dotgibson/htpx` at `7f369ee37ee5` (none — 3 commits past v3.2.0), pinned in `detections/htpx.pin`.
 
-**107 blue entries · 100 claimed here · 23 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
+**107 blue entries · 100 claimed here · 25 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
 
 ## htpx blue entries claimed by detection content here
 
@@ -148,9 +148,11 @@ Techniques this repo detects that the corpus has no attack for — so there is n
 | T1074.001 | `archive_staging_utility` |
 | T1082 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1087.001 | `host_recon_command_burst`, `host_recon_powershell_4104`, `local_group_enum_sweep_4798_4799` |
+| T1112 | `wdigest_uselogoncredential_enabled_sysmon_13` |
 | T1136.001 | `rogue_account_creation_4720` |
 | T1136.002 | `machine_account_creation_burst_4741`, `rogue_account_creation_4720` |
 | T1484.002 | `okta_idp_created` |
+| T1547.001 | `registry_run_key_suspicious_target_sysmon_13` |
 | T1550.003 | `unconstrained_delegation_4624` |
 | T1558.005 | `ccache_theft_staging` |
 | T1560.001 | `archive_staging_utility` |

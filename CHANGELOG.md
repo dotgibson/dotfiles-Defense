@@ -24,6 +24,36 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **Detection review, section B: two unread telemetry planes, an AD CS row that over-claimed,
+  and a PsExec rule that missed both PsExecs.**
+  - **Sysmon registry events had no reader.** The lab config collects Run keys and WDigest
+    `UseLogonCredential` (Sysmon 12/13), and the methodology lists Sysmon 13 as a source,
+    but no rule read either, and T1547.001 / T1112 were in neither the coverage nor the
+    `known-absent` ledger. New: `wdigest_uselogoncredential_enabled_sysmon_13` (value set
+    to 1, no filter) and `registry_run_key_suspicious_target_sysmon_13` (a Run/RunOnce value
+    launching from a user-writable path or through a script host, with a DEPLOY-REQUIRED
+    per-user-app allowlist). Its Splunk form is recorded in the precedence allowlist.
+  - **New `dcsync_non_dc_machine_account_4662`** covers DCSync by a machine account that is
+    not a DC. `dcsync_replication_4662` drops every `$` subject by design, so this is the
+    replication-rights ACL backdoor on a computer object, or a MachineAccountQuota account
+    used for DCSync. `experimental`, with a DEPLOY-REQUIRED DC list. It does **not** see
+    DCSync as a real DC's account from an attacker host (the ESC8 tail): 4662 carries no
+    source address. That is now recorded as an open gap in `DEFENSE-METHODOLOGY.md`
+    rather than implied as covered.
+  - **The AD CS methodology row** claimed a "4886 SAN" check on the `siem` plane. Nothing
+    performs one: `adcs_esc1_san_mismatch_4886` surfaces every request for analyst triage,
+    and its description now says the filename names that question, not a comparison it
+    makes. The row now reads what exists (`sigma, siem`: 5145 pipes, 4886/4887 requests
+    with SAN compared at triage, 4624 relay mismatch).
+  - **`service_creation_psexec_7045` described impacket-psexec and PsExec but matched only
+    smbexec.** It now adds Sysinternals `PSEXESVC` and impacket-psexec's
+    `%systemroot%\<8 letters>.exe` behind a 4-letter service name (shapes taken from
+    impacket's `serviceinstall.py`). Its fixture had paired `PSEXESVC` with a `%COMSPEC%`
+    path, which no real PsExec does; it now carries one event per shape plus a near-miss
+    TN. The old rule fires on one of the three. This is the corpus's first `|re` rule;
+    Lucene cannot take the anchored, `(?i)` pattern, so the Elastic form carries a
+    DEPLOY-REQUIRED rewrite and a README backend-work row.
+
 - **Detection review, section A: thirteen rules that could not fire (wholly or in one arm),
   or whose allowlist could never suppress, because rule and fixture shared a guess about
   the vendor's log.** Every

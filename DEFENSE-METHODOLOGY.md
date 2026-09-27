@@ -24,18 +24,18 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Offens
 
 ## ATT&CK tactic → data source → detection
 
-| ATT&CK tactic            | Primary data sources                                              | Where detections live | Validate with (Offense)                                              |
-| ------------------------ | ----------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------- |
-| Initial Access           | npm / PyPI publish audit logs                                     | sigma                 | htpx pairs `npm-malicious-publish` / `pypi-malicious-publish`        |
-| Recon / Discovery        | Zeek, 4688/4769, 4798/4799, 5145, 1644/4662                       | network, sigma        | recon / Kerberoast folds                                             |
-| Credential Access        | Sysmon 10, 4625/4771                                              | sysmon, sigma         | Responder / cracking folds                                           |
-| Lateral Movement         | 4624 type 3, Zeek SMB                                             | sigma, network        | lateral-movement fold                                                |
-| Priv Esc / Persistence   | Sysmon 1/13/17, 4720/7045                                         | sysmon, sigma         | LOLBAS / persistence folds                                           |
-| Coercion / Relay / AD CS | 5145 pipes, 4886 SAN                                              | siem                  | coercion → relay → DC fold                                           |
-| Collection               | 4663 file reads, 4688 archive cmds                                | sigma                 | collection / exfil fold                                              |
-| Exfil / C2               | Suricata, Zeek conn/dns/ssl, CloudTrail share grants              | network, sigma        | reverse-shell / pivot folds; htpx pair `aws-snapshot-share-exfil`    |
-| Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn | sigma, network        | ransomware chain (teardown → recovery → payload); cryptomining pair  |
-| Anti-forensics           | 1102 + 104 log clears, auditd history syscalls, 4742 rogue DC     | sigma                 | DCShadow fold; `wevtutil cl` / `shred ~/.bash_history` on a lab host |
+| ATT&CK tactic            | Primary data sources                                                         | Where detections live | Validate with (Offense)                                              |
+| ------------------------ | ---------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------- |
+| Initial Access           | npm / PyPI publish audit logs                                                | sigma                 | htpx pairs `npm-malicious-publish` / `pypi-malicious-publish`        |
+| Recon / Discovery        | Zeek, 4688/4769, 4798/4799, 5145, 1644/4662                                  | network, sigma        | recon / Kerberoast folds                                             |
+| Credential Access        | Sysmon 10, 4625/4771                                                         | sysmon, sigma         | Responder / cracking folds                                           |
+| Lateral Movement         | 4624 type 3, Zeek SMB                                                        | sigma, network        | lateral-movement fold                                                |
+| Priv Esc / Persistence   | Sysmon 1/13/17, 4720/7045                                                    | sysmon, sigma         | LOLBAS / persistence folds                                           |
+| Coercion / Relay / AD CS | 5145 pipes, 4886/4887 requests (SAN compared at triage), 4624 relay mismatch | sigma, siem           | coercion → relay → DC fold                                           |
+| Collection               | 4663 file reads, 4688 archive cmds                                           | sigma                 | collection / exfil fold                                              |
+| Exfil / C2               | Suricata, Zeek conn/dns/ssl, CloudTrail share grants                         | network, sigma        | reverse-shell / pivot folds; htpx pair `aws-snapshot-share-exfil`    |
+| Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn            | sigma, network        | ransomware chain (teardown → recovery → payload); cryptomining pair  |
+| Anti-forensics           | 1102 + 104 log clears, auditd history syscalls, 4742 rogue DC                | sigma                 | DCShadow fold; `wevtutil cl` / `shred ~/.bash_history` on a lab host |
 
 The right-hand column is the point: every row has a Offense fold that proves the
 detection works.
@@ -398,6 +398,18 @@ true negative to carry the *identical* `EventData` key set as its true positive,
 construction no fixture in this manifest can exercise a missing-or-renamed-field case. That is
 the right call for the gate, and it is why the answer was a capture rather than more CI.
 
+**The RegistryEvent block is read now, too.** The lab Sysmon config has long collected
+Sysmon 12/13 for `\CurrentVersion\Run` and WDigest `UseLogonCredential`, and the table's
+Priv Esc / Persistence row lists Sysmon 13 as a source, but no rule read either. It was the
+same telemetry-ahead-of-detection hole as the pipe names, and one the `known-absent` ledger
+could not flag, because T1547.001 and T1112 were never named anywhere. Two rules close it:
+`detections/sigma/defense_impairment/wdigest_uselogoncredential_enabled_sysmon_13.yml` (the
+value set to 1, no filter, since nothing legitimate on a supported build needs it) and
+`detections/sigma/persistence/registry_run_key_suspicious_target_sysmon_13.yml` (a Run or
+RunOnce value whose data launches from a user-writable path or through a script host,
+with a DEPLOY-REQUIRED allowlist for per-user apps such as OneDrive). Both key on what was
+written, not on which process wrote it.
+
 The row is narrow on purpose: it is the *registry* plane, not the endpoint. Both rules
 fire on a publish event in an npm or PyPI audit log — a package shipped by an actor that
 is not the sanctioned CI identity, or a release uploaded with a long-lived token rather
@@ -618,6 +630,22 @@ Its own limit, recorded so it is not rediscovered: 4104 logs a script BLOCK, so 
 monolithic `.ps1` doing all the recon at once is one event and will not trip a
 distinct-block count. The interactive operator is what it adds; a scripted one is caught by
 the 4688 twin only if the script shells out.
+
+**The AD CS row's tail is an open gap, recorded so it is not mistaken for coverage.** The
+row names three stages; the Sigma side sees the first two and part of the third. Coercion
+is `coercion_named_pipes_5145` and its Sysmon 18 companion; the relay is the SIEM plane's
+`ntlm_relay_4624` correlation. The certificate request is
+`detections/sigma/privilege_escalation/adcs_esc1_san_mismatch_4886.yml`, which surfaces every
+4886/4887 at `informational` for the SAN-vs-requester comparison an analyst (or a backend
+correlation) makes. The filename names that triage question; the rule does not perform the
+comparison, because Sigma cannot compare two fields. What nothing here sees is ESC8's end
+state: a DC's machine-account certificate obtained through the relay, then used to
+authenticate and DCSync as that DC. `dcsync_replication_4662` drops `$` subjects by design,
+and `dcsync_non_dc_machine_account_4662` allowlists the real DCs, so DCSync as `DC01$` from
+an attacker host reads as ordinary replication - 4662 has no source address to tell them
+apart. Closing it needs the logon side, a DC account authenticating (PKINIT) from an
+address that is not a DC, and that is not yet written because its false-positive profile
+has not been measured.
 
 ### Declined coverage (recorded, not planned)
 
