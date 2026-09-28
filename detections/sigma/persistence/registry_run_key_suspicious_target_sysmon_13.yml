@@ -1,0 +1,74 @@
+title: Registry Run key pointing at a user-writable path or an interpreter (Sysmon 13)
+id: 50dd8a7c-843e-4ad5-ad3b-2c24a5a84773
+status: experimental
+description: |
+  Detects a value written under a ...\CurrentVersion\Run or \RunOnce key (HKLM or a user
+  hive) whose data launches something from a user-writable location, or hands a command
+  line to a script host / LOLBin. Run keys are the oldest autostart there is (T1547.001):
+  the value's data executes at every logon, as the user whose hive it is (or as every user,
+  from HKLM), with no service, task or WMI object for the other persistence rules to see.
+  What the entry RUNS is the signal, not which process wrote it - reg.exe, PowerShell, a
+  .NET RegistryKey call and a C2's native RegSetValueEx all produce the same Sysmon 13, so
+  the writer is not keyed on. Two shapes:
+    - a target under AppData, Temp, Users\Public or ProgramData - the places a user-level
+      implant can drop its binary without admin;
+    - a target that is an interpreter or proxy-execution binary (powershell, mshta,
+      rundll32, regsvr32, wscript/cscript, cmd /c) - the fileless form, where the payload
+      lives in the command line or a remote URL.
+  Signed software from Program Files is deliberately not matched; that is where the
+  benign majority of Run entries point.
+  Data-source prerequisite: detections/sysmon/sysmonconfig-detection-lab.xml collects
+  RegistryEvent writes whose TargetObject contains \CurrentVersion\Run, which covers Run
+  and RunOnce. A Sysmon config without that include makes this rule silently inert.
+references:
+  - https://attack.mitre.org/techniques/T1547/001/
+  - https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys
+author: dotfiles-Defense
+date: 2026-09-27
+tags:
+  - attack.persistence
+  - attack.privilege-escalation
+  - attack.t1547.001
+logsource:
+  category: registry_set
+  product: windows
+detection:
+  run_key:
+    TargetObject|contains:
+      - '\Software\Microsoft\Windows\CurrentVersion\Run\'
+      - '\Software\Microsoft\Windows\CurrentVersion\RunOnce\'
+      - '\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run\'
+      - '\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\RunOnce\'
+  target_user_writable:
+    Details|contains:
+      - '\AppData\'
+      - '\Temp\'
+      - '\Users\Public\'
+      - '\ProgramData\'
+  target_interpreter:
+    Details|contains:
+      - 'powershell'
+      - 'pwsh'
+      - 'mshta'
+      - 'rundll32'
+      - 'regsvr32'
+      - 'wscript'
+      - 'cscript'
+      - 'cmd.exe /c'
+      - 'cmd /c'
+  filter_user_apps:
+    # DEPLOY-REQUIRED: replace with the per-user applications YOUR fleet legitimately
+    # autostarts from AppData - OneDrive, Teams, Slack, Zoom and Discord all install
+    # per-user and register a Run value under the user hive. Key on the FULL expected
+    # path, not a bare executable name: a name alone is exactly what an implant copies.
+    # Until filled this excludes only the example, so those updaters alert at every
+    # install and update. Run detections/sigma/deploy-required.sh to find this.
+    Details|contains:
+      - '\AppData\Local\Microsoft\OneDrive\OneDrive.exe'   # example — replace
+  condition: run_key and 1 of target_* and not filter_user_apps
+falsepositives:
+  - Per-user application installers (OneDrive, Teams, Slack, Zoom, Discord, Spotify) that
+    autostart from AppData - allowlist their full paths in filter_user_apps.
+  - Enterprise login scripts or management agents that register a PowerShell / cmd Run
+    entry - confirm the publisher and allowlist the exact command line.
+level: medium

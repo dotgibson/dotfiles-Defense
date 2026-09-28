@@ -1,0 +1,59 @@
+title: DCSync - replication right requested by a machine account that is not a DC
+id: 7e68d560-6903-4e4a-851b-9bf3334c9e99
+status: experimental
+description: |
+  Detects a 4662 requesting a directory-replication extended right where the subject is a
+  machine account (name ends in $) that is NOT one of your domain controllers. It is the
+  companion to dcsync_replication_4662.yml, which drops every machine account because DCs
+  replicate as their own accounts all day. That filter is right for its rule, but it also
+  hides the non-DC computer account that should never replicate at all:
+    - an ACL backdoor that grants DS-Replication-Get-Changes(-All) to a member server's or
+      workstation's computer object, then DCSyncs from that host as SYSTEM (which
+      authenticates remotely as HOST$);
+    - a machine account created through MachineAccountQuota, granted the right, and used
+      to DCSync.
+  What it does NOT see, stated plainly: DCSync performed as a REAL DC's account from a host
+  that is not that DC - the tail of the coercion -> relay -> AD CS (ESC8) chain, where
+  the attacker obtains a certificate for DC01$ and replicates as DC01$. 4662 carries no
+  source address, so that event is indistinguishable here from DC01$ replicating
+  legitimately. That case needs the logon side - the DC account authenticating from a
+  non-DC address - and is recorded as an open gap in DEFENSE-METHODOLOGY.md.
+  Requires the same audit prerequisites as dcsync_replication_4662.yml: the Directory
+  Service Access subcategory and a SACL on the domain head auditing the replication rights.
+references:
+  - https://attack.mitre.org/techniques/T1003/006/
+  - https://learn.microsoft.com/en-us/windows/win32/adschema/r-ds-replication-get-changes-all
+author: dotfiles-Defense
+date: 2026-09-27
+tags:
+  - attack.credential-access
+  - attack.t1003.006
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4662
+    Properties|contains:
+      - '1131f6aa-9c07-11d1-f79f-00c04fc2dcd2'   # DS-Replication-Get-Changes
+      - '1131f6ad-9c07-11d1-f79f-00c04fc2dcd2'   # DS-Replication-Get-Changes-All
+      - '89e95b76-444d-4c62-991a-0facbeda640c'   # DS-Replication-Get-Changes-In-Filtered-Set
+    SubjectUserName|endswith: '$'
+  filter_real_dcs:
+    # DEPLOY-REQUIRED: replace with EVERY domain controller's computer account (and any
+    # RODC). Until filled this excludes only the examples, so routine DC-to-DC replication
+    # alerts at high on every other DC. Read-only DCs replicate the filtered set too.
+    # Run detections/sigma/deploy-required.sh to find this.
+    SubjectUserName:
+      - 'DC01$'   # example — replace
+      - 'DC02$'   # example — replace
+  filter_system:
+    # The DC's own SYSTEM context - local, not a remote replication partner.
+    SubjectUserSid: 'S-1-5-18'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - A DC missing from filter_real_dcs (a newly promoted DC, an RODC) - keep the list in step
+    with the Domain Controllers OU.
+  - Entra Connect / directory-sync servers configured to run as a computer account rather
+    than a service account - confirm and allowlist by name.
+level: high

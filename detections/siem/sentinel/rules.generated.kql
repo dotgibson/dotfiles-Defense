@@ -78,6 +78,9 @@ EventType =~ "ConnectPipe" and PipeName contains "efsrpc"
 // credential_access/coercion_named_pipes_5145.yml — Authentication coercion - named-pipe access over IPC$ (5145)
 (EventID == 5145 and ShareName contains "IPC$" and (RelativeTargetName contains "spoolss" or RelativeTargetName contains "efsrpc" or RelativeTargetName contains "lsarpc" or RelativeTargetName contains "netlogon" or RelativeTargetName contains "lsass")) and (not(SubjectUserName endswith "$"))
 
+// credential_access/dcsync_non_dc_machine_account_4662.yml — DCSync - replication right requested by a machine account that is not a DC
+(EventID == 4662 and (Properties contains "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2" or Properties contains "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2" or Properties contains "89e95b76-444d-4c62-991a-0facbeda640c") and SubjectUserName endswith "$") and (not(((SubjectUserName in~ ("DC01$", "DC02$")) or SubjectUserSid =~ "S-1-5-18")))
+
 // credential_access/dcsync_replication_4662.yml — DCSync - directory replication right requested by a non-DC
 (EventID == 4662 and (Properties contains "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2" or Properties contains "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2" or Properties contains "89e95b76-444d-4c62-991a-0facbeda640c")) and (not((SubjectUserName endswith "$" or SubjectUserSid =~ "S-1-5-18")))
 
@@ -101,6 +104,9 @@ EventType =~ "ConnectPipe" and PipeName contains "efsrpc"
 
 // defense_impairment/dcshadow_rogue_dc_4742.yml — DCShadow - rogue DC registration (GC SPN added to a non-DC)
 (EventID == 4742 and ServicePrincipalNames contains "GC/") and (not((TargetUserName in~ ("DC1$", "DC2$"))))
+
+// defense_impairment/wdigest_uselogoncredential_enabled_sysmon_13.yml — WDigest UseLogonCredential enabled - cleartext credential caching turned back on (Sysmon 13)
+TargetObject endswith "\\Control\\SecurityProviders\\WDigest\\UseLogonCredential" and Details =~ "DWORD (0x00000001)"
 
 // defense_impairment/windows_event_log_cleared_104.yml — Windows event log cleared - non-Security channel (104)
 EventID == 104
@@ -208,7 +214,7 @@ uri contains "/script" and (not(uri contains "/scriptApproval"))
 CommandLine contains "/dest:rdp-tcp#"
 
 // lateral_movement/service_creation_psexec_7045.yml — Suspicious service installed (psexec-style remote exec)
-EventID == 7045 and (ImagePath contains "\\ADMIN$\\" or ImagePath contains "%COMSPEC%" or ImagePath contains "\\cmd.exe" or ImagePath contains "powershell.exe" or ImagePath contains "powershell -" or ImagePath contains "pwsh.exe" or ImagePath contains "cscript" or ImagePath contains "wscript" or ImagePath contains "rundll32" or ImagePath contains "mshta")
+EventID == 7045 and ((ImagePath contains "\\ADMIN$\\" or ImagePath contains "%COMSPEC%" or ImagePath contains "\\cmd.exe" or ImagePath contains "powershell.exe" or ImagePath contains "powershell -" or ImagePath contains "pwsh.exe" or ImagePath contains "cscript" or ImagePath contains "wscript" or ImagePath contains "rundll32" or ImagePath contains "mshta") or (ServiceName =~ "PSEXESVC" or ImagePath endswith "\\PSEXESVC.exe") or (ImagePath matches regex "(?i)^(%systemroot%|\\\\\\\\[^\\\\]+\\\\[^\\\\]+)\\\\[a-z]{8}\\.exe$" and ServiceName matches regex "^[A-Za-z]{4}$"))
 
 // lateral_movement/svcctl_atsvc_remote_pipe_sysmon_18.yml — Remote service-control / task-scheduling named-pipe bind (Sysmon 18)
 EventType =~ "ConnectPipe" and Image =~ "System" and (PipeName contains "svcctl" or PipeName contains "atsvc")
@@ -266,6 +272,9 @@ eventType in~ ("user.mfa.factor.reset_all", "user.mfa.factor.deactivate", "user.
 
 // persistence/machine_account_creation_burst_4741.yml — Computer-account-created base (4741)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
+// persistence/registry_run_key_suspicious_target_sysmon_13.yml — Registry Run key pointing at a user-writable path or an interpreter (Sysmon 13)
+(TargetObject contains "\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\" or TargetObject contains "\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\" or TargetObject contains "\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run\\" or TargetObject contains "\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\") and ((Details contains "\\AppData\\" or Details contains "\\Temp\\" or Details contains "\\Users\\Public\\" or Details contains "\\ProgramData\\") or (Details contains "powershell" or Details contains "pwsh" or Details contains "mshta" or Details contains "rundll32" or Details contains "regsvr32" or Details contains "wscript" or Details contains "cscript" or Details contains "cmd.exe /c" or Details contains "cmd /c")) and (not(Details contains "\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe"))
 
 // persistence/rogue_account_creation_4720.yml — Rogue account creation (4720)
 EventID == 4720 and (not(SubjectUserName =~ "svc_iam_provisioning"))

@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**117 rules · 137 detection documents · 84 techniques · 12 tactics · 24 logsources.**
+**120 rules · 140 detection documents · 86 techniques · 12 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
@@ -10,11 +10,11 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | ------ | -- | ---------: | ----: |
 | Initial Access | TA0001 | 1 | 2 |
 | Execution | TA0002 | 9 | 11 |
-| Persistence | TA0003 | 16 | 37 |
-| Privilege Escalation | TA0004 | 9 | 15 |
+| Persistence | TA0003 | 17 | 38 |
+| Privilege Escalation | TA0004 | 10 | 16 |
 | Stealth | TA0005 | 3 | 6 |
-| Defense Impairment | TA0112 | 7 | 12 |
-| Credential Access | TA0006 | 18 | 21 |
+| Defense Impairment | TA0112 | 8 | 13 |
+| Credential Access | TA0006 | 18 | 22 |
 | Discovery | TA0007 | 14 | 8 |
 | Lateral Movement | TA0008 | 11 | 8 |
 | Collection | TA0009 | 5 | 4 |
@@ -27,7 +27,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | --------- | ----: | ---------- |
 | T1003.001 | 1 | `lsass_handle_access` |
 | T1003.003 | 1 | `ntds_dump_ntdsutil_vss_4688` |
-| T1003.006 | 1 | `dcsync_replication_4662` |
+| T1003.006 | 2 | `dcsync_non_dc_machine_account_4662`, `dcsync_replication_4662` |
 | T1003.008 | 1 | `shadow_file_read` |
 | T1005 | 1 | `mass_file_read_4663` |
 | T1007 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
@@ -57,6 +57,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1098.003 | 3 | `aws_iam_privesc_policy`, `entra_directory_role_grant`, `gws_admin_role_grant` |
 | T1098.004 | 1 | `ssh_authorized_keys_write` |
 | T1110.003 | 1 | `password_spray_4625` |
+| T1112 | 1 | `wdigest_uselogoncredential_enabled_sysmon_13` |
 | T1114.003 | 1 | `gws_external_mail_forwarding` |
 | T1134.001 | 6 | `potato_seimpersonate_4688`, `potato_seimpersonate_sysmon_1`, `spoolss_pipe_impersonation_sysmon_17`, `srvsvc_epmapper_pipe_impersonation_sysmon_17`, `token_theft_parent_child_mismatch_sysmon_1`, `token_theft_process_target_subject_4688` |
 | T1135 | 3 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst`, `host_recon_powershell_4104` |
@@ -80,6 +81,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1543 | 3 | `github_self_hosted_runner_registered`, `gitlab_rogue_runner_associated`, `tfc_rogue_agent_pool` |
 | T1543.002 | 1 | `systemd_unit_persistence` |
 | T1546.003 | 1 | `wmi_event_subscription_consumer` |
+| T1547.001 | 1 | `registry_run_key_suspicious_target_sysmon_13` |
 | T1548.001 | 1 | `suid_bit_set` |
 | T1548.003 | 1 | `sudo_root_shell` |
 | T1550.002 | 1 | `passthehash_4624_fanout` |
@@ -117,8 +119,8 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `cloud` | `aws`, `azure`, `gcp` | 15 |
 | `cloudflare` | `cloudflare` | 3 |
 | `collection` | `windows` | 2 |
-| `credential_access` | `windows` | 11 |
-| `defense_impairment` | `windows` | 3 |
+| `credential_access` | `windows` | 12 |
+| `defense_impairment` | `windows` | 4 |
 | `discovery` | `windows` | 8 |
 | `github` | `github` | 3 |
 | `gitlab` | `gitlab` | 3 |
@@ -130,7 +132,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `linux` | `linux` | 9 |
 | `npm` | `npm` | 3 |
 | `okta` | `okta` | 3 |
-| `persistence` | `windows` | 4 |
+| `persistence` | `windows` | 5 |
 | `privilege_escalation` | `windows` | 9 |
 | `pypi` | `pypi` | 3 |
 | `registry` | `harbor` | 3 |

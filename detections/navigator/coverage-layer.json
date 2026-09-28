@@ -22,9 +22,9 @@
     },
     {
       "techniqueID": "T1003.006",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): dcsync_replication_4662"
+      "comment": "2 rule(s): dcsync_non_dc_machine_account_4662, dcsync_replication_4662"
     },
     {
       "techniqueID": "T1003.008",
@@ -201,6 +201,12 @@
       "comment": "1 rule(s): password_spray_4625"
     },
     {
+      "techniqueID": "T1112",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): wdigest_uselogoncredential_enabled_sysmon_13"
+    },
+    {
       "techniqueID": "T1114.003",
       "score": 1,
       "enabled": true,
@@ -337,6 +343,12 @@
       "score": 1,
       "enabled": true,
       "comment": "1 rule(s): wmi_event_subscription_consumer"
+    },
+    {
+      "techniqueID": "T1547.001",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): registry_run_key_suspicious_target_sysmon_13"
     },
     {
       "techniqueID": "T1548.001",

@@ -78,6 +78,9 @@ EventType:ConnectPipe AND PipeName:*efsrpc*
 // credential_access/coercion_named_pipes_5145.yml — Authentication coercion - named-pipe access over IPC$ (5145)
 (EventID:5145 AND ShareName:*IPC$* AND (RelativeTargetName:(*spoolss* OR *efsrpc* OR *lsarpc* OR *netlogon* OR *lsass*))) AND (NOT SubjectUserName:*$)
 
+// credential_access/dcsync_non_dc_machine_account_4662.yml — DCSync - replication right requested by a machine account that is not a DC
+(EventID:4662 AND (Properties:(*1131f6aa\-9c07\-11d1\-f79f\-00c04fc2dcd2* OR *1131f6ad\-9c07\-11d1\-f79f\-00c04fc2dcd2* OR *89e95b76\-444d\-4c62\-991a\-0facbeda640c*)) AND SubjectUserName:*$) AND (NOT ((SubjectUserName:(DC01$ OR DC02$)) OR SubjectUserSid:S\-1\-5\-18))
+
 // credential_access/dcsync_replication_4662.yml — DCSync - directory replication right requested by a non-DC
 (EventID:4662 AND (Properties:(*1131f6aa\-9c07\-11d1\-f79f\-00c04fc2dcd2* OR *1131f6ad\-9c07\-11d1\-f79f\-00c04fc2dcd2* OR *89e95b76\-444d\-4c62\-991a\-0facbeda640c*))) AND (NOT (SubjectUserName:*$ OR SubjectUserSid:S\-1\-5\-18))
 
@@ -101,6 +104,9 @@ EventType:ConnectPipe AND PipeName:*efsrpc*
 
 // defense_impairment/dcshadow_rogue_dc_4742.yml — DCShadow - rogue DC registration (GC SPN added to a non-DC)
 (EventID:4742 AND ServicePrincipalNames:*GC\/*) AND (NOT (TargetUserName:(DC1$ OR DC2$)))
+
+// defense_impairment/wdigest_uselogoncredential_enabled_sysmon_13.yml — WDigest UseLogonCredential enabled - cleartext credential caching turned back on (Sysmon 13)
+TargetObject:*\\Control\\SecurityProviders\\WDigest\\UseLogonCredential AND Details:"DWORD \(0x00000001\)"
 
 // defense_impairment/windows_event_log_cleared_104.yml — Windows event log cleared - non-Security channel (104)
 EventID:104
@@ -208,7 +214,7 @@ uri:*\/script* AND (NOT uri:*\/scriptApproval*)
 CommandLine:*\/dest\:rdp\-tcp#*
 
 // lateral_movement/service_creation_psexec_7045.yml — Suspicious service installed (psexec-style remote exec)
-EventID:7045 AND (ImagePath:(*\\ADMIN$\\* OR *%COMSPEC%* OR *\\cmd.exe* OR *powershell.exe* OR *powershell\ \-* OR *pwsh.exe* OR *cscript* OR *wscript* OR *rundll32* OR *mshta*))
+EventID:7045 AND ((ImagePath:(*\\ADMIN$\\* OR *%COMSPEC%* OR *\\cmd.exe* OR *powershell.exe* OR *powershell\ \-* OR *pwsh.exe* OR *cscript* OR *wscript* OR *rundll32* OR *mshta*)) OR (ServiceName:PSEXESVC OR ImagePath:*\\PSEXESVC.exe) OR (ImagePath:/(?i)^(%systemroot%|\\\\[^\\]+\\[^\\]+)\\[a-z]{8}\.exe$/ AND ServiceName:/^[A-Za-z]{4}$/))
 
 // lateral_movement/svcctl_atsvc_remote_pipe_sysmon_18.yml — Remote service-control / task-scheduling named-pipe bind (Sysmon 18)
 EventType:ConnectPipe AND Image:System AND (PipeName:(*svcctl* OR *atsvc*))
@@ -266,6 +272,9 @@ eventType:(user.mfa.factor.reset_all OR user.mfa.factor.deactivate OR user.mfa.f
 
 // persistence/machine_account_creation_burst_4741.yml — Computer-account-created base (4741)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
+// persistence/registry_run_key_suspicious_target_sysmon_13.yml — Registry Run key pointing at a user-writable path or an interpreter (Sysmon 13)
+(TargetObject:(*\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\* OR *\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\* OR *\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run\\* OR *\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\*)) AND ((Details:(*\\AppData\\* OR *\\Temp\\* OR *\\Users\\Public\\* OR *\\ProgramData\\*)) OR (Details:(*powershell* OR *pwsh* OR *mshta* OR *rundll32* OR *regsvr32* OR *wscript* OR *cscript* OR *cmd.exe\ \/c* OR *cmd\ \/c*))) AND (NOT Details:*\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe*)
 
 // persistence/rogue_account_creation_4720.yml — Rogue account creation (4720)
 EventID:4720 AND (NOT SubjectUserName:svc_iam_provisioning)
