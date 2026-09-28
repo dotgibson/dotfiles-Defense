@@ -35,6 +35,7 @@ references:
   - https://attack.mitre.org/techniques/T1074/001/
 author: dotfiles-Defense
 date: 2026-08-05
+modified: 2026-09-28
 tags:
   - attack.collection
   - attack.t1560.001
@@ -77,6 +78,45 @@ detection:
     CommandLine|contains|all:
       - 'Compress-Archive'
       - '\Temp\'
+  # The archiver branches above say nothing about DIRECTION, and extraction is where the
+  # noise was: `7z x -pinfected sample.7z` (every malware-analysis desk, and any vendor that
+  # ships encrypted deliveries) matched the password half at high, and installers unpacking
+  # into %TEMP% matched the staging half. Staging is compressing, so each archiver needs its
+  # CREATE verb: rar/7z `a` (add), `u` (update) or `m` (move into the archive - the one that
+  # also deletes the source); tar in create mode; makecab only ever creates.
+  add_verb_rar_7z:
+    Image|endswith:
+      - '\rar.exe'
+      - '\winrar.exe'
+      - '\7z.exe'
+      - '\7za.exe'
+      - '\7zg.exe'
+    CommandLine|contains:
+      - ' a '
+      - ' u '
+      - ' m '
+  add_verb_tar:
+    # Named flag clusters, not a bare ' -c': Sigma matching is case-insensitive, so ' -c'
+    # also matched tar's `-C <dir>` (change directory), which extraction uses too -
+    # `tar -xf pkg.zip -C C:\Windows\Temp\pkg` fired. These are the create forms.
+    Image|endswith: '\tar.exe'
+    CommandLine|contains:
+      - ' -cf'
+      - ' -czf'
+      - ' -cjf'
+      - ' -cvf'
+      - ' -czvf'
+      - ' -cvzf'
+      - ' -acf'
+      - ' -a -c'
+      - ' -c -f'
+      - ' --create'
+  add_verb_makecab:
+    Image|endswith: '\makecab.exe'
+  filter_rar_no_password:
+    # rar's `-p-` means "do not ask for a password" - automation, not encryption - and it
+    # contains ' -p'.
+    CommandLine|contains: ' -p-'
   filter_backup_tooling:
     # DEPLOY-REQUIRED: replace with the backup, packaging, and build tooling that
     # legitimately archives into staging paths in YOUR estate (installer builds and
@@ -92,7 +132,7 @@ detection:
   # noisy enough to need that trade; the password branch is not, and silencing an
   # encrypted archive because of who launched it would throw away the high-confidence
   # signal to quiet the low-confidence one. Both validated: see the two manifest rows.
-  condition: selection_password or (1 of selection_staging_* and not filter_backup_tooling)
+  condition: (selection_password and 1 of add_verb_* and not filter_rar_no_password) or (((selection_staging_archiver and 1 of add_verb_*) or selection_staging_powershell) and not filter_backup_tooling)
 falsepositives:
   - Software packaging, installer builds, and CI jobs that archive into %TEMP% (suppress
     via filter_backup_tooling; the password-protected half is unaffected).

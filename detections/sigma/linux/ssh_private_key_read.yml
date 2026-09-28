@@ -30,7 +30,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/ssh-key-theft-auditd.md
 author: dotfiles-Defense
 date: 2026-08-26
-modified: 2026-09-02
+modified: 2026-09-28
 tags:
   - attack.credential-access
   - attack.t1552.004
@@ -54,16 +54,22 @@ detection:
     # the legitimate reader list is SHORT, so an unfilled entry here shows up as an
     # alert rather than as silence. Until filled this excludes only the entries below.
     # Run detections/sigma/deploy-required.sh to find this.
-    comm:
-      - 'ssh'
-      - 'sshd'
-      - 'ssh-agent'
-      - 'ssh-keygen'
-      - 'ssh-add'
-      - 'scp'
-      - 'sftp'
-      - 'git'
-  condition: selection and not filter_ssh_stack
+    # FULL exe paths, not comm - comm is attacker-settable (a renamed copy, or
+    # prctl(PR_SET_NAME)), so a reader calling itself `git` or `ssh` was filtered.
+    exe:
+      - '/usr/bin/ssh'
+      - '/usr/sbin/sshd'
+      - '/usr/bin/ssh-agent'
+      - '/usr/bin/ssh-keygen'
+      - '/usr/bin/ssh-add'
+      - '/usr/bin/scp'
+      - '/usr/bin/sftp'
+      - '/usr/bin/git'
+  filter_pubkey:
+    # `name|contains: '/id_rsa'` also matched id_rsa.pub - pasting a public key into a
+    # code host, ssh-copy-id and backups all read it, and none of that is key theft.
+    name|endswith: '.pub'
+  condition: selection and not 1 of filter_*
 falsepositives:
   - Backup or endpoint agents reading home directories wholesale - allowlist them in
     filter_ssh_stack, or narrow the watch away from the paths they sweep.

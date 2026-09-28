@@ -38,7 +38,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/suid-abuse-auditd.md
 author: dotfiles-Defense
 date: 2026-08-26
-modified: 2026-09-02
+modified: 2026-09-28
 tags:
   - attack.privilege-escalation
   - attack.t1548.001
@@ -55,19 +55,24 @@ detection:
     # installs setuid helpers will not be in the list below at all. Until filled this
     # excludes only the entries below.
     # Run detections/sigma/deploy-required.sh to find this.
-    exe|endswith:
-      - '/dpkg'
-      - '/rpm'
-      - '/apt'
-      - '/apt-get'
-      - '/yum'
-      - '/dnf'
-      - '/zypper'
-      - '/install'
-      - '/ansible-playbook'      # example CM — verify against your fleet
-      - '/puppet'                # example CM — verify against your fleet
-      - '/chef-client'           # example CM — verify against your fleet
-      - '/salt-minion'           # example CM — verify against your fleet
+    # FULL paths, matched exactly - never a basename suffix. `exe|endswith: '/dpkg'` also
+    # matched /tmp/dpkg, so `cp /bin/chmod /tmp/dpkg; /tmp/dpkg u+s /tmp/x` was filtered.
+    # /usr/bin/install is deliberately absent: it is a general coreutils tool, and
+    # `install -m 4755 /bin/bash /tmp/.x` plants a SUID root shell in one command.
+    exe:
+      - '/usr/bin/dpkg'
+      - '/bin/dpkg'
+      - '/usr/bin/rpm'
+      - '/bin/rpm'
+      - '/usr/bin/apt'
+      - '/usr/bin/apt-get'
+      - '/usr/bin/yum'
+      - '/usr/bin/dnf'
+      - '/usr/bin/zypper'
+      - '/usr/bin/ansible-playbook'   # example CM — verify the path on your fleet
+      - '/opt/puppetlabs/puppet/bin/puppet'   # example CM — verify the path on your fleet
+      - '/usr/bin/chef-client'        # example CM — verify the path on your fleet
+      - '/usr/bin/salt-minion'        # example CM — verify the path on your fleet
   condition: selection and not filter_provisioning
 falsepositives:
   - Package installs setting the setuid bit on binaries that ship with it - allowlist

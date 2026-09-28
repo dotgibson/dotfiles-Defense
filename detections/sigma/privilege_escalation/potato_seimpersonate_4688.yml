@@ -53,7 +53,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/potato-seimpersonate-4688.md
 author: dotfiles-Defense
 date: 2026-06-30
-modified: 2026-08-30
+modified: 2026-09-28
 tags:
   # T1134.001 is dual-tactic in ATT&CK v19 — TA0004 and TA0005 (Stealth) — and only the
   # TA0004 half is claimed here. That is deliberate, not an oversight
@@ -80,10 +80,20 @@ detection:
       - '\powershell.exe'
       - '\pwsh.exe'
   selection_svc_identity:
-    SubjectUserName|contains:
-      - 'APPPOOL'
-      - 'NETWORK SERVICE'
-      - 'LOCAL SERVICE'
+    # Keyed on SIDs, not names. 4688 renders these identities in ways a name match misses:
+    # NETWORK SERVICE shares the machine-account logon session, so its SubjectUserName is
+    # the computer account (HOST$) - the same effect this description measures for SYSTEM -
+    # and a 'NETWORK SERVICE' term never matched. An IIS app pool renders as the bare pool
+    # name (DefaultAppPool, or a site-named pool like `intranet`) with IIS APPPOOL in
+    # SubjectDomainName, so `SubjectUserName contains APPPOOL` caught only pools that
+    # happened to carry the word. SIDs are also locale-proof.
+    - SubjectUserSid|startswith: 'S-1-5-82-'   # IIS app-pool virtual accounts
+    - SubjectUserSid:
+        - 'S-1-5-19'   # LOCAL SERVICE
+        - 'S-1-5-20'   # NETWORK SERVICE
+    # Name-based fallbacks for a pipeline that resolves SIDs to names before indexing.
+    - SubjectDomainName: 'IIS APPPOOL'
+    - SubjectUserName: 'LOCAL SERVICE'
   condition: selection_shell and selection_svc_identity
 falsepositives:
   - Service accounts that legitimately shell out (scripts, monitoring) - baseline

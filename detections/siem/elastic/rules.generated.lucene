@@ -61,7 +61,7 @@ resource.type:api_token AND action.type:create
 ((resource.type:(worker OR workers_script)) AND (action.type:(create OR update))) AND (NOT actor.email:ci\-deploy@example.com)
 
 // collection/archive_staging_utility.yml — Collected data staged into an archive (T1560.001)
-((Image:(*\\rar.exe OR *\\winrar.exe OR *\\7z.exe OR *\\7za.exe OR *\\7zg.exe)) AND (CommandLine:(*\ \-hp* OR *\ \-p* OR *\ \-mhe*))) OR ((((Image:(*\\rar.exe OR *\\winrar.exe OR *\\7z.exe OR *\\7za.exe OR *\\7zg.exe OR *\\tar.exe OR *\\makecab.exe)) AND (CommandLine:(*\\AppData\\Local\\Temp\\* OR *\\Windows\\Temp\\* OR *\\Users\\Public\\* OR *\\ProgramData\\*))) OR ((Image:(*\\powershell.exe OR *\\pwsh.exe)) AND (CommandLine:*Compress\-Archive* AND CommandLine:*\\Temp\\*))) AND (NOT ParentImage:*\\backup\-agent.exe))
+(((Image:(*\\rar.exe OR *\\winrar.exe OR *\\7z.exe OR *\\7za.exe OR *\\7zg.exe)) AND (CommandLine:(*\ \-hp* OR *\ \-p* OR *\ \-mhe*))) AND (((Image:(*\\rar.exe OR *\\winrar.exe OR *\\7z.exe OR *\\7za.exe OR *\\7zg.exe)) AND (CommandLine:(*\ a\ * OR *\ u\ * OR *\ m\ *))) OR (Image:*\\tar.exe AND (CommandLine:(*\ \-cf* OR *\ \-czf* OR *\ \-cjf* OR *\ \-cvf* OR *\ \-czvf* OR *\ \-cvzf* OR *\ \-acf* OR *\ \-a\ \-c* OR *\ \-c\ \-f* OR *\ \-\-create*))) OR Image:*\\makecab.exe) AND (NOT CommandLine:*\ \-p\-*)) OR (((((Image:(*\\rar.exe OR *\\winrar.exe OR *\\7z.exe OR *\\7za.exe OR *\\7zg.exe OR *\\tar.exe OR *\\makecab.exe)) AND (CommandLine:(*\\AppData\\Local\\Temp\\* OR *\\Windows\\Temp\\* OR *\\Users\\Public\\* OR *\\ProgramData\\*))) AND (((Image:(*\\rar.exe OR *\\winrar.exe OR *\\7z.exe OR *\\7za.exe OR *\\7zg.exe)) AND (CommandLine:(*\ a\ * OR *\ u\ * OR *\ m\ *))) OR (Image:*\\tar.exe AND (CommandLine:(*\ \-cf* OR *\ \-czf* OR *\ \-cjf* OR *\ \-cvf* OR *\ \-czvf* OR *\ \-cvzf* OR *\ \-acf* OR *\ \-a\ \-c* OR *\ \-c\ \-f* OR *\ \-\-create*))) OR Image:*\\makecab.exe)) OR ((Image:(*\\powershell.exe OR *\\pwsh.exe)) AND (CommandLine:*Compress\-Archive* AND CommandLine:*\\Temp\\*))) AND (NOT ParentImage:*\\backup\-agent.exe))
 
 // collection/mass_file_read_4663.yml — File read handle base (4663)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -94,7 +94,7 @@ EventType:ConnectPipe AND PipeName:*efsrpc*
 (EventID:4769 AND TicketEncryptionType:0x17) AND (NOT (ServiceName:(*$ OR krbtgt)))
 
 // credential_access/lsass_handle_access.yml — LSASS process access with dump-shaped rights
-(TargetImage:*\\lsass.exe AND (GrantedAccess:(0x1010 OR 0x1410 OR 0x1438 OR 0x143a OR 0x1fffff))) AND (NOT (SourceImage:(*\\MsMpEng.exe OR *\\MsSense.exe OR *\\wininit.exe OR *\\csrss.exe OR *\\CSFalconService.exe OR *\\SentinelAgent.exe OR *\\RepMgr.exe)))
+(TargetImage:*\\lsass.exe AND (GrantedAccess:(0x1010 OR 0x1410 OR 0x1438 OR 0x143a OR 0x1fffff))) AND (NOT ((SourceImage:(C\:\\ProgramData\\Microsoft\\Windows\ Defender\\Platform\\* OR C\:\\Program\ Files\\Windows\ Defender\\* OR C\:\\Program\ Files\\Windows\ Defender\ Advanced\ Threat\ Protection\\*)) OR (SourceImage:(C\:\\Windows\\System32\\wininit.exe OR C\:\\Windows\\System32\\csrss.exe OR "C\:\\Program Files\\CrowdStrike\\CSFalconService.exe" OR "C\:\\Program Files\\Confer\\RepMgr.exe")) OR SourceImage:C\:\\Program\ Files\\SentinelOne\\*))
 
 // credential_access/ntds_dump_ntdsutil_vss_4688.yml — NTDS.dit theft via ntdsutil / VSS on a domain controller
 (Image:*\\ntdsutil.exe AND (CommandLine:(*ifm* OR *create\ full*))) OR ((CommandLine:(*create\ shadow* OR *start\ backup*)) AND (Image:(*\\vssadmin.exe OR *\\wbadmin.exe))) OR Image:*\\diskshadow.exe
@@ -172,7 +172,7 @@ eventName:authorize AND (scope:(*mail.google.com* OR *auth\/gmail* OR *auth\/dri
 ((Image:*\\manage\-bde.exe AND (CommandLine:(*\-on* OR *\-protectors\ \-add* OR *\-forcerecovery*))) OR ((Image:(*\\powershell.exe OR *\\pwsh.exe)) AND (CommandLine:(*Enable\-BitLocker* OR *Add\-BitLockerKeyProtector*)))) AND (NOT ParentImage:*\\TSManager.exe)
 
 // impact/data_destruction_wipe.yml — Data destruction - free-space wipe / secure delete / volume clean
-(Image:*\\cipher.exe AND CommandLine:*\/w*) OR (Image:(*\\sdelete.exe OR *\\sdelete64.exe)) OR (Image:*\\fsutil.exe AND CommandLine:*setzerodata*) OR (Image:*\\diskpart.exe AND CommandLine:*clean*)
+(Image:*\\cipher.exe AND CommandLine:*\/w*) OR (Image:(*\\sdelete.exe OR *\\sdelete64.exe)) OR (Image:*\\fsutil.exe AND CommandLine:*setzerodata*) OR ((Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe)) AND (CommandLine:*diskpart* AND CommandLine:*clean*))
 
 // impact/mass_file_encryption_4663.yml — File write/delete handle base (4663)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -181,7 +181,7 @@ eventName:authorize AND (scope:(*mail.google.com* OR *auth\/gmail* OR *auth\/dri
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // impact/recovery_inhibition_process.yml — Inhibit system recovery - shadow copy / backup / boot-recovery deletion
-((Image:(*\\vssadmin.exe OR *\\wmic.exe)) AND (CommandLine:*shadow* AND CommandLine:*delete*)) OR (Image:*\\wbadmin.exe AND (CommandLine:*delete* AND CommandLine:*catalog*)) OR (Image:*\\bcdedit.exe AND (CommandLine:*recoveryenabled* AND CommandLine:*no*)) OR (Image:*\\bcdedit.exe AND (CommandLine:*bootstatuspolicy* AND CommandLine:*ignoreallfailures*))
+((Image:(*\\vssadmin.exe OR *\\wmic.exe)) AND (CommandLine:*shadow* AND CommandLine:*delete*)) OR (Image:*\\vssadmin.exe AND (CommandLine:*resize* AND CommandLine:*shadowstorage*)) OR (((Image:(*\\powershell.exe OR *\\pwsh.exe)) AND CommandLine:*Win32_ShadowCopy*) AND (CommandLine:(*Remove\-WmiObject* OR *Remove\-CimInstance* OR *.Delete\(*))) OR ((Image:*\\wbadmin.exe AND CommandLine:*delete*) AND (CommandLine:(*catalog* OR *backup*))) OR ((Image:*\\bcdedit.exe AND CommandLine:*recoveryenabled*) OR (Image:*\\bcdedit.exe AND (CommandLine:*bootstatuspolicy* AND CommandLine:*ignoreallfailures*)))
 
 // impact/service_stop_burst.yml — Service/process stop command base - service control by command line
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -235,19 +235,19 @@ key:cron_persist AND (NOT (exe:(*\/dpkg OR *\/rpm OR *\/apt OR *\/apt\-get OR *\
 key:hist_tamper AND name:*_history*
 
 // linux/shadow_file_read.yml — /etc/shadow read by a non-auth process (auditd)
-key:shadow_read AND (NOT (comm:(unix_chkpwd OR sshd OR login OR su OR sudo OR passwd OR chpasswd OR chage OR pwck OR grpck OR useradd OR usermod OR userdel OR systemd)))
+key:shadow_read AND (NOT (exe:(\/usr\/sbin\/unix_chkpwd OR \/sbin\/unix_chkpwd OR \/usr\/sbin\/sshd OR \/usr\/bin\/login OR \/bin\/login OR \/usr\/bin\/su OR \/bin\/su OR \/usr\/bin\/sudo OR \/usr\/bin\/passwd OR \/usr\/sbin\/chpasswd OR \/usr\/bin\/chage OR \/usr\/sbin\/pwck OR \/usr\/sbin\/grpck OR \/usr\/sbin\/useradd OR \/usr\/sbin\/usermod OR \/usr\/sbin\/userdel OR \/usr\/lib\/systemd\/systemd OR \/lib\/systemd\/systemd OR \/usr\/sbin\/cron OR \/usr\/sbin\/crond)))
 
 // linux/ssh_authorized_keys_write.yml — SSH authorized_keys written - key-based persistence (auditd)
 (key:ssh_authkeys AND name:*authorized_keys*) AND (NOT (exe:(*\/cloud\-init OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)))
 
 // linux/ssh_private_key_read.yml — SSH private key read by a non-SSH process (auditd)
-(key:ssh_key_read AND (name:(*\/id_rsa* OR *\/id_ecdsa* OR *\/id_ed25519* OR *\/id_dsa* OR *\/identity*))) AND (NOT (comm:(ssh OR sshd OR ssh\-agent OR ssh\-keygen OR ssh\-add OR scp OR sftp OR git)))
+(key:ssh_key_read AND (name:(*\/id_rsa* OR *\/id_ecdsa* OR *\/id_ed25519* OR *\/id_dsa* OR *\/identity*))) AND (NOT ((exe:(\/usr\/bin\/ssh OR \/usr\/sbin\/sshd OR \/usr\/bin\/ssh\-agent OR \/usr\/bin\/ssh\-keygen OR \/usr\/bin\/ssh\-add OR \/usr\/bin\/scp OR \/usr\/bin\/sftp OR \/usr\/bin\/git)) OR name:*.pub))
 
 // linux/sudo_root_shell.yml — Root shell spawned under a real login uid - sudo escape (auditd)
 (key:sudo_abuse AND (comm:(bash OR sh OR dash OR zsh OR ksh OR fish OR python OR python3 OR perl OR ruby))) AND (NOT auid:1000)
 
 // linux/suid_bit_set.yml — Setuid bit set on a file - SUID backdoor planted (auditd)
-key:suid_change AND (NOT (exe:(*\/dpkg OR *\/rpm OR *\/apt OR *\/apt\-get OR *\/yum OR *\/dnf OR *\/zypper OR *\/install OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)))
+key:suid_change AND (NOT (exe:(\/usr\/bin\/dpkg OR \/bin\/dpkg OR \/usr\/bin\/rpm OR \/bin\/rpm OR \/usr\/bin\/apt OR \/usr\/bin\/apt\-get OR \/usr\/bin\/yum OR \/usr\/bin\/dnf OR \/usr\/bin\/zypper OR \/usr\/bin\/ansible\-playbook OR \/opt\/puppetlabs\/puppet\/bin\/puppet OR \/usr\/bin\/chef\-client OR \/usr\/bin\/salt\-minion)))
 
 // linux/systemd_unit_persistence.yml — Systemd unit persistence - unit or timer file written (auditd)
 key:systemd_persist AND (NOT ((exe:(*\/dpkg OR *\/rpm OR *\/apt OR *\/apt\-get OR *\/yum OR *\/dnf OR *\/zypper OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)) OR (exe:*\/systemctl AND name:*.wants\/*) OR (exe:*\/systemd AND name:\/run\/systemd\/system\/*)))
@@ -289,7 +289,7 @@ EventID:4698 AND (TaskContent:(*\-enc\ * OR *\-EncodedCommand* OR *\-w\ hidden* 
 EventID:(4886 OR 4887)
 
 // privilege_escalation/potato_seimpersonate_4688.yml — Potato privesc - service identity spawning an interactive shell (Security 4688)
-(Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe)) AND (SubjectUserName:(*APPPOOL* OR *NETWORK\ SERVICE* OR *LOCAL\ SERVICE*))
+(Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe)) AND (SubjectUserSid:S\-1\-5\-82\-* OR (SubjectUserSid:(S\-1\-5\-19 OR S\-1\-5\-20)) OR SubjectDomainName:"IIS APPPOOL" OR SubjectUserName:"LOCAL SERVICE")
 
 // privilege_escalation/potato_seimpersonate_sysmon_1.yml — Potato privesc - service identity spawning an interactive shell (Sysmon 1)
 (Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe)) AND (ParentUser:(*APPPOOL* OR *NETWORK\ SERVICE* OR *LOCAL\ SERVICE*))

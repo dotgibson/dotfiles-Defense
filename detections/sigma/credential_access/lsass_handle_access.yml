@@ -17,6 +17,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/lsass-4656.md
 author: dotfiles-Defense
 date: 2026-06-30
+modified: 2026-09-28
 tags:
   - attack.credential-access
   - attack.t1003.001
@@ -39,14 +40,20 @@ detection:
     # binary names differ by product and version. In any non-Defender shop the EDR reads
     # LSASS continuously, so until this matches your agent this high-severity rule fires
     # steadily. Run detections/sigma/deploy-required.sh to find this.
-    SourceImage|endswith:
-      - '\MsMpEng.exe'
-      - '\MsSense.exe'
-      - '\wininit.exe'
-      - '\csrss.exe'
-      - '\CSFalconService.exe'     # example (CrowdStrike) — verify against your fleet
-      - '\SentinelAgent.exe'       # example (SentinelOne) — verify against your fleet
-      - '\RepMgr.exe'              # example (Carbon Black) — verify against your fleet
+    # Keyed on FULL paths / protected install directories, never a bare basename:
+    # `SourceImage|endswith: '\MsMpEng.exe'` also matched C:\Users\Public\MsMpEng.exe, so a
+    # dumper renamed to MsMpEng.exe was filtered. Defender runs from a versioned folder
+    # under its Platform directory, which tamper protection keeps attacker-proof.
+    - SourceImage|startswith:
+        - 'C:\ProgramData\Microsoft\Windows Defender\Platform\'
+        - 'C:\Program Files\Windows Defender\'
+        - 'C:\Program Files\Windows Defender Advanced Threat Protection\'
+    - SourceImage:
+        - 'C:\Windows\System32\wininit.exe'
+        - 'C:\Windows\System32\csrss.exe'
+        - 'C:\Program Files\CrowdStrike\CSFalconService.exe'   # example (CrowdStrike) — verify on your fleet
+        - 'C:\Program Files\Confer\RepMgr.exe'                 # example (Carbon Black) — verify on your fleet
+    - SourceImage|startswith: 'C:\Program Files\SentinelOne\'   # example (SentinelOne, versioned folder) — verify
   condition: selection and not filter_av
 falsepositives:
   - Endpoint protection / EDR agents reading LSASS (allowlist by SourceImage).
