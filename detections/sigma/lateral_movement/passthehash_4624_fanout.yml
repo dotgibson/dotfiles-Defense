@@ -15,6 +15,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/lateral-4624-fanout.md
 author: dotfiles-Defense
 date: 2026-07-15
+modified: 2026-09-28
 name: network_logon_4624
 tags:
   - attack.lateral-movement
@@ -32,9 +33,23 @@ detection:
       - '-'
       - '127.0.0.1'
       - '::1'
-  condition: selection and not filter_local
+  filter_machine:
+    # A workstation's own computer account (and every user) authenticates type 3 to several
+    # DCs, file and print servers at boot and logon - past 5 hosts in 10 minutes across the
+    # whole estate, every morning. Machine accounts are not how pass-the-hash reuses a
+    # human credential, so they are dropped here. Kerberos is deliberately kept: this base
+    # also serves the generic remote-service fan-out (T1021), not only NTLM pass-the-hash.
+    TargetUserName|endswith: '$'
+  filter_anonymous:
+    # Null-session / anonymous SMB and RPC binds (S-1-5-7) - enumeration noise, not reuse
+    # of a stolen credential.
+    TargetUserName: 'ANONYMOUS LOGON'
+  condition: selection and not 1 of filter_*
 falsepositives:
   - A single user opening one file share (defeated by the distinct-host count below).
+  - A user's own morning logon reaching DCs, file and print servers - usually under the
+    threshold once machine accounts are dropped; raise the threshold or exclude DC
+    destinations if your estate still trips it.
 level: informational
 ---
 title: Pass-the-hash / credential reuse - one source, many hosts (4624)

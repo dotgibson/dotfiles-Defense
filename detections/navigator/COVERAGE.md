@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**120 rules · 140 detection documents · 86 techniques · 12 tactics · 24 logsources.**
+**121 rules · 142 detection documents · 86 techniques · 12 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
@@ -15,7 +15,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Stealth | TA0005 | 3 | 6 |
 | Defense Impairment | TA0112 | 8 | 13 |
 | Credential Access | TA0006 | 18 | 22 |
-| Discovery | TA0007 | 14 | 8 |
+| Discovery | TA0007 | 14 | 9 |
 | Lateral Movement | TA0008 | 11 | 8 |
 | Collection | TA0009 | 5 | 4 |
 | Exfiltration | TA0010 | 3 | 3 |
@@ -51,12 +51,12 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1074.001 | 1 | `archive_staging_utility` |
 | T1082 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1087.001 | 3 | `host_recon_command_burst`, `host_recon_powershell_4104`, `local_group_enum_sweep_4798_4799` |
-| T1087.002 | 4 | `ldap_recon_explicit_creds_4648`, `ldap_recon_property_reads_4662`, `ldap_recon_search_filter_1644`, `sharphound_ldap_sweep_4662` |
+| T1087.002 | 5 | `kerberos_user_enum_4768`, `ldap_recon_explicit_creds_4648`, `ldap_recon_property_reads_4662`, `ldap_recon_search_filter_1644`, `sharphound_ldap_sweep_4662` |
 | T1098 | 16 | `aws_login_profile_created`, `cloudflare_api_token_created`, `gcp_iam_policy_backdoor`, `github_credential_backdoor`, `gitlab_token_backdoor`, `harbor_robot_account_created`, `jenkins_api_token_created`, `k8s_clusteradmin_binding`, `npm_maintainer_added`, `okta_api_token_created`, `pypi_collaborator_added`, `pypi_trusted_publisher_added`, `rbcd_allowedtoact_5136`, `slack_app_installed`, `tfc_token_backdoor`, `vault_approle_backdoor` |
 | T1098.001 | 3 | `aws_iam_access_key_created`, `entra_sp_credential_backdoor`, `gcp_service_account_key_created` |
 | T1098.003 | 3 | `aws_iam_privesc_policy`, `entra_directory_role_grant`, `gws_admin_role_grant` |
 | T1098.004 | 1 | `ssh_authorized_keys_write` |
-| T1110.003 | 1 | `password_spray_4625` |
+| T1110.003 | 2 | `asrep_roast_probing_4771`, `password_spray_4625` |
 | T1112 | 1 | `wdigest_uselogoncredential_enabled_sysmon_13` |
 | T1114.003 | 1 | `gws_external_mail_forwarding` |
 | T1134.001 | 6 | `potato_seimpersonate_4688`, `potato_seimpersonate_sysmon_1`, `spoolss_pipe_impersonation_sysmon_17`, `srvsvc_epmapper_pipe_impersonation_sysmon_17`, `token_theft_parent_child_mismatch_sysmon_1`, `token_theft_process_target_subject_4688` |
@@ -94,7 +94,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1556.006 | 1 | `okta_mfa_factor_reset` |
 | T1558 | 1 | `unconstrained_delegation_4624` |
 | T1558.003 | 1 | `kerberoasting_rc4_tgs` |
-| T1558.004 | 2 | `asrep_roast_4768`, `asrep_roast_probing_4771` |
+| T1558.004 | 1 | `asrep_roast_4768` |
 | T1558.005 | 1 | `ccache_theft_staging` |
 | T1560.001 | 1 | `archive_staging_utility` |
 | T1563.002 | 1 | `rdp_hijack_tscon_4688` |
@@ -121,7 +121,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `collection` | `windows` | 2 |
 | `credential_access` | `windows` | 12 |
 | `defense_impairment` | `windows` | 4 |
-| `discovery` | `windows` | 8 |
+| `discovery` | `windows` | 9 |
 | `github` | `github` | 3 |
 | `gitlab` | `gitlab` | 3 |
 | `google_workspace` | `google_workspace` | 3 |

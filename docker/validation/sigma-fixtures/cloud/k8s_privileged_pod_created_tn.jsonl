@@ -1,1 +1,2 @@
 {"verb": "create", "objectRef": {"resource": "pods"}, "requestObject": {"spec": {"hostPID": false, "hostIPC": false, "containers": [{"name": "c", "securityContext": {"privileged": false}}], "volumes": [{"name": "data", "hostPath": {"path": "/opt/appdata"}}]}}}
+{"verb": "patch", "objectRef": {"resource": "pods", "subresource": "ephemeralcontainers"}, "requestObject": {"spec": {"ephemeralContainers": [{"name": "debugger-y", "securityContext": {"privileged": false}}]}}}

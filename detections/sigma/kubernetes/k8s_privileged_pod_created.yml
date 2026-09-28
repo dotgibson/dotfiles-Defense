@@ -22,9 +22,10 @@ description: |
   (htpx pair k8s-privileged-pod). Requires the kube-apiserver audit policy logging
   pod create at RequestResponse level (so requestObject is present).
 
-  DEPLOY-REQUIRED: array traversal. Two of the three escape branches key into JSON
-  ARRAYS: `spec.containers` is []Container and `spec.volumes` is []Volume in the
-  kube-apiserver audit requestObject. Sigma has no portable array-index syntax, so the
+  DEPLOY-REQUIRED: array traversal. Every branch but hostPID keys into a JSON ARRAY:
+  `spec.containers` and `spec.initContainers` are []Container, `spec.volumes` is []Volume,
+  and `spec.ephemeralContainers` is []EphemeralContainer in the kube-apiserver audit
+  requestObject. Sigma has no portable array-index syntax, so the
   dotted paths below rely on the BACKEND expanding arrays, and backends differ:
     - Elasticsearch/OpenSearch: object fields are flattened by default, so
       `requestObject.spec.containers.securityContext.privileged` matches. Works as shipped
@@ -43,7 +44,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/k8s-privileged-pod-audit.md
 author: dotfiles-Defense
 date: 2026-06-30
-modified: 2026-09-02
+modified: 2026-09-28
 tags:
   - attack.privilege-escalation
   - attack.t1610
@@ -57,6 +58,10 @@ detection:
     objectRef.resource: 'pods'
   escape_privileged:
     requestObject.spec.containers.securityContext.privileged: true
+  escape_privileged_init:
+    # An init container runs with the same node access as any other; checking only
+    # spec.containers let a privileged initContainer through.
+    requestObject.spec.initContainers.securityContext.privileged: true
   escape_hostpid:
     requestObject.spec.hostPID: true
   escape_hostipc:
@@ -75,7 +80,18 @@ detection:
       - '/var/lib/kubelet'
       - '/var/lib/docker'
       - '/var/lib/containerd'
-  condition: selection_create and 1 of escape_*
+  selection_ephemeral:
+    # Ephemeral containers (kubectl debug) are added by a patch to the pods/ephemeralcontainers
+    # subresource, never by a pod create - `kubectl debug --profile=sysadmin` sets them
+    # privileged on a running pod.
+    verb:
+      - 'patch'
+      - 'update'
+    objectRef.resource: 'pods'
+    objectRef.subresource: 'ephemeralcontainers'
+  ephemeral_privileged:
+    requestObject.spec.ephemeralContainers.securityContext.privileged: true
+  condition: (selection_create and 1 of escape_*) or (selection_ephemeral and ephemeral_privileged)
 falsepositives:
   - Sanctioned infrastructure pods (CNI, CSI, monitoring agents) that require
     privileged or hostPath - allowlist by namespace/serviceaccount/image.

@@ -1,1 +1,3 @@
 {"verb": "create", "objectRef": {"resource": "clusterrolebindings"}, "requestObject": {"roleRef": {"name": "cluster-admin"}}}
+{"verb": "patch", "objectRef": {"resource": "clusterrolebindings", "name": "cluster-admin"}, "requestObject": [{"op": "add", "path": "/subjects/-", "value": {"kind": "User", "name": "mallory"}}]}
+{"verb": "patch", "objectRef": {"resource": "clusterrolebindings", "name": "platform-admins"}, "requestObject": [{"op": "add", "path": "/subjects/-", "value": {"kind": "User", "name": "mallory"}}], "responseObject": {"roleRef": {"name": "cluster-admin"}}}

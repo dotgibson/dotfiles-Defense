@@ -28,7 +28,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/k8s-rolebinding-audit.md
 author: dotfiles-Defense
 date: 2026-06-30
-modified: 2026-09-02
+modified: 2026-09-28
 tags:
   - attack.privilege-escalation
   - attack.persistence
@@ -46,7 +46,29 @@ detection:
       - 'clusterrolebindings'
       - 'rolebindings'
     requestObject.roleRef.name: 'cluster-admin'
-  condition: selection
+  # roleRef is IMMUTABLE on a (Cluster)RoleBinding (Kubernetes RBAC docs), so "grant
+  # cluster-admin" after creation is a patch/update that ADDS A SUBJECT to a binding that
+  # already points at cluster-admin - `kubectl patch clusterrolebinding cluster-admin
+  # --type=json -p '[{"op":"add","path":"/subjects/-",...}]'`. That request body carries
+  # no roleRef, so the selection above never saw it.
+  selection_extend_default:
+    # The built-in binding is itself named cluster-admin.
+    verb:
+      - 'update'
+      - 'patch'
+    objectRef.resource: 'clusterrolebindings'
+    objectRef.name: 'cluster-admin'
+  selection_extend_any:
+    # Any other binding pointing at cluster-admin: visible only in the RESPONSE, which the
+    # audit policy must log at RequestResponse level for these resources.
+    verb:
+      - 'update'
+      - 'patch'
+    objectRef.resource:
+      - 'clusterrolebindings'
+      - 'rolebindings'
+    responseObject.roleRef.name: 'cluster-admin'
+  condition: 1 of selection*
 falsepositives:
   - Cluster bootstrap and sanctioned platform automation (GitOps/IaC) that manages
     RBAC - allowlist those principals and review the rest.

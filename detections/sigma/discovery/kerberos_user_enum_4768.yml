@@ -1,0 +1,65 @@
+title: Kerberos username enumeration base - TGT request for an unknown principal (4768 0x6)
+id: f8b64264-fd7d-4c29-8c48-2c93bed79735
+status: experimental
+description: |
+  Base event for the Kerberos username-enumeration correlation: a 4768 (TGT request)
+  failing with status 0x6, KDC_ERR_C_PRINCIPAL_UNKNOWN - the name is not in the directory.
+  kerbrute userenum and impacket-GetNPUsers run against a user list send one AS-REQ per
+  candidate name; the KDC answers a real account with PREAUTH_REQUIRED (no failure event)
+  and a nonexistent one with 0x6. One is a typo; many distinct names from one client is
+  the sweep. Enumeration is the step before a spray or an AS-REP roast, and it needs no
+  credentials, so it is often the first thing an outside-in operator does.
+  Data-source prerequisite: failed 4768s are logged only with FAILURE auditing enabled on
+  the "Audit Kerberos Authentication Service" subcategory on every DC. Success-only
+  auditing (a common default) makes this rule silently inert.
+references:
+  - https://attack.mitre.org/techniques/T1087/002/
+  - https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4768
+author: dotfiles-Defense
+date: 2026-09-28
+name: kerb_tgt_unknown_principal_4768
+tags:
+  - attack.discovery
+  - attack.t1087.002
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4768
+    Status: '0x6'
+  condition: selection
+falsepositives:
+  - A single user or a misconfigured service asking for a name that does not exist
+    (defeated by the distinct-name count below).
+level: informational
+---
+title: Kerberos username enumeration - one source, many unknown principals (4768 0x6)
+id: fb124d77-9e40-4f36-b1da-df45c138a5df
+status: experimental
+description: |
+  Detects one client address requesting TGTs for many distinct names that do not exist
+  (4768 status 0x6) - the kerbrute userenum / GetNPUsers-with-a-user-list sweep. This is the
+  enumeration that asrep_roast_probing_4771.yml used to claim; 4771 0x18 is a wrong
+  password and belongs to the spray. Ten unknown names from one source in ten minutes is
+  not a typo.
+  Validate (purple): run "kerbrute userenum" or GetNPUsers with a user list from
+  dotfiles-Offense (hacktheplanet "Microsoft Windows Kerberos" fold; htpx pair
+  asreproast-getnpusers).
+references:
+  - https://attack.mitre.org/techniques/T1087/002/
+correlation:
+  type: value_count
+  rules:
+    - kerb_tgt_unknown_principal_4768
+  group-by:
+    - IpAddress
+  timespan: 10m
+  condition:
+    gte: 10
+    field: TargetUserName
+falsepositives:
+  - An application or SSO appliance misconfigured with a list of stale usernames (it
+    repeats the same names; allowlist its address).
+  - A shared NAT egress collapsing many users behind one address.
+level: medium

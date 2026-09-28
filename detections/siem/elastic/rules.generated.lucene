@@ -69,7 +69,7 @@ resource.type:api_token AND action.type:create
 // credential_access/asrep_roast_4768.yml — AS-REP roast - TGT issued without pre-authentication (4768 type 0)
 (EventID:4768 AND PreAuthType:0) AND (NOT TargetUserName:*$)
 
-// credential_access/asrep_roast_probing_4771.yml — AS-REP / Kerbrute enumeration base - Kerberos pre-auth failure 0x18 (4771)
+// credential_access/asrep_roast_probing_4771.yml — Kerberos password-spray base - pre-auth failure 0x18, wrong password (4771)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // credential_access/coercion_efsrpc_pipe_sysmon_18.yml — Authentication coercion - efsrpc named-pipe bind on the host (Sysmon 18)
@@ -121,6 +121,9 @@ EventID:1102
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // discovery/host_recon_powershell_4104.yml — PowerShell discovery cmdlet base (4104)
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
+// discovery/kerberos_user_enum_4768.yml — Kerberos username enumeration base - TGT request for an unknown principal (4768 0x6)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // discovery/ldap_recon_explicit_creds_4648.yml — Explicit-credential logon base - 4648 with a named target
@@ -199,13 +202,13 @@ uri:*\/createItem* OR (uri:*\/job\/* AND uri:*\/configSubmit*)
 uri:*\/script* AND (NOT uri:*\/scriptApproval*)
 
 // kubernetes/k8s_clusteradmin_binding.yml — Kubernetes cluster-admin role binding created or modified
-(verb:(create OR update OR patch)) AND (objectRef.resource:(clusterrolebindings OR rolebindings)) AND requestObject.roleRef.name:cluster\-admin
+((verb:(create OR update OR patch)) AND (objectRef.resource:(clusterrolebindings OR rolebindings)) AND requestObject.roleRef.name:cluster\-admin) OR ((verb:(update OR patch)) AND objectRef.resource:clusterrolebindings AND objectRef.name:cluster\-admin) OR ((verb:(update OR patch)) AND (objectRef.resource:(clusterrolebindings OR rolebindings)) AND responseObject.roleRef.name:cluster\-admin)
 
 // kubernetes/k8s_pod_exec_attach.yml — Kubernetes pod exec / attach
 (verb:create AND objectRef.resource:pods AND (objectRef.subresource:(exec OR attach))) AND (NOT user.username:system\:serviceaccount\:*)
 
 // kubernetes/k8s_privileged_pod_created.yml — Kubernetes privileged / host-namespace pod created (node escape)
-(verb:create AND objectRef.resource:pods) AND (requestObject.spec.containers.securityContext.privileged:true OR requestObject.spec.hostPID:true OR requestObject.spec.hostIPC:true OR requestObject.spec.volumes.hostPath.path:\/ OR (requestObject.spec.volumes.hostPath.path:(\/proc* OR \/var\/run* OR \/run* OR \/etc* OR \/root* OR \/dev* OR \/sys* OR \/var\/lib\/kubelet* OR \/var\/lib\/docker* OR \/var\/lib\/containerd*)))
+((verb:create AND objectRef.resource:pods) AND (requestObject.spec.containers.securityContext.privileged:true OR requestObject.spec.initContainers.securityContext.privileged:true OR requestObject.spec.hostPID:true OR requestObject.spec.hostIPC:true OR requestObject.spec.volumes.hostPath.path:\/ OR (requestObject.spec.volumes.hostPath.path:(\/proc* OR \/var\/run* OR \/run* OR \/etc* OR \/root* OR \/dev* OR \/sys* OR \/var\/lib\/kubelet* OR \/var\/lib\/docker* OR \/var\/lib\/containerd*)))) OR (((verb:(patch OR update)) AND objectRef.resource:pods AND objectRef.subresource:ephemeralcontainers) AND requestObject.spec.ephemeralContainers.securityContext.privileged:true)
 
 // lateral_movement/passthehash_4624_fanout.yml — Network-logon base - successful type-3 logon (4624)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -223,7 +226,7 @@ EventType:ConnectPipe AND Image:System AND (PipeName:(*svcctl* OR *atsvc*))
 (EventID:4624 AND LogonType:3 AND AuthenticationPackageName:Kerberos AND (TargetUserName:(DC1$ OR DC2$))) AND (NOT (Computer:(DC1* OR DC2*)))
 
 // lateral_movement/wmiexec_wmiprvse_child_4688.yml — WMI remote exec - shell spawned by WmiPrvSE
-(ParentImage:*\\WmiPrvSE.exe AND (Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe))) AND (CommandLine:*\/Q* AND CommandLine:*\/c* AND CommandLine:*127.0.0.1\\ADMIN$*)
+(ParentImage:*\\WmiPrvSE.exe AND (Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe))) AND (CommandLine:*\/Q* AND CommandLine:*\/c* AND CommandLine:*\ 1\>\ * AND CommandLine:*2\>\&1*)
 
 // linux/ccache_theft_staging.yml — Kerberos ccache file named on a command line (theft / staging)
 (CommandLine:(*\/tmp\/krb5cc_* OR *.ccache* OR *krb5.ccache*)) AND (NOT (Image:(*\/kinit OR *\/klist OR *\/kdestroy OR *\/kvno OR *\/kswitch OR *\/kpasswd)))
@@ -340,7 +343,7 @@ action:app_installed
 action:(external_shared_channel_invite_created OR external_shared_channel_invite_accepted OR external_shared_channel_invite_approved OR external_shared_channel_connected)
 
 // snowflake/snowflake_data_unload.yml — Snowflake data unload (COPY INTO external stage — exfil triage)
-query_type:UNLOAD AND (NOT ((query_text:(*@%* OR *@\~*)) OR query_text:*MY_SANCTIONED_STAGE*))
+query_type:UNLOAD AND (NOT ((query_text:(COPY\ INTO\ @%* OR COPY\ INTO\ @\~*)) OR query_text:COPY\ INTO\ @MY_SANCTIONED_STAGE*))
 
 // snowflake/snowflake_network_policy_change.yml — Snowflake network policy changed (IP allowlist tamper)
 (query_text:(*NETWORK\ POLICY* OR *NETWORK_POLICY*)) AND (NOT (query_text:(SHOW* OR DESC*)))
@@ -363,5 +366,5 @@ resource.type:authentication_token AND resource.action:create
 // vault/vault_audit_device_disabled.yml — HashiCorp Vault audit device disabled (blind the SIEM)
 type:request AND request.operation:delete AND request.path:sys\/audit\/*
 
-// vault/vault_bulk_secret_read.yml — Vault secret-read base - KV read on a secret/ path
+// vault/vault_bulk_secret_read.yml — Vault secret-read base - KV read on a secret mount
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
