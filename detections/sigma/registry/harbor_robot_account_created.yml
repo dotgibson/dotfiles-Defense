@@ -16,7 +16,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/harbor-robot-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
-modified: 2026-09-02
+modified: 2026-09-27
 tags:
   - attack.persistence
   - attack.t1098
@@ -31,9 +31,10 @@ detection:
     # DEPLOY-REQUIRED: replace with the operator(s) that legitimately mint robot
     # accounts - the Terraform / GitOps identity that provisions per-project robots.
     # Until filled this excludes only the example, so routine robot provisioning
-    # alerts alongside the backdoor. `operator` is the actor field the other Harbor
-    # rules here key on. Run detections/sigma/deploy-required.sh to find this.
-    operator:
+    # alerts alongside the backdoor. `username` is the actor field in Harbor's audit API /
+    # database record (AuditLogExt); the syslog-forward format calls it `operator`, so
+    # normalize to the API shape first. Run detections/sigma/deploy-required.sh to find this.
+    username:
       - 'svc-terraform-harbor'   # example — replace
   condition: selection and not filter_provisioning
 falsepositives:

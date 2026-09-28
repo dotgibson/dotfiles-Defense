@@ -1,1 +1,4 @@
-{"gcp": {"audit": {"method_name": "google.iam.admin.v1.SetIamPolicy", "principal_email": "attacker@corp.example"}}}
+{"gcp": {"audit": {"method_name": "SetIamPolicy", "principal_email": "attacker@corp.example"}}}
+{"gcp": {"audit": {"method_name": "cloudresourcemanager.v1.projects.setIamPolicy", "principal_email": "attacker@corp.example"}}}
+{"gcp": {"audit": {"method_name": "google.iam.admin.v1.SetIAMPolicy", "principal_email": "attacker@corp.example"}}}
+{"gcp": {"audit": {"method_name": "storage.setIamPermissions", "principal_email": "attacker@corp.example"}}}

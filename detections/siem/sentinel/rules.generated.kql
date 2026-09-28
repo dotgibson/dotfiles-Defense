@@ -46,7 +46,7 @@ eventSource =~ "iam.amazonaws.com" and (eventName in~ ("CreateLoginProfile", "Up
 ((['gcp.audit.method_name'] endswith ".instances.setMetadata" and (['gcp.audit.metadata.instance_metadata_delta.added_metadata_keys'] in~ ("startup-script", "startup-script-url", "windows-startup-script-cmd", "windows-startup-script-bat", "windows-startup-script-ps1", "windows-startup-script-url"))) or (['gcp.audit.method_name'] endswith ".instances.setMetadata" and (['gcp.audit.metadata.instance_metadata_delta.modified_metadata_keys'] in~ ("startup-script", "startup-script-url", "windows-startup-script-cmd", "windows-startup-script-bat", "windows-startup-script-ps1", "windows-startup-script-url")))) and (not(['gcp.audit.principal_email'] =~ "compute-terraform@example.iam.gserviceaccount.com"))
 
 // cloud/gcp_iam_policy_backdoor.yml — GCP IAM policy binding added (SetIamPolicy backdoor)
-['gcp.audit.method_name'] endswith ".SetIamPolicy" and (not(['gcp.audit.principal_email'] =~ "iam-terraform@example.iam.gserviceaccount.com"))
+(['gcp.audit.method_name'] endswith "SetIamPolicy" or ['gcp.audit.method_name'] endswith "setIamPolicy" or ['gcp.audit.method_name'] endswith "SetIAMPolicy" or ['gcp.audit.method_name'] endswith "setIamPermissions") and (not(['gcp.audit.principal_email'] =~ "iam-terraform@example.iam.gserviceaccount.com"))
 
 // cloud/gcp_service_account_key_created.yml — GCP user-managed service-account key created
 (['gcp.audit.method_name'] in~ ("google.iam.admin.v1.CreateServiceAccountKey", "google.iam.admin.v1.UploadServiceAccountKey")) and (not(['gcp.audit.principal_email'] =~ "iam-terraform@example.iam.gserviceaccount.com"))
@@ -124,7 +124,7 @@ EventID == 1102
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // discovery/ldap_recon_search_filter_1644.yml — Targeted LDAP recon - revealing search filter (1644)
-EventID == 1644 and (SearchFilter contains "servicePrincipalName" or SearchFilter contains "userAccountControl:1.2.840.113556.1.4.803" or SearchFilter contains "adminCount" or SearchFilter contains "msDS-AllowedToDelegateTo" or SearchFilter contains "trustedForDelegation")
+EventID == 1644 and (SearchFilter contains "servicePrincipalName" or SearchFilter contains "userAccountControl&" or SearchFilter contains "userAccountControl &" or SearchFilter contains "userAccountControl:1.2.840.113556.1.4.803" or SearchFilter contains "adminCount" or SearchFilter contains "msDS-AllowedToDelegateTo")
 
 // discovery/local_group_enum_sweep_4798_4799.yml — Local SAM enumeration base - local group membership was enumerated
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -136,10 +136,10 @@ EventID == 1644 and (SearchFilter contains "servicePrincipalName" or SearchFilte
 action in~ ("protected_branch.destroy", "protected_branch.policy_override")
 
 // github/github_credential_backdoor.yml — GitHub deploy-key, PAT, or App-install credential backdoor
-action in~ ("repo.create_deploy_key", "personal_access_token.access_granted", "integration_installation.create")
+action in~ ("public_key.create", "personal_access_token.access_granted", "integration_installation.create")
 
 // github/github_self_hosted_runner_registered.yml — GitHub self-hosted runner registered (job/secret capture)
-action =~ "self_hosted_runner.created" and (not(actor =~ "svc-runner-provisioner"))
+(action endswith ".register_self_hosted_runner" or action endswith ".configure_self_hosted_jit_runner") and (not(actor =~ "svc-runner-provisioner"))
 
 // gitlab/gitlab_protected_branch_tamper.yml — GitLab protected-branch tampered (unreviewed merge)
 event_type =~ "protected_branch_removed"
@@ -151,7 +151,7 @@ event_type =~ "set_runner_associated_projects"
 event_type in~ ("project_access_token_created", "group_access_token_created", "personal_access_token_created", "deploy_token_created", "group_deploy_token_created")
 
 // google_workspace/gws_admin_role_grant.yml — Google Workspace admin/super-admin role granted (tenant persistence)
-eventName in~ ("GRANT_DELEGATED_ADMIN_PRIVILEGES", "ASSIGN_ROLE")
+eventName in~ ("GRANT_ADMIN_PRIVILEGE", "GRANT_DELEGATED_ADMIN_PRIVILEGES", "ASSIGN_ROLE")
 
 // google_workspace/gws_external_mail_forwarding.yml — Google Workspace external mail forwarding enabled (BEC exfil)
 eventName =~ "email_forwarding_out_of_domain"
@@ -304,22 +304,22 @@ User contains "SYSTEM" and (ParentUser contains "APPPOOL" or ParentUser contains
 TargetUserSid =~ "S-1-5-18" and (not(SubjectUserSid =~ "S-1-5-18"))
 
 // pypi/pypi_collaborator_added.yml — PyPI project collaborator added (durable publish backdoor)
-action startswith "add Owner" or action startswith "add Maintainer"
+action startswith "invite Owner" or action startswith "invite Maintainer" or action startswith "accepted Owner" or action startswith "accepted Maintainer" or action startswith "add Owner" or action startswith "add Maintainer"
 
 // pypi/pypi_token_release_upload.yml — PyPI release uploaded via token, not trusted publishing (supply-chain implant)
-action =~ "new release" and (not(publisher_type =~ "trusted_publisher"))
+tag =~ "project:release:add" and (not(['additional.uploaded_via_trusted_publisher'] == true))
 
 // pypi/pypi_trusted_publisher_added.yml — PyPI trusted publisher added (credential-less publish backdoor)
-action startswith "add" and action contains "trusted publisher"
+tag in~ ("project:oidc:publisher-added", "organization:oidc:publisher-added")
 
 // registry/harbor_artifact_deleted.yml — Harbor artifact deleted (force re-pull / anti-forensics)
-(operation =~ "delete" and (resource_type in~ ("artifact", "repository"))) and (not(operator =~ "robot$harbor-gc"))
+(operation =~ "delete" and (resource_type in~ ("artifact", "repository"))) and (not(username =~ "robot$harbor-gc"))
 
 // registry/harbor_image_pushed_trusted_tag.yml — Harbor image push (backdoored image / trusted-tag poisoning)
-(operation =~ "push" and resource_type =~ "artifact") and (not(operator =~ "robot$ci-pipeline"))
+(operation =~ "create" and (resource_type in~ ("artifact", "tag"))) and (not(username =~ "robot$ci-pipeline"))
 
 // registry/harbor_robot_account_created.yml — Harbor robot account created (durable registry credential)
-(operation =~ "create" and resource_type =~ "robot") and (not(operator =~ "svc-terraform-harbor"))
+(operation =~ "create" and resource_type =~ "robot") and (not(username =~ "svc-terraform-harbor"))
 
 // slack/slack_2fa_enforcement_disabled.yml — Slack workspace 2FA enforcement setting changed
 action =~ "pref.two_factor_auth_changed"
@@ -328,7 +328,7 @@ action =~ "pref.two_factor_auth_changed"
 action =~ "app_installed"
 
 // slack/slack_external_shared_channel.yml — Slack Connect external shared channel (channel exfiltration)
-action in~ ("shared_channel_invite_sent", "shared_channel_invite_accepted")
+action in~ ("external_shared_channel_invite_created", "external_shared_channel_invite_accepted", "external_shared_channel_invite_approved", "external_shared_channel_connected")
 
 // snowflake/snowflake_data_unload.yml — Snowflake data unload (COPY INTO external stage — exfil triage)
 query_type =~ "UNLOAD" and (not(((query_text contains "@%" or query_text contains "@~") or query_text contains "MY_SANCTIONED_STAGE")))

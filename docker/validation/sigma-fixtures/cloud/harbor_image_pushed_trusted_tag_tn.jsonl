@@ -1,1 +1,1 @@
-{"operation": "push", "resource_type": "artifact", "operator": "robot$ci-pipeline", "resource": "library/app:1.4.2"}
+{"operation": "create", "resource_type": "artifact", "resource": "library/app:1.4.2", "username": "robot$ci-pipeline", "operation_description": "push artifact: library/app@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae", "is_successful": true}

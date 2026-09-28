@@ -1,6 +1,6 @@
 title: Snowflake network policy changed (IP allowlist tamper)
 id: 9fded018-1de7-4f8a-b257-84ae8c3e418e
-status: test
+status: experimental  # not `test` while the QUERY_HISTORY column casing (query_text vs QUERY_TEXT) is unconfirmed - see fixture-provenance.tsv
 description: |
   Detects Snowflake network-policy changes in ACCOUNT_USAGE.QUERY_HISTORY (query text
   containing NETWORK POLICY - a CREATE/ALTER/DROP network policy or ALTER ACCOUNT/USER SET
@@ -19,7 +19,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/snowflake-network-policy-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
-modified: 2026-09-02
+modified: 2026-09-27
 tags:
   - attack.defense-impairment
   - attack.t1686.001

@@ -2,8 +2,10 @@ title: PyPI trusted publisher added (credential-less publish backdoor)
 id: 4b0dd20c-fce9-4410-a7d4-ba338c4df93c
 status: experimental
 description: |
-  Detects a trusted-publisher addition in the PyPI project journal (an "add ... trusted
-  publisher" entry). Trusted publishing authorizes a named external CI identity (e.g. a GitHub
+  Detects a trusted-publisher addition in PyPI's security events (tag
+  project:oidc:publisher-added, or organization:oidc:publisher-added for an org-wide one).
+  Warehouse writes no journal entry for this, only the event, whose additional block names
+  the publisher, its specifier/url and submitted_by. Trusted publishing authorizes a named external CI identity (e.g. a GitHub
   repo + workflow) to publish over OIDC with no long-lived token; registering an
   attacker-controlled repo/workflow is a durable, credential-less publish backdoor - no token
   to revoke, and every future release from that workflow is trusted (T1098). The change is
@@ -16,6 +18,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/pypi-trusted-publisher-audit.md
 author: dotfiles-Defense
 date: 2026-07-03
+modified: 2026-09-27
 tags:
   - attack.persistence
   - attack.t1098
@@ -23,11 +26,11 @@ logsource:
   product: pypi
   service: audit
 detection:
-  add_action:
-    action|startswith: 'add'
-  trusted_publisher:
-    action|contains: 'trusted publisher'
-  condition: add_action and trusted_publisher
+  selection:
+    tag:
+      - 'project:oidc:publisher-added'
+      - 'organization:oidc:publisher-added'
+  condition: selection
 falsepositives:
   - Registering the project's own repo/workflow as a trusted publisher - pin the allowed
     publisher and alert on any addition that names another org/repo.

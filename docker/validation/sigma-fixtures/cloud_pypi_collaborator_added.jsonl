@@ -1,1 +1,2 @@
-{"Event": {"System": {"Channel": "pypi"}, "EventData": {"action": "add OwnerSUF"}}}
+{"Event": {"System": {"Channel": "pypi"}, "EventData": {"name": "acme-sdk", "action": "invite Owner mallory", "submitted_by": "alice"}}}
+{"Event": {"System": {"Channel": "pypi"}, "EventData": {"name": "acme-sdk", "action": "accepted Owner mallory", "submitted_by": "mallory"}}}

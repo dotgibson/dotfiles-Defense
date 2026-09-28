@@ -1,1 +1,2 @@
-{"Event": {"System": {"Channel": "github"}, "EventData": {"action": "self_hosted_runner.created", "actor": "svc-runner-provisioner"}}}
+{"Event": {"System": {"Channel": "github"}, "EventData": {"action": "org.register_self_hosted_runner", "actor": "svc-runner-provisioner"}}}
+{"Event": {"System": {"Channel": "github"}, "EventData": {"action": "repo.configure_self_hosted_jit_runner", "actor": "svc-runner-provisioner"}}}

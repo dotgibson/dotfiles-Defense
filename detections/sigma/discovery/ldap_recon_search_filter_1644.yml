@@ -29,8 +29,10 @@ references:
   - https://attack.mitre.org/techniques/T1069/002/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/ldap-recon-4662.md
   - https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/configure-ad-and-lds-event-logging
+  - https://www.huntress.com/blog/ldap-active-directory-detection-part-one
 author: dotfiles-Defense
 date: 2026-09-09
+modified: 2026-09-27
 tags:
   - attack.discovery
   - attack.t1087.002
@@ -43,10 +45,21 @@ detection:
     EventID: 1644
     SearchFilter|contains:
       - 'servicePrincipalName'
+      # 1644 does not log the bitwise-AND matching rule as sent: the DC rewrites
+      # `userAccountControl:1.2.840.113556.1.4.803:=4194304` to
+      # `(userAccountControl&4194304)`, and pads operands with spaces unpredictably
+      # (`( userAccountControl &524288)`), so the OID form alone never matched a real
+      # 1644. Both rewritten spacings are listed; the OID form is kept for pipelines that
+      # re-render the filter from the client side.
+      - 'userAccountControl&'
+      - 'userAccountControl &'
       - 'userAccountControl:1.2.840.113556.1.4.803'
       - 'adminCount'
       - 'msDS-AllowedToDelegateTo'
-      - 'trustedForDelegation'
+      # `trustedForDelegation` was here and is gone: it is an AD PowerShell
+      # pseudo-property, not an LDAP attribute - `Get-ADComputer -Filter
+      # {TrustedForDelegation -eq $true}` goes on the wire as the UAC bit
+      # (userAccountControl&524288), which the terms above already catch.
   condition: selection
 falsepositives:
   - Identity / PKI / monitoring tooling that legitimately queries these attributes

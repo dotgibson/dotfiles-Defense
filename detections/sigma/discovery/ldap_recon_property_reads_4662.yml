@@ -19,6 +19,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/ldap-recon-4662.md
 author: dotfiles-Defense
 date: 2026-09-09
+modified: 2026-09-27
 name: ldap_recon_property_read_4662
 tags:
   - attack.discovery
@@ -31,7 +32,7 @@ detection:
   selection:
     EventID: 4662
     Properties|contains:
-      - '28630ebc-41d5-11d1-a9c1-0000f80367c1'   # servicePrincipalName
+      - 'f3a64788-5306-11d1-a9c5-0000f80367c1'   # servicePrincipalName (schemaIDGUID, MS-ADA3)
       - 'bf967a68-0de6-11d0-a285-00aa003049e2'   # userAccountControl
   filter_machine_accounts:
     SubjectUserName|endswith: '$'

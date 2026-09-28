@@ -24,6 +24,48 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **Detection review, section A: thirteen rules that could not fire (wholly or in one arm),
+  or whose allowlist could never suppress, because rule and fixture shared a guess about
+  the vendor's log.** Every
+  corrected name below was checked against a primary source (vendor docs or source code),
+  and each fixture was rebuilt in that shape. Run against the new fixtures, the old rules
+  fail ten validation cases; the new ones pass 44/44 cloud and 108/108 host.
+  - **GitHub:** `github_self_hosted_runner_registered` keyed on `self_hosted_runner.created`,
+    which GitHub does not emit; it now matches `*.register_self_hosted_runner` and
+    `*.configure_self_hosted_jit_runner`. `github_credential_backdoor`'s deploy-key arm used
+    `repo.create_deploy_key`; GitHub logs a deploy key as `public_key.create` (github/docs
+    audit-log data).
+  - **Slack:** `slack_external_shared_channel` keyed on two action names Slack does not have;
+    it now uses `external_shared_channel_invite_created` / `_accepted` / `_approved` /
+    `external_shared_channel_connected`.
+  - **Harbor:** a push is audited as `operation: create` (there is no `push` operation), and
+    the actor is `username`, not `operator`. So `harbor_image_pushed_trusted_tag` never fired,
+    and none of the three Harbor allowlists suppressed anything. The trusted-tag rule now
+    also catches a tag re-pointed at an existing digest (`create` on `tag`).
+  - **PyPI:** the collaborator rule missed the `invite` / `accepted` path (the takeover
+    path) and now names project-creation's `add Owner` as a false positive. The token-upload
+    rule's filter keyed on a `publisher_type` column that does not exist; it now reads
+    `project:release:add` with `additional.uploaded_via_trusted_publisher`, so a
+    trusted-publisher upload is finally suppressed. The trusted-publisher rule looked for a
+    journal entry Warehouse never writes; it now keys on the `project:oidc:publisher-added`
+    event.
+  - **Google Workspace:** `gws_admin_role_grant` missed `GRANT_ADMIN_PRIVILEGE`, the actual
+    super-admin grant, and mislabelled `GRANT_DELEGATED_ADMIN_PRIVILEGES` as one.
+  - **GCP:** `gcp_iam_policy_backdoor` required a leading-dot, exact-case `.SetIamPolicy`,
+    missing Resource Manager's `…projects.setIamPolicy`, bucket `storage.setIamPermissions`
+    and the `SetIAMPolicy` spelling. Each casing is now listed.
+  - **AD:** `ldap_recon_property_reads_4662` used legacyExchangeDN's GUID for
+    servicePrincipalName (now `f3a64788-…`, MS-ADA3), so its Kerberoast half never fired.
+    `ldap_recon_search_filter_1644` matched the bitwise-OID form a DC never logs (1644
+    rewrites it to `userAccountControl&<bits>`) and `trustedForDelegation`, which is a
+    PowerShell pseudo-property rather than an LDAP attribute.
+  - **Jenkins:** the Audit Trail plugin's default pattern logs neither `/script` nor
+    `generateNewToken`. Both rules now carry a `DEPLOY-REQUIRED` note and a README
+    deploy-time row, and `jenkins_script_console` drops to `experimental`.
+    `npm_publish_2fa_disabled` (#149) and `snowflake_network_policy_change` also drop to
+    `experimental` while their fields are unconfirmed. 17 fixtures move to
+    `vendor-documented`, each citing its source.
+
 - **The host validation gate now tests correlation `timespan`, and runs the current SQL
   backend.** #333 pinned `pysigma-backend-sqlite` to 1.2.4 because 2.0.0 windows each
   correlation on the event time and the fixtures had none. The 34 correlation fixtures now

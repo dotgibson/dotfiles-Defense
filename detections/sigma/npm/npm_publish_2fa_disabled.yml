@@ -1,6 +1,6 @@
 title: npm publish-2FA requirement disabled (open the publish path)
 id: 0df91273-3e6e-459c-b865-468bd1f1c686
-status: test
+status: experimental  # not `test` while the mfa field is unconfirmed against npm's audit schema (#149) - a rule keyed on an unverified field can pass its fixture and never fire
 description: |
   Detects the package require-two-factor-to-publish control being turned off in the npm audit
   log (action=package.edit, mfa=none). That setting is what stops a bare stolen token from
@@ -16,6 +16,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/npm-2fa-audit.md
 author: dotfiles-Defense
 date: 2026-07-03
+modified: 2026-09-27
 tags:
   - attack.defense-impairment
   - attack.t1685

@@ -2,8 +2,11 @@ title: GitHub self-hosted runner registered (job/secret capture)
 id: d0d00bd8-b122-4909-96e2-49d2775598fb
 status: experimental
 description: |
-  Detects registration of a self-hosted Actions runner in the GitHub Enterprise
-  audit log (action self_hosted_runner.created). An attacker with repo/org admin can
+  Detects registration of a self-hosted Actions runner in the GitHub audit log:
+  repo./org./enterprise.register_self_hosted_runner, and the just-in-time variant
+  *.configure_self_hosted_jit_runner (an ephemeral runner minted through the API, the same
+  job capture without a long-lived registration). GitHub has no "self_hosted_runner.created"
+  action. An attacker with repo/org admin can
   bind their own runner with a label a workflow targets; every matching job then
   executes on their host, exposing the checked-out source, injected secrets.*, and
   the ephemeral GITHUB_TOKEN - durable, non-interactive persistence that survives the
@@ -17,7 +20,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/gh-runner-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
-modified: 2026-09-02
+modified: 2026-09-27
 tags:
   - attack.persistence
   - attack.t1543
@@ -26,7 +29,9 @@ logsource:
   service: audit
 detection:
   selection:
-    action: 'self_hosted_runner.created'
+    action|endswith:
+      - '.register_self_hosted_runner'
+      - '.configure_self_hosted_jit_runner'
   filter_runner_provisioning:
     # DEPLOY-REQUIRED: replace with the actor(s) that legitimately register runners -
     # the runner-provisioning service account or the autoscaler's app identity. Until

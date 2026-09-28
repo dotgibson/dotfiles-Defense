@@ -1,1 +1,1 @@
-{"action": "new release", "publisher_type": "api_token"}
+{"tag": "project:release:add", "additional": {"submitted_by": "alice", "canonical_version": "2.4.1", "publisher_url": null, "uploaded_via_trusted_publisher": false}}

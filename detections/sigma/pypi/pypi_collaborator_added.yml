@@ -2,8 +2,11 @@ title: PyPI project collaborator added (durable publish backdoor)
 id: e93df3fe-0b2f-47bc-b0d9-ac2961d54812
 status: experimental
 description: |
-  Detects a new Owner/Maintainer grant in the PyPI project journal (action begins "add Owner"
-  or "add Maintainer"). Adding an attacker-controlled account as a project owner mints durable
+  Detects a new Owner/Maintainer grant in the PyPI project journal. Warehouse writes three
+  shapes: "invite <role> <user>" then "accepted <role> <user>" for the normal collaborator
+  path (an invitation the new account accepts - the takeover path, since the attacker's own
+  account does the accepting), and "add <role> <user>" for a direct add of an existing
+  organization member. Adding an attacker-controlled account as a project owner mints durable
   publish rights that survive the compromised maintainer's password reset and token
   revocation, the persistent form of a stolen token (T1098). Role changes are rare and map to
   a known onboarding, so an unfamiliar account or an out-of-band grant is the tell; an
@@ -15,6 +18,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/pypi-role-audit.md
 author: dotfiles-Defense
 date: 2026-07-03
+modified: 2026-09-27
 tags:
   - attack.persistence
   - attack.t1098
@@ -24,10 +28,18 @@ logsource:
 detection:
   selection:
     action|startswith:
+      - 'invite Owner'
+      - 'invite Maintainer'
+      - 'accepted Owner'
+      - 'accepted Maintainer'
       - 'add Owner'
       - 'add Maintainer'
   condition: selection
 falsepositives:
+  - Project creation - Warehouse journals "add Owner <creator>" (submitted by that same
+    creator) right after the project's "create" entry, so every new project fires once.
+    Suppress an "add Owner" whose named user is its own submitter and follows a "create" for
+    the same project; a sigma selection cannot compare two fields, so do it in the SIEM.
   - Onboarding a sanctioned collaborator - reconcile new owners/maintainers against known
     collaborators and alert on unfamiliar accounts or grants made during an incident.
 level: high

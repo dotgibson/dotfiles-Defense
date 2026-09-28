@@ -16,6 +16,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/gcp-iam-policy-audit.md
 author: dotfiles-Defense
 date: 2026-07-22
+modified: 2026-09-27
 tags:
   - attack.persistence
   - attack.t1098
@@ -24,7 +25,18 @@ logsource:
   service: gcp.audit
 detection:
   selection:
-    gcp.audit.method_name|endswith: '.SetIamPolicy'
+    # No leading dot, and each casing listed explicitly because a Lucene keyword match is
+    # case-sensitive. Google's Resource Manager audit docs name project/folder/org grants
+    # "cloudresourcemanager.v1.projects.setIamPolicy" (lowercase s); Cloud Storage's name
+    # bucket IAM "storage.setIamPermissions". "SetIamPolicy" (bare, or with a service
+    # prefix) and the service-account "google.iam.admin.v1.SetIAMPolicy" spelling are the
+    # commonly reported forms - verify against your own export. None of these suffixes
+    # also matches the read-only "GetIamPolicy" or "testIamPermissions".
+    gcp.audit.method_name|endswith:
+      - 'SetIamPolicy'
+      - 'setIamPolicy'
+      - 'SetIAMPolicy'
+      - 'setIamPermissions'
   filter_iac:
     # DEPLOY-REQUIRED: replace with your IaC / access-management automation principal(s)
     # so pipeline-driven IAM changes don't alert. Until filled this excludes only the

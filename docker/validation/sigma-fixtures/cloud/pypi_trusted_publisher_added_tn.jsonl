@@ -1,1 +1,1 @@
-{"action": "add Maintainer bob"}
+{"tag": "project:oidc:publisher-removed", "additional": {"publisher": "GitHub", "id": "6b1f0c1e-2c1e-4a8e-9d3b-0f6f5c1d2e3a", "specifier": "acme/acme-sdk @ .github/workflows/release.yml", "url": "https://github.com/acme/acme-sdk", "submitted_by": "alice"}}

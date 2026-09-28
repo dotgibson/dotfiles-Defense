@@ -1,1 +1,1 @@
-{"operation": "delete", "resource_type": "artifact", "operator": "robot$harbor-gc"}
+{"operation": "delete", "resource_type": "artifact", "resource": "library/app:1.0.0", "username": "robot$harbor-gc", "is_successful": true}

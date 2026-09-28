@@ -22,7 +22,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/jenkins-api-token-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
-modified: 2026-09-02
+modified: 2026-09-27
 tags:
   - attack.persistence
   - attack.t1098
@@ -31,6 +31,9 @@ logsource:
   service: audit
 detection:
   selection:
+    # DEPLOY-REQUIRED: widen the Audit Trail plugin's URL pattern to include
+    # `generateNewToken`. Its default keyword list (DEFAULT_PATTERN in the plugin source)
+    # does not log it, so on a default install this rule never fires.
     uri|contains: 'ApiTokenProperty/generateNewToken'
   condition: selection
 falsepositives:
