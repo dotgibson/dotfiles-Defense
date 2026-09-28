@@ -24,6 +24,52 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **Detection review, section C (8-13): six rules that missed the attacker's variant, one
+  mislabelled technique, and a new Kerberos enumeration rule.** Each fix carries a fixture
+  that the old rule gets wrong. Host validation is 114/114 with 83 true negatives (was 80);
+  cloud validation stays 44/44 with more lines per fixture.
+  - **`wmiexec_wmiprvse_child_4688`:** it required the `ADMIN$` share, but impacket takes
+    the share from `-share`, so `-share C$` evaded it. NetExec, which the rule names, never
+    used the loopback share at all: it redirects to `\Windows\Temp\<6>` or, fileless, to
+    `\\<attacker-ip>\<share>\`. The rule now matches the redirect shape both tools build
+    (`/Q`, `/c`, ` 1> `, `2>&1`) wherever it points, and gains its first TN (a WmiPrvSE-run
+    script with no redirect). `-nooutput` leaves no redirect and is recorded as a gap,
+    because a bare `WmiPrvSE → cmd /Q /c` is too generic to alert on.
+  - **`passthehash_4624_fanout`:** machine accounts (`$`) and `ANONYMOUS LOGON` fan out
+    across hosts as routine traffic and could trip the correlation on their own. The base
+    now drops both; Kerberos stays in scope. A new TN of six `WS07$` logons fires the old
+    rule and not the new one.
+  - **`asrep_roast_probing_4771` is a Kerberos password spray, not AS-REP roasting.** 4771
+    `0x18` is a bad password at pre-authentication. It is retagged `T1110.003`
+    (credential-access) and retitled; filename and ids are kept. T1558.004 stays covered
+    by `asrep_roast_4768`.
+  - **New `kerberos_user_enum_4768`** takes over the enumeration claim the 4771 rule used to
+    make: 4768 status `0x6` (unknown principal), distinct names per `IpAddress`, 10 in 10
+    minutes (`kerbrute userenum`, GetNPUsers with a user list). Tagged T1087.002
+    (discovery), with TP, TN and outside-window fixtures.
+  - **`k8s_clusteradmin_binding`:** a binding's `roleRef` is immutable, so the realistic
+    escalation is a `patch`/`update` adding a subject to the existing `cluster-admin`
+    binding, and that patch carries no `roleRef`. A new arm matches it.
+  - **`k8s_privileged_pod_created`:** a privileged `initContainer`, or a privileged
+    ephemeral container attached through the `ephemeralcontainers` subresource, got past
+    it. It now has arms for both, and the array-traversal DEPLOY-REQUIRED note names the
+    new arrays.
+  - **`vault_bulk_secret_read`:** it grouped by `auth.entity_id`, which Vault omits for
+    root and orphan tokens, so a leaked root token's sweep was never counted. It now groups
+    by `auth.accessor`, while the allowlist stays on the stable entity id. The `secret/`
+    prefix is only the dev-server default, so it is now a DEPLOY-REQUIRED list of KV mounts.
+    The group-by change is proven by the compiled Splunk form (`by auth.accessor`). The
+    cloud plane cannot run correlations.
+  - **`snowflake_data_unload`:** the internal-stage filter was `contains '@~'/'@%'`, so a
+    stage reference in a SQL comment (`COPY INTO 's3://…' … /* @~ */`) suppressed an
+    external unload. It is now anchored with `startswith 'COPY INTO @~'/'COPY INTO @%'`,
+    which fails toward alerting. A regex was avoided because the cloud evaluator does not
+    run `|re` and Elastic would need a rewrite. `COPY INTO @~` followed by `GET` is noted
+    in the rule as a future correlation. The DEPLOY-REQUIRED `filter_known_stages` had the
+    same `contains` bypass (`/* MY_SANCTIONED_STAGE */`) and is anchored the same way.
+  - `detections/README.md`: rows updated, and the stale `sigma/` header count is corrected to
+    121 rules / 142 documents.
+
 - **Detection review, section C (1-7): seven rules with a dead term, an easy evasion, or an
   allowlist keyed on a name the attacker picks.** Each fix carries a fixture that the old
   rule gets wrong: it misses the new TP or fires on the new TN. Host validation is 111/111

@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 1, "Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "DC01"}, "EventData": {"ParentImage": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe", "Image": "C:\\Windows\\System32\\cmd.exe", "CommandLine": "cmd.exe /Q /c C:\\scripts\\inventory.bat", "User": "NT AUTHORITY\\SYSTEM"}}}

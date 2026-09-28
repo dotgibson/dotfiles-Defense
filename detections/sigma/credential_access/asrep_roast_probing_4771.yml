@@ -1,21 +1,26 @@
-title: AS-REP / Kerbrute enumeration base - Kerberos pre-auth failure 0x18 (4771)
+title: Kerberos password-spray base - pre-auth failure 0x18, wrong password (4771)
 id: 5eb3081c-3f36-48b1-980e-7430685bbc01
 status: experimental
 description: |
-  Base event for the AS-REP/Kerbrute enumeration correlation: a Kerberos pre-auth
-  failure with failure code 0x18 (4771). One is normal; many distinct targets
-  from one client is the probe. This is the secondary enumeration tell, not the
-  roast itself - the successful roast (4768 with pre-auth type 0) is detected by
-  asrep_roast_4768.yml.
+  Base event for the Kerberos password-spray correlation: a pre-auth failure with code
+  0x18, KDC_ERR_PREAUTH_FAILED - which Microsoft's 4771 reference defines as "the wrong
+  password was provided". One is normal; many distinct accounts from one client is the
+  spray. This rule used to call itself an AS-REP / username-ENUMERATION base, which 0x18
+  is not: kerbrute userenum and GetNPUsers send AS-REQs without pre-auth, so a real user
+  never reaches a password check and a nonexistent one comes back as 4768 status 0x6.
+  That enumeration is kerberos_user_enum_4768.yml; the roast itself (4768 pre-auth type
+  0) is asrep_roast_4768.yml. The filename is kept for the manifest and htpx references.
 references:
-  - https://attack.mitre.org/techniques/T1558/004/
+  - https://attack.mitre.org/techniques/T1110/003/
+  - https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4771
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/password-spray-4625.md
 author: dotfiles-Defense
 date: 2026-06-30
+modified: 2026-09-28
 name: kerb_preauth_fail_4771
 tags:
   - attack.credential-access
-  - attack.t1558.004
+  - attack.t1110.003
 logsource:
   product: windows
   service: security
@@ -28,19 +33,20 @@ falsepositives:
   - A single user with an expired password (defeated by the group-by below).
 level: informational
 ---
-title: AS-REP / Kerbrute username enumeration (4771 0x18)
+title: Kerberos password spray - one source, many accounts with wrong-password pre-auth failures (4771 0x18)
 id: c34eca90-8774-47f6-a0d7-c01b1a116c00
 status: experimental
 description: |
-  Detects one client address generating Kerberos pre-auth failures (0x18) across
-  many distinct accounts - the AS-REP / username-enumeration tell (Kerbrute userenum,
-  GetNPUsers probing). A real user fat-fingers their own name, not five-plus others.
-  This catches the enumeration sweep; the successful roast itself (4768 pre-auth type
-  0) is detected by asrep_roast_4768.yml.
-  Validate (purple): run "kerbrute userenum" / GetNPUsers from dotfiles-Offense
-  (hacktheplanet "Microsoft Windows Kerberos" fold; htpx pair asreproast-getnpusers).
+  Detects one client address generating wrong-password Kerberos pre-auth failures (0x18)
+  across many distinct accounts - a password spray over Kerberos (kerbrute
+  passwordspray / bruteuser), the 4771 twin of password_spray_4625.yml's NTLM/4625 view.
+  A real user mistypes their own password, not five-plus other people's. Username
+  enumeration does NOT produce this event (see the base rule's description); it is
+  kerberos_user_enum_4768.yml.
+  Validate (purple): run "kerbrute passwordspray" from dotfiles-Offense (hacktheplanet
+  "Microsoft Windows Kerberos" fold).
 references:
-  - https://attack.mitre.org/techniques/T1558/004/
+  - https://attack.mitre.org/techniques/T1110/003/
 correlation:
   type: value_count
   rules:

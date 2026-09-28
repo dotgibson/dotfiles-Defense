@@ -1,1 +1,3 @@
 {"verb": "create", "objectRef": {"resource": "pods"}, "requestObject": {"spec": {"containers": [{"name": "c", "securityContext": {"privileged": true}}]}}}
+{"verb": "create", "objectRef": {"resource": "pods"}, "requestObject": {"spec": {"initContainers": [{"name": "i", "securityContext": {"privileged": true}}], "containers": [{"name": "c", "securityContext": {"privileged": false}}]}}}
+{"verb": "patch", "objectRef": {"resource": "pods", "subresource": "ephemeralcontainers"}, "requestObject": {"spec": {"ephemeralContainers": [{"name": "debugger-x", "securityContext": {"privileged": true}}]}}}

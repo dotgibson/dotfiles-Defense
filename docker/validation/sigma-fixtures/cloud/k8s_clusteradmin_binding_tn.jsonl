@@ -1,1 +1,2 @@
 {"verb": "create", "objectRef": {"resource": "clusterrolebindings"}, "requestObject": {"roleRef": {"name": "view"}}}
+{"verb": "patch", "objectRef": {"resource": "clusterrolebindings", "name": "view-all"}, "requestObject": [{"op": "add", "path": "/subjects/-", "value": {"kind": "User", "name": "auditor"}}], "responseObject": {"roleRef": {"name": "view"}}}

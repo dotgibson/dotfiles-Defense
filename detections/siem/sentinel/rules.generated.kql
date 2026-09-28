@@ -69,7 +69,7 @@ eventSource =~ "iam.amazonaws.com" and (eventName in~ ("CreateLoginProfile", "Up
 // credential_access/asrep_roast_4768.yml — AS-REP roast - TGT issued without pre-authentication (4768 type 0)
 (EventID == 4768 and PreAuthType == 0) and (not(TargetUserName endswith "$"))
 
-// credential_access/asrep_roast_probing_4771.yml — AS-REP / Kerbrute enumeration base - Kerberos pre-auth failure 0x18 (4771)
+// credential_access/asrep_roast_probing_4771.yml — Kerberos password-spray base - pre-auth failure 0x18, wrong password (4771)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // credential_access/coercion_efsrpc_pipe_sysmon_18.yml — Authentication coercion - efsrpc named-pipe bind on the host (Sysmon 18)
@@ -121,6 +121,9 @@ EventID == 1102
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // discovery/host_recon_powershell_4104.yml — PowerShell discovery cmdlet base (4104)
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
+// discovery/kerberos_user_enum_4768.yml — Kerberos username enumeration base - TGT request for an unknown principal (4768 0x6)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // discovery/ldap_recon_explicit_creds_4648.yml — Explicit-credential logon base - 4648 with a named target
@@ -199,13 +202,13 @@ uri contains "/createItem" or (uri contains "/job/" and uri contains "/configSub
 uri contains "/script" and (not(uri contains "/scriptApproval"))
 
 // kubernetes/k8s_clusteradmin_binding.yml — Kubernetes cluster-admin role binding created or modified
-(verb in~ ("create", "update", "patch")) and (['objectRef.resource'] in~ ("clusterrolebindings", "rolebindings")) and ['requestObject.roleRef.name'] =~ "cluster-admin"
+((verb in~ ("create", "update", "patch")) and (['objectRef.resource'] in~ ("clusterrolebindings", "rolebindings")) and ['requestObject.roleRef.name'] =~ "cluster-admin") or ((verb in~ ("update", "patch")) and ['objectRef.resource'] =~ "clusterrolebindings" and ['objectRef.name'] =~ "cluster-admin") or ((verb in~ ("update", "patch")) and (['objectRef.resource'] in~ ("clusterrolebindings", "rolebindings")) and ['responseObject.roleRef.name'] =~ "cluster-admin")
 
 // kubernetes/k8s_pod_exec_attach.yml — Kubernetes pod exec / attach
 (verb =~ "create" and ['objectRef.resource'] =~ "pods" and (['objectRef.subresource'] in~ ("exec", "attach"))) and (not(['user.username'] startswith "system:serviceaccount:"))
 
 // kubernetes/k8s_privileged_pod_created.yml — Kubernetes privileged / host-namespace pod created (node escape)
-(verb =~ "create" and ['objectRef.resource'] =~ "pods") and (['requestObject.spec.containers.securityContext.privileged'] == true or ['requestObject.spec.hostPID'] == true or ['requestObject.spec.hostIPC'] == true or ['requestObject.spec.volumes.hostPath.path'] =~ "/" or (['requestObject.spec.volumes.hostPath.path'] startswith "/proc" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/run" or ['requestObject.spec.volumes.hostPath.path'] startswith "/run" or ['requestObject.spec.volumes.hostPath.path'] startswith "/etc" or ['requestObject.spec.volumes.hostPath.path'] startswith "/root" or ['requestObject.spec.volumes.hostPath.path'] startswith "/dev" or ['requestObject.spec.volumes.hostPath.path'] startswith "/sys" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/lib/kubelet" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/lib/docker" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/lib/containerd"))
+((verb =~ "create" and ['objectRef.resource'] =~ "pods") and (['requestObject.spec.containers.securityContext.privileged'] == true or ['requestObject.spec.initContainers.securityContext.privileged'] == true or ['requestObject.spec.hostPID'] == true or ['requestObject.spec.hostIPC'] == true or ['requestObject.spec.volumes.hostPath.path'] =~ "/" or (['requestObject.spec.volumes.hostPath.path'] startswith "/proc" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/run" or ['requestObject.spec.volumes.hostPath.path'] startswith "/run" or ['requestObject.spec.volumes.hostPath.path'] startswith "/etc" or ['requestObject.spec.volumes.hostPath.path'] startswith "/root" or ['requestObject.spec.volumes.hostPath.path'] startswith "/dev" or ['requestObject.spec.volumes.hostPath.path'] startswith "/sys" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/lib/kubelet" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/lib/docker" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/lib/containerd"))) or (((verb in~ ("patch", "update")) and ['objectRef.resource'] =~ "pods" and ['objectRef.subresource'] =~ "ephemeralcontainers") and ['requestObject.spec.ephemeralContainers.securityContext.privileged'] == true)
 
 // lateral_movement/passthehash_4624_fanout.yml — Network-logon base - successful type-3 logon (4624)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -223,7 +226,7 @@ EventType =~ "ConnectPipe" and Image =~ "System" and (PipeName contains "svcctl"
 (EventID == 4624 and LogonType == 3 and AuthenticationPackageName =~ "Kerberos" and (TargetUserName in~ ("DC1$", "DC2$"))) and (not((Computer startswith "DC1" or Computer startswith "DC2")))
 
 // lateral_movement/wmiexec_wmiprvse_child_4688.yml — WMI remote exec - shell spawned by WmiPrvSE
-(ParentImage endswith "\\WmiPrvSE.exe" and (Image endswith "\\cmd.exe" or Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe")) and (CommandLine contains "/Q" and CommandLine contains "/c" and CommandLine contains "127.0.0.1\\ADMIN$")
+(ParentImage endswith "\\WmiPrvSE.exe" and (Image endswith "\\cmd.exe" or Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe")) and (CommandLine contains "/Q" and CommandLine contains "/c" and CommandLine contains " 1> " and CommandLine contains "2>&1")
 
 // linux/ccache_theft_staging.yml — Kerberos ccache file named on a command line (theft / staging)
 (CommandLine contains "/tmp/krb5cc_" or CommandLine contains ".ccache" or CommandLine contains "krb5.ccache") and (not((Image endswith "/kinit" or Image endswith "/klist" or Image endswith "/kdestroy" or Image endswith "/kvno" or Image endswith "/kswitch" or Image endswith "/kpasswd")))
@@ -340,7 +343,7 @@ action =~ "app_installed"
 action in~ ("external_shared_channel_invite_created", "external_shared_channel_invite_accepted", "external_shared_channel_invite_approved", "external_shared_channel_connected")
 
 // snowflake/snowflake_data_unload.yml — Snowflake data unload (COPY INTO external stage — exfil triage)
-query_type =~ "UNLOAD" and (not(((query_text contains "@%" or query_text contains "@~") or query_text contains "MY_SANCTIONED_STAGE")))
+query_type =~ "UNLOAD" and (not(((query_text startswith "COPY INTO @%" or query_text startswith "COPY INTO @~") or query_text startswith "COPY INTO @MY_SANCTIONED_STAGE")))
 
 // snowflake/snowflake_network_policy_change.yml — Snowflake network policy changed (IP allowlist tamper)
 (query_text contains "NETWORK POLICY" or query_text contains "NETWORK_POLICY") and (not((query_text startswith "SHOW" or query_text startswith "DESC")))
@@ -363,5 +366,5 @@ query_type =~ "CREATE_USER" or (query_type =~ "GRANT" and (query_text contains "
 // vault/vault_audit_device_disabled.yml — HashiCorp Vault audit device disabled (blind the SIEM)
 type =~ "request" and ['request.operation'] =~ "delete" and ['request.path'] startswith "sys/audit/"
 
-// vault/vault_bulk_secret_read.yml — Vault secret-read base - KV read on a secret/ path
+// vault/vault_bulk_secret_read.yml — Vault secret-read base - KV read on a secret mount
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.

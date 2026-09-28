@@ -166,9 +166,9 @@
     },
     {
       "techniqueID": "T1087.002",
-      "score": 4,
+      "score": 5,
       "enabled": true,
-      "comment": "4 rule(s): ldap_recon_explicit_creds_4648, ldap_recon_property_reads_4662, ldap_recon_search_filter_1644, sharphound_ldap_sweep_4662"
+      "comment": "5 rule(s): kerberos_user_enum_4768, ldap_recon_explicit_creds_4648, ldap_recon_property_reads_4662, ldap_recon_search_filter_1644, sharphound_ldap_sweep_4662"
     },
     {
       "techniqueID": "T1098",
@@ -196,9 +196,9 @@
     },
     {
       "techniqueID": "T1110.003",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): password_spray_4625"
+      "comment": "2 rule(s): asrep_roast_probing_4771, password_spray_4625"
     },
     {
       "techniqueID": "T1112",
@@ -424,9 +424,9 @@
     },
     {
       "techniqueID": "T1558.004",
-      "score": 2,
+      "score": 1,
       "enabled": true,
-      "comment": "2 rule(s): asrep_roast_4768, asrep_roast_probing_4771"
+      "comment": "1 rule(s): asrep_roast_4768"
     },
     {
       "techniqueID": "T1558.005",
