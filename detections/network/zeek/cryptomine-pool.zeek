@@ -2,7 +2,8 @@
 ##!
 ##! Closes the Impact tactic's one wire-side technique: T1496.001 Compute Hijacking.
 ##! Network mirror of the dotfiles-Offense companion pair resource-hijack-xmrig <->
-##! cryptomine-pool-detect. Every other Impact detection in this repo is a Sigma rule on
+##! cryptomine-pool-detect (https://github.com/dotgibson/htpx/blob/main/entries/blue/cryptomine-pool-detect.md).
+##! Every other Impact detection in this repo is a Sigma rule on
 ##! host telemetry; this one cannot be, because the invariant is a conversation with a
 ##! mining pool, not anything the endpoint does to itself.
 ##!

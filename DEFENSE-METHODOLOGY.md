@@ -24,18 +24,18 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Offens
 
 ## ATT&CK tactic → data source → detection
 
-| ATT&CK tactic            | Primary data sources                                                         | Where detections live | Validate with (Offense)                                              |
-| ------------------------ | ---------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------- |
-| Initial Access           | npm / PyPI publish audit logs                                                | sigma                 | htpx pairs `npm-malicious-publish` / `pypi-malicious-publish`        |
-| Recon / Discovery        | Zeek, 4688/4769, 4798/4799, 5145, 1644/4662                                  | network, sigma        | recon / Kerberoast folds                                             |
-| Credential Access        | Sysmon 10, 4625/4771                                                         | sysmon, sigma         | Responder / cracking folds                                           |
-| Lateral Movement         | 4624 type 3, Zeek SMB                                                        | sigma, network        | lateral-movement fold                                                |
-| Priv Esc / Persistence   | Sysmon 1/13/17, 4720/7045                                                    | sysmon, sigma         | LOLBAS / persistence folds                                           |
-| Coercion / Relay / AD CS | 5145 pipes, 4886/4887 requests (SAN compared at triage), 4624 relay mismatch | sigma, siem           | coercion → relay → DC fold                                           |
-| Collection               | 4663 file reads, 4688 archive cmds                                           | sigma                 | collection / exfil fold                                              |
-| Exfil / C2               | Suricata, Zeek conn/dns/ssl, CloudTrail share grants                         | network, sigma        | reverse-shell / pivot folds; htpx pair `aws-snapshot-share-exfil`    |
-| Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn            | sigma, network        | ransomware chain (teardown → recovery → payload); cryptomining pair  |
-| Anti-forensics           | 1102 + 104 log clears, auditd history syscalls, 4742 rogue DC                | sigma                 | DCShadow fold; `wevtutil cl` / `shred ~/.bash_history` on a lab host |
+| ATT&CK tactic            | Primary data sources                                                         | Where detections live | Validate with (Offense)                                                 |
+| ------------------------ | ---------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------- |
+| Initial Access           | npm / PyPI publish audit logs                                                | sigma                 | htpx pairs `npm-malicious-publish` / `pypi-malicious-publish`           |
+| Recon / Discovery        | 4688/4104, 4798/4799, 5145, 1644/4662, 4648                                  | sigma                 | recon / AD-enumeration folds (no network-plane recon detection yet)     |
+| Credential Access        | Sysmon 10, 4625/4768/4769/4771, 4662, 5145, Zeek Kerberos                    | sigma, network        | Kerberoast / DCSync / LSASS folds (Responder capture: no detection yet) |
+| Lateral Movement         | 4624 type 3, 4688/Sysmon 1, 7045                                             | sigma                 | lateral-movement fold                                                   |
+| Priv Esc / Persistence   | Sysmon 1/13/17, 4720/7045                                                    | sysmon, sigma         | persistence / privesc folds (LOLBAS: no detection yet)                  |
+| Coercion / Relay / AD CS | 5145 pipes, 4886/4887 requests (SAN compared at triage), 4624 relay mismatch | sigma, siem           | coercion → relay → DC fold                                              |
+| Collection               | 4663 file reads, 4688 archive cmds                                           | sigma                 | collection / exfil fold                                                 |
+| Exfil / C2               | Suricata, Zeek conn/dns/ssl, CloudTrail share grants                         | network, sigma        | reverse-shell / pivot folds; htpx pair `aws-snapshot-share-exfil`       |
+| Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn            | sigma, network        | ransomware chain (teardown → recovery → payload); cryptomining pair     |
+| Anti-forensics           | 1102 + 104 log clears, auditd history syscalls, 4742 rogue DC                | sigma                 | DCShadow fold; `wevtutil cl` / `shred ~/.bash_history` on a lab host    |
 
 The right-hand column is the point: every row has a Offense fold that proves the
 detection works.
@@ -47,6 +47,13 @@ and `detections/sigma/pypi/pypi_token_release_upload.yml` — have covered T1195
 T1195.002 is Initial-Access-only in ATT&CK, so the tactic column read zero in
 `detections/navigator/COVERAGE.md` while Execution over-counted it, and this table had no row at
 all. The weekly `/coverage-gap` routine caught it in #209.
+
+The row is narrow on purpose: it is the *registry* plane, not the endpoint. Both rules
+fire on a publish event in an npm or PyPI audit log — a package shipped by an actor that
+is not the sanctioned CI identity, or a release uploaded with a long-lived token rather
+than OIDC trusted publishing. The downstream execution their descriptions mention (the
+trojanized version that every `npm install` then runs) is the *consequence*, which is why
+it is prose and not a second tactic tag.
 
 **The Anti-forensics row spans two ATT&CK tactics, and reading it needs one fact about
 v19 that is easy to get wrong.** ATT&CK v19 split Defense Evasion into **Stealth
@@ -410,13 +417,6 @@ RunOnce value whose data launches from a user-writable path or through a script 
 with a DEPLOY-REQUIRED allowlist for per-user apps such as OneDrive). Both key on what was
 written, not on which process wrote it.
 
-The row is narrow on purpose: it is the *registry* plane, not the endpoint. Both rules
-fire on a publish event in an npm or PyPI audit log — a package shipped by an actor that
-is not the sanctioned CI identity, or a release uploaded with a long-lived token rather
-than OIDC trusted publishing. The downstream execution their descriptions mention (the
-trojanized version that every `npm install` then runs) is the *consequence*, which is why
-it is prose and not a second tactic tag.
-
 **Collection** is the newest row and the weakest one, which is worth knowing before you
 lean on it. Its detections — the T1005 read sweep and the T1560.001 archive step under
 `detections/sigma/collection/` — key on *volume and destination* rather than on an
@@ -457,7 +457,8 @@ event stream.
 repo covers has two control planes — an *identity* plane (who exists, what they hold) and a
 *resource* plane (what runs, what is read) — and a corpus can be deep on one and empty on
 the other while a per-tactic map like the table above shows nothing wrong. That is what
-happened to Azure. Six pairs of Entra/M365 identity coverage sat in `detections/sigma/cloud/`,
+happened to Azure. Six Entra/M365 identity detections existed - three Sigma rules in
+`detections/sigma/cloud/` and three Sentinel joins in `detections/siem/sentinel/` -
 AWS reached both planes, and Azure's resource plane had no rule at all: the provider read as
 covered until you sorted by plane.
 

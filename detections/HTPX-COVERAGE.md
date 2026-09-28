@@ -6,7 +6,7 @@ A **gap here is not a defect.** htpx spans SaaS and CI/CD platforms this repo ha
 
 Corpus: `dotgibson/htpx` at `7f369ee37ee5` (none — 3 commits past v3.2.0), pinned in `detections/htpx.pin`.
 
-**107 blue entries · 100 claimed here · 26 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
+**107 blue entries · 103 claimed here · 26 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
 
 ## htpx blue entries claimed by detection content here
 
@@ -31,9 +31,11 @@ Corpus: `dotgibson/htpx` at `7f369ee37ee5` (none — 3 commits past v3.2.0), pin
 | `coercion-5145` | T1187 | `coercion_efsrpc_pipe_sysmon_18`, `coercion_named_pipes_5145`, `detections/network/suricata/coercion.rules` |
 | `consent-grant-auditlogs` | T1528 | `entra_illicit_consent_grant` |
 | `cron-persist-auditd` | T1053.003 | `cron_persistence` |
+| `cryptomine-pool-detect` | T1496.001 | `detections/network/zeek/cryptomine-pool.zeek` |
 | `dcshadow-4742` | T1207 | `dcshadow_rogue_dc_4742` |
 | `dcsync-4662` | T1003.006 | `dcsync_replication_4662` |
 | `device-code-signin` | T1528 | `detections/siem/sentinel/entra_device_code_signin.yaml` |
+| `dga-nxdomain-entropy` | T1568.002 | `detections/network/zeek/dns-c2.zeek` |
 | `dpapi-backupkey-5145` | T1555 | `dpapi_backupkey_5145` |
 | `entra-role-assign-audit` | T1098.003 | `entra_directory_role_grant` |
 | `gcp-audit-log-tamper-audit` | T1685.002 | `gcp_audit_log_sink_deleted` |
@@ -106,6 +108,7 @@ Corpus: `dotgibson/htpx` at `7f369ee37ee5` (none — 3 commits past v3.2.0), pin
 | `tfc-agent-audit` | T1543 | `tfc_rogue_agent_pool` |
 | `tfc-token-audit` | T1098 | `tfc_token_backdoor` |
 | `tfc-var-audit` | T1072 | `tfc_variable_injection` |
+| `unconstrained-deleg-4624` | T1558 | `unconstrained_delegation_4624` |
 | `valid-accounts-signin` | T1078.004 | `detections/siem/sentinel/entra_valid_accounts_signin.yaml` |
 | `vault-approle-audit` | T1098 | `vault_approle_backdoor` |
 | `vault-audit-device-audit` | T1685 | `vault_audit_device_disabled` |
@@ -119,12 +122,9 @@ The other side of the boundary. Each is a detection the corpus documents and thi
 
 | htpx blue entry | ATT&CK | Title |
 | --------------- | ------ | ----- |
-| `cryptomine-pool-detect` | T1496.001 | Detect cryptojacking (Stratum pool connections + CPU peg) |
-| `dga-nxdomain-entropy` | T1568.002 | Detect DGA beacons (NXDOMAIN burst + label entropy) |
 | `dns-tunnel-sysmon-22` | T1071.004 | Detect DNS tunneling (Sysmon 22 query volume + label length) |
 | `domain-fronting-sni-mismatch` | T1090.004 | Detect domain fronting (CDN edge from a non-browser process; SNI vs Host mismatch) |
 | `gcp-gcs-exfil-audit` | T1530 | Detect GCS bulk exfil (GCP Data Access, storage.objects.get volume) |
-| `unconstrained-deleg-4624` | T1558 | Detect unconstrained-deleg abuse (DC machine-account auth to a non-DC, 4624) |
 | `web-service-c2-beacon` | T1102.002 | Detect web-service C2 (non-browser process to SaaS API) |
 
 ## Sigma techniques no htpx entry covers

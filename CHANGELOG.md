@@ -24,6 +24,30 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **Detection review 2, section E: pairing and methodology bookkeeping that misstated
+  coverage.** No detection logic changes.
+  - **`HTPX-COVERAGE.md` under-claimed three pairs that have detections.** It listed
+    `unconstrained-deleg-4624`, `cryptomine-pool-detect` and `dga-nxdomain-entropy` under
+    "nothing here claims". Each detection named its pair in prose the claim regex could not
+    parse: "PURPLE-TEAM … row", "companion pair", or "htpx pairs (". Each now carries the
+    htpx blue-entry URL.
+  - **`dns-tunnel-sysmon-22` stays unclaimed on purpose.** Its source is Sysmon DnsQuery
+    alone, which the lab config does not collect, and `dns-c2.zeek` is its wire twin rather
+    than an implementation of it. The script now says so.
+  - **`DEFENSE-METHODOLOGY.md` table rows no longer name planes that have nothing in them.**
+    - Lateral Movement claimed "Zeek SMB", but no such script exists.
+    - Recon claimed Zeek, but the only Zeek Kerberos script is credential access, so it
+      moved to that row.
+    - The Responder and LOLBAS validation cells pointed at folds with no detection behind
+      them. They now say "no detection yet".
+    - Sources are corrected to the events the rules actually read.
+  - **An Initial Access paragraph had drifted.** It sat after the Sysmon-13 RegistryEvent
+    paragraph, so "the *registry* plane … Both rules" read as the two registry rules. It is
+    back under the Initial Access paragraph it explains.
+  - **The Entra count is split out.** "Six pairs of Entra/M365 identity coverage sat in
+    `detections/sigma/cloud/`" now says three are Sigma rules there and three are Sentinel
+    joins.
+
 - **Detection review 2, section B: rules that could not see the attack they claim.** From the
   2026-09-28 follow-up review. Each fix was checked against the tool's own source where one
   exists, and each carries a fixture the old rule gets wrong. Host validation is 120/120
