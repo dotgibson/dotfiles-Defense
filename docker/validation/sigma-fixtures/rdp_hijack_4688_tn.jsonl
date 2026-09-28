@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 1, "Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "DC01"}, "EventData": {"Image": "C:\\Windows\\System32\\tscon.exe", "CommandLine": "tscon 3", "ParentImage": "C:\\Windows\\explorer.exe", "User": "CORP\\jdoe"}}}

@@ -1,1 +1,2 @@
 {"type": "request", "request": {"operation": "update", "path": "secret/data/app"}}
+{"type": "request", "request": {"operation": "update", "path": "auth/approle/role/ci-deploy/secret-id"}, "auth": {"entity_id": "00000000-0000-0000-0000-00000000c1c1"}}

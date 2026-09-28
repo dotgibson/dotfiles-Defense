@@ -24,6 +24,69 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **Detection review 2, section B: rules that could not see the attack they claim.** From the
+  2026-09-28 follow-up review. Each fix was checked against the tool's own source where one
+  exists, and each carries a fixture the old rule gets wrong. Host validation is 120/120
+  with 92 true negatives (was 114/114 with 84); cloud stays 44/44.
+  - **Kerberoasting was RC4-only.** GetUserSPNs, nxc and Rubeus do not force RC4, so an
+    AES-only service account yielded a 0x11/0x12 ticket that `kerberoasting_rc4_tgs` never
+    saw. New `kerberoast_spn_burst_4769` counts distinct user SPNs per source address, 5 in
+    10 minutes, in any encryption type. The RC4 rule stays as the single-event fast path,
+    and its description no longer says the tools force RC4.
+  - **DPAPI backup-key theft was watched on the wrong channel.** SharpDPAPI `backupkey`,
+    `dpapi.py backupkeys` and mimikatz read the `G$BCKUPKEY_*` LSA secret over LSARPC
+    (verified in SharpDPAPI `lib/Backup.cs`). New `dpapi_backupkey_secret_read_4662` covers
+    the DC-side 4662 SecretObject read (T1003.004). `dpapi_backupkey_5145` is demoted to a
+    low-severity MS-BKRP hunt and says what `protected_storage` actually carries.
+  - **`scheduled_task_suspicious_4698` missed impacket atexec.** atexec's
+    `cmd.exe /C … > %windir%\Temp\<x>.tmp 2>&1` is now matched (checked against
+    `atexec.py`), along with PowerShell's `-e`/`-ec`/`-w 1`/`-win h` and a path-less `mshta`.
+    The atsvc pipe rule's claim that the 4698 rule catches atexec is now true, and it notes
+    the `-silentcommand` exception.
+  - **Allowlists keyed on a name the attacker can take:**
+    - `spoolss_pipe_impersonation_sysmon_17` now requires the exact
+      `C:\Windows\System32\spoolsv.exe`; PrintSpoofer renamed to `spoolsv.exe` had been
+      filtered.
+    - `cron_persistence`, `systemd_unit_persistence` and `ssh_authorized_keys_write` now use
+      exact `exe` paths instead of basename `endswith` (`/tmp/dpkg`).
+    - Their dnf, yum, cloud-init, ansible, salt, puppet and chef entries are removed. Those
+      tools run under a Python or Ruby interpreter, so auditd records the interpreter as
+      `exe` and the entries never matched. The same applies in `suid_bit_set`.
+  - **`lsass_handle_access`** now matches on the PROCESS_VM_READ bit (SigmaHQ's suffix list)
+    instead of five exact masks. `0x1f0fff` and `0x410` got through before.
+  - **`k8s_pod_exec_attach`**:
+    - It matched `create` only. WebSocket exec from kubectl 1.30+ is audited as `get`, so
+      both verbs are now matched. This is an assumption to confirm against a real apiserver.
+    - It dropped every service account, including a token stolen from a pod. It now
+      allowlists named controllers only.
+  - **`vault_approle_backdoor`**:
+    - It covered only `role/` paths. It now also covers `users/`, `groups/`, `certs/` and
+      `map/`: `vault write auth/userpass/users/backdoor policies=root` did not fire, and the
+      description's cert claim did not match.
+    - It fired on every CI secret-id mint. Those are now exempt only for allowlisted
+      orchestrator entities.
+  - **`rdp_hijack_tscon_4688`** now also fires on `tscon <id>` run as SYSTEM with no `/dest`,
+    the classic hijack. That arm is Sysmon-only, and the rule says what a 4688 deployment
+    substitutes.
+  - **`wmi_event_subscription_consumer`** alerted on a Command Line consumer only when it named
+    an interpreter. A consumer pointing at a dropped binary now alerts, less a Destination
+    allowlist.
+  - **`registry_run_key_suspicious_target_sysmon_13`** now also matches `%APPDATA%`-style
+    unexpanded values and 8.3 short names.
+  - **New `service_binary_windows_root_7045`** (medium) covers a service binary directly in
+    `%SystemRoot%`. It catches `psexec -r <name>` and impacket `-service-name`, which beat the
+    PsExec rule's name-keyed branches. It is a separate rule with a vendor allowlist, not a
+    branch of the high PsExec rule, because the PsExec rule's own TN is a vendor binary in
+    exactly that place.
+  - **`gpp_cpassword_sysvol_5145`**:
+    - Users read their GPOs' `User\Preferences` at every logon, so a single read of those was
+      noise. The single-event alert is now scoped to `Machine\Preferences`.
+    - User preference files move to a new per-user distinct-file fan-out correlation
+      (10 in 10 minutes).
+    - `Drives.xml`, one of the six cpassword-bearing files, is added.
+  - `detections/README.md`: the rule, deploy-time and backend-work rows are updated, and the
+    header count is now 124 rules / 148 documents.
+
 - **Detection review, section C (8-13): six rules that missed the attacker's variant, one
   mislabelled technique, and a new Kerberos enumeration rule.** Each fix carries a fixture
   that the old rule gets wrong. Host validation is 114/114 with 83 true negatives (was 80);

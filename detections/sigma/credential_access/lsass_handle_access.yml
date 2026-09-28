@@ -4,11 +4,14 @@ status: experimental
 description: |
   Detects credential theft from memory: a handle to lsass.exe with read/dump
   access rights, from a process that is not a known security/AV engine. Sysmon 10
-  (ProcessAccess) sees this far better than the Security log; the GrantedAccess
-  masks below are the classic dump-capable combinations (0x1010, 0x1410, 0x1438,
-  0x143a, 0x1fffff). 0x1fffff is PROCESS_ALL_ACCESS - the broadest of the set and the one
-  most likely to be a legitimate agent opening LSASS with a full-rights handle, so if this
-  rule stays noisy after the allowlist below is populated, that mask is where the noise is.
+  (ProcessAccess) sees this far better than the Security log. GrantedAccess is matched on
+  the PROCESS_VM_READ (0x10) bit rather than a fixed list: an exact list (0x1010, 0x1410,
+  0x1438, 0x143a, 0x1fffff) let any other read-capable mask through, including
+  0x1f0fff (pre-Vista PROCESS_ALL_ACCESS, still what tools built against old headers ask
+  for) and 0x410 (QUERY_INFORMATION|VM_READ). The suffix list follows SigmaHQ's LSASS
+  access-flag rule. The full-rights masks are the ones most likely to be a legitimate
+  agent, so if this rule stays noisy after the allowlist below is populated, that is where
+  the noise is.
   Validate (purple): run "nxc -M lsassy" / a remote LSASS dump from dotfiles-Offense
   (hacktheplanet "Lateral movement" fold; htpx pair lsass-dump-lsassy). Tune the
   SourceImage allowlist to your EDR/AV.
@@ -27,12 +30,13 @@ logsource:
 detection:
   selection:
     TargetImage|endswith: '\lsass.exe'
-    GrantedAccess:
-      - '0x1010'
-      - '0x1410'
-      - '0x1438'
-      - '0x143a'
-      - '0x1fffff'
+  selection_access:
+    # Low byte carries PROCESS_VM_READ (0x10) when its high nibble is odd. Sysmon renders
+    # the mask as lowercase hex; Sigma matching is case-insensitive.
+    - GrantedAccess|endswith: ['10', '30', '50', '70', '90', 'b0', 'd0', 'f0',
+                               '18', '38', '58', '78', '98', 'b8', 'd8', 'f8',
+                               '1a', '3a', '5a', '7a', '9a', 'ba', 'da', 'fa']
+    - GrantedAccess|startswith: ['0x1f0fff', '0x1f1fff', '0x1f2fff', '0x1f3fff', '0x1fffff']
   filter_av:
     # DEPLOY-REQUIRED: extend with YOUR endpoint-protection agents. The list below covers
     # Defender (MsMpEng/MsSense) and the two OS processes that legitimately hold LSASS
@@ -54,7 +58,7 @@ detection:
         - 'C:\Program Files\CrowdStrike\CSFalconService.exe'   # example (CrowdStrike) — verify on your fleet
         - 'C:\Program Files\Confer\RepMgr.exe'                 # example (Carbon Black) — verify on your fleet
     - SourceImage|startswith: 'C:\Program Files\SentinelOne\'   # example (SentinelOne, versioned folder) — verify
-  condition: selection and not filter_av
+  condition: selection and selection_access and not filter_av
 falsepositives:
   - Endpoint protection / EDR agents reading LSASS (allowlist by SourceImage).
   - Some backup and performance-monitoring agents.

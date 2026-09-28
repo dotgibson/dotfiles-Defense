@@ -84,17 +84,23 @@ EventType:ConnectPipe AND PipeName:*efsrpc*
 // credential_access/dcsync_replication_4662.yml — DCSync - directory replication right requested by a non-DC
 (EventID:4662 AND (Properties:(*1131f6aa\-9c07\-11d1\-f79f\-00c04fc2dcd2* OR *1131f6ad\-9c07\-11d1\-f79f\-00c04fc2dcd2* OR *89e95b76\-444d\-4c62\-991a\-0facbeda640c*))) AND (NOT (SubjectUserName:*$ OR SubjectUserSid:S\-1\-5\-18))
 
-// credential_access/dpapi_backupkey_5145.yml — DPAPI domain backup-key theft - protected_storage pipe (5145)
+// credential_access/dpapi_backupkey_5145.yml — MS-BKRP use over the protected_storage pipe on a DC (5145, hunt)
 (EventID:5145 AND ShareName:*IPC$* AND RelativeTargetName:*protected_storage*) AND (NOT SubjectUserName:*$)
 
-// credential_access/gpp_cpassword_sysvol_5145.yml — GPP cpassword hunt - SYSVOL preferences XML read by a user
-(EventID:5145 AND ShareName:*SYSVOL* AND (RelativeTargetName:(*Groups.xml OR *Services.xml OR *ScheduledTasks.xml OR *Printers.xml OR *DataSources.xml))) AND (NOT SubjectUserName:*$)
+// credential_access/dpapi_backupkey_secret_read_4662.yml — DPAPI domain backup key read from LSA secrets (4662 on a DC)
+EventID:4662 AND ObjectType:SecretObject AND AccessMask:0x2 AND ObjectName:*BCKUPKEY*
+
+// credential_access/gpp_cpassword_sysvol_5145.yml — GPP cpassword hunt - Machine preferences XML read by a user account (5145)
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
+// credential_access/kerberoast_spn_burst_4769.yml — Kerberoasting base - service ticket for a user SPN (4769, any etype)
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // credential_access/kerberoasting_rc4_tgs.yml — Kerberoasting - RC4 service ticket for a user SPN
 (EventID:4769 AND TicketEncryptionType:0x17) AND (NOT (ServiceName:(*$ OR krbtgt)))
 
 // credential_access/lsass_handle_access.yml — LSASS process access with dump-shaped rights
-(TargetImage:*\\lsass.exe AND (GrantedAccess:(0x1010 OR 0x1410 OR 0x1438 OR 0x143a OR 0x1fffff))) AND (NOT ((SourceImage:(C\:\\ProgramData\\Microsoft\\Windows\ Defender\\Platform\\* OR C\:\\Program\ Files\\Windows\ Defender\\* OR C\:\\Program\ Files\\Windows\ Defender\ Advanced\ Threat\ Protection\\*)) OR (SourceImage:(C\:\\Windows\\System32\\wininit.exe OR C\:\\Windows\\System32\\csrss.exe OR "C\:\\Program Files\\CrowdStrike\\CSFalconService.exe" OR "C\:\\Program Files\\Confer\\RepMgr.exe")) OR SourceImage:C\:\\Program\ Files\\SentinelOne\\*))
+TargetImage:*\\lsass.exe AND ((GrantedAccess:(*10 OR *30 OR *50 OR *70 OR *90 OR *b0 OR *d0 OR *f0 OR *18 OR *38 OR *58 OR *78 OR *98 OR *b8 OR *d8 OR *f8 OR *1a OR *3a OR *5a OR *7a OR *9a OR *ba OR *da OR *fa)) OR (GrantedAccess:(0x1f0fff* OR 0x1f1fff* OR 0x1f2fff* OR 0x1f3fff* OR 0x1fffff*))) AND (NOT ((SourceImage:(C\:\\ProgramData\\Microsoft\\Windows\ Defender\\Platform\\* OR C\:\\Program\ Files\\Windows\ Defender\\* OR C\:\\Program\ Files\\Windows\ Defender\ Advanced\ Threat\ Protection\\*)) OR (SourceImage:(C\:\\Windows\\System32\\wininit.exe OR C\:\\Windows\\System32\\csrss.exe OR "C\:\\Program Files\\CrowdStrike\\CSFalconService.exe" OR "C\:\\Program Files\\Confer\\RepMgr.exe")) OR SourceImage:C\:\\Program\ Files\\SentinelOne\\*))
 
 // credential_access/ntds_dump_ntdsutil_vss_4688.yml — NTDS.dit theft via ntdsutil / VSS on a domain controller
 (Image:*\\ntdsutil.exe AND (CommandLine:(*ifm* OR *create\ full*))) OR ((CommandLine:(*create\ shadow* OR *start\ backup*)) AND (Image:(*\\vssadmin.exe OR *\\wbadmin.exe))) OR Image:*\\diskshadow.exe
@@ -205,7 +211,7 @@ uri:*\/script* AND (NOT uri:*\/scriptApproval*)
 ((verb:(create OR update OR patch)) AND (objectRef.resource:(clusterrolebindings OR rolebindings)) AND requestObject.roleRef.name:cluster\-admin) OR ((verb:(update OR patch)) AND objectRef.resource:clusterrolebindings AND objectRef.name:cluster\-admin) OR ((verb:(update OR patch)) AND (objectRef.resource:(clusterrolebindings OR rolebindings)) AND responseObject.roleRef.name:cluster\-admin)
 
 // kubernetes/k8s_pod_exec_attach.yml — Kubernetes pod exec / attach
-(verb:create AND objectRef.resource:pods AND (objectRef.subresource:(exec OR attach))) AND (NOT user.username:system\:serviceaccount\:*)
+((verb:(create OR get)) AND objectRef.resource:pods AND (objectRef.subresource:(exec OR attach))) AND (NOT user.username:system\:serviceaccount\:kube\-system\:replicaset\-controller)
 
 // kubernetes/k8s_privileged_pod_created.yml — Kubernetes privileged / host-namespace pod created (node escape)
 ((verb:create AND objectRef.resource:pods) AND (requestObject.spec.containers.securityContext.privileged:true OR requestObject.spec.initContainers.securityContext.privileged:true OR requestObject.spec.hostPID:true OR requestObject.spec.hostIPC:true OR requestObject.spec.volumes.hostPath.path:\/ OR (requestObject.spec.volumes.hostPath.path:(\/proc* OR \/var\/run* OR \/run* OR \/etc* OR \/root* OR \/dev* OR \/sys* OR \/var\/lib\/kubelet* OR \/var\/lib\/docker* OR \/var\/lib\/containerd*)))) OR (((verb:(patch OR update)) AND objectRef.resource:pods AND objectRef.subresource:ephemeralcontainers) AND requestObject.spec.ephemeralContainers.securityContext.privileged:true)
@@ -214,7 +220,10 @@ uri:*\/script* AND (NOT uri:*\/scriptApproval*)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // lateral_movement/rdp_hijack_tscon_4688.yml — RDP session hijack - tscon redirect to an RDP endpoint
-CommandLine:*\/dest\:rdp\-tcp#*
+CommandLine:*\/dest\:rdp\-tcp#* OR (Image:*\\tscon.exe AND User:*SYSTEM*)
+
+// lateral_movement/service_binary_windows_root_7045.yml — Service installed from a binary directly in the Windows directory (7045)
+EventID:7045 AND ImagePath:/(?i)^"?(%systemroot%|c:\\windows)\\[^\\]+\.exe"?$/ AND (NOT ImagePath:%systemroot%\\vupdater.exe)
 
 // lateral_movement/service_creation_psexec_7045.yml — Suspicious service installed (psexec-style remote exec)
 EventID:7045 AND ((ImagePath:(*\\ADMIN$\\* OR *%COMSPEC%* OR *\\cmd.exe* OR *powershell.exe* OR *powershell\ \-* OR *pwsh.exe* OR *cscript* OR *wscript* OR *rundll32* OR *mshta*)) OR (ServiceName:PSEXESVC OR ImagePath:*\\PSEXESVC.exe) OR (ImagePath:/(?i)^(%systemroot%|\\\\[^\\]+\\[^\\]+)\\[a-z]{8}\.exe$/ AND ServiceName:/^[A-Za-z]{4}$/))
@@ -232,7 +241,7 @@ EventType:ConnectPipe AND Image:System AND (PipeName:(*svcctl* OR *atsvc*))
 (CommandLine:(*\/tmp\/krb5cc_* OR *.ccache* OR *krb5.ccache*)) AND (NOT (Image:(*\/kinit OR *\/klist OR *\/kdestroy OR *\/kvno OR *\/kswitch OR *\/kpasswd)))
 
 // linux/cron_persistence.yml — Cron persistence - scheduled-job file written (auditd)
-key:cron_persist AND (NOT (exe:(*\/dpkg OR *\/rpm OR *\/apt OR *\/apt\-get OR *\/yum OR *\/dnf OR *\/zypper OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)))
+key:cron_persist AND (NOT (exe:(\/usr\/bin\/dpkg OR \/usr\/bin\/rpm OR \/usr\/bin\/zypper OR \/usr\/bin\/apt OR \/usr\/bin\/apt\-get)))
 
 // linux/history_clearing.yml — Shell history cleared or truncated (auditd)
 key:hist_tamper AND name:*_history*
@@ -241,7 +250,7 @@ key:hist_tamper AND name:*_history*
 key:shadow_read AND (NOT (exe:(\/usr\/sbin\/unix_chkpwd OR \/sbin\/unix_chkpwd OR \/usr\/sbin\/sshd OR \/usr\/bin\/login OR \/bin\/login OR \/usr\/bin\/su OR \/bin\/su OR \/usr\/bin\/sudo OR \/usr\/bin\/passwd OR \/usr\/sbin\/chpasswd OR \/usr\/bin\/chage OR \/usr\/sbin\/pwck OR \/usr\/sbin\/grpck OR \/usr\/sbin\/useradd OR \/usr\/sbin\/usermod OR \/usr\/sbin\/userdel OR \/usr\/lib\/systemd\/systemd OR \/lib\/systemd\/systemd OR \/usr\/sbin\/cron OR \/usr\/sbin\/crond)))
 
 // linux/ssh_authorized_keys_write.yml — SSH authorized_keys written - key-based persistence (auditd)
-(key:ssh_authkeys AND name:*authorized_keys*) AND (NOT (exe:(*\/cloud\-init OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)))
+(key:ssh_authkeys AND name:*authorized_keys*) AND (NOT exe:\/opt\/keymgr\/bin\/keyagent)
 
 // linux/ssh_private_key_read.yml — SSH private key read by a non-SSH process (auditd)
 (key:ssh_key_read AND (name:(*\/id_rsa* OR *\/id_ecdsa* OR *\/id_ed25519* OR *\/id_dsa* OR *\/identity*))) AND (NOT ((exe:(\/usr\/bin\/ssh OR \/usr\/sbin\/sshd OR \/usr\/bin\/ssh\-agent OR \/usr\/bin\/ssh\-keygen OR \/usr\/bin\/ssh\-add OR \/usr\/bin\/scp OR \/usr\/bin\/sftp OR \/usr\/bin\/git)) OR name:*.pub))
@@ -250,10 +259,10 @@ key:shadow_read AND (NOT (exe:(\/usr\/sbin\/unix_chkpwd OR \/sbin\/unix_chkpwd O
 (key:sudo_abuse AND (comm:(bash OR sh OR dash OR zsh OR ksh OR fish OR python OR python3 OR perl OR ruby))) AND (NOT auid:1000)
 
 // linux/suid_bit_set.yml — Setuid bit set on a file - SUID backdoor planted (auditd)
-key:suid_change AND (NOT (exe:(\/usr\/bin\/dpkg OR \/bin\/dpkg OR \/usr\/bin\/rpm OR \/bin\/rpm OR \/usr\/bin\/apt OR \/usr\/bin\/apt\-get OR \/usr\/bin\/yum OR \/usr\/bin\/dnf OR \/usr\/bin\/zypper OR \/usr\/bin\/ansible\-playbook OR \/opt\/puppetlabs\/puppet\/bin\/puppet OR \/usr\/bin\/chef\-client OR \/usr\/bin\/salt\-minion)))
+key:suid_change AND (NOT (exe:(\/usr\/bin\/dpkg OR \/bin\/dpkg OR \/usr\/bin\/rpm OR \/bin\/rpm OR \/usr\/bin\/apt OR \/usr\/bin\/apt\-get OR \/usr\/bin\/yum OR \/usr\/bin\/dnf OR \/usr\/bin\/zypper)))
 
 // linux/systemd_unit_persistence.yml — Systemd unit persistence - unit or timer file written (auditd)
-key:systemd_persist AND (NOT ((exe:(*\/dpkg OR *\/rpm OR *\/apt OR *\/apt\-get OR *\/yum OR *\/dnf OR *\/zypper OR *\/ansible\-playbook OR *\/puppet OR *\/chef\-client OR *\/salt\-minion)) OR (exe:*\/systemctl AND name:*.wants\/*) OR (exe:*\/systemd AND name:\/run\/systemd\/system\/*)))
+key:systemd_persist AND (NOT ((exe:(\/usr\/bin\/dpkg OR \/usr\/bin\/rpm OR \/usr\/bin\/zypper OR \/usr\/bin\/apt OR \/usr\/bin\/apt\-get)) OR ((exe:(\/usr\/bin\/systemctl OR \/bin\/systemctl)) AND name:*.wants\/*) OR ((exe:(\/usr\/lib\/systemd\/systemd OR \/lib\/systemd\/systemd)) AND name:\/run\/systemd\/system\/*)))
 
 // npm/npm_maintainer_added.yml — npm maintainer or owner added (durable publish backdoor)
 action:(package.owner_add OR team.user_add)
@@ -277,16 +286,16 @@ eventType:(user.mfa.factor.reset_all OR user.mfa.factor.deactivate OR user.mfa.f
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // persistence/registry_run_key_suspicious_target_sysmon_13.yml — Registry Run key pointing at a user-writable path or an interpreter (Sysmon 13)
-(TargetObject:(*\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\* OR *\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\* OR *\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run\\* OR *\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\*)) AND ((Details:(*\\AppData\\* OR *\\Temp\\* OR *\\Users\\Public\\* OR *\\ProgramData\\*)) OR (Details:(*powershell* OR *pwsh* OR *mshta* OR *rundll32* OR *regsvr32* OR *wscript* OR *cscript* OR *cmd.exe\ \/c* OR *cmd\ \/c*))) AND (NOT Details:*\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe*)
+(TargetObject:(*\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\* OR *\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\* OR *\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run\\* OR *\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\*)) AND ((Details:(*\\AppData\\* OR *\\Temp\\* OR *\\Users\\Public\\* OR *\\ProgramData\\* OR *%APPDATA%* OR *%LOCALAPPDATA%* OR *%TEMP%* OR *%TMP%* OR *%PUBLIC%* OR *%ProgramData%* OR *\~1\\* OR *\~2\\* OR *\~3\\* OR *\~4\\*)) OR (Details:(*powershell* OR *pwsh* OR *mshta* OR *rundll32* OR *regsvr32* OR *wscript* OR *cscript* OR *cmd.exe\ \/c* OR *cmd\ \/c*))) AND (NOT Details:*\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe*)
 
 // persistence/rogue_account_creation_4720.yml — Rogue account creation (4720)
 EventID:4720 AND (NOT SubjectUserName:svc_iam_provisioning)
 
 // persistence/scheduled_task_suspicious_4698.yml — Scheduled task created with a suspicious action
-EventID:4698 AND (TaskContent:(*\-enc\ * OR *\-EncodedCommand* OR *\-w\ hidden* OR *\-WindowStyle\ Hidden* OR *FromBase64String* OR *\\mshta.exe* OR *\\regsvr32.exe* OR *\\rundll32.exe* OR *DownloadString* OR *IEX\(* OR *IEX\ * OR *\|\ IEX*))
+EventID:4698 AND ((TaskContent:(*\-enc\ * OR *\-EncodedCommand* OR *\-w\ hidden* OR *\-WindowStyle\ Hidden* OR *FromBase64String* OR *mshta* OR *\\regsvr32.exe* OR *\\rundll32.exe* OR *DownloadString* OR *IEX\(* OR *IEX\ * OR *\|\ IEX*)) OR (TaskContent:*powershell* AND (TaskContent:(*\-e\ * OR *\-ec\ * OR *\-w\ 1* OR *\-win\ h*))) OR (TaskContent:*\<Command\>cmd.exe\<\/Command\>* AND TaskContent:*\/C\ * AND TaskContent:*\\Temp\\* AND TaskContent:*.tmp\ 2\&gt;\&amp;1*))
 
 // persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line or script consumer
-(EventID:20 AND (Destination:(*powershell* OR *cmd.exe* OR *mshta* OR *wscript* OR *cscript* OR *rundll32* OR *\-enc\ * OR *\-ec\ * OR *\-EncodedCommand* OR *FromBase64String*))) OR (EventID:20 AND Type:*Script*)
+(EventID:20 AND (Destination:(*powershell* OR *cmd.exe* OR *mshta* OR *wscript* OR *cscript* OR *rundll32* OR *\-enc\ * OR *\-ec\ * OR *\-EncodedCommand* OR *FromBase64String*))) OR (EventID:20 AND Type:*Script*) OR ((EventID:20 AND Type:*Command\ Line*) AND (NOT Destination:C\:\\Program\ Files\\Monitoring\\agent.exe*))
 
 // privilege_escalation/adcs_esc1_san_mismatch_4886.yml — AD CS certificate request (ESC1 triage surface)
 EventID:(4886 OR 4887)
@@ -304,7 +313,7 @@ EventID:(4886 OR 4887)
 (EventID:5136 AND AttributeLDAPDisplayName:msDS\-KeyCredentialLink) AND (NOT SubjectUserName:MSOL_*)
 
 // privilege_escalation/spoolss_pipe_impersonation_sysmon_17.yml — SeImpersonate privesc - non-spooler process creating a spoolss named pipe (Sysmon 17)
-(EventType:CreatePipe AND PipeName:*spoolss*) AND (NOT Image:*\\spoolsv.exe)
+(EventType:CreatePipe AND PipeName:*spoolss*) AND (NOT Image:C\:\\Windows\\System32\\spoolsv.exe)
 
 // privilege_escalation/srvsvc_epmapper_pipe_impersonation_sysmon_17.yml — SeImpersonate privesc - nested srvsvc/epmapper named pipe created locally (Sysmon 17)
 EventType:CreatePipe AND (PipeName:(*\\pipe\\srvsvc* OR *\\pipe\\epmapper*))
@@ -361,7 +370,7 @@ resource.type:authentication_token AND resource.action:create
 (resource.type:variable AND (resource.action:(create OR update))) AND (NOT auth.description:ci\-deploy@example.com)
 
 // vault/vault_approle_backdoor.yml — HashiCorp Vault auth role / AppRole / auth method created (persistence)
-(type:request AND (request.operation:(create OR update))) AND ((request.path:(auth\/*\/role\/* OR auth\/*\/roles\/*)) OR request.path:sys\/auth\/*)
+(type:request AND (request.operation:(create OR update))) AND ((request.path:(auth\/*\/role\/* OR auth\/*\/roles\/* OR auth\/*\/users\/* OR auth\/*\/groups\/* OR auth\/*\/certs\/* OR auth\/*\/map\/*)) OR request.path:sys\/auth\/*) AND (NOT ((request.path:(*\/secret\-id OR *\/custom\-secret\-id)) AND auth.entity_id:00000000\-0000\-0000\-0000\-00000000c1c1))
 
 // vault/vault_audit_device_disabled.yml — HashiCorp Vault audit device disabled (blind the SIEM)
 type:request AND request.operation:delete AND request.path:sys\/audit\/*

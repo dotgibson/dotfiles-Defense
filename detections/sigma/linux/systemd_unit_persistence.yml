@@ -51,18 +51,24 @@ detection:
     # this matches your fleet the rule reports your patch window. Until filled this
     # excludes only the entries below.
     # Run detections/sigma/deploy-required.sh to find this.
-    exe|endswith:
-      - '/dpkg'
-      - '/rpm'
-      - '/apt'
-      - '/apt-get'
-      - '/yum'
-      - '/dnf'
-      - '/zypper'
-      - '/ansible-playbook'      # example CM — verify against your fleet
-      - '/puppet'                # example CM — verify against your fleet
-      - '/chef-client'           # example CM — verify against your fleet
-      - '/salt-minion'           # example CM — verify against your fleet
+    # Keyed on EXACT full paths. `exe|endswith: '/dpkg'` also matched /tmp/dpkg, so any
+    # binary copied to that name wrote cron/unit files as "the package manager" - the same
+    # bypass suid_bit_set.yml closed. Only COMPILED tools can be allowlisted this way:
+    # auditd's exe is the resolved binary, which for a script is its INTERPRETER. dnf and
+    # yum (Python), cloud-init, ansible modules and salt-minion (Python), puppet and
+    # chef-client (Ruby) all record exe=/usr/bin/python3.x or the Ruby binary, so entries
+    # naming them never matched - they were removed rather than left looking like
+    # coverage. To exempt one, pair the interpreter with its comm, e.g.
+    #   exe|startswith: '/usr/bin/python3'  AND  comm: 'dnf'
+    # in a separate filter_* block - and accept that comm is the script's name, which
+    # any Python script can take. A parent-process or auid-unset (4294967295) key from
+    # your agent's service unit is the stronger option where your pipeline carries it.
+    exe:
+      - '/usr/bin/dpkg'
+      - '/usr/bin/rpm'
+      - '/usr/bin/zypper'
+      - '/usr/bin/apt'
+      - '/usr/bin/apt-get'
   filter_systemctl_wants:
     # `systemctl enable` / `disable` maintains a symlink farm under <target>.wants/, and
     # that is the whole systemctl volume on this key. Scoped to the .wants/ path rather
@@ -70,7 +76,9 @@ detection:
     # directory still alerts even when systemctl is the writer, which is exactly where
     # `systemctl edit --force --full` and `systemctl link` land. NOT deploy-required -
     # the path shape is a systemd invariant, not a property of your fleet.
-    exe|endswith: '/systemctl'
+    exe:   # exact paths (merged-/usr and older split-/usr layouts), never a basename
+      - '/usr/bin/systemctl'
+      - '/bin/systemctl'
     name|contains: '.wants/'
   filter_systemd_runtime:
     # PID 1 materializing a generated or transient unit under /run, which happens on
@@ -83,7 +91,9 @@ detection:
     # not muting the rule on generator output - the alternative is a rule that fires on
     # every reboot, and a muted rule is a blind spot for the whole key rather than for
     # one variant. Catch the transient path on the D-Bus call instead.
-    exe|endswith: '/systemd'
+    exe:
+      - '/usr/lib/systemd/systemd'
+      - '/lib/systemd/systemd'
     name|startswith: '/run/systemd/system/'
   condition: selection and not 1 of filter_*
 falsepositives:

@@ -1,1 +1,2 @@
 {"key": "systemd_persist", "comm": "bash", "exe": "/usr/bin/bash", "name": "/etc/systemd/system/updater.service", "auid": "1000", "uid": "0"}
+{"key": "systemd_persist", "comm": "dpkg", "exe": "/tmp/dpkg", "name": "/etc/systemd/system/updater.service", "auid": "1000", "uid": "0"}

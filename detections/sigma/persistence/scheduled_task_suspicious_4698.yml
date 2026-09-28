@@ -34,7 +34,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/schtask-4698.md
 author: dotfiles-Defense
 date: 2026-06-30
-modified: 2026-08-28
+modified: 2026-09-28
 tags:
   - attack.persistence
   - attack.execution
@@ -52,14 +52,35 @@ detection:
       - '-w hidden'
       - '-WindowStyle Hidden'
       - 'FromBase64String'
-      - '\mshta.exe'
+      # Path-less, so `<Command>mshta</Command>` matches as well as `\mshta.exe`.
+      - 'mshta'
       - '\regsvr32.exe'
       - '\rundll32.exe'
       - 'DownloadString'
       - 'IEX('
       - 'IEX '
       - '| IEX'
-  condition: selection and suspicious
+  powershell_task:
+    TaskContent|contains: 'powershell'
+  powershell_short_flags:
+    # The abbreviations the long-form list above misses. Scoped to a PowerShell task so a
+    # bare '-e ' in some other program's arguments does not match.
+    TaskContent|contains:
+      - '-e '
+      - '-ec '
+      - '-w 1'
+      - '-win h'
+  impacket_atexec:
+    # impacket examples/atexec.py registers <Command>cmd.exe</Command> with
+    # <Arguments>/C <cmd> > %windir%\Temp\<8 letters>.tmp 2>&1</Arguments> as S-1-5-18.
+    # 4698 carries TaskContent as XML text, so the redirect arrives entity-escaped.
+    # `-silentcommand` drops the redirect and is not caught here.
+    TaskContent|contains|all:
+      - '<Command>cmd.exe</Command>'
+      - '/C '
+      - '\Temp\'
+      - '.tmp 2&gt;&amp;1'
+  condition: selection and (suspicious or (powershell_task and powershell_short_flags) or impacket_atexec)
 falsepositives:
   - Software installers that register tasks invoking helper scripts (allowlist).
 level: high

@@ -6,7 +6,7 @@ A **gap here is not a defect.** htpx spans SaaS and CI/CD platforms this repo ha
 
 Corpus: `dotgibson/htpx` at `7f369ee37ee5` (none — 3 commits past v3.2.0), pinned in `detections/htpx.pin`.
 
-**107 blue entries · 100 claimed here · 25 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
+**107 blue entries · 100 claimed here · 26 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
 
 ## htpx blue entries claimed by detection content here
 
@@ -63,7 +63,7 @@ Corpus: `dotgibson/htpx` at `7f369ee37ee5` (none — 3 commits past v3.2.0), pin
 | `k8s-exec-audit` | T1609 | `k8s_pod_exec_attach` |
 | `k8s-privileged-pod-audit` | T1610, T1611 | `k8s_privileged_pod_created` |
 | `k8s-rolebinding-audit` | T1098 | `k8s_clusteradmin_binding` |
-| `kerberoasting-4769` | T1558.003 | `kerberoasting_rc4_tgs`, `detections/network/zeek/kerberoast-rc4.zeek` |
+| `kerberoasting-4769` | T1558.003 | `kerberoast_spn_burst_4769`, `kerberoasting_rc4_tgs`, `detections/network/zeek/kerberoast-rc4.zeek` |
 | `lateral-4624-fanout` | T1550.002 | `passthehash_4624_fanout` |
 | `ldap-recon-4662` | T1069.002, T1087.002 | `ldap_recon_property_reads_4662`, `ldap_recon_search_filter_1644` |
 | `lsass-4656` | T1003.001 | `lsass_handle_access` |
@@ -133,12 +133,13 @@ Techniques this repo detects that the corpus has no attack for — so there is n
 
 | Technique | Rules |
 | --------- | ----- |
+| T1003.004 | `dpapi_backupkey_secret_read_4662` |
 | T1005 | `mass_file_read_4663` |
 | T1007 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1016 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1018 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1021 | `passthehash_4624_fanout` |
-| T1021.002 | `svcctl_atsvc_remote_pipe_sysmon_18` |
+| T1021.002 | `service_binary_windows_root_7045`, `svcctl_atsvc_remote_pipe_sysmon_18` |
 | T1033 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1046 | `ldap_recon_explicit_creds_4648` |
 | T1049 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst`, `host_recon_powershell_4104` |
@@ -156,7 +157,7 @@ Techniques this repo detects that the corpus has no attack for — so there is n
 | T1550.003 | `unconstrained_delegation_4624` |
 | T1558.005 | `ccache_theft_staging` |
 | T1560.001 | `archive_staging_utility` |
-| T1569.002 | `service_creation_psexec_7045`, `svcctl_atsvc_remote_pipe_sysmon_18` |
+| T1569.002 | `service_binary_windows_root_7045`, `service_creation_psexec_7045`, `svcctl_atsvc_remote_pipe_sysmon_18` |
 | T1685.005 | `windows_event_log_cleared_104`, `windows_event_log_cleared_1102` |
 
 ## Declared holes upstream (`pair: null`)

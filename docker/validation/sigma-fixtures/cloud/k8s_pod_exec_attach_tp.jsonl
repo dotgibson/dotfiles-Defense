@@ -1,1 +1,3 @@
 {"verb": "create", "objectRef": {"resource": "pods", "subresource": "exec", "namespace": "prod"}, "user": {"username": "alice@corp.example"}}
+{"verb": "get", "objectRef": {"resource": "pods", "subresource": "exec", "namespace": "prod"}, "user": {"username": "alice@corp.example"}}
+{"verb": "create", "objectRef": {"resource": "pods", "subresource": "exec", "namespace": "prod"}, "user": {"username": "system:serviceaccount:prod:webapp"}}

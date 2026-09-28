@@ -84,17 +84,23 @@ EventType =~ "ConnectPipe" and PipeName contains "efsrpc"
 // credential_access/dcsync_replication_4662.yml — DCSync - directory replication right requested by a non-DC
 (EventID == 4662 and (Properties contains "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2" or Properties contains "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2" or Properties contains "89e95b76-444d-4c62-991a-0facbeda640c")) and (not((SubjectUserName endswith "$" or SubjectUserSid =~ "S-1-5-18")))
 
-// credential_access/dpapi_backupkey_5145.yml — DPAPI domain backup-key theft - protected_storage pipe (5145)
+// credential_access/dpapi_backupkey_5145.yml — MS-BKRP use over the protected_storage pipe on a DC (5145, hunt)
 (EventID == 5145 and ShareName contains "IPC$" and RelativeTargetName contains "protected_storage") and (not(SubjectUserName endswith "$"))
 
-// credential_access/gpp_cpassword_sysvol_5145.yml — GPP cpassword hunt - SYSVOL preferences XML read by a user
-(EventID == 5145 and ShareName contains "SYSVOL" and (RelativeTargetName endswith "Groups.xml" or RelativeTargetName endswith "Services.xml" or RelativeTargetName endswith "ScheduledTasks.xml" or RelativeTargetName endswith "Printers.xml" or RelativeTargetName endswith "DataSources.xml")) and (not(SubjectUserName endswith "$"))
+// credential_access/dpapi_backupkey_secret_read_4662.yml — DPAPI domain backup key read from LSA secrets (4662 on a DC)
+EventID == 4662 and ObjectType =~ "SecretObject" and AccessMask =~ "0x2" and ObjectName contains "BCKUPKEY"
+
+// credential_access/gpp_cpassword_sysvol_5145.yml — GPP cpassword hunt - Machine preferences XML read by a user account (5145)
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
+
+// credential_access/kerberoast_spn_burst_4769.yml — Kerberoasting base - service ticket for a user SPN (4769, any etype)
+// UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // credential_access/kerberoasting_rc4_tgs.yml — Kerberoasting - RC4 service ticket for a user SPN
 (EventID == 4769 and TicketEncryptionType =~ "0x17") and (not((ServiceName in~ ("krbtgt") or ServiceName endswith "$")))
 
 // credential_access/lsass_handle_access.yml — LSASS process access with dump-shaped rights
-(TargetImage endswith "\\lsass.exe" and (GrantedAccess in~ ("0x1010", "0x1410", "0x1438", "0x143a", "0x1fffff"))) and (not(((SourceImage startswith "C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\" or SourceImage startswith "C:\\Program Files\\Windows Defender\\" or SourceImage startswith "C:\\Program Files\\Windows Defender Advanced Threat Protection\\") or (SourceImage in~ ("C:\\Windows\\System32\\wininit.exe", "C:\\Windows\\System32\\csrss.exe", "C:\\Program Files\\CrowdStrike\\CSFalconService.exe", "C:\\Program Files\\Confer\\RepMgr.exe")) or SourceImage startswith "C:\\Program Files\\SentinelOne\\")))
+TargetImage endswith "\\lsass.exe" and ((GrantedAccess endswith "10" or GrantedAccess endswith "30" or GrantedAccess endswith "50" or GrantedAccess endswith "70" or GrantedAccess endswith "90" or GrantedAccess endswith "b0" or GrantedAccess endswith "d0" or GrantedAccess endswith "f0" or GrantedAccess endswith "18" or GrantedAccess endswith "38" or GrantedAccess endswith "58" or GrantedAccess endswith "78" or GrantedAccess endswith "98" or GrantedAccess endswith "b8" or GrantedAccess endswith "d8" or GrantedAccess endswith "f8" or GrantedAccess endswith "1a" or GrantedAccess endswith "3a" or GrantedAccess endswith "5a" or GrantedAccess endswith "7a" or GrantedAccess endswith "9a" or GrantedAccess endswith "ba" or GrantedAccess endswith "da" or GrantedAccess endswith "fa") or (GrantedAccess startswith "0x1f0fff" or GrantedAccess startswith "0x1f1fff" or GrantedAccess startswith "0x1f2fff" or GrantedAccess startswith "0x1f3fff" or GrantedAccess startswith "0x1fffff")) and (not(((SourceImage startswith "C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\" or SourceImage startswith "C:\\Program Files\\Windows Defender\\" or SourceImage startswith "C:\\Program Files\\Windows Defender Advanced Threat Protection\\") or (SourceImage in~ ("C:\\Windows\\System32\\wininit.exe", "C:\\Windows\\System32\\csrss.exe", "C:\\Program Files\\CrowdStrike\\CSFalconService.exe", "C:\\Program Files\\Confer\\RepMgr.exe")) or SourceImage startswith "C:\\Program Files\\SentinelOne\\")))
 
 // credential_access/ntds_dump_ntdsutil_vss_4688.yml — NTDS.dit theft via ntdsutil / VSS on a domain controller
 (Image endswith "\\ntdsutil.exe" and (CommandLine contains "ifm" or CommandLine contains "create full")) or ((CommandLine contains "create shadow" or CommandLine contains "start backup") and (Image endswith "\\vssadmin.exe" or Image endswith "\\wbadmin.exe")) or Image endswith "\\diskshadow.exe"
@@ -205,7 +211,7 @@ uri contains "/script" and (not(uri contains "/scriptApproval"))
 ((verb in~ ("create", "update", "patch")) and (['objectRef.resource'] in~ ("clusterrolebindings", "rolebindings")) and ['requestObject.roleRef.name'] =~ "cluster-admin") or ((verb in~ ("update", "patch")) and ['objectRef.resource'] =~ "clusterrolebindings" and ['objectRef.name'] =~ "cluster-admin") or ((verb in~ ("update", "patch")) and (['objectRef.resource'] in~ ("clusterrolebindings", "rolebindings")) and ['responseObject.roleRef.name'] =~ "cluster-admin")
 
 // kubernetes/k8s_pod_exec_attach.yml — Kubernetes pod exec / attach
-(verb =~ "create" and ['objectRef.resource'] =~ "pods" and (['objectRef.subresource'] in~ ("exec", "attach"))) and (not(['user.username'] startswith "system:serviceaccount:"))
+((verb in~ ("create", "get")) and ['objectRef.resource'] =~ "pods" and (['objectRef.subresource'] in~ ("exec", "attach"))) and (not(['user.username'] =~ "system:serviceaccount:kube-system:replicaset-controller"))
 
 // kubernetes/k8s_privileged_pod_created.yml — Kubernetes privileged / host-namespace pod created (node escape)
 ((verb =~ "create" and ['objectRef.resource'] =~ "pods") and (['requestObject.spec.containers.securityContext.privileged'] == true or ['requestObject.spec.initContainers.securityContext.privileged'] == true or ['requestObject.spec.hostPID'] == true or ['requestObject.spec.hostIPC'] == true or ['requestObject.spec.volumes.hostPath.path'] =~ "/" or (['requestObject.spec.volumes.hostPath.path'] startswith "/proc" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/run" or ['requestObject.spec.volumes.hostPath.path'] startswith "/run" or ['requestObject.spec.volumes.hostPath.path'] startswith "/etc" or ['requestObject.spec.volumes.hostPath.path'] startswith "/root" or ['requestObject.spec.volumes.hostPath.path'] startswith "/dev" or ['requestObject.spec.volumes.hostPath.path'] startswith "/sys" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/lib/kubelet" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/lib/docker" or ['requestObject.spec.volumes.hostPath.path'] startswith "/var/lib/containerd"))) or (((verb in~ ("patch", "update")) and ['objectRef.resource'] =~ "pods" and ['objectRef.subresource'] =~ "ephemeralcontainers") and ['requestObject.spec.ephemeralContainers.securityContext.privileged'] == true)
@@ -214,7 +220,10 @@ uri contains "/script" and (not(uri contains "/scriptApproval"))
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // lateral_movement/rdp_hijack_tscon_4688.yml — RDP session hijack - tscon redirect to an RDP endpoint
-CommandLine contains "/dest:rdp-tcp#"
+CommandLine contains "/dest:rdp-tcp#" or (Image endswith "\\tscon.exe" and User contains "SYSTEM")
+
+// lateral_movement/service_binary_windows_root_7045.yml — Service installed from a binary directly in the Windows directory (7045)
+EventID == 7045 and ImagePath matches regex "(?i)^\"?(%systemroot%|c:\\\\windows)\\\\[^\\\\]+\\.exe\"?$" and (not(ImagePath =~ "%systemroot%\\vupdater.exe"))
 
 // lateral_movement/service_creation_psexec_7045.yml — Suspicious service installed (psexec-style remote exec)
 EventID == 7045 and ((ImagePath contains "\\ADMIN$\\" or ImagePath contains "%COMSPEC%" or ImagePath contains "\\cmd.exe" or ImagePath contains "powershell.exe" or ImagePath contains "powershell -" or ImagePath contains "pwsh.exe" or ImagePath contains "cscript" or ImagePath contains "wscript" or ImagePath contains "rundll32" or ImagePath contains "mshta") or (ServiceName =~ "PSEXESVC" or ImagePath endswith "\\PSEXESVC.exe") or (ImagePath matches regex "(?i)^(%systemroot%|\\\\\\\\[^\\\\]+\\\\[^\\\\]+)\\\\[a-z]{8}\\.exe$" and ServiceName matches regex "^[A-Za-z]{4}$"))
@@ -232,7 +241,7 @@ EventType =~ "ConnectPipe" and Image =~ "System" and (PipeName contains "svcctl"
 (CommandLine contains "/tmp/krb5cc_" or CommandLine contains ".ccache" or CommandLine contains "krb5.ccache") and (not((Image endswith "/kinit" or Image endswith "/klist" or Image endswith "/kdestroy" or Image endswith "/kvno" or Image endswith "/kswitch" or Image endswith "/kpasswd")))
 
 // linux/cron_persistence.yml — Cron persistence - scheduled-job file written (auditd)
-key =~ "cron_persist" and (not((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
+key =~ "cron_persist" and (not((exe in~ ("/usr/bin/dpkg", "/usr/bin/rpm", "/usr/bin/zypper", "/usr/bin/apt", "/usr/bin/apt-get"))))
 
 // linux/history_clearing.yml — Shell history cleared or truncated (auditd)
 key =~ "hist_tamper" and name contains "_history"
@@ -241,7 +250,7 @@ key =~ "hist_tamper" and name contains "_history"
 key =~ "shadow_read" and (not((exe in~ ("/usr/sbin/unix_chkpwd", "/sbin/unix_chkpwd", "/usr/sbin/sshd", "/usr/bin/login", "/bin/login", "/usr/bin/su", "/bin/su", "/usr/bin/sudo", "/usr/bin/passwd", "/usr/sbin/chpasswd", "/usr/bin/chage", "/usr/sbin/pwck", "/usr/sbin/grpck", "/usr/sbin/useradd", "/usr/sbin/usermod", "/usr/sbin/userdel", "/usr/lib/systemd/systemd", "/lib/systemd/systemd", "/usr/sbin/cron", "/usr/sbin/crond"))))
 
 // linux/ssh_authorized_keys_write.yml — SSH authorized_keys written - key-based persistence (auditd)
-(key =~ "ssh_authkeys" and name contains "authorized_keys") and (not((exe endswith "/cloud-init" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
+(key =~ "ssh_authkeys" and name contains "authorized_keys") and (not(exe =~ "/opt/keymgr/bin/keyagent"))
 
 // linux/ssh_private_key_read.yml — SSH private key read by a non-SSH process (auditd)
 (key =~ "ssh_key_read" and (name contains "/id_rsa" or name contains "/id_ecdsa" or name contains "/id_ed25519" or name contains "/id_dsa" or name contains "/identity")) and (not(((exe in~ ("/usr/bin/ssh", "/usr/sbin/sshd", "/usr/bin/ssh-agent", "/usr/bin/ssh-keygen", "/usr/bin/ssh-add", "/usr/bin/scp", "/usr/bin/sftp", "/usr/bin/git")) or name endswith ".pub")))
@@ -250,10 +259,10 @@ key =~ "shadow_read" and (not((exe in~ ("/usr/sbin/unix_chkpwd", "/sbin/unix_chk
 (key =~ "sudo_abuse" and (comm in~ ("bash", "sh", "dash", "zsh", "ksh", "fish", "python", "python3", "perl", "ruby"))) and (not(auid == 1000))
 
 // linux/suid_bit_set.yml — Setuid bit set on a file - SUID backdoor planted (auditd)
-key =~ "suid_change" and (not((exe in~ ("/usr/bin/dpkg", "/bin/dpkg", "/usr/bin/rpm", "/bin/rpm", "/usr/bin/apt", "/usr/bin/apt-get", "/usr/bin/yum", "/usr/bin/dnf", "/usr/bin/zypper", "/usr/bin/ansible-playbook", "/opt/puppetlabs/puppet/bin/puppet", "/usr/bin/chef-client", "/usr/bin/salt-minion"))))
+key =~ "suid_change" and (not((exe in~ ("/usr/bin/dpkg", "/bin/dpkg", "/usr/bin/rpm", "/bin/rpm", "/usr/bin/apt", "/usr/bin/apt-get", "/usr/bin/yum", "/usr/bin/dnf", "/usr/bin/zypper"))))
 
 // linux/systemd_unit_persistence.yml — Systemd unit persistence - unit or timer file written (auditd)
-key =~ "systemd_persist" and (not(((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion") or (exe endswith "/systemctl" and name contains ".wants/") or (exe endswith "/systemd" and name startswith "/run/systemd/system/"))))
+key =~ "systemd_persist" and (not(((exe in~ ("/usr/bin/dpkg", "/usr/bin/rpm", "/usr/bin/zypper", "/usr/bin/apt", "/usr/bin/apt-get")) or ((exe in~ ("/usr/bin/systemctl", "/bin/systemctl")) and name contains ".wants/") or ((exe in~ ("/usr/lib/systemd/systemd", "/lib/systemd/systemd")) and name startswith "/run/systemd/system/"))))
 
 // npm/npm_maintainer_added.yml — npm maintainer or owner added (durable publish backdoor)
 action in~ ("package.owner_add", "team.user_add")
@@ -277,16 +286,16 @@ eventType in~ ("user.mfa.factor.reset_all", "user.mfa.factor.deactivate", "user.
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // persistence/registry_run_key_suspicious_target_sysmon_13.yml — Registry Run key pointing at a user-writable path or an interpreter (Sysmon 13)
-(TargetObject contains "\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\" or TargetObject contains "\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\" or TargetObject contains "\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run\\" or TargetObject contains "\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\") and ((Details contains "\\AppData\\" or Details contains "\\Temp\\" or Details contains "\\Users\\Public\\" or Details contains "\\ProgramData\\") or (Details contains "powershell" or Details contains "pwsh" or Details contains "mshta" or Details contains "rundll32" or Details contains "regsvr32" or Details contains "wscript" or Details contains "cscript" or Details contains "cmd.exe /c" or Details contains "cmd /c")) and (not(Details contains "\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe"))
+(TargetObject contains "\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\" or TargetObject contains "\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\" or TargetObject contains "\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run\\" or TargetObject contains "\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\") and ((Details contains "\\AppData\\" or Details contains "\\Temp\\" or Details contains "\\Users\\Public\\" or Details contains "\\ProgramData\\" or Details contains "%APPDATA%" or Details contains "%LOCALAPPDATA%" or Details contains "%TEMP%" or Details contains "%TMP%" or Details contains "%PUBLIC%" or Details contains "%ProgramData%" or Details contains "~1\\" or Details contains "~2\\" or Details contains "~3\\" or Details contains "~4\\") or (Details contains "powershell" or Details contains "pwsh" or Details contains "mshta" or Details contains "rundll32" or Details contains "regsvr32" or Details contains "wscript" or Details contains "cscript" or Details contains "cmd.exe /c" or Details contains "cmd /c")) and (not(Details contains "\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe"))
 
 // persistence/rogue_account_creation_4720.yml — Rogue account creation (4720)
 EventID == 4720 and (not(SubjectUserName =~ "svc_iam_provisioning"))
 
 // persistence/scheduled_task_suspicious_4698.yml — Scheduled task created with a suspicious action
-EventID == 4698 and (TaskContent contains "-enc " or TaskContent contains "-EncodedCommand" or TaskContent contains "-w hidden" or TaskContent contains "-WindowStyle Hidden" or TaskContent contains "FromBase64String" or TaskContent contains "\\mshta.exe" or TaskContent contains "\\regsvr32.exe" or TaskContent contains "\\rundll32.exe" or TaskContent contains "DownloadString" or TaskContent contains "IEX(" or TaskContent contains "IEX " or TaskContent contains "| IEX")
+EventID == 4698 and ((TaskContent contains "-enc " or TaskContent contains "-EncodedCommand" or TaskContent contains "-w hidden" or TaskContent contains "-WindowStyle Hidden" or TaskContent contains "FromBase64String" or TaskContent contains "mshta" or TaskContent contains "\\regsvr32.exe" or TaskContent contains "\\rundll32.exe" or TaskContent contains "DownloadString" or TaskContent contains "IEX(" or TaskContent contains "IEX " or TaskContent contains "| IEX") or (TaskContent contains "powershell" and (TaskContent contains "-e " or TaskContent contains "-ec " or TaskContent contains "-w 1" or TaskContent contains "-win h")) or (TaskContent contains "<Command>cmd.exe</Command>" and TaskContent contains "/C " and TaskContent contains "\\Temp\\" and TaskContent contains ".tmp 2&gt;&amp;1"))
 
 // persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line or script consumer
-(EventID == 20 and (Destination contains "powershell" or Destination contains "cmd.exe" or Destination contains "mshta" or Destination contains "wscript" or Destination contains "cscript" or Destination contains "rundll32" or Destination contains "-enc " or Destination contains "-ec " or Destination contains "-EncodedCommand" or Destination contains "FromBase64String")) or (EventID == 20 and Type contains "Script")
+(EventID == 20 and (Destination contains "powershell" or Destination contains "cmd.exe" or Destination contains "mshta" or Destination contains "wscript" or Destination contains "cscript" or Destination contains "rundll32" or Destination contains "-enc " or Destination contains "-ec " or Destination contains "-EncodedCommand" or Destination contains "FromBase64String")) or (EventID == 20 and Type contains "Script") or ((EventID == 20 and Type contains "Command Line") and (not(Destination startswith "C:\\Program Files\\Monitoring\\agent.exe")))
 
 // privilege_escalation/adcs_esc1_san_mismatch_4886.yml — AD CS certificate request (ESC1 triage surface)
 EventID in~ ("4886", "4887")
@@ -304,7 +313,7 @@ EventID in~ ("4886", "4887")
 (EventID == 5136 and AttributeLDAPDisplayName =~ "msDS-KeyCredentialLink") and (not(SubjectUserName startswith "MSOL_"))
 
 // privilege_escalation/spoolss_pipe_impersonation_sysmon_17.yml — SeImpersonate privesc - non-spooler process creating a spoolss named pipe (Sysmon 17)
-(EventType =~ "CreatePipe" and PipeName contains "spoolss") and (not(Image endswith "\\spoolsv.exe"))
+(EventType =~ "CreatePipe" and PipeName contains "spoolss") and (not(Image =~ "C:\\Windows\\System32\\spoolsv.exe"))
 
 // privilege_escalation/srvsvc_epmapper_pipe_impersonation_sysmon_17.yml — SeImpersonate privesc - nested srvsvc/epmapper named pipe created locally (Sysmon 17)
 EventType =~ "CreatePipe" and (PipeName contains "\\pipe\\srvsvc" or PipeName contains "\\pipe\\epmapper")
@@ -361,7 +370,7 @@ query_type =~ "CREATE_USER" or (query_type =~ "GRANT" and (query_text contains "
 (['resource.type'] =~ "variable" and (['resource.action'] in~ ("create", "update"))) and (not(['auth.description'] =~ "ci-deploy@example.com"))
 
 // vault/vault_approle_backdoor.yml — HashiCorp Vault auth role / AppRole / auth method created (persistence)
-(type =~ "request" and (['request.operation'] in~ ("create", "update"))) and (((['request.path'] contains "auth/" and ['request.path'] contains "/role/") or (['request.path'] contains "auth/" and ['request.path'] contains "/roles/")) or ['request.path'] startswith "sys/auth/")
+(type =~ "request" and (['request.operation'] in~ ("create", "update"))) and (((['request.path'] contains "auth/" and ['request.path'] contains "/role/") or (['request.path'] contains "auth/" and ['request.path'] contains "/roles/") or (['request.path'] contains "auth/" and ['request.path'] contains "/users/") or (['request.path'] contains "auth/" and ['request.path'] contains "/groups/") or (['request.path'] contains "auth/" and ['request.path'] contains "/certs/") or (['request.path'] contains "auth/" and ['request.path'] contains "/map/")) or ['request.path'] startswith "sys/auth/") and (not(((['request.path'] endswith "/secret-id" or ['request.path'] endswith "/custom-secret-id") and ['auth.entity_id'] =~ "00000000-0000-0000-0000-00000000c1c1")))
 
 // vault/vault_audit_device_disabled.yml — HashiCorp Vault audit device disabled (blind the SIEM)
 type =~ "request" and ['request.operation'] =~ "delete" and ['request.path'] startswith "sys/audit/"

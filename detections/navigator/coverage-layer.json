@@ -21,6 +21,12 @@
       "comment": "1 rule(s): ntds_dump_ntdsutil_vss_4688"
     },
     {
+      "techniqueID": "T1003.004",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): dpapi_backupkey_secret_read_4662"
+    },
+    {
       "techniqueID": "T1003.006",
       "score": 2,
       "enabled": true,
@@ -64,9 +70,9 @@
     },
     {
       "techniqueID": "T1021.002",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): svcctl_atsvc_remote_pipe_sysmon_18"
+      "comment": "2 rule(s): service_binary_windows_root_7045, svcctl_atsvc_remote_pipe_sysmon_18"
     },
     {
       "techniqueID": "T1033",
@@ -388,9 +394,9 @@
     },
     {
       "techniqueID": "T1555",
-      "score": 2,
+      "score": 3,
       "enabled": true,
-      "comment": "2 rule(s): dpapi_backupkey_5145, vault_bulk_secret_read"
+      "comment": "3 rule(s): dpapi_backupkey_5145, dpapi_backupkey_secret_read_4662, vault_bulk_secret_read"
     },
     {
       "techniqueID": "T1555.006",
@@ -418,9 +424,9 @@
     },
     {
       "techniqueID": "T1558.003",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): kerberoasting_rc4_tgs"
+      "comment": "2 rule(s): kerberoast_spn_burst_4769, kerberoasting_rc4_tgs"
     },
     {
       "techniqueID": "T1558.004",
@@ -460,9 +466,9 @@
     },
     {
       "techniqueID": "T1569.002",
-      "score": 2,
+      "score": 3,
       "enabled": true,
-      "comment": "2 rule(s): service_creation_psexec_7045, svcctl_atsvc_remote_pipe_sysmon_18"
+      "comment": "3 rule(s): service_binary_windows_root_7045, service_creation_psexec_7045, svcctl_atsvc_remote_pipe_sysmon_18"
     },
     {
       "techniqueID": "T1609",

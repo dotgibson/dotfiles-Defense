@@ -2,3 +2,6 @@
 {"type": "request", "request": {"operation": "create", "path": "auth/kubernetes/role/attacker"}}
 {"type": "request", "request": {"operation": "update", "path": "auth/token/roles/persist"}}
 {"type": "request", "request": {"operation": "update", "path": "sys/auth/jwt"}}
+{"type": "request", "request": {"operation": "update", "path": "auth/userpass/users/backdoor"}, "auth": {"entity_id": "5d2e9a41-7b3c-4e8f-a1d2-6c0b9e8f7a65"}}
+{"type": "request", "request": {"operation": "update", "path": "auth/cert/certs/evil-ca"}, "auth": {"entity_id": "5d2e9a41-7b3c-4e8f-a1d2-6c0b9e8f7a65"}}
+{"type": "request", "request": {"operation": "update", "path": "auth/approle/role/prod-admin/secret-id"}, "auth": {"entity_id": "5d2e9a41-7b3c-4e8f-a1d2-6c0b9e8f7a65"}}

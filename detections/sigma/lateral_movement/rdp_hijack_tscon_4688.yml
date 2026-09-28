@@ -28,6 +28,7 @@ references:
   - https://github.com/bohops/SharpRDPHijack
 author: dotfiles-Defense
 date: 2026-06-30
+modified: 2026-09-28
 tags:
   - attack.lateral-movement
   - attack.t1563.002
@@ -37,7 +38,20 @@ logsource:
 detection:
   selection:
     CommandLine|contains: '/dest:rdp-tcp#'
-  condition: selection
+  tscon_image:
+    Image|endswith: '\tscon.exe'
+  as_system:
+    # tscon run as SYSTEM connects ANY session without its password. With no /dest it
+    # attaches the target to the CURRENT session - the classic interactive hijack from a
+    # SYSTEM shell (`psexec -s cmd`, then `tscon 3`) - which /dest:rdp-tcp# never saw.
+    # Sysmon 1 only: User is Sysmon's field, and the windows-audit pipeline passes it
+    # through unmapped, so on native 4688 this arm has no field to read. A 4688-only
+    # deployment substitutes `SubjectUserSid: 'S-1-5-18'` (the creator). Both cannot be
+    # named here: a backend that queries a column the channel lacks fails the whole
+    # search rather than the one branch. `SYSTEM` is the English rendering
+    # (NT AUTHORITY\SYSTEM); a localized OS writes its own.
+    User|contains: 'SYSTEM'
+  condition: selection or (tscon_image and as_system)
 falsepositives:
   - Rare helpdesk shadow/remote-control tooling that wraps tscon (allowlist it).
 level: high

@@ -2,12 +2,19 @@ title: Kubernetes pod exec / attach
 id: 58f7fc78-5340-4f02-9596-da4514108b67
 status: experimental
 description: |
-  Detects interactive access into a running pod: a create against the pods/exec or
-  pods/attach subresource (kubectl exec / attach). This is the container-runtime
+  Detects interactive access into a running pod: a request against the pods/exec or
+  pods/attach subresource (kubectl exec / attach). The audit verb follows the HTTP
+  method: SPDY exec is a POST (`create`), but kubectl 1.30+ execs over WebSocket, which
+  opens with a GET upgrade and is audited as `get` - so both verbs are matched, or a
+  current kubectl is invisible. (Assumption from the KEP-4006 transport change; confirm
+  against a real audit event from your apiserver version.) This is the container-runtime
   equivalent of an interactive shell on a host - routine in dev, but in production it
   is the tell for hands-on-keyboard activity, debugging-as-a-foothold, or post-
-  compromise lateral movement. Scope to production namespaces and alert on
-  exec/attach by human users (not controllers/service accounts).
+  compromise lateral movement. Scope to production namespaces and allowlist
+  the specific controller service accounts that exec by design. Service accounts as a
+  class are NOT excluded: a token stolen from a compromised pod
+  (/var/run/secrets/kubernetes.io/serviceaccount/token) execs as
+  system:serviceaccount:<ns>:<sa>, which is the typical in-cluster attacker path.
   Validate (purple): run "kubectl exec -it <pod> -- sh" from dotfiles-Offense (htpx pair
   k8s-exec). Requires the kube-apiserver audit policy logging the exec subresource.
 references:
@@ -15,6 +22,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/k8s-exec-audit.md
 author: dotfiles-Defense
 date: 2026-06-30
+modified: 2026-09-28
 tags:
   - attack.execution
   - attack.t1609
@@ -23,19 +31,23 @@ logsource:
   service: audit
 detection:
   selection:
-    verb: 'create'
+    verb:
+      - 'create'   # SPDY (POST)
+      - 'get'      # WebSocket upgrade, kubectl 1.30+
     objectRef.resource: 'pods'
     objectRef.subresource:
       - 'exec'
       - 'attach'
-  filter_sa:
-    # Controllers and service accounts exec into pods constantly (operators, debug
-    # sidecars); the tell is a *human* getting an interactive shell. Drop the
-    # service-account principals so this fires on people, not automation.
-    # DEPLOY-REQUIRED: additionally scope objectRef.namespace to your production
-    # namespaces. Run detections/sigma/deploy-required.sh to find this.
-    user.username|startswith: 'system:serviceaccount:'
-  condition: selection and not filter_sa
+  filter_exec_controllers:
+    # DEPLOY-REQUIRED: the specific service accounts that exec into pods by design
+    # (operators, backup/debug controllers), each by full name. This replaced a
+    # `startswith: 'system:serviceaccount:'` filter that dropped EVERY service account -
+    # including a token stolen from a compromised pod, the usual in-cluster path.
+    # Also scope objectRef.namespace to your production namespaces. Until filled this
+    # excludes only the example. Run detections/sigma/deploy-required.sh to find this.
+    user.username:
+      - 'system:serviceaccount:kube-system:replicaset-controller'   # example — replace
+  condition: selection and not filter_exec_controllers
 falsepositives:
   - Routine developer/operator access in non-production namespaces, and debug
     controllers - scope objectRef.namespace to production and allowlist known human
