@@ -24,6 +24,37 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **Detection review, section C (1-7): seven rules with a dead term, an easy evasion, or an
+  allowlist keyed on a name the attacker picks.** Each fix carries a fixture that the old
+  rule gets wrong: it misses the new TP or fires on the new TN. Host validation is 111/111
+  with 80 true negatives (was 77).
+  - **`potato_seimpersonate_4688`:** 4688 renders NETWORK SERVICE as the computer account
+    and an app pool as its bare pool name, so the `NETWORK SERVICE` term never matched and
+    `APPPOOL` caught only pools with the word in their name. It now keys on SIDs
+    (`S-1-5-82-*`, `S-1-5-19`, `S-1-5-20`) with name fallbacks. The fixture's
+    `IIS APPPOOL\DefaultAppPool` SubjectUserName was not what Windows writes; it is now
+    corrected, and a SYSTEM TN was added.
+  - **`recovery_inhibition_process` (`test`):** it adds `vssadmin resize shadowstorage`,
+    PowerShell `Win32_ShadowCopy` removal, and `wbadmin delete systemstatebackup/backup`,
+    and `recoveryenabled` no longer requires the literal `no`. The old rule caught 1 of the
+    6 forms; the new rule catches all 6, and read-only near-misses stay silent.
+  - **`suid_bit_set`:** `/usr/bin/install` (`install -m 4755 /bin/bash /tmp/.x`) was
+    allowlisted, and every entry was a basename suffix, so `/tmp/dpkg` passed too. The
+    allowlist is now full paths.
+  - **`shadow_file_read`, `ssh_private_key_read`:** the allowlists keyed on `comm`, which a
+    renamed copy or `prctl` sets. They now key on full `exe` paths, and cron is added to
+    the shadow allowlist. The SSH rule no longer fires on `*.pub`.
+  - **`lsass_handle_access`, `mass_file_read_4663`:** a dumper or collector renamed to
+    `MsMpEng.exe` / `SearchIndexer.exe` anywhere on disk was filtered. They now use full
+    paths, with Defender matched by its protected Platform directory.
+  - **`data_destruction_wipe`:** diskpart never carries `clean` on its own command line.
+    The branch now matches the shell that pipes it in; `diskpart /s` is deliberately left
+    unmatched.
+  - **`archive_staging_utility`:** it fired at high on extraction (`7z x -p…`, `rar x -p-`,
+    `tar -xf … -C %TEMP%`). It now requires a create verb per archiver. Sigma's
+    case-insensitive `' -c'` also matched tar's `-C <dir>`, so tar uses its named create
+    clusters. The Splunk precedence sign-off was re-traced for the new condition.
+
 - **Detection review, section B: two unread telemetry planes, an AD CS row that over-claimed,
   and a PsExec rule that missed both PsExecs.**
   - **Sysmon registry events had no reader.** The lab config collects Run keys and WDigest

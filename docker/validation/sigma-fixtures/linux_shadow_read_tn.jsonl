@@ -1,1 +1,2 @@
 {"key": "shadow_read", "comm": "unix_chkpwd", "exe": "/usr/sbin/unix_chkpwd", "name": "/etc/shadow", "auid": "1000", "uid": "0"}
+{"key": "shadow_read", "comm": "cron", "exe": "/usr/sbin/cron", "name": "/etc/shadow", "auid": "4294967295", "uid": "0"}

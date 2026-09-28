@@ -23,6 +23,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/inhibit-recovery-4688.md
 author: dotfiles-Defense
 date: 2026-07-22
+modified: 2026-09-28
 tags:
   - attack.impact
   - attack.t1490
@@ -37,23 +38,48 @@ detection:
     CommandLine|contains|all:
       - 'shadow'
       - 'delete'
-  selection_wbadmin:
-    Image|endswith: '\wbadmin.exe'
+  selection_vss_resize:
+    # Conti-style purge: shrink shadow storage until Windows discards the copies itself -
+    # `vssadmin resize shadowstorage /for=C: /on=C: /maxsize=401MB` - no "delete" anywhere.
+    Image|endswith: '\vssadmin.exe'
     CommandLine|contains|all:
-      - 'delete'
+      - 'resize'
+      - 'shadowstorage'
+  selection_ps_shadowcopy:
+    # Get-WmiObject/Get-CimInstance Win32_ShadowCopy piped to Remove-WmiObject /
+    # Remove-CimInstance, or `.Delete()` on each - the same deletion without vssadmin.
+    Image|endswith:
+      - '\powershell.exe'
+      - '\pwsh.exe'
+    CommandLine|contains: 'Win32_ShadowCopy'
+  ps_shadowcopy_delete:
+    CommandLine|contains:
+      - 'Remove-WmiObject'
+      - 'Remove-CimInstance'
+      - '.Delete('
+  selection_wbadmin:
+    # `delete catalog`, `delete systemstatebackup` and `delete backup` all destroy the
+    # backup set; requiring `catalog` alone let the other two through.
+    Image|endswith: '\wbadmin.exe'
+    CommandLine|contains: 'delete'
+  wbadmin_target:
+    CommandLine|contains:
       - 'catalog'
+      - 'backup'
   selection_bcdedit_recovery:
     Image|endswith: '\bcdedit.exe'
-    CommandLine|contains|all:
-      - 'recoveryenabled'
-      - 'no'
+    # bcdedit booleans accept no/off/false/0, so requiring the literal `no` let
+    # `recoveryenabled off` and `... 0` through. Setting it by hand is rare either way.
+    CommandLine|contains: 'recoveryenabled'
   selection_bcdedit_bootstatus:
     Image|endswith: '\bcdedit.exe'
     CommandLine|contains|all:
       - 'bootstatuspolicy'
       - 'ignoreallfailures'
-  condition: 1 of selection_*
+  condition: selection_vss or selection_vss_resize or (selection_ps_shadowcopy and ps_shadowcopy_delete) or (selection_wbadmin and wbadmin_target) or 1 of selection_bcdedit_*
 falsepositives:
+  - An administrator resizing shadow storage upward, or re-enabling boot recovery with
+    `recoveryenabled yes`, during maintenance - both now match; confirm against the change.
   - Sanctioned backup/imaging software or an administrator intentionally clearing shadow
     storage during maintenance (allowlist the binary path and account/host).
 level: high

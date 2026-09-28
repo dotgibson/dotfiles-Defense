@@ -61,7 +61,7 @@ eventSource =~ "iam.amazonaws.com" and (eventName in~ ("CreateLoginProfile", "Up
 ((['resource.type'] in~ ("worker", "workers_script")) and (['action.type'] in~ ("create", "update"))) and (not(['actor.email'] =~ "ci-deploy@example.com"))
 
 // collection/archive_staging_utility.yml — Collected data staged into an archive (T1560.001)
-((Image endswith "\\rar.exe" or Image endswith "\\winrar.exe" or Image endswith "\\7z.exe" or Image endswith "\\7za.exe" or Image endswith "\\7zg.exe") and (CommandLine contains " -hp" or CommandLine contains " -p" or CommandLine contains " -mhe")) or ((((Image endswith "\\rar.exe" or Image endswith "\\winrar.exe" or Image endswith "\\7z.exe" or Image endswith "\\7za.exe" or Image endswith "\\7zg.exe" or Image endswith "\\tar.exe" or Image endswith "\\makecab.exe") and (CommandLine contains "\\AppData\\Local\\Temp\\" or CommandLine contains "\\Windows\\Temp\\" or CommandLine contains "\\Users\\Public\\" or CommandLine contains "\\ProgramData\\")) or ((Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and (CommandLine contains "Compress-Archive" and CommandLine contains "\\Temp\\"))) and (not(ParentImage endswith "\\backup-agent.exe")))
+(((Image endswith "\\rar.exe" or Image endswith "\\winrar.exe" or Image endswith "\\7z.exe" or Image endswith "\\7za.exe" or Image endswith "\\7zg.exe") and (CommandLine contains " -hp" or CommandLine contains " -p" or CommandLine contains " -mhe")) and (((Image endswith "\\rar.exe" or Image endswith "\\winrar.exe" or Image endswith "\\7z.exe" or Image endswith "\\7za.exe" or Image endswith "\\7zg.exe") and (CommandLine contains " a " or CommandLine contains " u " or CommandLine contains " m ")) or (Image endswith "\\tar.exe" and (CommandLine contains " -cf" or CommandLine contains " -czf" or CommandLine contains " -cjf" or CommandLine contains " -cvf" or CommandLine contains " -czvf" or CommandLine contains " -cvzf" or CommandLine contains " -acf" or CommandLine contains " -a -c" or CommandLine contains " -c -f" or CommandLine contains " --create")) or Image endswith "\\makecab.exe") and (not(CommandLine contains " -p-"))) or (((((Image endswith "\\rar.exe" or Image endswith "\\winrar.exe" or Image endswith "\\7z.exe" or Image endswith "\\7za.exe" or Image endswith "\\7zg.exe" or Image endswith "\\tar.exe" or Image endswith "\\makecab.exe") and (CommandLine contains "\\AppData\\Local\\Temp\\" or CommandLine contains "\\Windows\\Temp\\" or CommandLine contains "\\Users\\Public\\" or CommandLine contains "\\ProgramData\\")) and (((Image endswith "\\rar.exe" or Image endswith "\\winrar.exe" or Image endswith "\\7z.exe" or Image endswith "\\7za.exe" or Image endswith "\\7zg.exe") and (CommandLine contains " a " or CommandLine contains " u " or CommandLine contains " m ")) or (Image endswith "\\tar.exe" and (CommandLine contains " -cf" or CommandLine contains " -czf" or CommandLine contains " -cjf" or CommandLine contains " -cvf" or CommandLine contains " -czvf" or CommandLine contains " -cvzf" or CommandLine contains " -acf" or CommandLine contains " -a -c" or CommandLine contains " -c -f" or CommandLine contains " --create")) or Image endswith "\\makecab.exe")) or ((Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and (CommandLine contains "Compress-Archive" and CommandLine contains "\\Temp\\"))) and (not(ParentImage endswith "\\backup-agent.exe")))
 
 // collection/mass_file_read_4663.yml — File read handle base (4663)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -94,7 +94,7 @@ EventType =~ "ConnectPipe" and PipeName contains "efsrpc"
 (EventID == 4769 and TicketEncryptionType =~ "0x17") and (not((ServiceName in~ ("krbtgt") or ServiceName endswith "$")))
 
 // credential_access/lsass_handle_access.yml — LSASS process access with dump-shaped rights
-(TargetImage endswith "\\lsass.exe" and (GrantedAccess in~ ("0x1010", "0x1410", "0x1438", "0x143a", "0x1fffff"))) and (not((SourceImage endswith "\\MsMpEng.exe" or SourceImage endswith "\\MsSense.exe" or SourceImage endswith "\\wininit.exe" or SourceImage endswith "\\csrss.exe" or SourceImage endswith "\\CSFalconService.exe" or SourceImage endswith "\\SentinelAgent.exe" or SourceImage endswith "\\RepMgr.exe")))
+(TargetImage endswith "\\lsass.exe" and (GrantedAccess in~ ("0x1010", "0x1410", "0x1438", "0x143a", "0x1fffff"))) and (not(((SourceImage startswith "C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\" or SourceImage startswith "C:\\Program Files\\Windows Defender\\" or SourceImage startswith "C:\\Program Files\\Windows Defender Advanced Threat Protection\\") or (SourceImage in~ ("C:\\Windows\\System32\\wininit.exe", "C:\\Windows\\System32\\csrss.exe", "C:\\Program Files\\CrowdStrike\\CSFalconService.exe", "C:\\Program Files\\Confer\\RepMgr.exe")) or SourceImage startswith "C:\\Program Files\\SentinelOne\\")))
 
 // credential_access/ntds_dump_ntdsutil_vss_4688.yml — NTDS.dit theft via ntdsutil / VSS on a domain controller
 (Image endswith "\\ntdsutil.exe" and (CommandLine contains "ifm" or CommandLine contains "create full")) or ((CommandLine contains "create shadow" or CommandLine contains "start backup") and (Image endswith "\\vssadmin.exe" or Image endswith "\\wbadmin.exe")) or Image endswith "\\diskshadow.exe"
@@ -172,7 +172,7 @@ eventName =~ "authorize" and (scope contains "mail.google.com" or scope contains
 ((Image endswith "\\manage-bde.exe" and (CommandLine contains "-on" or CommandLine contains "-protectors -add" or CommandLine contains "-forcerecovery")) or ((Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and (CommandLine contains "Enable-BitLocker" or CommandLine contains "Add-BitLockerKeyProtector"))) and (not(ParentImage endswith "\\TSManager.exe"))
 
 // impact/data_destruction_wipe.yml — Data destruction - free-space wipe / secure delete / volume clean
-(Image endswith "\\cipher.exe" and CommandLine contains "/w") or (Image endswith "\\sdelete.exe" or Image endswith "\\sdelete64.exe") or (Image endswith "\\fsutil.exe" and CommandLine contains "setzerodata") or (Image endswith "\\diskpart.exe" and CommandLine contains "clean")
+(Image endswith "\\cipher.exe" and CommandLine contains "/w") or (Image endswith "\\sdelete.exe" or Image endswith "\\sdelete64.exe") or (Image endswith "\\fsutil.exe" and CommandLine contains "setzerodata") or ((Image endswith "\\cmd.exe" or Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and (CommandLine contains "diskpart" and CommandLine contains "clean"))
 
 // impact/mass_file_encryption_4663.yml — File write/delete handle base (4663)
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -181,7 +181,7 @@ eventName =~ "authorize" and (scope contains "mail.google.com" or scope contains
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // impact/recovery_inhibition_process.yml — Inhibit system recovery - shadow copy / backup / boot-recovery deletion
-((Image endswith "\\vssadmin.exe" or Image endswith "\\wmic.exe") and (CommandLine contains "shadow" and CommandLine contains "delete")) or (Image endswith "\\wbadmin.exe" and (CommandLine contains "delete" and CommandLine contains "catalog")) or (Image endswith "\\bcdedit.exe" and (CommandLine contains "recoveryenabled" and CommandLine contains "no")) or (Image endswith "\\bcdedit.exe" and (CommandLine contains "bootstatuspolicy" and CommandLine contains "ignoreallfailures"))
+((Image endswith "\\vssadmin.exe" or Image endswith "\\wmic.exe") and (CommandLine contains "shadow" and CommandLine contains "delete")) or (Image endswith "\\vssadmin.exe" and (CommandLine contains "resize" and CommandLine contains "shadowstorage")) or (((Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and CommandLine contains "Win32_ShadowCopy") and (CommandLine contains "Remove-WmiObject" or CommandLine contains "Remove-CimInstance" or CommandLine contains ".Delete(")) or ((Image endswith "\\wbadmin.exe" and CommandLine contains "delete") and (CommandLine contains "catalog" or CommandLine contains "backup")) or ((Image endswith "\\bcdedit.exe" and CommandLine contains "recoveryenabled") or (Image endswith "\\bcdedit.exe" and (CommandLine contains "bootstatuspolicy" and CommandLine contains "ignoreallfailures")))
 
 // impact/service_stop_burst.yml — Service/process stop command base - service control by command line
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
@@ -235,19 +235,19 @@ key =~ "cron_persist" and (not((exe endswith "/dpkg" or exe endswith "/rpm" or e
 key =~ "hist_tamper" and name contains "_history"
 
 // linux/shadow_file_read.yml — /etc/shadow read by a non-auth process (auditd)
-key =~ "shadow_read" and (not((comm in~ ("unix_chkpwd", "sshd", "login", "su", "sudo", "passwd", "chpasswd", "chage", "pwck", "grpck", "useradd", "usermod", "userdel", "systemd"))))
+key =~ "shadow_read" and (not((exe in~ ("/usr/sbin/unix_chkpwd", "/sbin/unix_chkpwd", "/usr/sbin/sshd", "/usr/bin/login", "/bin/login", "/usr/bin/su", "/bin/su", "/usr/bin/sudo", "/usr/bin/passwd", "/usr/sbin/chpasswd", "/usr/bin/chage", "/usr/sbin/pwck", "/usr/sbin/grpck", "/usr/sbin/useradd", "/usr/sbin/usermod", "/usr/sbin/userdel", "/usr/lib/systemd/systemd", "/lib/systemd/systemd", "/usr/sbin/cron", "/usr/sbin/crond"))))
 
 // linux/ssh_authorized_keys_write.yml — SSH authorized_keys written - key-based persistence (auditd)
 (key =~ "ssh_authkeys" and name contains "authorized_keys") and (not((exe endswith "/cloud-init" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
 
 // linux/ssh_private_key_read.yml — SSH private key read by a non-SSH process (auditd)
-(key =~ "ssh_key_read" and (name contains "/id_rsa" or name contains "/id_ecdsa" or name contains "/id_ed25519" or name contains "/id_dsa" or name contains "/identity")) and (not((comm in~ ("ssh", "sshd", "ssh-agent", "ssh-keygen", "ssh-add", "scp", "sftp", "git"))))
+(key =~ "ssh_key_read" and (name contains "/id_rsa" or name contains "/id_ecdsa" or name contains "/id_ed25519" or name contains "/id_dsa" or name contains "/identity")) and (not(((exe in~ ("/usr/bin/ssh", "/usr/sbin/sshd", "/usr/bin/ssh-agent", "/usr/bin/ssh-keygen", "/usr/bin/ssh-add", "/usr/bin/scp", "/usr/bin/sftp", "/usr/bin/git")) or name endswith ".pub")))
 
 // linux/sudo_root_shell.yml — Root shell spawned under a real login uid - sudo escape (auditd)
 (key =~ "sudo_abuse" and (comm in~ ("bash", "sh", "dash", "zsh", "ksh", "fish", "python", "python3", "perl", "ruby"))) and (not(auid == 1000))
 
 // linux/suid_bit_set.yml — Setuid bit set on a file - SUID backdoor planted (auditd)
-key =~ "suid_change" and (not((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/install" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion")))
+key =~ "suid_change" and (not((exe in~ ("/usr/bin/dpkg", "/bin/dpkg", "/usr/bin/rpm", "/bin/rpm", "/usr/bin/apt", "/usr/bin/apt-get", "/usr/bin/yum", "/usr/bin/dnf", "/usr/bin/zypper", "/usr/bin/ansible-playbook", "/opt/puppetlabs/puppet/bin/puppet", "/usr/bin/chef-client", "/usr/bin/salt-minion"))))
 
 // linux/systemd_unit_persistence.yml — Systemd unit persistence - unit or timer file written (auditd)
 key =~ "systemd_persist" and (not(((exe endswith "/dpkg" or exe endswith "/rpm" or exe endswith "/apt" or exe endswith "/apt-get" or exe endswith "/yum" or exe endswith "/dnf" or exe endswith "/zypper" or exe endswith "/ansible-playbook" or exe endswith "/puppet" or exe endswith "/chef-client" or exe endswith "/salt-minion") or (exe endswith "/systemctl" and name contains ".wants/") or (exe endswith "/systemd" and name startswith "/run/systemd/system/"))))
@@ -289,7 +289,7 @@ EventID == 4698 and (TaskContent contains "-enc " or TaskContent contains "-Enco
 EventID in~ ("4886", "4887")
 
 // privilege_escalation/potato_seimpersonate_4688.yml — Potato privesc - service identity spawning an interactive shell (Security 4688)
-(Image endswith "\\cmd.exe" or Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and (SubjectUserName contains "APPPOOL" or SubjectUserName contains "NETWORK SERVICE" or SubjectUserName contains "LOCAL SERVICE")
+(Image endswith "\\cmd.exe" or Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and (SubjectUserSid startswith "S-1-5-82-" or (SubjectUserSid in~ ("S-1-5-19", "S-1-5-20")) or SubjectDomainName =~ "IIS APPPOOL" or SubjectUserName =~ "LOCAL SERVICE")
 
 // privilege_escalation/potato_seimpersonate_sysmon_1.yml — Potato privesc - service identity spawning an interactive shell (Sysmon 1)
 (Image endswith "\\cmd.exe" or Image endswith "\\powershell.exe" or Image endswith "\\pwsh.exe") and (ParentUser contains "APPPOOL" or ParentUser contains "NETWORK SERVICE" or ParentUser contains "LOCAL SERVICE")

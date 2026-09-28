@@ -1,1 +1,3 @@
 {"key": "suid_change", "comm": "chmod", "exe": "/usr/bin/chmod", "name": "/tmp/.cache/rootbash", "auid": "1000", "uid": "0"}
+{"key": "suid_change", "comm": "install", "exe": "/usr/bin/install", "name": "/tmp/.x", "auid": "1000", "uid": "0"}
+{"key": "suid_change", "comm": "dpkg", "exe": "/tmp/dpkg", "name": "/tmp/.cache/rootbash", "auid": "1000", "uid": "0"}

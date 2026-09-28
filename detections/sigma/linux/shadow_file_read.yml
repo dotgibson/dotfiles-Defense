@@ -21,6 +21,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/shadow-dump-auditd.md
 author: dotfiles-Defense
 date: 2026-08-26
+modified: 2026-09-28
 tags:
   - attack.credential-access
   - attack.t1003.008
@@ -38,21 +39,34 @@ detection:
     # as-is and the extension is tuning rather than a prerequisite. Until extended, a
     # nightly compliance scan will alert.
     # Run detections/sigma/deploy-required.sh to find this.
-    comm:
-      - 'unix_chkpwd'
-      - 'sshd'
-      - 'login'
-      - 'su'
-      - 'sudo'
-      - 'passwd'
-      - 'chpasswd'
-      - 'chage'
-      - 'pwck'
-      - 'grpck'
-      - 'useradd'
-      - 'usermod'
-      - 'userdel'
-      - 'systemd'
+    # FULL exe paths, not comm. comm is the executable's basename (or anything a process
+    # sets with prctl(PR_SET_NAME)), so `cp /bin/cat /tmp/sshd; /tmp/sshd /etc/shadow` was
+    # filtered as sshd. exe is the resolved binary path the kernel records, which a
+    # rename cannot forge. Both /usr and pre-usrmerge / paths are listed.
+    exe:
+      - '/usr/sbin/unix_chkpwd'
+      - '/sbin/unix_chkpwd'
+      - '/usr/sbin/sshd'
+      - '/usr/bin/login'
+      - '/bin/login'
+      - '/usr/bin/su'
+      - '/bin/su'
+      - '/usr/bin/sudo'
+      - '/usr/bin/passwd'
+      - '/usr/sbin/chpasswd'
+      - '/usr/bin/chage'
+      - '/usr/sbin/pwck'
+      - '/usr/sbin/grpck'
+      - '/usr/sbin/useradd'
+      - '/usr/sbin/usermod'
+      - '/usr/sbin/userdel'
+      - '/usr/lib/systemd/systemd'
+      - '/lib/systemd/systemd'
+      # cron runs the PAM account stack as root for each job, and root-context pam_unix
+      # reads /etc/shadow itself rather than through unix_chkpwd - so every scheduled job
+      # would alert without these. Confirm the path on your distros.
+      - '/usr/sbin/cron'
+      - '/usr/sbin/crond'
   condition: selection and not filter_auth_stack
 falsepositives:
   - Compliance or vulnerability scanners auditing password policy - allowlist them in

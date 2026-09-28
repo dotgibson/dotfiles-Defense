@@ -55,7 +55,7 @@ references:
   - https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4663
 author: dotfiles-Defense
 date: 2026-08-05
-modified: 2026-08-21
+modified: 2026-09-28
 name: file_read_handle_4663
 tags:
   - attack.collection
@@ -82,10 +82,12 @@ detection:
     # muted - which is the failure mode the methodology warns about. Identify the
     # sweepers from your own data before deploying. Run
     # detections/sigma/deploy-required.sh to find this.
-    ProcessName|endswith:
-      - '\SearchIndexer.exe'
-      - '\MsMpEng.exe'
-      - '\backup-agent.exe' # example — replace with your backup/sync agents
+    # FULL paths, never a bare basename: `ProcessName|endswith: '\SearchIndexer.exe'` also
+    # matched a collection tool renamed to SearchIndexer.exe anywhere on disk.
+    - ProcessName:
+        - 'C:\Windows\System32\SearchIndexer.exe'
+        - 'C:\Program Files\Vendor\Backup\backup-agent.exe'   # example — replace with your backup/sync agents
+    - ProcessName|startswith: 'C:\ProgramData\Microsoft\Windows Defender\Platform\'
   condition: (selection_list or selection_mask) and not filter_indexers
 falsepositives:
   - Any normal file read (defeated by the distinct-file count below).

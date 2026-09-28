@@ -23,6 +23,7 @@ references:
   - https://attack.mitre.org/techniques/T1490/
 author: dotfiles-Defense
 date: 2026-08-05
+modified: 2026-09-28
 tags:
   - attack.impact
   - attack.t1485
@@ -41,8 +42,19 @@ detection:
     Image|endswith: '\fsutil.exe'
     CommandLine|contains: 'setzerodata'
   selection_diskpart_clean:
-    Image|endswith: '\diskpart.exe'
-    CommandLine|contains: 'clean'
+    # diskpart takes no commands on its own command line - only from stdin or a /s script -
+    # so `Image diskpart.exe, CommandLine contains clean` matched only a script whose
+    # FILENAME contained "clean". The visible form is the shell that pipes the commands
+    # in: cmd /c "(echo select disk 0 & echo clean) | diskpart". `diskpart /s <script>` is
+    # deliberately not matched: imaging and deployment tooling runs diskpart scripts
+    # routinely, and the script's contents are not in the event.
+    Image|endswith:
+      - '\cmd.exe'
+      - '\powershell.exe'
+      - '\pwsh.exe'
+    CommandLine|contains|all:
+      - 'diskpart'
+      - 'clean'
   condition: 1 of selection_*
 falsepositives:
   - Decommissioning / media-sanitization and disk-imaging workflows (allowlist the host
