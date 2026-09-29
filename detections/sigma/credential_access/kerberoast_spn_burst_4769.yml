@@ -1,0 +1,68 @@
+title: Kerberoasting base - service ticket for a user SPN (4769, any etype)
+id: 413b4d51-f6c6-493b-85d5-202d5adea99d
+status: experimental
+description: |
+  Base event for the Kerberoasting burst correlation below: a successful 4769 service
+  ticket for an SPN held by a user account (not a machine `$`, not krbtgt), in ANY
+  encryption type. Not actionable alone - users request tickets for SQL, web and file
+  services all day. The roasting shape is one client asking for many distinct user SPNs
+  in a short window, expressed by the correlation.
+references:
+  - https://attack.mitre.org/techniques/T1558/003/
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/kerberoasting-4769.md
+author: dotfiles-Defense
+date: 2026-09-28
+name: kerberoast_tgs_user_spn_4769
+tags:
+  - attack.credential-access
+  - attack.t1558.003
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4769
+    Status: '0x0'
+  filter_machine:
+    ServiceName|endswith: '$'
+  filter_krbtgt:
+    ServiceName: 'krbtgt'
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - Every ordinary service-ticket request for a user-held SPN (defeated by the
+    distinct-SPN count below).
+level: informational
+---
+title: Kerberoasting - one source requesting many user SPNs (4769, any etype)
+id: 79dbc45d-f7e3-412d-9463-cff9a5a0d32a
+status: experimental
+description: |
+  Detects Kerberoasting regardless of ticket encryption type: one client address
+  requesting service tickets for five or more distinct user-held SPNs within ten
+  minutes. impacket-GetUserSPNs -request and nxc --kerberoasting request every roastable
+  SPN in one pass, and they do NOT force RC4 - an AES-only service account yields an
+  AES ticket that still cracks offline - so the RC4-only kerberoasting_rc4_tgs.yml is
+  blind to them there. This counts breadth, which the tool cannot avoid when it sweeps.
+  A single targeted roast stays below the threshold; the RC4 rule is the fast path for
+  that case when the account still allows RC4.
+  Validate (purple): run the "Microsoft Windows Kerberos" Kerberoast fold in
+  dotfiles-Offense/offensive/hacktheplanet against an AES-only service account (htpx pair
+  kerberoast-getuserspns); confirm the 4769s carry 0x11/0x12 and this rule fires.
+references:
+  - https://attack.mitre.org/techniques/T1558/003/
+correlation:
+  type: value_count
+  rules:
+    - kerberoast_tgs_user_spn_4769
+  group-by:
+    - IpAddress
+  timespan: 10m
+  condition:
+    gte: 5
+    field: ServiceName
+falsepositives:
+  - An application server or jump host that brokers access to many services held by
+    user accounts (baseline and allowlist its address, or raise the threshold for it).
+  - Users of a portal that fans out to many backend services in one page load, each
+    under its own user-held SPN (rare; move those SPNs to gMSAs, which end in `$`).
+level: high

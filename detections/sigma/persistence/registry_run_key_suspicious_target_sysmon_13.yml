@@ -45,6 +45,19 @@ detection:
       - '\Temp\'
       - '\Users\Public\'
       - '\ProgramData\'
+      # Sysmon 13 records Details as written, so a REG_EXPAND_SZ value keeps its %VAR% -
+      # `%APPDATA%\x.exe` contains none of the expanded forms above. 8.3 short names
+      # (C:\Users\bob\APPDAT~1\, C:\PROGRA~3\) dodge them the same way.
+      - '%APPDATA%'
+      - '%LOCALAPPDATA%'
+      - '%TEMP%'
+      - '%TMP%'
+      - '%PUBLIC%'
+      - '%ProgramData%'
+      - '~1\'
+      - '~2\'
+      - '~3\'
+      - '~4\'
   target_interpreter:
     Details|contains:
       - 'powershell'

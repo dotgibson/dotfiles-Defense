@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 4698, "Channel": "Security", "Computer": "SRV02"}, "EventData": {"TaskName": "\\VendorMaintenance", "TaskContent": "<Actions><Exec><Command>powershell.exe</Command><Arguments>-ExecutionPolicy Bypass -File C:\\Scripts\\cleanup.ps1</Arguments></Exec></Actions>"}}}

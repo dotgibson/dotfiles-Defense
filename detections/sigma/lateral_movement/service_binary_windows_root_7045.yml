@@ -1,0 +1,51 @@
+title: Service installed from a binary directly in the Windows directory (7045)
+id: d8b8beb4-6b6e-4f7f-803b-e4625bc8041f
+status: experimental
+description: |
+  Detects a new service whose binary sits directly in %SystemRoot% (C:\Windows\x.exe)
+  rather than under System32 or a program folder. That is where remote-exec tools drop
+  their service binary over ADMIN$, and it survives the renames that beat
+  service_creation_psexec_7045.yml's name-keyed branches: Sysinternals `psexec -r updsvc`
+  installs %SystemRoot%\updsvc.exe, and impacket psexec.py `-service-name` /
+  `-remote-binary-name` choose both names. Almost no Windows or mainstream vendor service
+  lives at the root of the Windows directory - but some do, which is why this is its own
+  medium rule with a deploy-time allowlist rather than a branch of the high-confidence
+  PsExec rule. Expect a first-week baseline.
+  Validate (purple): run `psexec -r <name>` or impacket psexec.py with -service-name and
+  -remote-binary-name from dotfiles-Offense (hacktheplanet "Lateral movement & remote
+  execution" fold). No htpx pair covers the renamed-service variant yet; the nearest is
+  pth-lateral-nxc, which pairs service_creation_psexec_7045.yml.
+references:
+  - https://attack.mitre.org/techniques/T1569/002/
+  - https://attack.mitre.org/techniques/T1021/002/
+author: dotfiles-Defense
+date: 2026-09-28
+tags:
+  - attack.execution
+  - attack.t1569.002
+  - attack.lateral-movement
+  - attack.t1021.002
+logsource:
+  product: windows
+  service: system
+detection:
+  selection:
+    EventID: 7045
+  windows_root_binary:
+    # DEPLOY-REQUIRED (Elastic only): Lucene regexes match the whole term implicitly, have
+    # no (?i) flag, and read ^ and $ as literals, so the generated Lucene form never
+    # matches. Rewrite it in your Elastic rule as
+    #   ImagePath:/"?(%[sS][yY][sS][tT][eE][mM][rR][oO][oO][tT]%|[cC]:\\[wW][iI][nN][dD][oO][wW][sS])\\[^\\]+\.[eE][xX][eE]"?/
+    # Splunk and Sentinel take the anchored, case-insensitive pattern as written.
+    ImagePath|re: '(?i)^"?(%systemroot%|c:\\windows)\\[^\\]+\.exe"?$'
+  filter_known_root_services:
+    # DEPLOY-REQUIRED: vendor services on YOUR fleet that install their binary at the root
+    # of the Windows directory. Exact ImagePath, never a bare name. Until filled this
+    # excludes only the example. Run detections/sigma/deploy-required.sh to find this.
+    ImagePath:
+      - '%systemroot%\vupdater.exe'   # example — replace
+  condition: selection and windows_root_binary and not filter_known_root_services
+falsepositives:
+  - Older vendor agents and printer/scanner drivers that install a service binary at the
+    root of C:\Windows (allowlist the exact ImagePath).
+level: medium

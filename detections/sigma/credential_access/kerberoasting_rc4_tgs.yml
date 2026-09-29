@@ -2,10 +2,15 @@ title: Kerberoasting - RC4 service ticket for a user SPN
 id: f61b8f0e-d702-42e6-8c4b-7a96f166b44f
 status: test
 description: |
-  Detects the Kerberoasting invariant: an RC4 (0x17) TGS-REQ for a non-machine,
-  non-krbtgt SPN. The encryption downgrade is the tell even when ticket flags look
-  normal - roasting tools force RC4 to keep the hash crackable. Detect on the
-  downgrade, not the tool name or count.
+  Detects an RC4 (0x17) service ticket for a non-machine, non-krbtgt SPN - the fast,
+  single-event half of Kerberoasting coverage. It is NOT the whole invariant: the common
+  roasting tools (impacket-GetUserSPNs -request, nxc --kerberoasting, Rubeus by default)
+  do not force RC4. The KDC issues the ticket in an etype the service account supports,
+  so an AES-only account yields a 0x11/0x12 ticket that still cracks (hashcat -m 19700)
+  and this rule never sees it. kerberoast_spn_burst_4769.yml (id
+  79dbc45d-f7e3-412d-9463-cff9a5a0d32a) covers that case by counting distinct user SPNs
+  requested from one source, whatever the etype. Keep both: this one fires on a single
+  targeted RC4 roast, which is below the burst threshold.
   Validate (purple): run the "Microsoft Windows Kerberos" Kerberoast fold in
   dotfiles-Offense/offensive/hacktheplanet (htpx pair: kerberoast-getuserspns <-> this);
   confirm the 4769 fires with Ticket_Encryption_Type 0x17.
@@ -14,6 +19,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/kerberoasting-4769.md
 author: dotfiles-Defense
 date: 2026-06-30
+modified: 2026-09-28
 tags:
   - attack.credential-access
   - attack.t1558.003

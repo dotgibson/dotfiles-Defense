@@ -6,7 +6,9 @@ description: |
   rule sees is already caught downstream on another plane. service_creation_psexec_7045.yml
   (id fd22807d-bdb8-44b8-81f4-8d44c8be24b4) catches the service smbexec/psexec install over
   svcctl, and scheduled_task_suspicious_4698.yml (id 8ae44ad2-6331-4444-97f4-b2eac893717c)
-  catches the task atexec schedules over atsvc. Nothing here is a gap those two leave open.
+  catches the task atexec schedules over atsvc (its default redirect shape; `-silentcommand`
+  drops the redirect and only this pipe rule sees it). Nothing else here is a gap those
+  two leave open.
   What it adds is a SECOND, INDEPENDENT plane: the pipe bind is visible on the host even
   where the 7045 / 4698 audit subcategory is never forwarded, and it happens EARLIER in the
   chain than the artifact those rules key on - the bind is the request, the service or the

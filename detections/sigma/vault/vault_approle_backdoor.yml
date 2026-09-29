@@ -12,7 +12,12 @@ description: |
   jwt, oidc, kubernetes, aws or cert backend is the same outcome one path over: a
   trust relationship the attacker controls the other end of, minted without touching
   sys/auth at all. The rule matched only the approle path when first shipped; it now
-  matches the role path under every backend. These are rare, admin-level changes, so
+  matches the role path under every backend. Backends whose identities are not called
+  roles are matched too: userpass and ldap `users/`, ldap and okta `groups/` (a group
+  mapped to a policy), cert `certs/` (the description used to claim cert and did not
+  match it) and github `map/users|teams/`. `vault write auth/userpass/users/backdoor
+  password=x policies=root` is the one-line version of this technique. These are rare,
+  admin-level changes, so
   one by an unexpected token - especially a role bound to root/a broad policy -
   warrants review.
   Validate (purple): create a rogue AppRole from dotfiles-Offense (htpx pair
@@ -23,7 +28,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/vault-approle-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
-modified: 2026-09-02
+modified: 2026-09-28
 tags:
   - attack.persistence
   - attack.t1098
@@ -40,10 +45,32 @@ detection:
     request.path:
       - 'auth/*/role/*'
       - 'auth/*/roles/*'
+      - 'auth/*/users/*'
+      - 'auth/*/groups/*'
+      - 'auth/*/certs/*'
+      - 'auth/*/map/*'
   paths_method:
     request.path|startswith: 'sys/auth/'
-  condition: selection and 1 of paths_*
+  secret_id_mint:
+    # `auth/approle/role/<name>/secret-id` (and custom-secret-id) is an update under the
+    # role path, and every AppRole CI integration mints one per pipeline run - that was
+    # this rule's largest noise source. Exempted ONLY for the orchestrator identities
+    # below; a secret-id minted for an existing powerful role by anyone else is itself a
+    # backdoor credential and still alerts.
+    request.path|endswith:
+      - '/secret-id'
+      - '/custom-secret-id'
+  filter_ci_orchestrator:
+    # DEPLOY-REQUIRED: the entity ids of the CI/CD orchestrators that mint AppRole
+    # secret-ids (`vault read -format=json identity/entity/name/<name>`). Until filled this
+    # exempts only the example, so every pipeline's secret-id mint alerts. Run
+    # detections/sigma/deploy-required.sh to find this.
+    auth.entity_id:
+      - '00000000-0000-0000-0000-00000000c1c1'   # example — replace with an entity id
+  condition: selection and 1 of paths_* and not (secret_id_mint and filter_ci_orchestrator)
 falsepositives:
+  - A userpass user changing their own password (auth/userpass/users/<self>/password) -
+    triage on whether request.path names the caller's own identity.
   - Provisioning sanctioned automation - allowlist the expected admin tokens and review
     roles bound to root/broad policies or given non-expiring secret-id TTLs.
 level: medium

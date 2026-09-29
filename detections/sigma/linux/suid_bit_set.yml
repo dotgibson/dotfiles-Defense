@@ -69,10 +69,9 @@ detection:
       - '/usr/bin/yum'
       - '/usr/bin/dnf'
       - '/usr/bin/zypper'
-      - '/usr/bin/ansible-playbook'   # example CM — verify the path on your fleet
-      - '/opt/puppetlabs/puppet/bin/puppet'   # example CM — verify the path on your fleet
-      - '/usr/bin/chef-client'        # example CM — verify the path on your fleet
-      - '/usr/bin/salt-minion'        # example CM — verify the path on your fleet
+      # No configuration-management entries: ansible modules, salt-minion (Python), puppet
+      # and chef-client (Ruby) write under their interpreter's exe, so a path naming the
+      # tool never matched. See cron_persistence.yml for the interpreter+comm option.
   condition: selection and not filter_provisioning
 falsepositives:
   - Package installs setting the setuid bit on binaries that ship with it - allowlist

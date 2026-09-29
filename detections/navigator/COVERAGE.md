@@ -2,21 +2,21 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**121 rules · 142 detection documents · 86 techniques · 12 tactics · 24 logsources.**
+**124 rules · 148 detection documents · 87 techniques · 12 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
 | Tactic | ID | Techniques | Rules |
 | ------ | -- | ---------: | ----: |
 | Initial Access | TA0001 | 1 | 2 |
-| Execution | TA0002 | 9 | 11 |
+| Execution | TA0002 | 9 | 12 |
 | Persistence | TA0003 | 17 | 38 |
 | Privilege Escalation | TA0004 | 10 | 16 |
 | Stealth | TA0005 | 3 | 6 |
 | Defense Impairment | TA0112 | 8 | 13 |
-| Credential Access | TA0006 | 18 | 22 |
+| Credential Access | TA0006 | 19 | 24 |
 | Discovery | TA0007 | 14 | 9 |
-| Lateral Movement | TA0008 | 11 | 8 |
+| Lateral Movement | TA0008 | 11 | 9 |
 | Collection | TA0009 | 5 | 4 |
 | Exfiltration | TA0010 | 3 | 3 |
 | Impact | TA0040 | 5 | 9 |
@@ -27,6 +27,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | --------- | ----: | ---------- |
 | T1003.001 | 1 | `lsass_handle_access` |
 | T1003.003 | 1 | `ntds_dump_ntdsutil_vss_4688` |
+| T1003.004 | 1 | `dpapi_backupkey_secret_read_4662` |
 | T1003.006 | 2 | `dcsync_non_dc_machine_account_4662`, `dcsync_replication_4662` |
 | T1003.008 | 1 | `shadow_file_read` |
 | T1005 | 1 | `mass_file_read_4663` |
@@ -34,7 +35,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1016 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1018 | 2 | `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1021 | 1 | `passthehash_4624_fanout` |
-| T1021.002 | 1 | `svcctl_atsvc_remote_pipe_sysmon_18` |
+| T1021.002 | 2 | `service_binary_windows_root_7045`, `svcctl_atsvc_remote_pipe_sysmon_18` |
 | T1033 | 3 | `host_enum_srvsvc_wkssvc_5145`, `host_recon_command_burst`, `host_recon_powershell_4104` |
 | T1046 | 1 | `ldap_recon_explicit_creds_4648` |
 | T1047 | 1 | `wmiexec_wmiprvse_child_4688` |
@@ -88,19 +89,19 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1550.003 | 1 | `unconstrained_delegation_4624` |
 | T1552.004 | 1 | `ssh_private_key_read` |
 | T1552.006 | 1 | `gpp_cpassword_sysvol_5145` |
-| T1555 | 2 | `dpapi_backupkey_5145`, `vault_bulk_secret_read` |
+| T1555 | 3 | `dpapi_backupkey_5145`, `dpapi_backupkey_secret_read_4662`, `vault_bulk_secret_read` |
 | T1555.006 | 1 | `azure_keyvault_bulk_secret_read` |
 | T1556 | 2 | `okta_idp_created`, `shadow_credentials_keycredentiallink_5136` |
 | T1556.006 | 1 | `okta_mfa_factor_reset` |
 | T1558 | 1 | `unconstrained_delegation_4624` |
-| T1558.003 | 1 | `kerberoasting_rc4_tgs` |
+| T1558.003 | 2 | `kerberoast_spn_burst_4769`, `kerberoasting_rc4_tgs` |
 | T1558.004 | 1 | `asrep_roast_4768` |
 | T1558.005 | 1 | `ccache_theft_staging` |
 | T1560.001 | 1 | `archive_staging_utility` |
 | T1563.002 | 1 | `rdp_hijack_tscon_4688` |
 | T1567 | 1 | `slack_external_shared_channel` |
 | T1567.002 | 1 | `snowflake_data_unload` |
-| T1569.002 | 2 | `service_creation_psexec_7045`, `svcctl_atsvc_remote_pipe_sysmon_18` |
+| T1569.002 | 3 | `service_binary_windows_root_7045`, `service_creation_psexec_7045`, `svcctl_atsvc_remote_pipe_sysmon_18` |
 | T1609 | 1 | `k8s_pod_exec_attach` |
 | T1610 | 1 | `k8s_privileged_pod_created` |
 | T1611 | 1 | `k8s_privileged_pod_created` |
@@ -119,7 +120,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `cloud` | `aws`, `azure`, `gcp` | 15 |
 | `cloudflare` | `cloudflare` | 3 |
 | `collection` | `windows` | 2 |
-| `credential_access` | `windows` | 12 |
+| `credential_access` | `windows` | 14 |
 | `defense_impairment` | `windows` | 4 |
 | `discovery` | `windows` | 9 |
 | `github` | `github` | 3 |
@@ -128,7 +129,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `impact` | `windows` | 8 |
 | `jenkins` | `jenkins` | 3 |
 | `kubernetes` | `kubernetes` | 3 |
-| `lateral_movement` | `windows` | 6 |
+| `lateral_movement` | `windows` | 7 |
 | `linux` | `linux` | 9 |
 | `npm` | `npm` | 3 |
 | `okta` | `okta` | 3 |

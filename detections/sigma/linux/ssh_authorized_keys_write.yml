@@ -46,12 +46,15 @@ detection:
     # left after it is a key appended by something else, which is the event this rule is
     # for. Until filled this excludes only the examples below.
     # Run detections/sigma/deploy-required.sh to find this.
-    exe|endswith:
-      - '/cloud-init'            # example — replace with your key-management path
-      - '/ansible-playbook'      # example CM — verify against your fleet
-      - '/puppet'                # example CM — verify against your fleet
-      - '/chef-client'           # example CM — verify against your fleet
-      - '/salt-minion'           # example CM — verify against your fleet
+    # EXACT full paths of compiled tools only. The previous examples (cloud-init,
+    # ansible-playbook, puppet, chef-client, salt-minion) are Python or Ruby, so auditd
+    # records their writes under the interpreter's exe and those entries never matched -
+    # and as `endswith` basenames they also exempted any binary renamed to one of them.
+    # For an interpreter-run manager, pair the interpreter exe with its comm in a separate
+    # filter_* block (e.g. exe|startswith '/usr/bin/python3' AND comm 'cloud-init'),
+    # knowing comm is the script name and can be copied.
+    exe:
+      - '/opt/keymgr/bin/keyagent'   # example — replace with your key-distribution agent
   condition: selection and not filter_provisioning
 falsepositives:
   - Configuration management or cloud-init distributing user keys - allowlist that path

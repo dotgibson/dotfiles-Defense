@@ -1,24 +1,25 @@
-title: DPAPI domain backup-key theft - protected_storage pipe (5145)
+title: MS-BKRP use over the protected_storage pipe on a DC (5145, hunt)
 id: d2280db3-54ba-4329-8cc7-de905fac62ac
 status: test
 description: |
-  Detects retrieval of the DPAPI domain backup key: a 5145 detailed file-share
-  access whose relative target is the protected_storage named pipe over IPC$ on a
-  domain controller. The backup key rides MS-BKRP over that pipe, and almost nothing
-  but a genuine domain backup operation touches it - so a non-backup principal
-  accessing protected_storage on a DC is the tell. With the backup key an attacker
-  decrypts every user's DPAPI master keys (browser/credential-manager secrets)
-  domain-wide; that decryption is offline, so this RPC is the only on-wire moment.
-  Detection posture: narrow but real - near-zero-FP on DCs, which is why it stays a
-  single-selection alert rather than a volume correlation.
-  Validate (purple): run SharpDPAPI backupkey or mimikatz lsadump::backupkeys from
-  dotfiles-Offense (hacktheplanet "Credential access" fold; htpx pair dpapi-backupkey).
+  Hunt, not the backup-key-theft alert. A 5145 on a DC for the protected_storage pipe over
+  IPC$ is MS-BKRP (BackupKey Remote Protocol) use. It was titled as backup-key theft, but
+  the tools that steal the key do not take it this way: SharpDPAPI `backupkey`, impacket
+  `dpapi.py backupkeys` and mimikatz `lsadump::backupkeys` read the G$BCKUPKEY_* LSA
+  secret over \lsarpc (verified in SharpDPAPI lib/Backup.cs and impacket dpapi.py). That
+  theft is dpapi_backupkey_secret_read_4662.yml (id d4125b17-0cc3-4f43-83f9-5f9190750682).
+  What does ride protected_storage is BackuprKey restore: a client asking the DC to
+  decrypt one master key online. Windows clients do that for their own user when a
+  password reset leaves a master key unreadable, and impacket `dpapi.py masterkey` does it
+  with a stolen user credential. So this is worth a look at a principal doing it for many
+  users, or from a host that is not theirs, but it is not a theft signal on its own.
   Requires detailed file-share auditing (5145) on domain controllers.
 references:
   - https://attack.mitre.org/techniques/T1555/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/dpapi-backupkey-5145.md
 author: dotfiles-Defense
 date: 2026-07-15
+modified: 2026-09-28
 tags:
   - attack.credential-access
   - attack.t1555
@@ -34,6 +35,6 @@ detection:
     SubjectUserName|endswith: '$'
   condition: selection and not filter_machine
 falsepositives:
-  - A genuine domain backup / DR tool retrieving the backup key under a service
-    identity (allowlist that specific principal).
-level: high
+  - Windows clients asking the DC to recover their own master key after a password
+    reset (legitimate BackuprKey restore under the user's own account).
+level: low
