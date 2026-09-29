@@ -4,7 +4,7 @@ Where this repo's Sigma rules meet the [htpx](https://github.com/dotgibson/htpx)
 
 A **gap here is not a defect.** htpx spans SaaS and CI/CD platforms this repo has no rules for, by design — this report exists so the shape of that boundary is reviewable instead of assumed. A dead *claim* is a different matter and fails the build in `detections/check-htpx-pairing.sh`.
 
-Corpus: `dotgibson/htpx` at `7f369ee37ee5` (none — 3 commits past v3.2.0), pinned in `detections/htpx.pin`.
+Corpus: `dotgibson/htpx` at `d669f892000d` (v3.3.0), pinned in `detections/htpx.pin`.
 
 **107 blue entries · 103 claimed here · 26 Sigma techniques no htpx entry covers · 1 declared hole upstream.**
 
@@ -36,7 +36,7 @@ Corpus: `dotgibson/htpx` at `7f369ee37ee5` (none — 3 commits past v3.2.0), pin
 | `dcsync-4662` | T1003.006 | `dcsync_replication_4662` |
 | `device-code-signin` | T1528 | `detections/siem/sentinel/entra_device_code_signin.yaml` |
 | `dga-nxdomain-entropy` | T1568.002 | `detections/network/zeek/dns-c2.zeek` |
-| `dpapi-backupkey-5145` | T1555 | `dpapi_backupkey_5145` |
+| `dpapi-backupkey-4662` | T1555 | `dpapi_backupkey_5145`, `dpapi_backupkey_secret_read_4662` |
 | `entra-role-assign-audit` | T1098.003 | `entra_directory_role_grant` |
 | `gcp-audit-log-tamper-audit` | T1685.002 | `gcp_audit_log_sink_deleted` |
 | `gcp-gce-metadata-audit` | T1651 | `gcp_gce_metadata_startup_script` |
@@ -71,7 +71,7 @@ Corpus: `dotgibson/htpx` at `7f369ee37ee5` (none — 3 commits past v3.2.0), pin
 | `lsass-4656` | T1003.001 | `lsass_handle_access` |
 | `mass-encrypt-4663` | T1486 | `mass_file_encryption_4663`, `mass_file_encryption_sysmon_11` |
 | `mtls-c2-ja3` | T1573.002 | `detections/network/zeek/tls-c2.zeek` |
-| `npm-2fa-audit` | T1685 | `npm_publish_2fa_disabled` |
+| `npm-2fa-audit` | T1556.006 | `npm_publish_2fa_disabled` |
 | `npm-owner-audit` | T1098 | `npm_maintainer_added` |
 | `npm-publish-audit` | T1195.002 | `npm_malicious_package_publish` |
 | `ntds-ntdsutil-4688` | T1003.003 | `ntds_dump_ntdsutil_vss_4688` |
@@ -92,7 +92,7 @@ Corpus: `dotgibson/htpx` at `7f369ee37ee5` (none — 3 commits past v3.2.0), pin
 | `shadow-credentials-5136` | T1556 | `shadow_credentials_keycredentiallink_5136` |
 | `shadow-dump-auditd` | T1003.008 | `shadow_file_read` |
 | `silver-ticket-4769` | T1558.002 | `detections/siem/sentinel/silver_ticket_4624.yaml`, `detections/siem/splunk/correlation_searches.conf` |
-| `slack-2fa-audit` | T1685 | `slack_2fa_enforcement_disabled` |
+| `slack-2fa-audit` | T1556.006 | `slack_2fa_enforcement_disabled` |
 | `slack-app-audit` | T1098 | `slack_app_installed` |
 | `slack-external-share-audit` | T1567 | `slack_external_shared_channel` |
 | `smb-enum-5145` | T1087.002, T1135 | `host_enum_srvsvc_wkssvc_5145` |
