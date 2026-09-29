@@ -32,6 +32,13 @@ under `[Unreleased]` from here.
   Neither PAT action had a fixture before. Each now has its own single-event TP row,
   because zircolite passes a TP file when any event in it matches, so a shared file would
   hide a typo in either action name.
+- **`npm_publish_2fa_disabled` and `slack_2fa_enforcement_disabled` are retagged from
+  T1685 to T1556.006 (#346).** Both fire when an MFA requirement is weakened, which is an
+  authentication-process change rather than tampering with a security tool. Upstream htpx
+  retagged the paired entries the same way in htpx#134, and `okta_mfa_factor_reset`
+  already uses T1556.006 for this shape. The tactic stays `defense-impairment`, which
+  T1556.006 carries in ATT&CK v19.2 and which matches upstream's TA0112. Detection logic
+  and fixtures are unchanged.
 - **`htpx.pin` moves to htpx v3.3.0, and both DPAPI rules name `dpapi-backupkey-4662`
   (#336).** Upstream retired `entries/blue/dpapi-backupkey-5145` in favour of
   `dpapi-backupkey-4662`, which keys the theft on the 4662 LSA secret read and keeps

@@ -13,7 +13,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Persistence | TA0003 | 17 | 38 |
 | Privilege Escalation | TA0004 | 10 | 16 |
 | Stealth | TA0005 | 3 | 6 |
-| Defense Impairment | TA0112 | 8 | 13 |
+| Defense Impairment | TA0112 | 9 | 13 |
 | Credential Access | TA0006 | 19 | 24 |
 | Discovery | TA0007 | 14 | 9 |
 | Lateral Movement | TA0008 | 11 | 9 |
@@ -92,7 +92,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1555 | 3 | `dpapi_backupkey_5145`, `dpapi_backupkey_secret_read_4662`, `vault_bulk_secret_read` |
 | T1555.006 | 1 | `azure_keyvault_bulk_secret_read` |
 | T1556 | 2 | `okta_idp_created`, `shadow_credentials_keycredentiallink_5136` |
-| T1556.006 | 1 | `okta_mfa_factor_reset` |
+| T1556.006 | 3 | `npm_publish_2fa_disabled`, `okta_mfa_factor_reset`, `slack_2fa_enforcement_disabled` |
 | T1558 | 1 | `unconstrained_delegation_4624` |
 | T1558.003 | 2 | `kerberoast_spn_burst_4769`, `kerberoasting_rc4_tgs` |
 | T1558.004 | 1 | `asrep_roast_4768` |
@@ -108,7 +108,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1648 | 1 | `cloudflare_worker_deployed` |
 | T1649 | 1 | `adcs_esc1_san_mismatch_4886` |
 | T1651 | 2 | `azure_vm_run_command`, `gcp_gce_metadata_startup_script` |
-| T1685 | 5 | `github_branch_protection_tamper`, `gitlab_protected_branch_tamper`, `npm_publish_2fa_disabled`, `slack_2fa_enforcement_disabled`, `vault_audit_device_disabled` |
+| T1685 | 3 | `github_branch_protection_tamper`, `gitlab_protected_branch_tamper`, `vault_audit_device_disabled` |
 | T1685.002 | 1 | `gcp_audit_log_sink_deleted` |
 | T1685.005 | 2 | `windows_event_log_cleared_104`, `windows_event_log_cleared_1102` |
 | T1686.001 | 2 | `cloudflare_waf_rule_disabled`, `snowflake_network_policy_change` |

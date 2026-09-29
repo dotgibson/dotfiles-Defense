@@ -540,7 +540,7 @@ family tests a pointer against a bitmask on the calls it gets wrong.
 | ------------------------------- | ------------------------------------- | --------- | --------------------------- |
 | `npm_malicious_package_publish` | `package.publish` by non-CI actor     | T1195.002 | npm · npm-malicious-publish |
 | `npm_maintainer_added`          | `package.owner_add` / `team.user_add` | T1098     | npm · npm-owner-add         |
-| `npm_publish_2fa_disabled`      | `package.edit` `mfa=none`             | T1685     | npm · npm-2fa-disable       |
+| `npm_publish_2fa_disabled`      | `package.edit` `mfa=none`             | T1556.006 | npm · npm-2fa-disable       |
 
 **`pypi/`** (PyPI project journal — `product: pypi`, `service: audit`; field `action`)
 
@@ -552,11 +552,11 @@ family tests a pointer against a bitmask on the calls it gets wrong.
 
 **`slack/`** (Slack Enterprise Grid audit logs — `product: slack`, `service: audit`; field `action`)
 
-| Rule                             | Event / source                                                                                 | ATT&CK | Validate with                |
-| -------------------------------- | ---------------------------------------------------------------------------------------------- | ------ | ---------------------------- |
-| `slack_app_installed`            | `app_installed` (broad read scopes)                                                            | T1098  | Slack · slack-malicious-app  |
-| `slack_external_shared_channel`  | `external_shared_channel_invite_*` / `_connected`                                              | T1567  | Slack · slack-external-share |
-| `slack_2fa_enforcement_disabled` | `pref.two_factor_auth_changed` (fires on the change; the direction lives in Slack's `details`) | T1685  | Slack · slack-2fa-disable    |
+| Rule                             | Event / source                                                                                 | ATT&CK    | Validate with                |
+| -------------------------------- | ---------------------------------------------------------------------------------------------- | --------- | ---------------------------- |
+| `slack_app_installed`            | `app_installed` (broad read scopes)                                                            | T1098     | Slack · slack-malicious-app  |
+| `slack_external_shared_channel`  | `external_shared_channel_invite_*` / `_connected`                                              | T1567     | Slack · slack-external-share |
+| `slack_2fa_enforcement_disabled` | `pref.two_factor_auth_changed` (fires on the change; the direction lives in Slack's `details`) | T1556.006 | Slack · slack-2fa-disable    |
 
 `password_spray`, `asrep_roast_probing`, `sharphound_ldap_sweep`,
 `ldap_recon_explicit_creds_4648`, `host_recon_command_burst`,
