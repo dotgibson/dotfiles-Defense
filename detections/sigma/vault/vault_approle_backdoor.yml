@@ -59,7 +59,9 @@ detection:
     # backdoor credential and still alerts.
     request.path|endswith:
       - '/secret-id'
+      - '/secret-id/'
       - '/custom-secret-id'
+      - '/custom-secret-id/'
   filter_ci_orchestrator:
     # DEPLOY-REQUIRED: the entity ids of the CI/CD orchestrators that mint AppRole
     # secret-ids (`vault read -format=json identity/entity/name/<name>`). Until filled this
@@ -70,10 +72,19 @@ detection:
   filter_secret_id_admin:
     # Looking up or destroying an existing secret-id (`.../secret-id/lookup|destroy`,
     # `.../secret-id-accessor/lookup|destroy`) is routine CI and Vault Agent housekeeping
-    # under the role path, and mints nothing.
-    request.path|contains:
-      - '/secret-id/'
-      - '/secret-id-accessor/'
+    # under the role path, and mints nothing. Matched by SUFFIX, one endpoint at a time:
+    # Vault routes `role/<name>/secret-id/?$`, so a `contains: '/secret-id/'` also
+    # exempted a mint written with a trailing slash, and every role write on a mount
+    # whose own path contains `secret-id`.
+    request.path|endswith:
+      - '/secret-id/lookup'
+      - '/secret-id/lookup/'
+      - '/secret-id/destroy'
+      - '/secret-id/destroy/'
+      - '/secret-id-accessor/lookup'
+      - '/secret-id-accessor/lookup/'
+      - '/secret-id-accessor/destroy'
+      - '/secret-id-accessor/destroy/'
   condition: selection and 1 of paths_* and not filter_secret_id_admin and not (secret_id_mint and filter_ci_orchestrator)
 falsepositives:
   - A userpass user changing their own password (auth/userpass/users/<self>/password) -

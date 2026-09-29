@@ -46,13 +46,19 @@ under `[Unreleased]` from here.
   - **`suid_bit_set`:** the `/usr/bin/yum` and `/usr/bin/dnf` entries are removed. Both
     tools run under Python, so the entries never matched. Review 2 removed the same entries
     from the cron and systemd rules and missed this file.
-  - **`vault_approle_backdoor`:** secret-id lookup and destroy (`/secret-id/`,
-    `/secret-id-accessor/`) are routine CI housekeeping, and they alerted even for the
-    allowlisted orchestrator. They are now excluded.
-  - **`snowflake_data_unload`:** allowlist entries must end in `/`. `@MY_SANCTIONED_STAGE`
-    had also exempted `@MY_SANCTIONED_STAGE_EVIL`.
-  - **`scheduled_task_suspicious_4698`:** it now matches the `-en`/`-enco` prefixes of
-    `-EncodedCommand`, the `/`-prefixed forms, and `pwsh` tasks.
+  - **`vault_approle_backdoor`:** secret-id lookup and destroy are routine CI
+    housekeeping, and they alerted even for the allowlisted orchestrator. They are now
+    excluded by exact suffix (`/secret-id/lookup`, `/secret-id-accessor/destroy`, ...).
+    A `contains: '/secret-id/'` would also have hidden a mint written with a trailing
+    slash (`.../secret-id/`, which Vault routes as a mint) and every role write on a
+    mount named `secret-id`.
+  - **`snowflake_data_unload`:** each allowlisted stage now takes two entries, `@STAGE/`
+    and `@STAGE` followed by a space (a root unload). A bare `@MY_SANCTIONED_STAGE` had
+    also exempted `@MY_SANCTIONED_STAGE_EVIL`.
+  - **`scheduled_task_suspicious_4698`:** it now matches every prefix of
+    `-EncodedCommand` with `-` or `/`, and `pwsh` tasks. Each prefix ends in a space, so
+    `-Encoding utf8` and URLs do not match. The bare `/e` is left out because it is
+    robocopy's `/E` far more often than an encoded command.
   - **`spoolss_pipe_impersonation_sysmon_17`:**
     - The description no longer names GodPotato, which stands up an `epmapper` pipe. The
       sibling rule already says so.
@@ -62,7 +68,8 @@ under `[Unreleased]` from here.
       host is krbrelayx on Linux, no Windows host writes a 4624.
     - The DC filter uses exact FQDNs. `startswith: 'DC1'` exempted `DC10`.
   - **`systemd_unit_persistence`:** the documented auditd watches now include
-    `/lib/systemd/system/` (split-/usr) and the global user-unit directories.
+    `/lib/systemd/system/` (split-/usr) and the global user-unit directories, each on a line
+    that pastes straight into an audit rules file.
 
 - **Detection review 2, section E: pairing and methodology bookkeeping that misstated
   coverage.** No detection logic changes.

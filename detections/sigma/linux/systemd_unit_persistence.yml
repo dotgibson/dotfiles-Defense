@@ -15,7 +15,8 @@ description: |
     -w /etc/systemd/system/ -p wa -k systemd_persist
     -w /usr/lib/systemd/system/ -p wa -k systemd_persist
     -w /run/systemd/system/ -p wa -k systemd_persist
-    -w /lib/systemd/system/ -p wa -k systemd_persist      (split-/usr hosts only)
+    ## split-/usr hosts only (where /lib is not a symlink to /usr/lib):
+    -w /lib/systemd/system/ -p wa -k systemd_persist
     -w /etc/systemd/user/ -p wa -k systemd_persist
     -w /usr/lib/systemd/user/ -p wa -k systemd_persist
   The two global user-unit directories run their units for EVERY user session, so they

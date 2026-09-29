@@ -68,16 +68,38 @@ detection:
     # The abbreviations the long-form list above misses. Scoped to a PowerShell task so a
     # bare '-e ' in some other program's arguments does not match.
     TaskContent|contains:
-      # PowerShell accepts any unambiguous prefix of -EncodedCommand, so the full word and
-      # '-enc ' are not the whole set: '-en ' and '-enco' (which also covers -encod,
-      # -encode, -encodedc) are listed too, with the '/' parameter prefix.
+      # PowerShell accepts any unambiguous prefix of -EncodedCommand, with '-' or '/'.
+      # Every prefix ENDS IN A SPACE: an open-ended '-enco' matched every cmdlet's
+      # '-Encoding utf8', and '/enc' matched URLs and paths. ('-enc ' is in the list
+      # above.) The bare '/e ' is left out: inside a PowerShell task it is far more often
+      # robocopy's or xcopy's '/E ' than an encoded command.
       - '-e '
-      - '-ec '
       - '-en '
-      - '-enco'
-      - '/e '
+      - '-enco '
+      - '-encod '
+      - '-encode '
+      - '-encoded '
+      - '-encodedc '
+      - '-encodedco '
+      - '-encodedcom '
+      - '-encodedcomm '
+      - '-encodedcomma '
+      - '-encodedcomman '
+      - '-ec '
+      - '/en '
+      - '/enc '
+      - '/enco '
+      - '/encod '
+      - '/encode '
+      - '/encoded '
+      - '/encodedc '
+      - '/encodedco '
+      - '/encodedcom '
+      - '/encodedcomm '
+      - '/encodedcomma '
+      - '/encodedcomman '
+      - '/encodedcommand '
       - '/ec '
-      - '/enc'
       - '-w 1'
       - '-win h'
   impacket_atexec:
