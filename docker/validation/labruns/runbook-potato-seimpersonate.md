@@ -192,9 +192,14 @@ up `unverified`.
 
 Then run the shipped rules against the capture with the same engine the gate uses: zircolite
 v3.7.6 and its own pinned requirements (`git clone --branch v3.7.6`, then
-`pip install -r requirements.txt`), which is what `sigma-validation.yml` does. That workflow pins
-zircolite but not pySigma — `pysigma==1.5.0` is the *compile* gate's pin in `sigma.yml`, and the
-cloud evaluator pins 1.4.0 — so record the pySigma version the install resolved to.
+`pip install -r requirements.txt`), which is what `sigma-validation.yml` does. zircolite's own
+`requirements.txt` floats `pysigma>=0.10.10`, so the resolved version is not fixed by the clone.
+Both gates pin the parser explicitly: `sigma.yml` (the *compile* gate) and `sigma-validation.yml`
+(the cloud evaluator, for its `sigma_eval.py` step) each pin `pysigma==1.5.1` **and**
+`pyparsing==3.3.3` — the pyparsing pin added by #321 because that transitive dep can change the
+condition-parse verdict on its own (SigmaHQ/pySigma#548). So record both the pySigma **and** the
+pyparsing version the install resolved to. (Pins verified against `sigma.yml` / `sigma-validation.yml`
+as of #321; re-check them there rather than trusting these numbers.)
 
 Assign the paths, do not prefix them onto the command. In `VAR=x cmd "$VAR"` the shell expands
 `"$VAR"` *before* applying the assignment, so the prefix form silently runs `python` with no script
