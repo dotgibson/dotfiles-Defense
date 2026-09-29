@@ -76,3 +76,6 @@ __pycache__/
 # tracks .claude/commands/*.md on purpose, and a blanket rule would hide the next command
 # someone added. A worktree is disposable session state; its commits live on a branch.
 .claude/worktrees/
+
+# Python wheels (a local pip download must never ride a commit)
+*.whl

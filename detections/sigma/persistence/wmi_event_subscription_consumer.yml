@@ -39,7 +39,7 @@ references:
   - https://github.com/trustedsec/SysmonCommunityGuide/blob/master/chapters/WMI-events.md
 author: dotfiles-Defense
 date: 2026-06-30
-modified: 2026-09-28
+modified: 2026-09-29
 tags:
   - attack.persistence
   - attack.privilege-escalation
@@ -52,6 +52,7 @@ detection:
     EventID: 20
     Destination|contains:
       - 'powershell'
+      - 'pwsh'
       - 'cmd.exe'
       - 'mshta'
       - 'wscript'
@@ -81,7 +82,14 @@ detection:
     # excludes only the example. Run detections/sigma/deploy-required.sh to find this.
     Destination|startswith:
       - 'C:\Program Files\Monitoring\agent.exe'   # example — replace
-  condition: selection_commandline_payload or selection_script_consumer or (selection_commandline_any and not filter_known_consumers)
+  created:
+    # Sysmon 20 also logs a consumer's deletion; an agent's uninstall or cleanup is not a
+    # new persistence mechanism.
+    Operation: 'Created'
+  # The allowlist covers EVERY arm. It used to gate only the ungated Command Line arm, so an
+  # SCCM or monitoring consumer whose Destination is `cmd.exe /c ...` hit the keyword arm
+  # at high with no way to exempt it.
+  condition: created and (selection_commandline_payload or selection_script_consumer or selection_commandline_any) and not filter_known_consumers
 falsepositives:
   - SCCM/monitoring agents that register permanent consumers (allowlist by Name
     and Destination).

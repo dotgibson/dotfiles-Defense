@@ -25,6 +25,7 @@ references:
   - https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys
 author: dotfiles-Defense
 date: 2026-09-27
+modified: 2026-09-29
 tags:
   - attack.persistence
   - attack.privilege-escalation
@@ -54,10 +55,11 @@ detection:
       - '%TMP%'
       - '%PUBLIC%'
       - '%ProgramData%'
-      - '~1\'
-      - '~2\'
-      - '~3\'
-      - '~4\'
+      # Named, not a generic `~N\`: PROGRA~1 and PROGRA~2 are Program Files and Program
+      # Files (x86), which this rule deliberately leaves alone.
+      - '\PROGRA~3\'   # ProgramData
+      - '\APPDAT~1\'   # AppData
+      - '\LOCALS~1\'   # Local Settings (legacy AppData\Local)
   target_interpreter:
     Details|contains:
       - 'powershell'

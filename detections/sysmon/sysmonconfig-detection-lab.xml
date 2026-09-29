@@ -38,8 +38,11 @@
     </RuleGroup>
     <RuleGroup name="lsass-access-noise" groupRelation="or">
       <ProcessAccess onmatch="exclude">
-        <SourceImage condition="image">MsMpEng.exe</SourceImage>
-        <SourceImage condition="image">MsSense.exe</SourceImage>
+        <!-- Defender by install directory, not by file name: condition="image" matches the
+             bare name, so any binary renamed to MsMpEng.exe was dropped here before
+             lsass_handle_access.yml could see it. -->
+        <SourceImage condition="begin with">C:\ProgramData\Microsoft\Windows Defender\Platform\</SourceImage>
+        <SourceImage condition="begin with">C:\Program Files\Windows Defender Advanced Threat Protection\</SourceImage>
         <SourceImage condition="is">C:\Windows\System32\wininit.exe</SourceImage>
         <SourceImage condition="is">C:\Windows\System32\csrss.exe</SourceImage>
       </ProcessAccess>

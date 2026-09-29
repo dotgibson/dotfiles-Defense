@@ -100,7 +100,7 @@ EventID:4662 AND ObjectType:SecretObject AND AccessMask:0x2 AND ObjectName:*BCKU
 (EventID:4769 AND TicketEncryptionType:0x17) AND (NOT (ServiceName:(*$ OR krbtgt)))
 
 // credential_access/lsass_handle_access.yml — LSASS process access with dump-shaped rights
-TargetImage:*\\lsass.exe AND ((GrantedAccess:(*10 OR *30 OR *50 OR *70 OR *90 OR *b0 OR *d0 OR *f0 OR *18 OR *38 OR *58 OR *78 OR *98 OR *b8 OR *d8 OR *f8 OR *1a OR *3a OR *5a OR *7a OR *9a OR *ba OR *da OR *fa)) OR (GrantedAccess:(0x1f0fff* OR 0x1f1fff* OR 0x1f2fff* OR 0x1f3fff* OR 0x1fffff*))) AND (NOT ((SourceImage:(C\:\\ProgramData\\Microsoft\\Windows\ Defender\\Platform\\* OR C\:\\Program\ Files\\Windows\ Defender\\* OR C\:\\Program\ Files\\Windows\ Defender\ Advanced\ Threat\ Protection\\*)) OR (SourceImage:(C\:\\Windows\\System32\\wininit.exe OR C\:\\Windows\\System32\\csrss.exe OR "C\:\\Program Files\\CrowdStrike\\CSFalconService.exe" OR "C\:\\Program Files\\Confer\\RepMgr.exe")) OR SourceImage:C\:\\Program\ Files\\SentinelOne\\*))
+TargetImage:*\\lsass.exe AND ((GrantedAccess:(*10 OR *11 OR *12 OR *13 OR *14 OR *15 OR *16 OR *17 OR *18 OR *19 OR *1a OR *1b OR *1c OR *1d OR *1e OR *1f OR *30 OR *31 OR *32 OR *33 OR *34 OR *35 OR *36 OR *37 OR *38 OR *39 OR *3a OR *3b OR *3c OR *3d OR *3e OR *3f OR *50 OR *51 OR *52 OR *53 OR *54 OR *55 OR *56 OR *57 OR *58 OR *59 OR *5a OR *5b OR *5c OR *5d OR *5e OR *5f OR *70 OR *71 OR *72 OR *73 OR *74 OR *75 OR *76 OR *77 OR *78 OR *79 OR *7a OR *7b OR *7c OR *7d OR *7e OR *7f OR *90 OR *91 OR *92 OR *93 OR *94 OR *95 OR *96 OR *97 OR *98 OR *99 OR *9a OR *9b OR *9c OR *9d OR *9e OR *9f OR *b0 OR *b1 OR *b2 OR *b3 OR *b4 OR *b5 OR *b6 OR *b7 OR *b8 OR *b9 OR *ba OR *bb OR *bc OR *bd OR *be OR *bf OR *d0 OR *d1 OR *d2 OR *d3 OR *d4 OR *d5 OR *d6 OR *d7 OR *d8 OR *d9 OR *da OR *db OR *dc OR *dd OR *de OR *df OR *f0 OR *f1 OR *f2 OR *f3 OR *f4 OR *f5 OR *f6 OR *f7 OR *f8 OR *f9 OR *fa OR *fb OR *fc OR *fd OR *fe OR *ff)) OR GrantedAccess:0x40 OR (GrantedAccess:(0x1f0fff* OR 0x1f1fff* OR 0x1f2fff* OR 0x1f3fff* OR 0x1fffff*))) AND (NOT ((SourceImage:(C\:\\ProgramData\\Microsoft\\Windows\ Defender\\Platform\\* OR C\:\\Program\ Files\\Windows\ Defender\\* OR C\:\\Program\ Files\\Windows\ Defender\ Advanced\ Threat\ Protection\\*)) OR (SourceImage:(C\:\\Windows\\System32\\wininit.exe OR C\:\\Windows\\System32\\csrss.exe OR "C\:\\Program Files\\CrowdStrike\\CSFalconService.exe" OR "C\:\\Program Files\\Confer\\RepMgr.exe")) OR SourceImage:C\:\\Program\ Files\\SentinelOne\\*))
 
 // credential_access/ntds_dump_ntdsutil_vss_4688.yml — NTDS.dit theft via ntdsutil / VSS on a domain controller
 (Image:*\\ntdsutil.exe AND (CommandLine:(*ifm* OR *create\ full*))) OR ((CommandLine:(*create\ shadow* OR *start\ backup*)) AND (Image:(*\\vssadmin.exe OR *\\wbadmin.exe))) OR Image:*\\diskshadow.exe
@@ -232,7 +232,7 @@ EventID:7045 AND ((ImagePath:(*\\ADMIN$\\* OR *%COMSPEC%* OR *\\cmd.exe* OR *pow
 EventType:ConnectPipe AND Image:System AND (PipeName:(*svcctl* OR *atsvc*))
 
 // lateral_movement/unconstrained_delegation_4624.yml — Unconstrained delegation abuse - DC machine account authenticating to a non-DC (4624)
-(EventID:4624 AND LogonType:3 AND AuthenticationPackageName:Kerberos AND (TargetUserName:(DC1$ OR DC2$))) AND (NOT (Computer:(DC1* OR DC2*)))
+(EventID:4624 AND LogonType:3 AND AuthenticationPackageName:Kerberos AND (TargetUserName:(DC1$ OR DC2$))) AND (NOT (Computer:(DC1.corp.local OR DC2.corp.local)))
 
 // lateral_movement/wmiexec_wmiprvse_child_4688.yml — WMI remote exec - shell spawned by WmiPrvSE
 (ParentImage:*\\WmiPrvSE.exe AND (Image:(*\\cmd.exe OR *\\powershell.exe OR *\\pwsh.exe))) AND (CommandLine:*\/Q* AND CommandLine:*\/c* AND CommandLine:*\ 1\>\ * AND CommandLine:*2\>\&1*)
@@ -259,7 +259,7 @@ key:shadow_read AND (NOT (exe:(\/usr\/sbin\/unix_chkpwd OR \/sbin\/unix_chkpwd O
 (key:sudo_abuse AND (comm:(bash OR sh OR dash OR zsh OR ksh OR fish OR python OR python3 OR perl OR ruby))) AND (NOT auid:1000)
 
 // linux/suid_bit_set.yml — Setuid bit set on a file - SUID backdoor planted (auditd)
-key:suid_change AND (NOT (exe:(\/usr\/bin\/dpkg OR \/bin\/dpkg OR \/usr\/bin\/rpm OR \/bin\/rpm OR \/usr\/bin\/apt OR \/usr\/bin\/apt\-get OR \/usr\/bin\/yum OR \/usr\/bin\/dnf OR \/usr\/bin\/zypper)))
+key:suid_change AND (NOT (exe:(\/usr\/bin\/dpkg OR \/bin\/dpkg OR \/usr\/bin\/rpm OR \/bin\/rpm OR \/usr\/bin\/apt OR \/usr\/bin\/apt\-get OR \/usr\/bin\/zypper)))
 
 // linux/systemd_unit_persistence.yml — Systemd unit persistence - unit or timer file written (auditd)
 key:systemd_persist AND (NOT ((exe:(\/usr\/bin\/dpkg OR \/usr\/bin\/rpm OR \/usr\/bin\/zypper OR \/usr\/bin\/apt OR \/usr\/bin\/apt\-get)) OR ((exe:(\/usr\/bin\/systemctl OR \/bin\/systemctl)) AND name:*.wants\/*) OR ((exe:(\/usr\/lib\/systemd\/systemd OR \/lib\/systemd\/systemd)) AND name:\/run\/systemd\/system\/*)))
@@ -286,16 +286,16 @@ eventType:(user.mfa.factor.reset_all OR user.mfa.factor.deactivate OR user.mfa.f
 // UNSUPPORTED: Feature required for conversion of Sigma rule is not supported by backend: Backend does not support correlation rules.
 
 // persistence/registry_run_key_suspicious_target_sysmon_13.yml — Registry Run key pointing at a user-writable path or an interpreter (Sysmon 13)
-(TargetObject:(*\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\* OR *\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\* OR *\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run\\* OR *\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\*)) AND ((Details:(*\\AppData\\* OR *\\Temp\\* OR *\\Users\\Public\\* OR *\\ProgramData\\* OR *%APPDATA%* OR *%LOCALAPPDATA%* OR *%TEMP%* OR *%TMP%* OR *%PUBLIC%* OR *%ProgramData%* OR *\~1\\* OR *\~2\\* OR *\~3\\* OR *\~4\\*)) OR (Details:(*powershell* OR *pwsh* OR *mshta* OR *rundll32* OR *regsvr32* OR *wscript* OR *cscript* OR *cmd.exe\ \/c* OR *cmd\ \/c*))) AND (NOT Details:*\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe*)
+(TargetObject:(*\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\* OR *\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\* OR *\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run\\* OR *\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\RunOnce\\*)) AND ((Details:(*\\AppData\\* OR *\\Temp\\* OR *\\Users\\Public\\* OR *\\ProgramData\\* OR *%APPDATA%* OR *%LOCALAPPDATA%* OR *%TEMP%* OR *%TMP%* OR *%PUBLIC%* OR *%ProgramData%* OR *\\PROGRA\~3\\* OR *\\APPDAT\~1\\* OR *\\LOCALS\~1\\*)) OR (Details:(*powershell* OR *pwsh* OR *mshta* OR *rundll32* OR *regsvr32* OR *wscript* OR *cscript* OR *cmd.exe\ \/c* OR *cmd\ \/c*))) AND (NOT Details:*\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe*)
 
 // persistence/rogue_account_creation_4720.yml — Rogue account creation (4720)
 EventID:4720 AND (NOT SubjectUserName:svc_iam_provisioning)
 
 // persistence/scheduled_task_suspicious_4698.yml — Scheduled task created with a suspicious action
-EventID:4698 AND ((TaskContent:(*\-enc\ * OR *\-EncodedCommand* OR *\-w\ hidden* OR *\-WindowStyle\ Hidden* OR *FromBase64String* OR *mshta* OR *\\regsvr32.exe* OR *\\rundll32.exe* OR *DownloadString* OR *IEX\(* OR *IEX\ * OR *\|\ IEX*)) OR (TaskContent:*powershell* AND (TaskContent:(*\-e\ * OR *\-ec\ * OR *\-w\ 1* OR *\-win\ h*))) OR (TaskContent:*\<Command\>cmd.exe\<\/Command\>* AND TaskContent:*\/C\ * AND TaskContent:*\\Temp\\* AND TaskContent:*.tmp\ 2\&gt;\&amp;1*))
+EventID:4698 AND ((TaskContent:(*\-enc\ * OR *\-EncodedCommand* OR *\-w\ hidden* OR *\-WindowStyle\ Hidden* OR *FromBase64String* OR *mshta* OR *\\regsvr32.exe* OR *\\rundll32.exe* OR *DownloadString* OR *IEX\(* OR *IEX\ * OR *\|\ IEX*)) OR ((TaskContent:(*powershell* OR *pwsh*)) AND (TaskContent:/(?i)((^|[\s>"';(,=^])(\^|"|&quot;)*(-|\/|–|—|―)(\^|"|&quot;)*((-|\/|–|—|―)(\^|"|&quot;)*)?e((\^|"|&quot;)*c|(\^|"|&quot;)*n((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*d((\^|"|&quot;)*e((\^|"|&quot;)*d((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*m((\^|"|&quot;)*m((\^|"|&quot;)*a((\^|"|&quot;)*n((\^|"|&quot;)*d)?)?)?)?)?)?)?)?)?)?)?)?)?(&quot;|&apos;|["'^])*(\s|&#x?9;)+(((&quot;|&apos;|["'^])*[A-Za-z0-9+\/]){20}|(&quot;|")((\s|(&quot;|&apos;|["'^]))*[A-Za-z0-9+\/]){20})|(^|[\s>"';(,=^])(\^|"|&quot;)*(-|–|—|―)(\^|"|&quot;)*((-|–|—|―)(\^|"|&quot;)*)?e((\^|"|&quot;)*c|(\^|"|&quot;)*n((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*d((\^|"|&quot;)*e((\^|"|&quot;)*d((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*m((\^|"|&quot;)*m((\^|"|&quot;)*a((\^|"|&quot;)*n((\^|"|&quot;)*d)?)?)?)?)?)?)?)?)?)?)?)?)?(&quot;|&apos;|["'^])*(\s|&#x?9;)+(&quot;|&apos;|["'^])*[%!$])/ OR (TaskContent:(*\-w\ 1* OR *\-win\ h*)))) OR (TaskContent:*\<Command\>cmd.exe\<\/Command\>* AND TaskContent:*\/C\ * AND TaskContent:*\\Temp\\* AND TaskContent:*.tmp\ 2\&gt;\&amp;1*))
 
 // persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line or script consumer
-(EventID:20 AND (Destination:(*powershell* OR *cmd.exe* OR *mshta* OR *wscript* OR *cscript* OR *rundll32* OR *\-enc\ * OR *\-ec\ * OR *\-EncodedCommand* OR *FromBase64String*))) OR (EventID:20 AND Type:*Script*) OR ((EventID:20 AND Type:*Command\ Line*) AND (NOT Destination:C\:\\Program\ Files\\Monitoring\\agent.exe*))
+Operation:Created AND ((EventID:20 AND (Destination:(*powershell* OR *pwsh* OR *cmd.exe* OR *mshta* OR *wscript* OR *cscript* OR *rundll32* OR *\-enc\ * OR *\-ec\ * OR *\-EncodedCommand* OR *FromBase64String*))) OR (EventID:20 AND Type:*Script*) OR (EventID:20 AND Type:*Command\ Line*)) AND (NOT Destination:C\:\\Program\ Files\\Monitoring\\agent.exe*)
 
 // privilege_escalation/adcs_esc1_san_mismatch_4886.yml — AD CS certificate request (ESC1 triage surface)
 EventID:(4886 OR 4887)
@@ -352,7 +352,7 @@ action:app_installed
 action:(external_shared_channel_invite_created OR external_shared_channel_invite_accepted OR external_shared_channel_invite_approved OR external_shared_channel_connected)
 
 // snowflake/snowflake_data_unload.yml — Snowflake data unload (COPY INTO external stage — exfil triage)
-query_type:UNLOAD AND (NOT ((query_text:(COPY\ INTO\ @%* OR COPY\ INTO\ @\~*)) OR query_text:COPY\ INTO\ @MY_SANCTIONED_STAGE*))
+query_type:UNLOAD AND (NOT ((query_text:(COPY\ INTO\ @%* OR COPY\ INTO\ @\~*)) OR (query_text:(COPY\ INTO\ @MY_DB.MY_SCHEMA.MY_SANCTIONED_STAGE\/* OR COPY\ INTO\ @MY_DB.MY_SCHEMA.MY_SANCTIONED_STAGE\ *))))
 
 // snowflake/snowflake_network_policy_change.yml — Snowflake network policy changed (IP allowlist tamper)
 (query_text:(*NETWORK\ POLICY* OR *NETWORK_POLICY*)) AND (NOT (query_text:(SHOW* OR DESC*)))
@@ -370,7 +370,7 @@ resource.type:authentication_token AND resource.action:create
 (resource.type:variable AND (resource.action:(create OR update))) AND (NOT auth.description:ci\-deploy@example.com)
 
 // vault/vault_approle_backdoor.yml — HashiCorp Vault auth role / AppRole / auth method created (persistence)
-(type:request AND (request.operation:(create OR update))) AND ((request.path:(auth\/*\/role\/* OR auth\/*\/roles\/* OR auth\/*\/users\/* OR auth\/*\/groups\/* OR auth\/*\/certs\/* OR auth\/*\/map\/*)) OR request.path:sys\/auth\/*) AND (NOT ((request.path:(*\/secret\-id OR *\/custom\-secret\-id)) AND auth.entity_id:00000000\-0000\-0000\-0000\-00000000c1c1))
+(type:request AND (request.operation:(create OR update))) AND ((request.path:(auth\/*\/role\/* OR auth\/*\/roles\/* OR auth\/*\/users\/* OR auth\/*\/groups\/* OR auth\/*\/certs\/* OR auth\/*\/map\/*)) OR request.path:sys\/auth\/*) AND (NOT (request.path:auth\/approle\/role\/* AND (request.path:(*\/secret\-id\/lookup OR *\/secret\-id\/lookup\/ OR *\/secret\-id\/destroy OR *\/secret\-id\/destroy\/ OR *\/secret\-id\-accessor\/lookup OR *\/secret\-id\-accessor\/lookup\/ OR *\/secret\-id\-accessor\/destroy OR *\/secret\-id\-accessor\/destroy\/)))) AND (NOT ((request.path:auth\/approle\/role\/* AND (request.path:(*\/secret\-id OR *\/secret\-id\/ OR *\/custom\-secret\-id))) AND (NOT (request.path:(auth\/approle\/role\/secret\-id OR auth\/approle\/role\/secret\-id\/ OR auth\/approle\/role\/custom\-secret\-id))) AND auth.entity_id:00000000\-0000\-0000\-0000\-00000000c1c1))
 
 // vault/vault_audit_device_disabled.yml — HashiCorp Vault audit device disabled (blind the SIEM)
 type:request AND request.operation:delete AND request.path:sys\/audit\/*

@@ -34,7 +34,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/schtask-4698.md
 author: dotfiles-Defense
 date: 2026-06-30
-modified: 2026-09-28
+modified: 2026-09-29
 tags:
   - attack.persistence
   - attack.execution
@@ -61,13 +61,38 @@ detection:
       - 'IEX '
       - '| IEX'
   powershell_task:
-    TaskContent|contains: 'powershell'
-  powershell_short_flags:
-    # The abbreviations the long-form list above misses. Scoped to a PowerShell task so a
-    # bare '-e ' in some other program's arguments does not match.
     TaskContent|contains:
-      - '-e '
-      - '-ec '
+      - 'powershell'
+      - 'pwsh'
+  powershell_short_flags:
+    # Any abbreviation of -EncodedCommand followed by its payload. Scoped to a PowerShell
+    # task. PowerShell's parser (CommandLineParameterParser) takes any prefix down to
+    # `-e`/`-ec`; accepts `-`, `/` and the en dash, em dash and horizontal bar as the switch
+    # character, and pwsh drops a doubled one (`--e`); and trims each argv element. Argv
+    # parsing also removes quotes INSIDE a token (`-"e"c` is `-ec`) and cmd removes carets
+    # anywhere (`-e^c`, `^-e`), so both are allowed between every character of the flag.
+    # The payload is decoded with Convert.FromBase64String, which ignores whitespace, so it
+    # is matched as 20 base64 characters that may be split by quotes or carets, OR a quoted
+    # payload with whitespace inside, OR - behind a dash-type switch only, since robocopy's
+    # `/E %OPTS%` is common - a variable (`%p%`, `!p!`, `$p`). Requiring a payload is what
+    # keeps robocopy's `/E /R:2`, `-Encoding utf8` and a script's own short `-e prod`
+    # argument out. The dashes are an alternation, not a character class, so the pattern
+    # still matches if Splunk's PCRE runs in byte mode.
+    # Not settled: whether character references an attacker writes into the task XML
+    # (`&#32;`, `&#45;`) survive into 4698 TaskContent. If they do, they evade this; a
+    # lab capture of a task registered from such XML would tell.
+    # DEPLOY-REQUIRED (Elastic only): Lucene regexes match the whole term implicitly, have
+    # no (?i) flag, and treat " & # ^ / < > as operators, so the generated Lucene form never
+    # matches. Rewrite it in your Elastic rule as below, replacing each <TAB> with a literal
+    # tab character (Lucene has no \t escape; `\t` is the letter t). TaskContent must be a
+    # keyword field, and the leading `.*` with two counted branches can exceed Elasticsearch's
+    # max_determinized_states - test it on your cluster before relying on it:
+    #   TaskContent:/((.*[ <TAB>\>\"';(,=\^])?(\^|\"|\&quot;)*(-|\/|–|—|―)(\^|\"|\&quot;)*((-|\/|–|—|―)(\^|\"|\&quot;)*)?[eE]((\^|\"|\&quot;)*[cC]|(\^|\"|\&quot;)*[nN]((\^|\"|\&quot;)*[cC]((\^|\"|\&quot;)*[oO]((\^|\"|\&quot;)*[dD]((\^|\"|\&quot;)*[eE]((\^|\"|\&quot;)*[dD]((\^|\"|\&quot;)*[cC]((\^|\"|\&quot;)*[oO]((\^|\"|\&quot;)*[mM]((\^|\"|\&quot;)*[mM]((\^|\"|\&quot;)*[aA]((\^|\"|\&quot;)*[nN]((\^|\"|\&quot;)*[dD])?)?)?)?)?)?)?)?)?)?)?)?)?(\&quot;|\&apos;|[\"'\^])*([ <TAB>]|\&\#[xX]?9;)+(((\&quot;|\&apos;|[\"'\^])*[A-Za-z0-9+\/]){20}|(\&quot;|\")(([ <TAB>]|(\&quot;|\&apos;|[\"'\^]))*[A-Za-z0-9+\/]){20})|(.*[ <TAB>\>\"';(,=\^])?(\^|\"|\&quot;)*(-|–|—|―)(\^|\"|\&quot;)*((-|–|—|―)(\^|\"|\&quot;)*)?[eE]((\^|\"|\&quot;)*[cC]|(\^|\"|\&quot;)*[nN]((\^|\"|\&quot;)*[cC]((\^|\"|\&quot;)*[oO]((\^|\"|\&quot;)*[dD]((\^|\"|\&quot;)*[eE]((\^|\"|\&quot;)*[dD]((\^|\"|\&quot;)*[cC]((\^|\"|\&quot;)*[oO]((\^|\"|\&quot;)*[mM]((\^|\"|\&quot;)*[mM]((\^|\"|\&quot;)*[aA]((\^|\"|\&quot;)*[nN]((\^|\"|\&quot;)*[dD])?)?)?)?)?)?)?)?)?)?)?)?)?(\&quot;|\&apos;|[\"'\^])*([ <TAB>]|\&\#[xX]?9;)+(\&quot;|\&apos;|[\"'\^])*[%!$]).*/
+    # Splunk and Sentinel take the pattern as written; gen-siem.sh gives the Splunk form
+    # the base search the backend omits.
+    TaskContent|re: '(?i)((^|[\s>"'';(,=^])(\^|"|&quot;)*(-|/|–|—|―)(\^|"|&quot;)*((-|/|–|—|―)(\^|"|&quot;)*)?e((\^|"|&quot;)*c|(\^|"|&quot;)*n((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*d((\^|"|&quot;)*e((\^|"|&quot;)*d((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*m((\^|"|&quot;)*m((\^|"|&quot;)*a((\^|"|&quot;)*n((\^|"|&quot;)*d)?)?)?)?)?)?)?)?)?)?)?)?)?(&quot;|&apos;|["''^])*(\s|&#x?9;)+(((&quot;|&apos;|["''^])*[A-Za-z0-9+/]){20}|(&quot;|")((\s|(&quot;|&apos;|["''^]))*[A-Za-z0-9+/]){20})|(^|[\s>"'';(,=^])(\^|"|&quot;)*(-|–|—|―)(\^|"|&quot;)*((-|–|—|―)(\^|"|&quot;)*)?e((\^|"|&quot;)*c|(\^|"|&quot;)*n((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*d((\^|"|&quot;)*e((\^|"|&quot;)*d((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*m((\^|"|&quot;)*m((\^|"|&quot;)*a((\^|"|&quot;)*n((\^|"|&quot;)*d)?)?)?)?)?)?)?)?)?)?)?)?)?(&quot;|&apos;|["''^])*(\s|&#x?9;)+(&quot;|&apos;|["''^])*[%!$])'
+  powershell_window_flags:
+    TaskContent|contains:
       - '-w 1'
       - '-win h'
   impacket_atexec:
@@ -80,7 +105,12 @@ detection:
       - '/C '
       - '\Temp\'
       - '.tmp 2&gt;&amp;1'
-  condition: selection and (suspicious or (powershell_task and powershell_short_flags) or impacket_atexec)
+  condition: selection and (suspicious or (powershell_task and 1 of powershell_*_flags) or impacket_atexec)
 falsepositives:
   - Software installers that register tasks invoking helper scripts (allowlist).
+  - A PowerShell task passing its own script a long `-e` value that looks like base64 (for
+    example `deploy.ps1 -e ProductionWestEurope01`, or `wsl -e /usr/local/bin/...`).
+    Allowlist the task.
+  - A PowerShell task passing its own script a variable after a dash-type `-e` (for
+    example `-e $env:STAGE`) matches the variable arm. Allowlist the task.
 level: high

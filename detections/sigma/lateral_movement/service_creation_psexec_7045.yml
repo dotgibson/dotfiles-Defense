@@ -74,8 +74,10 @@ detection:
     # no (?i) flag, and read ^ and $ as literals, so the generated Lucene form of this
     # branch never matches. Rewrite it in your Elastic rule as
     #   ImagePath:/%systemroot%\\[a-zA-Z]{8}\.exe/ AND ServiceName:/[a-zA-Z]{4}/
-    # (impacket writes the lowercase %systemroot% literally). Splunk and Sentinel need
-    # nothing: both take the anchored, case-insensitive pattern as written.
+    # (impacket writes the lowercase %systemroot% literally). Splunk and Sentinel take the
+    # anchored, case-insensitive pattern as written. The Splunk backend emitted this rule
+    # with no base search (`search = | rex ...`), which Splunk rejects, so the whole rule
+    # was dead there until gen-siem.sh started supplying one.
     ImagePath|re: '(?i)^(%systemroot%|\\\\[^\\]+\\[^\\]+)\\[a-z]{8}\.exe$'
   impacket_psexec_name:
     # ...paired with its 4-random-letter service name, so a legitimate 8-letter binary in

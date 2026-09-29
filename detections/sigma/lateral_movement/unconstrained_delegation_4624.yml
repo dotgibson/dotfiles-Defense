@@ -9,7 +9,7 @@ description: |
   member server - DC-to-DC traffic is replication, and inbound auth to a DC is the
   normal shape. When DC01$ shows up as the TargetUserName on some other machine's
   4624, something MADE it authenticate: the attacker sets unconstrained delegation on
-  a host they control (or stands up a machine account with it), then coerces the DC
+  a Windows host they control, then coerces the DC
   to it with PrinterBug/PetitPotam/DFSCoerce. Because the destination is trusted for
   unconstrained delegation, the DC's own TGT is forwarded and cached in that host's
   LSASS, where Rubeus monitor lifts it - and a DC TGT is the domain.
@@ -35,6 +35,7 @@ references:
   - https://attack.mitre.org/techniques/T1550/003/
 author: dotfiles-Defense
 date: 2026-08-05
+modified: 2026-09-29
 tags:
   # Three deliberately: unconstrained-delegation abuse has no single ATT&CK id and forcing
   # it into one would misstate the coverage. T1187 is the forced authentication that
@@ -66,9 +67,11 @@ detection:
     # they appear in the Computer field of the host WRITING the event. DC-to-DC
     # authentication is normal replication and must not alert. Until filled, a real
     # DC-to-DC logon between anything other than DC1/DC2 would fire.
-    Computer|startswith:
-      - 'DC1' # example — replace with your real domain-controller hostnames
-      - 'DC2'
+    # Exact FQDNs, as the Computer field carries them. A `startswith: 'DC1'` form also
+    # exempted DC10 and any member server named DC1-something.
+    Computer:
+      - 'DC1.corp.local' # example — replace with your real domain-controller FQDNs
+      - 'DC2.corp.local'
   condition: selection and not filter_dc_destinations
 falsepositives:
   - A DC reaching a member server for a sanctioned reason (backup agent, monitoring

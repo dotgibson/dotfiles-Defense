@@ -24,6 +24,71 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **Detection review 3, sections A and B: defects in the review-2 rewrite, and older
+  claims the rewrite carried forward.** Each fix carries a fixture that the old rule gets
+  wrong.
+  - **`lsass_handle_access`:**
+    - The lab Sysmon config still dropped `MsMpEng.exe`/`MsSense.exe` by bare file name
+      (`condition="image"`). A dumper renamed to either never reached the rule, whatever
+      its filter said. The exclude now uses Defender's install directories.
+    - The "PROCESS_VM_READ bit" match covered only low nibbles 0/8/A, so `0x1411` got
+      through. All 128 read-capable suffixes are now listed, plus `0x40`
+      (PROCESS_DUP_HANDLE).
+    - The description no longer claims this is SigmaHQ's list.
+  - **`registry_run_key_suspicious_target_sysmon_13`:** the generic `~1\`/`~2\` entries
+    matched `PROGRA~1`/`PROGRA~2` (Program Files), which the rule deliberately leaves
+    alone. They are replaced with `\PROGRA~3\`, `\APPDAT~1\` and `\LOCALS~1\`.
+  - **`wmi_event_subscription_consumer`:**
+    - The Destination allowlist gated only one of three arms, so an SCCM `cmd.exe /c`
+      consumer could not be exempted. It now covers every arm.
+    - Consumer deletions no longer alert (`Operation: Created`).
+    - `pwsh` is added.
+  - **`suid_bit_set`:** the `/usr/bin/yum` and `/usr/bin/dnf` entries are removed. Both
+    tools run under Python, so the entries never matched. Review 2 removed the same entries
+    from the cron and systemd rules and missed this file.
+  - **`vault_approle_backdoor`:** secret-id lookup and destroy are routine CI
+    housekeeping, and they alerted even for the allowlisted orchestrator. They are now
+    excluded by exact suffix (`/secret-id/lookup`, `/secret-id-accessor/destroy`, ...).
+    A `contains: '/secret-id/'` would also have hidden a mint written with a trailing
+    slash (`.../secret-id/`, which Vault routes as a mint) and every role write on a
+    mount named `secret-id`. Both lists are pinned to the AppRole mount
+    (`auth/approle/role/`, DEPLOY-REQUIRED if yours differs). A bare suffix also exempted
+    `vault auth enable -path=x/secret-id/lookup`, a `/role/` substring exempted an LDAP
+    group named `role/secret-id/lookup`, and the orchestrator's mint exemption covered
+    creating a role named `secret-id`.
+  - **`snowflake_data_unload`:** each allowlisted stage now takes two entries, `@STAGE/`
+    and `@STAGE` followed by a space (a root unload). A bare `@MY_SANCTIONED_STAGE` had
+    also exempted `@MY_SANCTIONED_STAGE_EVIL`. The rule now says to write stages fully
+    qualified, since an unqualified name resolves in the caller's own schema, and its
+    example entries are qualified.
+  - **`scheduled_task_suspicious_4698`:** it now matches every prefix of
+    `-EncodedCommand` behind one or two of the switch characters PowerShell accepts (`-`,
+    `/`, en dash, em dash, horizontal bar), with quotes or cmd carets allowed before and
+    inside the flag (`-"e"c`, `-e^c`, `^-e`), then a space or tab, then a payload: 20
+    base64 characters that may be split by quotes or carets, a quoted payload with
+    spaces inside, or a variable (`%p%`, `!p!`, `$p`) behind a dash-type switch, since
+    robocopy's `/E %OPTS%` is common. It also covers `pwsh` tasks. Requiring the payload keeps `-Encoding utf8`, URLs, robocopy's `/E` and a
+    script's own short `-e prod` argument out; a long base64-looking `-e` value still
+    matches. Elastic needs the rewritten regex given in the rule.
+  - **Splunk: two rules could never run.** When a regex sits inside an OR, the Splunk
+    backend emits a search with no base (`search = | rex ...`), which Splunk rejects.
+    That killed `service_creation_psexec_7045` (since #337) and the new 4698 regex.
+    `gen-siem.sh` now lifts the final search's `source=... EventCode=N` into the base.
+    It fails the build instead of guessing when the shape differs: anything other than
+    `| rex`/`| eval` before the final search, an EventCode that is an OR operand (lifting
+    it would narrow the rule), or an empty or pipe-first `search =` it does not recognise.
+  - **`spoolss_pipe_impersonation_sysmon_17`:**
+    - The description no longer names GodPotato, which stands up an `epmapper` pipe. The
+      sibling rule already says so.
+    - A TP with PrintSpoofer's real nested pipe name (`\<guid>\pipe\spoolss`) is added.
+  - **`unconstrained_delegation_4624`:**
+    - The description no longer claims the "machine account" variant. When that account's
+      host is krbrelayx on Linux, no Windows host writes a 4624.
+    - The DC filter uses exact FQDNs. `startswith: 'DC1'` exempted `DC10`.
+  - **`systemd_unit_persistence`:** the documented auditd watches now include
+    `/lib/systemd/system/` (split-/usr) and the global user-unit directories, each on a line
+    that pastes straight into an audit rules file.
+
 - **Detection review 2, section E: pairing and methodology bookkeeping that misstated
   coverage.** No detection logic changes.
   - **`HTPX-COVERAGE.md` under-claimed three pairs that have detections.** It listed
