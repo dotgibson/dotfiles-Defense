@@ -24,6 +24,13 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **`npm_publish_2fa_disabled` and `slack_2fa_enforcement_disabled` are retagged from
+  T1685 to T1556.006 (#346).** Both fire when an MFA requirement is weakened, which is an
+  authentication-process change rather than tampering with a security tool. Upstream htpx
+  retagged the paired entries the same way in htpx#134, and `okta_mfa_factor_reset`
+  already uses T1556.006 for this shape. The tactic stays `defense-impairment`, which
+  T1556.006 carries in ATT&CK v19.2 and which matches upstream's TA0112. Detection logic
+  and fixtures are unchanged.
 - **Detection review 3, section C: the two findings that needed lab or estate data.**
   - **`dpapi_backupkey_secret_read_4662` keeps SYSTEM in scope, on purpose.** Running the
     extraction on the DC from a SYSTEM context (psexec to the DC, then mimikatz
