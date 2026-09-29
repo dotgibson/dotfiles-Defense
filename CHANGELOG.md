@@ -63,17 +63,20 @@ under `[Unreleased]` from here.
     example entries are qualified.
   - **`scheduled_task_suspicious_4698`:** it now matches every prefix of
     `-EncodedCommand` behind one or two of the switch characters PowerShell accepts (`-`,
-    `/`, en dash, em dash, horizontal bar), optionally quoted, then a space or tab, then
-    a payload: 20 base64 characters that may be split by quotes or cmd carets, a quoted
-    payload with spaces inside, or a variable (`%p%`, `!p!`, `$p`). It also covers `pwsh`
-    tasks. Requiring the payload keeps `-Encoding utf8`, URLs, robocopy's `/E` and a
+    `/`, en dash, em dash, horizontal bar), with quotes or cmd carets allowed before and
+    inside the flag (`-"e"c`, `-e^c`, `^-e`), then a space or tab, then a payload: 20
+    base64 characters that may be split by quotes or carets, a quoted payload with
+    spaces inside, or a variable (`%p%`, `!p!`, `$p`) behind a dash-type switch, since
+    robocopy's `/E %OPTS%` is common. It also covers `pwsh` tasks. Requiring the payload keeps `-Encoding utf8`, URLs, robocopy's `/E` and a
     script's own short `-e prod` argument out; a long base64-looking `-e` value still
     matches. Elastic needs the rewritten regex given in the rule.
   - **Splunk: two rules could never run.** When a regex sits inside an OR, the Splunk
     backend emits a search with no base (`search = | rex ...`), which Splunk rejects.
     That killed `service_creation_psexec_7045` (since #337) and the new 4698 regex.
-    `gen-siem.sh` now lifts the final search's `source=... EventCode=N` into the base,
-    and fails the build on any base-less search it cannot fix.
+    `gen-siem.sh` now lifts the final search's `source=... EventCode=N` into the base.
+    It fails the build instead of guessing when the shape differs: anything other than
+    `| rex`/`| eval` before the final search, an EventCode that is an OR operand (lifting
+    it would narrow the rule), or an empty or pipe-first `search =` it does not recognise.
   - **`spoolss_pipe_impersonation_sysmon_17`:**
     - The description no longer names GodPotato, which stands up an `epmapper` pipe. The
       sibling rule already says so.

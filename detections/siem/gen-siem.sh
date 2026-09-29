@@ -114,27 +114,38 @@ strip_default() {
 # the whole rule is dead - every branch, not just the regex one. Lift the final search's
 # leading `source="..." EventCode=N` into the base. Its top level is an implicit AND with
 # everything after it (OR binds tighter in the search command), so the copy keeps the
-# meaning and the duplicate left in <rest> is harmless. Anything else is a shape this
-# fix-up does not understand: fail loudly rather than ship a dead search.
+# meaning and the duplicate left in <rest> is harmless. Only `| rex` / `| eval` lines may
+# sit between the empty base and the final search, the EventCode must not be an OR
+# operand, and any other empty or pipe-first `search =` fails the build rather than ship
+# a dead search.
 add_base_search() {
   awk '
-    function flush(   i, base) {
-      if (!match(last, /^\| search source="[^"]*" EventCode=[0-9]+/)) {
-        print "gen-siem: base-less Splunk search with no source/EventCode to lift: " last > "/dev/stderr"
-        hold = 0
-        exit 1
-      }
+    function die(msg) {
+      print "gen-siem: " msg > "/dev/stderr"
+      bad = 1
+      exit 1
+    }
+    function flush(   i, base, rest) {
+      if (!match(last, /^\| search source="[^"]*" EventCode=[0-9]+/))
+        die("base-less Splunk search with no source/EventCode to lift: " last)
       base = substr(last, 10, RLENGTH - 9)
+      rest = substr(last, RSTART + RLENGTH)
+      # `source=X EventCode=N OR ...` means source AND (N OR ...): lifting N would narrow it.
+      if (rest ~ /^ OR /)
+        die("EventCode is an OR operand, lifting it would narrow the rule: " last)
       print "search = " base " \\"
       for (i = 1; i <= n; i++) print buf[i]
       print last
-      n = 0; hold = 0
+      n = 0
+      hold = 0
     }
-    /^search =  \\$/ { hold = 1; n = 0; next }
+    /^search = *\\$/ { if (hold) die("base-less search inside another: " $0); hold = 1; n = 0; next }
     hold && /^\| search / { last = $0; flush(); next }
-    hold { buf[++n] = $0; next }
+    hold && /^\| (rex|eval) / { buf[++n] = $0; next }
+    hold { die("unexpected line in a base-less search: " $0) }
+    /^search = *(\||$)/ { die("base-less search in a shape this fix-up does not handle: " $0) }
     { print }
-    END { if (hold) { print "gen-siem: unterminated base-less search" > "/dev/stderr"; exit 1 } }
+    END { if (!bad && hold) die("unterminated base-less search") }
   '
 }
 
