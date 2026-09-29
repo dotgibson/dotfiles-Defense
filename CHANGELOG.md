@@ -66,8 +66,11 @@ under `[Unreleased]` from here.
     `/`, en dash, em dash, horizontal bar), with quotes or cmd carets allowed before and
     inside the flag (`-"e"c`, `-e^c`, `^-e`), then a space or tab, then a payload: 20
     base64 characters that may be split by quotes or carets, a quoted payload with
-    spaces inside, or a variable (`%p%`, `!p!`, `$p`) behind a dash-type switch, since
-    robocopy's `/E %OPTS%` is common. It also covers `pwsh` tasks. Requiring the payload keeps `-Encoding utf8`, URLs, robocopy's `/E` and a
+    spaces inside, or a variable (`%p%`, `!p!`, `$p`); behind `/` only for `/ec` and
+    longer, since robocopy's `/E %OPTS%` is common. It also covers `pwsh` tasks. Quotes
+    and carets are not accepted before the dash: they already count as a boundary, and
+    allowing both made the pattern quadratic on a long run of quotes. Requiring the
+    payload keeps `-Encoding utf8`, URLs, robocopy's `/E` and a
     script's own short `-e prod` argument out; a long base64-looking `-e` value still
     matches. Elastic needs the rewritten regex given in the rule.
   - **Splunk: two rules could never run.** When a regex sits inside an OR, the Splunk
