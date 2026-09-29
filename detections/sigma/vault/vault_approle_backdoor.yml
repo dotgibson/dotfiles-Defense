@@ -58,19 +58,25 @@ detection:
     # below; a secret-id minted for an existing powerful role by anyone else is itself a
     # backdoor credential and still alerts. Vault routes `role/<name>/secret-id/?$` and
     # `role/<name>/custom-secret-id$`, so only the plain form takes a trailing slash.
-    request.path|startswith: 'auth/'
-    request.path|contains: '/role/'
+    # DEPLOY-REQUIRED: pinned to the AppRole mount, because these endpoints exist only on
+    # AppRole and its role names cannot contain `/` (GenericNameRegex) - a `/role/`
+    # substring alone was satisfied by an LDAP or Okta group NAMED `role/...`, and those
+    # backends allow slashes. If AppRole is mounted somewhere other than `auth/approle/`,
+    # change this prefix here and in filter_secret_id_admin and mint_is_role_name. Run
+    # detections/sigma/deploy-required.sh to find this.
+    request.path|startswith: 'auth/approle/role/'
     request.path|endswith:
       - '/secret-id'
       - '/secret-id/'
       - '/custom-secret-id'
   mint_is_role_name:
-    # ...but a ROLE NAMED `secret-id` (`auth/approle/role/secret-id`) is a role write,
-    # not a mint, and must not ride the orchestrator's mint exemption.
-    request.path|endswith:
-      - '/role/secret-id'
-      - '/role/secret-id/'
-      - '/role/custom-secret-id'
+    # ...but writing a ROLE NAMED `secret-id` (`auth/approle/role/secret-id`) is a role
+    # write, not a mint, and must not ride the orchestrator's mint exemption. Exact paths,
+    # so a real mint on a role named `role` (`.../role/role/secret-id`) stays exempt.
+    request.path:
+      - 'auth/approle/role/secret-id'
+      - 'auth/approle/role/secret-id/'
+      - 'auth/approle/role/custom-secret-id'
   filter_ci_orchestrator:
     # DEPLOY-REQUIRED: the entity ids of the CI/CD orchestrators that mint AppRole
     # secret-ids (`vault read -format=json identity/entity/name/<name>`). Until filled this
@@ -81,13 +87,13 @@ detection:
   filter_secret_id_admin:
     # Looking up or destroying an existing secret-id (`.../secret-id/lookup|destroy`,
     # `.../secret-id-accessor/lookup|destroy`) is routine CI and Vault Agent housekeeping
-    # under the role path, and mints nothing. Matched by SUFFIX and pinned to an auth
-    # mount's role path: a `contains: '/secret-id/'` also exempted a mint written with a
-    # trailing slash and every role write on a mount named `secret-id`, and a bare suffix
-    # exempted `vault auth enable -path=x/secret-id/lookup` (`sys/auth/...`), a path the
-    # attacker chooses.
-    request.path|startswith: 'auth/'
-    request.path|contains: '/role/'
+    # under the role path, and mints nothing. Matched by SUFFIX and pinned to the
+    # AppRole role path (see secret_id_mint): a `contains: '/secret-id/'` also exempted a
+    # mint written with a trailing slash and every role write on a mount named
+    # `secret-id`; a bare suffix exempted `vault auth enable -path=x/secret-id/lookup`
+    # (`sys/auth/...`); and a `/role/` substring exempted an LDAP group named
+    # `role/secret-id/lookup` - all paths the attacker chooses.
+    request.path|startswith: 'auth/approle/role/'
     request.path|endswith:
       - '/secret-id/lookup'
       - '/secret-id/lookup/'

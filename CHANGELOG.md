@@ -51,20 +51,29 @@ under `[Unreleased]` from here.
     excluded by exact suffix (`/secret-id/lookup`, `/secret-id-accessor/destroy`, ...).
     A `contains: '/secret-id/'` would also have hidden a mint written with a trailing
     slash (`.../secret-id/`, which Vault routes as a mint) and every role write on a
-    mount named `secret-id`. Both lists are pinned to an auth mount's role path
-    (`auth/.../role/...`): a bare suffix also exempted `vault auth enable
-    -path=x/secret-id/lookup`, and the orchestrator's mint exemption covered creating a
-    role named `secret-id`.
+    mount named `secret-id`. Both lists are pinned to the AppRole mount
+    (`auth/approle/role/`, DEPLOY-REQUIRED if yours differs). A bare suffix also exempted
+    `vault auth enable -path=x/secret-id/lookup`, a `/role/` substring exempted an LDAP
+    group named `role/secret-id/lookup`, and the orchestrator's mint exemption covered
+    creating a role named `secret-id`.
   - **`snowflake_data_unload`:** each allowlisted stage now takes two entries, `@STAGE/`
     and `@STAGE` followed by a space (a root unload). A bare `@MY_SANCTIONED_STAGE` had
     also exempted `@MY_SANCTIONED_STAGE_EVIL`. The rule now says to write stages fully
-    qualified, since an unqualified name resolves in the caller's own schema.
+    qualified, since an unqualified name resolves in the caller's own schema, and its
+    example entries are qualified.
   - **`scheduled_task_suspicious_4698`:** it now matches every prefix of
-    `-EncodedCommand`, with any switch character PowerShell accepts (`-`, `/`, en dash,
-    em dash, horizontal bar), quoted or not, followed by a space or tab and a base64
-    payload, and `pwsh` tasks. Requiring the payload keeps `-Encoding utf8`, URLs,
-    robocopy's `/E` and a script's own `-e prod` argument out. Elastic needs the
-    rewritten regex given in the rule.
+    `-EncodedCommand` behind one or two of the switch characters PowerShell accepts (`-`,
+    `/`, en dash, em dash, horizontal bar), optionally quoted, then a space or tab, then
+    a payload: 20 base64 characters that may be split by quotes or cmd carets, a quoted
+    payload with spaces inside, or a variable (`%p%`, `!p!`, `$p`). It also covers `pwsh`
+    tasks. Requiring the payload keeps `-Encoding utf8`, URLs, robocopy's `/E` and a
+    script's own short `-e prod` argument out; a long base64-looking `-e` value still
+    matches. Elastic needs the rewritten regex given in the rule.
+  - **Splunk: two rules could never run.** When a regex sits inside an OR, the Splunk
+    backend emits a search with no base (`search = | rex ...`), which Splunk rejects.
+    That killed `service_creation_psexec_7045` (since #337) and the new 4698 regex.
+    `gen-siem.sh` now lifts the final search's `source=... EventCode=N` into the base,
+    and fails the build on any base-less search it cannot fix.
   - **`spoolss_pipe_impersonation_sysmon_17`:**
     - The description no longer names GodPotato, which stands up an `epmapper` pipe. The
       sibling rule already says so.

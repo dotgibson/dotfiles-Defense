@@ -1,4 +1,4 @@
 {"query_type": "UNLOAD", "query_text": "COPY INTO @%mytable FROM @~/staged"}
 {"query_type": "UNLOAD", "query_text": "copy into @~/exports/daily FROM orders"}
-{"query_type": "UNLOAD", "query_text": "COPY INTO @MY_SANCTIONED_STAGE/daily FROM orders"}
-{"query_type": "UNLOAD", "query_text": "COPY INTO @MY_SANCTIONED_STAGE FROM orders"}
+{"query_type": "UNLOAD", "query_text": "COPY INTO @MY_DB.MY_SCHEMA.MY_SANCTIONED_STAGE/daily FROM orders"}
+{"query_type": "UNLOAD", "query_text": "COPY INTO @MY_DB.MY_SCHEMA.MY_SANCTIONED_STAGE FROM orders"}

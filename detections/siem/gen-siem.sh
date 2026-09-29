@@ -105,6 +105,39 @@ strip_default() {
   '
 }
 
+# A Sigma `|re` inside an OR makes the splunk backend emit a search with NO base:
+#   search =  \
+#   | rex field=F "(?<FMatch>...)" \
+#   | eval FCondition=... \
+#   | search source="..." EventCode=N <rest>
+# A search cannot start with `| rex` (not a generating command), so Splunk rejects it and
+# the whole rule is dead - every branch, not just the regex one. Lift the final search's
+# leading `source="..." EventCode=N` into the base. Its top level is an implicit AND with
+# everything after it (OR binds tighter in the search command), so the copy keeps the
+# meaning and the duplicate left in <rest> is harmless. Anything else is a shape this
+# fix-up does not understand: fail loudly rather than ship a dead search.
+add_base_search() {
+  awk '
+    function flush(   i, base) {
+      if (!match(last, /^\| search source="[^"]*" EventCode=[0-9]+/)) {
+        print "gen-siem: base-less Splunk search with no source/EventCode to lift: " last > "/dev/stderr"
+        hold = 0
+        exit 1
+      }
+      base = substr(last, 10, RLENGTH - 9)
+      print "search = " base " \\"
+      for (i = 1; i <= n; i++) print buf[i]
+      print last
+      n = 0; hold = 0
+    }
+    /^search =  \\$/ { hold = 1; n = 0; next }
+    hold && /^\| search / { last = $0; flush(); next }
+    hold { buf[++n] = $0; next }
+    { print }
+    END { if (hold) { print "gen-siem: unterminated base-less search" > "/dev/stderr"; exit 1 } }
+  '
+}
+
 # Compile one rule dir to savedsearches stanzas. Rules are passed as an explicit,
 # byte-sorted file list (NOT the bare directory): `sigma convert <dir>` enumerates in
 # filesystem order, which differs between machines and would make the generated file —
@@ -121,7 +154,7 @@ gen_dir() {
   [[ ${#files[@]} -gt 0 ]] || return 0
   # No stderr suppression: sigma's "Parsing Sigma rules" notice goes to stderr (it does
   # not pollute the generated stdout), and a real conversion error must stay visible.
-  "$SIGMA_BIN" convert -t splunk -f savedsearches "$@" "${files[@]}" | strip_default
+  "$SIGMA_BIN" convert -t splunk -f savedsearches "$@" "${files[@]}" | strip_default | add_base_search
 }
 
 generate_splunk() {

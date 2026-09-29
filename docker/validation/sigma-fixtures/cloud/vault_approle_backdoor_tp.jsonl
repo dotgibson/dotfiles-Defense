@@ -9,3 +9,5 @@
 {"type": "request", "request": {"operation": "update", "path": "auth/secret-id/role/backdoor"}, "auth": {"entity_id": "5d2e9a41-7b3c-4e8f-a1d2-6c0b9e8f7a65"}}
 {"type": "request", "request": {"operation": "update", "path": "sys/auth/ci/secret-id/lookup"}, "auth": {"entity_id": "5d2e9a41-7b3c-4e8f-a1d2-6c0b9e8f7a65"}}
 {"type": "request", "request": {"operation": "update", "path": "auth/approle/role/secret-id"}, "auth": {"entity_id": "00000000-0000-0000-0000-00000000c1c1"}}
+{"type": "request", "request": {"operation": "update", "path": "auth/ldap/groups/role/secret-id/lookup"}, "auth": {"entity_id": "5d2e9a41-7b3c-4e8f-a1d2-6c0b9e8f7a65"}}
+{"type": "request", "request": {"operation": "update", "path": "auth/ldap/groups/role/x/secret-id"}, "auth": {"entity_id": "00000000-0000-0000-0000-00000000c1c1"}}

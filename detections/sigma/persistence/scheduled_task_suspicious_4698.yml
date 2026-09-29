@@ -67,18 +67,24 @@ detection:
   powershell_short_flags:
     # Any abbreviation of -EncodedCommand followed by its payload. Scoped to a PowerShell
     # task. PowerShell's parser (CommandLineParameterParser) takes any prefix down to
-    # `-e`/`-ec`, accepts `-`, `/` and the en dash, em dash and horizontal bar as the
-    # switch character, and trims each argv element, so the flag can be quoted (`"-e"`,
-    # `&quot;-e&quot;` in the task XML) and followed by a tab rather than a space. A
-    # substring list ending in a space missed all of those. Requiring a base64 run of 20+
-    # characters after the flag is what keeps robocopy's `/E /R:2`, `-Encoding utf8` and
-    # a script's own `-e prod` argument out, and lets the bare `/e` back in.
-    # DEPLOY-REQUIRED (Elastic only): Lucene regexes match the whole term implicitly and
-    # have no (?i) flag, so the generated Lucene form never matches. Rewrite it in your
-    # Elastic rule as
-    #   TaskContent:/.*[-\/–—―][eE]([cC]|[nN]([cC]([oO]([dD]([eE]([dD]([cC]([oO]([mM]([mM]([aA]([nN]([dD])?)?)?)?)?)?)?)?)?)?)?)?)?(&quot;|["'])*(\s|&#x?9;)+(&quot;|["'])*[A-Za-z0-9+\/]{20}.*/
-    # Splunk and Sentinel take the pattern as written.
-    TaskContent|re: '(?i)(^|[\s>"'';(])[-/–—―]e(c|n(c(o(d(e(d(c(o(m(m(a(n(d)?)?)?)?)?)?)?)?)?)?)?)?)?(&quot;|["''])*(\s|&#x?9;)+(&quot;|["''])*[A-Za-z0-9+/]{20}'
+    # `-e`/`-ec`; accepts `-`, `/` and the en dash, em dash and horizontal bar as the switch
+    # character, and pwsh drops a doubled one (`--e`); and trims each argv element, so the
+    # flag can be quoted (`"-e"`, `&quot;-e&quot;` in the task XML) and followed by a tab.
+    # The payload is decoded with Convert.FromBase64String, which ignores whitespace, and
+    # argv parsing drops quotes, so it is matched as 20 base64 characters that may be split
+    # by quotes or cmd carets, OR a quoted payload with whitespace inside, OR a variable
+    # (`%p%`, `!p!`, `$p`). Requiring a payload is what keeps robocopy's `/E /R:2`,
+    # `-Encoding utf8` and a script's own short `-e prod` argument out. The dashes are an
+    # alternation, not a character class, so the pattern still matches if Splunk's PCRE
+    # runs in byte mode.
+    # DEPLOY-REQUIRED (Elastic only): Lucene regexes match the whole term implicitly, have
+    # no (?i) flag or \s, and treat " & # ^ / as operators, so the generated Lucene form
+    # never matches. Rewrite it in your Elastic rule as (verify against your mapping of
+    # TaskContent - it must be a keyword field):
+    #   TaskContent:/(.*[ \t\>\"';(,=])?(-|\/|–|—|―){1,2}[eE]([cC]|[nN]([cC]([oO]([dD]([eE]([dD]([cC]([oO]([mM]([mM]([aA]([nN]([dD])?)?)?)?)?)?)?)?)?)?)?)?)?(\&quot;|\&apos;|[\"'\^])*([ \t]|\&\#[xX]?9;)+(((\&quot;|\&apos;|[\"'\^])*[A-Za-z0-9+\/]){20}|(\&quot;|\")(([ \t]|(\&quot;|\&apos;|[\"'\^]))*[A-Za-z0-9+\/]){20}|(\&quot;|\&apos;|[\"'\^])*[%!$]).*/
+    # Splunk and Sentinel take the pattern as written; gen-siem.sh gives the Splunk form
+    # the base search the backend omits.
+    TaskContent|re: '(?i)(^|[\s>"'';(,=])(-|/|–|—|―){1,2}e(c|n(c(o(d(e(d(c(o(m(m(a(n(d)?)?)?)?)?)?)?)?)?)?)?)?)?(&quot;|&apos;|["''^])*(\s|&#x?9;)+(((&quot;|&apos;|["''^])*[A-Za-z0-9+/]){20}|(&quot;|")((\s|(&quot;|&apos;|["''^]))*[A-Za-z0-9+/]){20}|(&quot;|&apos;|["''^])*[%!$])'
   powershell_window_flags:
     TaskContent|contains:
       - '-w 1'
@@ -96,4 +102,7 @@ detection:
   condition: selection and (suspicious or (powershell_task and 1 of powershell_*_flags) or impacket_atexec)
 falsepositives:
   - Software installers that register tasks invoking helper scripts (allowlist).
+  - A PowerShell task passing its own script a long `-e` value that looks like base64 (for
+    example `deploy.ps1 -e ProductionWestEurope01`, or `wsl -e /usr/local/bin/...`).
+    Allowlist the task.
 level: high
