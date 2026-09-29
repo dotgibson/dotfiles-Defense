@@ -24,6 +24,18 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **Detection review 3, section C: the two findings that needed lab or estate data.**
+  - **`dpapi_backupkey_secret_read_4662` keeps SYSTEM in scope, on purpose.** Running the
+    extraction on the DC from a SYSTEM context (psexec to the DC, then mimikatz
+    `lsadump::backupkeys` or SharpDPAPI `backupkey`) records `S-1-5-18` as the subject, so
+    excluding SYSTEM would hide common post-compromise tradecraft. A new TP covers that
+    read. The rule says what to do if a lab capture shows BackuprKey servicing logging as
+    SYSTEM: split it into a lower-level rule, don't exclude it.
+  - **The GPP User-preferences sweep threshold (10) is now DEPLOY-REQUIRED, with a README
+    deploy-time row.** The count is of distinct paths, and each path carries its GPO's
+    GUID, so the threshold has to clear what one user reads across all their linked GPOs.
+    The TP sweep now spans four GPOs, and a new logon TN reads six files from three.
+
 - **Detection review 3, sections A and B: defects in the review-2 rewrite, and older
   claims the rewrite carried forward.** Each fix carries a fixture that the old rule gets
   wrong.
@@ -66,8 +78,11 @@ under `[Unreleased]` from here.
     `/`, en dash, em dash, horizontal bar), with quotes or cmd carets allowed before and
     inside the flag (`-"e"c`, `-e^c`, `^-e`), then a space or tab, then a payload: 20
     base64 characters that may be split by quotes or carets, a quoted payload with
-    spaces inside, or a variable (`%p%`, `!p!`, `$p`) behind a dash-type switch, since
-    robocopy's `/E %OPTS%` is common. It also covers `pwsh` tasks. Requiring the payload keeps `-Encoding utf8`, URLs, robocopy's `/E` and a
+    spaces inside, or a variable (`%p%`, `!p!`, `$p`); behind `/` only for `/ec` and
+    longer, since robocopy's `/E %OPTS%` is common. It also covers `pwsh` tasks. Quotes
+    and carets are not accepted before the dash: they already count as a boundary, and
+    allowing both made the pattern quadratic on a long run of quotes. Requiring the
+    payload keeps `-Encoding utf8`, URLs, robocopy's `/E` and a
     script's own short `-e prod` argument out; a long base64-looking `-e` value still
     matches. Elastic needs the rewritten regex given in the rule.
   - **Splunk: two rules could never run.** When a regex sits inside an OR, the Splunk
