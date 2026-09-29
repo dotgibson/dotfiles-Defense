@@ -28,7 +28,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/vault-approle-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
-modified: 2026-09-28
+modified: 2026-09-29
 tags:
   - attack.persistence
   - attack.t1098
@@ -67,7 +67,14 @@ detection:
     # detections/sigma/deploy-required.sh to find this.
     auth.entity_id:
       - '00000000-0000-0000-0000-00000000c1c1'   # example — replace with an entity id
-  condition: selection and 1 of paths_* and not (secret_id_mint and filter_ci_orchestrator)
+  filter_secret_id_admin:
+    # Looking up or destroying an existing secret-id (`.../secret-id/lookup|destroy`,
+    # `.../secret-id-accessor/lookup|destroy`) is routine CI and Vault Agent housekeeping
+    # under the role path, and mints nothing.
+    request.path|contains:
+      - '/secret-id/'
+      - '/secret-id-accessor/'
+  condition: selection and 1 of paths_* and not filter_secret_id_admin and not (secret_id_mint and filter_ci_orchestrator)
 falsepositives:
   - A userpass user changing their own password (auth/userpass/users/<self>/password) -
     triage on whether request.path names the caller's own identity.

@@ -3,7 +3,7 @@ id: d5c5c185-a62f-415a-ab0f-2572f910b541
 status: experimental
 description: |
   Detection posture: high. This is the rule that observes the impersonation itself,
-  rather than the shape around it. PrintSpoofer/GodPotato do not abuse the print
+  rather than the shape around it. PrintSpoofer does not abuse the print
   spooler's own pipe - they stand up their OWN pipe named for the spoolss endpoint
   and coerce the spooler into connecting to it, so the coerced SYSTEM context can be
   impersonated. The invariant is therefore ownership, not content: legitimate spoolss
@@ -57,7 +57,7 @@ description: |
   \<guid>\pipe\spoolss, verified against the corpus record, so spoolss is deliberately
   absent from that rule's name list rather than duplicated into it. lsarpc is collected and
   deliberately left to 5145, for the reason recorded in DEFENSE-METHODOLOGY.md.
-  Validate (purple): run PrintSpoofer/GodPotato from dotfiles-Offense (hacktheplanet
+  Validate (purple): run PrintSpoofer from dotfiles-Offense (hacktheplanet
   "Windows privilege escalation" fold; htpx pair potato-seimpersonate).
   Requires Sysmon PipeEvent (EventID 17). Note that the shipped
   detections/sysmon/sysmonconfig-detection-lab.xml enables PipeEvent as an
@@ -69,7 +69,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/potato-seimpersonate-4688.md
 author: dotfiles-Defense
 date: 2026-08-27
-modified: 2026-09-28
+modified: 2026-09-29
 tags:
   # Both halves of T1134.001 are claimed here, and the Stealth half is the point of the
   # rule. T1134.001 is dual-tactic in the pinned v19.2 bundle, so check-attack-tags.sh's

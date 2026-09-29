@@ -15,9 +15,13 @@ description: |
     -w /etc/systemd/system/ -p wa -k systemd_persist
     -w /usr/lib/systemd/system/ -p wa -k systemd_persist
     -w /run/systemd/system/ -p wa -k systemd_persist
-  Note user units (~/.config/systemd/user/) are deliberately not watched above: a
-  per-user watch does not generalize across home directories, and the user-unit path is
-  better served by a recursive watch you scope to your own layout.
+    -w /lib/systemd/system/ -p wa -k systemd_persist      (split-/usr hosts only)
+    -w /etc/systemd/user/ -p wa -k systemd_persist
+    -w /usr/lib/systemd/user/ -p wa -k systemd_persist
+  The two global user-unit directories run their units for EVERY user session, so they
+  are watched like system units. Per-user units (~/.config/systemd/user/) are
+  deliberately not: a per-user watch does not generalize across home directories, and
+  that path is better served by a recursive watch you scope to your own layout.
   THREE FILTERS, AND THE TWO SYSTEMD-SPECIFIC ONES ARE SCOPED BY PATH, NOT BY BINARY.
   filter_provisioning is exactly cron_persistence's list, because the volume argument is
   the same one. `systemd` and `systemctl` are NOT in it: allowlisting either binary
@@ -34,7 +38,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/systemd-persist-auditd.md
 author: dotfiles-Defense
 date: 2026-08-26
-modified: 2026-09-16
+modified: 2026-09-29
 tags:
   - attack.persistence
   - attack.t1543.002

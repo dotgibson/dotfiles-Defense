@@ -38,7 +38,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/suid-abuse-auditd.md
 author: dotfiles-Defense
 date: 2026-08-26
-modified: 2026-09-28
+modified: 2026-09-29
 tags:
   - attack.privilege-escalation
   - attack.t1548.001
@@ -66,8 +66,6 @@ detection:
       - '/bin/rpm'
       - '/usr/bin/apt'
       - '/usr/bin/apt-get'
-      - '/usr/bin/yum'
-      - '/usr/bin/dnf'
       - '/usr/bin/zypper'
       # No configuration-management entries: ansible modules, salt-minion (Python), puppet
       # and chef-client (Ruby) write under their interpreter's exe, so a path naming the

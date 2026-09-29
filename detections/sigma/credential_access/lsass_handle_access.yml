@@ -5,13 +5,15 @@ description: |
   Detects credential theft from memory: a handle to lsass.exe with read/dump
   access rights, from a process that is not a known security/AV engine. Sysmon 10
   (ProcessAccess) sees this far better than the Security log. GrantedAccess is matched on
-  the PROCESS_VM_READ (0x10) bit rather than a fixed list: an exact list (0x1010, 0x1410,
-  0x1438, 0x143a, 0x1fffff) let any other read-capable mask through, including
-  0x1f0fff (pre-Vista PROCESS_ALL_ACCESS, still what tools built against old headers ask
-  for) and 0x410 (QUERY_INFORMATION|VM_READ). The suffix list follows SigmaHQ's LSASS
-  access-flag rule. The full-rights masks are the ones most likely to be a legitimate
-  agent, so if this rule stays noisy after the allowlist below is populated, that is where
-  the noise is.
+  the PROCESS_VM_READ (0x10) bit: every mask whose low byte has an odd high nibble, all
+  128 two-digit suffixes, so no other low bit (TERMINATE 0x1, CREATE_THREAD 0x2, ...) can
+  be OR'd in to step around it. An earlier 24-suffix list covered only low nibbles 0/8/A
+  and let 0x1411 or 0x1419 through. PROCESS_DUP_HANDLE (0x40) is added on its own, since
+  duplicating an existing LSASS handle is a dump path that needs no VM_READ. This is
+  broader than SigmaHQ's LSASS access-flag rule, which splits the 0x10 cases into a
+  separate rule. The full-rights masks are the ones most likely to be a legitimate agent,
+  so if this rule stays noisy after the allowlist below is populated, that is where the
+  noise is.
   Validate (purple): run "nxc -M lsassy" / a remote LSASS dump from dotfiles-Offense
   (hacktheplanet "Lateral movement" fold; htpx pair lsass-dump-lsassy). Tune the
   SourceImage allowlist to your EDR/AV.
@@ -20,7 +22,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/lsass-4656.md
 author: dotfiles-Defense
 date: 2026-06-30
-modified: 2026-09-28
+modified: 2026-09-29
 tags:
   - attack.credential-access
   - attack.t1003.001
@@ -33,9 +35,16 @@ detection:
   selection_access:
     # Low byte carries PROCESS_VM_READ (0x10) when its high nibble is odd. Sysmon renders
     # the mask as lowercase hex; Sigma matching is case-insensitive.
-    - GrantedAccess|endswith: ['10', '30', '50', '70', '90', 'b0', 'd0', 'f0',
-                               '18', '38', '58', '78', '98', 'b8', 'd8', 'f8',
-                               '1a', '3a', '5a', '7a', '9a', 'ba', 'da', 'fa']
+    - GrantedAccess|endswith: [
+        '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '1a', '1b', '1c', '1d', '1e', '1f',
+        '30', '31', '32', '33', '34', '35', '36', '37', '38', '39', '3a', '3b', '3c', '3d', '3e', '3f',
+        '50', '51', '52', '53', '54', '55', '56', '57', '58', '59', '5a', '5b', '5c', '5d', '5e', '5f',
+        '70', '71', '72', '73', '74', '75', '76', '77', '78', '79', '7a', '7b', '7c', '7d', '7e', '7f',
+        '90', '91', '92', '93', '94', '95', '96', '97', '98', '99', '9a', '9b', '9c', '9d', '9e', '9f',
+        'b0', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 'b8', 'b9', 'ba', 'bb', 'bc', 'bd', 'be', 'bf',
+        'd0', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9', 'da', 'db', 'dc', 'dd', 'de', 'df',
+        'f0', 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'fa', 'fb', 'fc', 'fd', 'fe', 'ff']
+    - GrantedAccess: '0x40'   # PROCESS_DUP_HANDLE alone
     - GrantedAccess|startswith: ['0x1f0fff', '0x1f1fff', '0x1f2fff', '0x1f3fff', '0x1fffff']
   filter_av:
     # DEPLOY-REQUIRED: extend with YOUR endpoint-protection agents. The list below covers

@@ -34,7 +34,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/schtask-4698.md
 author: dotfiles-Defense
 date: 2026-06-30
-modified: 2026-09-28
+modified: 2026-09-29
 tags:
   - attack.persistence
   - attack.execution
@@ -61,13 +61,23 @@ detection:
       - 'IEX '
       - '| IEX'
   powershell_task:
-    TaskContent|contains: 'powershell'
+    TaskContent|contains:
+      - 'powershell'
+      - 'pwsh'
   powershell_short_flags:
     # The abbreviations the long-form list above misses. Scoped to a PowerShell task so a
     # bare '-e ' in some other program's arguments does not match.
     TaskContent|contains:
+      # PowerShell accepts any unambiguous prefix of -EncodedCommand, so the full word and
+      # '-enc ' are not the whole set: '-en ' and '-enco' (which also covers -encod,
+      # -encode, -encodedc) are listed too, with the '/' parameter prefix.
       - '-e '
       - '-ec '
+      - '-en '
+      - '-enco'
+      - '/e '
+      - '/ec '
+      - '/enc'
       - '-w 1'
       - '-win h'
   impacket_atexec:

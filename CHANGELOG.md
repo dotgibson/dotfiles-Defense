@@ -24,6 +24,46 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **Detection review 3, sections A and B: defects in the review-2 rewrite, and older
+  claims the rewrite carried forward.** Each fix carries a fixture that the old rule gets
+  wrong.
+  - **`lsass_handle_access`:**
+    - The lab Sysmon config still dropped `MsMpEng.exe`/`MsSense.exe` by bare file name
+      (`condition="image"`). A dumper renamed to either never reached the rule, whatever
+      its filter said. The exclude now uses Defender's install directories.
+    - The "PROCESS_VM_READ bit" match covered only low nibbles 0/8/A, so `0x1411` got
+      through. All 128 read-capable suffixes are now listed, plus `0x40`
+      (PROCESS_DUP_HANDLE).
+    - The description no longer claims this is SigmaHQ's list.
+  - **`registry_run_key_suspicious_target_sysmon_13`:** the generic `~1\`/`~2\` entries
+    matched `PROGRA~1`/`PROGRA~2` (Program Files), which the rule deliberately leaves
+    alone. They are replaced with `\PROGRA~3\`, `\APPDAT~1\` and `\LOCALS~1\`.
+  - **`wmi_event_subscription_consumer`:**
+    - The Destination allowlist gated only one of three arms, so an SCCM `cmd.exe /c`
+      consumer could not be exempted. It now covers every arm.
+    - Consumer deletions no longer alert (`Operation: Created`).
+    - `pwsh` is added.
+  - **`suid_bit_set`:** the `/usr/bin/yum` and `/usr/bin/dnf` entries are removed. Both
+    tools run under Python, so the entries never matched. Review 2 removed the same entries
+    from the cron and systemd rules and missed this file.
+  - **`vault_approle_backdoor`:** secret-id lookup and destroy (`/secret-id/`,
+    `/secret-id-accessor/`) are routine CI housekeeping, and they alerted even for the
+    allowlisted orchestrator. They are now excluded.
+  - **`snowflake_data_unload`:** allowlist entries must end in `/`. `@MY_SANCTIONED_STAGE`
+    had also exempted `@MY_SANCTIONED_STAGE_EVIL`.
+  - **`scheduled_task_suspicious_4698`:** it now matches the `-en`/`-enco` prefixes of
+    `-EncodedCommand`, the `/`-prefixed forms, and `pwsh` tasks.
+  - **`spoolss_pipe_impersonation_sysmon_17`:**
+    - The description no longer names GodPotato, which stands up an `epmapper` pipe. The
+      sibling rule already says so.
+    - A TP with PrintSpoofer's real nested pipe name (`\<guid>\pipe\spoolss`) is added.
+  - **`unconstrained_delegation_4624`:**
+    - The description no longer claims the "machine account" variant. When that account's
+      host is krbrelayx on Linux, no Windows host writes a 4624.
+    - The DC filter uses exact FQDNs. `startswith: 'DC1'` exempted `DC10`.
+  - **`systemd_unit_persistence`:** the documented auditd watches now include
+    `/lib/systemd/system/` (split-/usr) and the global user-unit directories.
+
 - **Detection review 2, section E: pairing and methodology bookkeeping that misstated
   coverage.** No detection logic changes.
   - **`HTPX-COVERAGE.md` under-claimed three pairs that have detections.** It listed
