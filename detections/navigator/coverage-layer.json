@@ -412,9 +412,9 @@
     },
     {
       "techniqueID": "T1556.006",
-      "score": 1,
+      "score": 3,
       "enabled": true,
-      "comment": "1 rule(s): okta_mfa_factor_reset"
+      "comment": "3 rule(s): npm_publish_2fa_disabled, okta_mfa_factor_reset, slack_2fa_enforcement_disabled"
     },
     {
       "techniqueID": "T1558",
@@ -508,9 +508,9 @@
     },
     {
       "techniqueID": "T1685",
-      "score": 5,
+      "score": 3,
       "enabled": true,
-      "comment": "5 rule(s): github_branch_protection_tamper, gitlab_protected_branch_tamper, npm_publish_2fa_disabled, slack_2fa_enforcement_disabled, vault_audit_device_disabled"
+      "comment": "3 rule(s): github_branch_protection_tamper, gitlab_protected_branch_tamper, vault_audit_device_disabled"
     },
     {
       "techniqueID": "T1685.002",
