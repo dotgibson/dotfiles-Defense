@@ -464,11 +464,11 @@ family tests a pointer against a bitmask on the calls it gets wrong.
 
 **`github/`** (GitHub Enterprise audit log — `product: github`, `service: audit`; field `action`)
 
-| Rule                                   | Event / source                                                            | ATT&CK | Validate with                     |
-| -------------------------------------- | ------------------------------------------------------------------------- | ------ | --------------------------------- |
-| `github_self_hosted_runner_registered` | `*.register_self_hosted_runner` / `*.configure_self_hosted_jit_runner`    | T1543  | GitHub · gh-self-hosted-runner    |
-| `github_branch_protection_tamper`      | `protected_branch.destroy` / `protected_branch.policy_override`           | T1685  | GitHub · gh-branch-protection-off |
-| `github_credential_backdoor`           | `public_key.create` (deploy key) / `personal_access_token.access_granted` | T1098  | GitHub · gh-deploy-key-backdoor   |
+| Rule                                   | Event / source                                                                                 | ATT&CK | Validate with                     |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------- | ------ | --------------------------------- |
+| `github_self_hosted_runner_registered` | `*.register_self_hosted_runner` / `*.configure_self_hosted_jit_runner`                         | T1543  | GitHub · gh-self-hosted-runner    |
+| `github_branch_protection_tamper`      | `protected_branch.destroy` / `protected_branch.policy_override`                                | T1685  | GitHub · gh-branch-protection-off |
+| `github_credential_backdoor`           | `public_key.create` (deploy key) / `personal_access_token.request_created` / `.access_granted` | T1098  | GitHub · gh-deploy-key-backdoor   |
 
 **`registry/`** (Harbor container-registry audit log — `product: harbor`, `service: audit`; field `operation`)
 

@@ -24,6 +24,14 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **`github_credential_backdoor` now also selects
+  `personal_access_token.request_created` (#348).** This follows htpx's `gh-cred-audit`
+  (htpx#139). GitHub logs the request only in orgs that require approval for
+  fine-grained PATs. There it is the moment an attacker-minted token can still be denied,
+  and a denied request never produces the `access_granted` the rule already selected.
+  Neither PAT action had a fixture before. Each now has its own single-event TP row,
+  because zircolite passes a TP file when any event in it matches, so a shared file would
+  hide a typo in either action name.
 - **`npm_publish_2fa_disabled` and `slack_2fa_enforcement_disabled` are retagged from
   T1685 to T1556.006 (#346).** Both fire when an MFA requirement is weakened, which is an
   authentication-process change rather than tampering with a security tool. Upstream htpx
