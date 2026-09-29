@@ -4,6 +4,11 @@
 ##! Network mirror of two htpx pairs (dotfiles-Offense PURPLE-TEAM.md):
 ##!   dns-tunnel-c2  <-> dns-tunnel-sysmon-22   (T1071.004, DNS as an app-layer C2)
 ##!   dga-c2-domains <-> dga-nxdomain-entropy   (T1568.002, DGA rendezvous)
+##! Claimed: https://github.com/dotgibson/htpx/blob/main/entries/blue/dga-nxdomain-entropy.md - that entry's
+##! source includes resolver NXDOMAIN logs, which is this script's view. NOT claimed:
+##! dns-tunnel-sysmon-22, whose source is Sysmon DnsQuery alone. This script is the wire
+##! twin of that detection, not an implementation of it, and DnsQuery (Sysmon 22) is not
+##! in the lab Sysmon config, so the host half stays genuinely open.
 ##! The Sysmon-22 twins attribute the queries to a process; this is the resolver /
 ##! Zeek dns.log view — the invariant is the *shape of the query stream*, not any
 ##! one domain, so it survives a domain rotation the way an IOC blocklist can't.

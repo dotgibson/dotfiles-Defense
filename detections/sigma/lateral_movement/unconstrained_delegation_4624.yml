@@ -29,6 +29,7 @@ description: |
   unconstrained-deleg-4624 row). Requires Logon auditing (success) on member servers,
   which is where this event is written - not on the DC.
 references:
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/unconstrained-deleg-4624.md
   - https://attack.mitre.org/techniques/T1187/
   - https://attack.mitre.org/techniques/T1558/
   - https://attack.mitre.org/techniques/T1550/003/
