@@ -24,6 +24,18 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **Detection review 3, section C: the two findings that needed lab or estate data.**
+  - **`dpapi_backupkey_secret_read_4662` keeps SYSTEM in scope, on purpose.** Running the
+    extraction on the DC from a SYSTEM context (psexec to the DC, then mimikatz
+    `lsadump::backupkeys` or SharpDPAPI `backupkey`) records `S-1-5-18` as the subject, so
+    excluding SYSTEM would hide common post-compromise tradecraft. A new TP covers that
+    read. The rule says what to do if a lab capture shows BackuprKey servicing logging as
+    SYSTEM: split it into a lower-level rule, don't exclude it.
+  - **The GPP User-preferences sweep threshold (10) is now DEPLOY-REQUIRED, with a README
+    deploy-time row.** The count is of distinct paths, and each path carries its GPO's
+    GUID, so the threshold has to clear what one user reads across all their linked GPOs.
+    The TP sweep now spans four GPOs, and a new logon TN reads six files from three.
+
 - **Detection review 3, sections A and B: defects in the review-2 rewrite, and older
   claims the rewrite carried forward.** Each fix carries a fixture that the old rule gets
   wrong.
