@@ -16,7 +16,7 @@ description: |
   Requires detailed file-share auditing (5145) on domain controllers.
 references:
   - https://attack.mitre.org/techniques/T1555/
-  - https://github.com/dotgibson/htpx/blob/main/entries/blue/dpapi-backupkey-5145.md
+  - https://github.com/dotgibson/htpx/blob/main/entries/blue/dpapi-backupkey-4662.md
 author: dotfiles-Defense
 date: 2026-07-15
 modified: 2026-09-28
