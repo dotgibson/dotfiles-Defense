@@ -24,6 +24,19 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **`htpx.pin` moves to htpx v3.3.0, and both DPAPI rules name `dpapi-backupkey-4662`
+  (#336).** Upstream retired `entries/blue/dpapi-backupkey-5145` in favour of
+  `dpapi-backupkey-4662`, which keys the theft on the 4662 LSA secret read and keeps
+  protected_storage 5145 as its secondary arm. The 5145 rule's `references:` URL was a
+  live 404 on `/blob/main/` while the gate, still reading the old pin, stayed green. Both
+  rules now reference the 4662 entry:
+  - `dpapi_backupkey_5145`: the MS-BKRP hunt.
+  - `dpapi_backupkey_secret_read_4662`: the theft alert.
+
+  So `HTPX-COVERAGE.md` lists the pair under the 4662 entry. The regenerated report also
+  shows upstream's npm/slack 2FA retag to `T1556.006`. The two rules here still carry
+  `T1685`, and whether to follow is a separate review call.
+
 - **Detection review 3, section C: the two findings that needed lab or estate data.**
   - **`dpapi_backupkey_secret_read_4662` keeps SYSTEM in scope, on purpose.** Running the
     extraction on the DC from a SYSTEM context (psexec to the DC, then mimikatz
