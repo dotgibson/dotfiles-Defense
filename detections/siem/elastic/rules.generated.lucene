@@ -151,7 +151,7 @@ EventID:1644 AND (SearchFilter:(*servicePrincipalName* OR *userAccountControl\&*
 action:(protected_branch.destroy OR protected_branch.policy_override)
 
 // github/github_credential_backdoor.yml — GitHub deploy-key, PAT, or App-install credential backdoor
-action:(public_key.create OR personal_access_token.access_granted OR integration_installation.create)
+action:(public_key.create OR personal_access_token.request_created OR personal_access_token.access_granted OR integration_installation.create)
 
 // github/github_self_hosted_runner_registered.yml — GitHub self-hosted runner registered (job/secret capture)
 (action:(*.register_self_hosted_runner OR *.configure_self_hosted_jit_runner)) AND (NOT actor:svc\-runner\-provisioner)
