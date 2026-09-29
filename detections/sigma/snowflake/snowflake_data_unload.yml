@@ -55,6 +55,11 @@ detection:
     # `@MY_SANCTIONED_STAGE_EVIL`. A stage takes TWO entries - the path form (`@STAGE/`)
     # and the stage-root form (`@STAGE ` with a trailing space, as in
     # `COPY INTO @STAGE FROM t`) - plus a newline form if your SQL breaks the line there.
+    # Write the stage FULLY QUALIFIED (`@DB.SCHEMA.STAGE`) and make your jobs use that
+    # form: an unqualified name resolves in the session's current schema, so anyone who
+    # can create a stage of the same name in a schema of their own (pointing at their
+    # bucket) inherits the exemption. Alert separately on CREATE/ALTER STAGE naming an
+    # allowlisted stage.
     query_text|startswith:
       - 'COPY INTO @MY_SANCTIONED_STAGE/'   # example — replace with your known-good stages
       - 'COPY INTO @MY_SANCTIONED_STAGE '   # example — the same stage, unloaded to its root

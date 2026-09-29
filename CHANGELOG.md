@@ -51,14 +51,20 @@ under `[Unreleased]` from here.
     excluded by exact suffix (`/secret-id/lookup`, `/secret-id-accessor/destroy`, ...).
     A `contains: '/secret-id/'` would also have hidden a mint written with a trailing
     slash (`.../secret-id/`, which Vault routes as a mint) and every role write on a
-    mount named `secret-id`.
+    mount named `secret-id`. Both lists are pinned to an auth mount's role path
+    (`auth/.../role/...`): a bare suffix also exempted `vault auth enable
+    -path=x/secret-id/lookup`, and the orchestrator's mint exemption covered creating a
+    role named `secret-id`.
   - **`snowflake_data_unload`:** each allowlisted stage now takes two entries, `@STAGE/`
     and `@STAGE` followed by a space (a root unload). A bare `@MY_SANCTIONED_STAGE` had
-    also exempted `@MY_SANCTIONED_STAGE_EVIL`.
+    also exempted `@MY_SANCTIONED_STAGE_EVIL`. The rule now says to write stages fully
+    qualified, since an unqualified name resolves in the caller's own schema.
   - **`scheduled_task_suspicious_4698`:** it now matches every prefix of
-    `-EncodedCommand` with `-` or `/`, and `pwsh` tasks. Each prefix ends in a space, so
-    `-Encoding utf8` and URLs do not match. The bare `/e` is left out because it is
-    robocopy's `/E` far more often than an encoded command.
+    `-EncodedCommand`, with any switch character PowerShell accepts (`-`, `/`, en dash,
+    em dash, horizontal bar), quoted or not, followed by a space or tab and a base64
+    payload, and `pwsh` tasks. Requiring the payload keeps `-Encoding utf8`, URLs,
+    robocopy's `/E` and a script's own `-e prod` argument out. Elastic needs the
+    rewritten regex given in the rule.
   - **`spoolss_pipe_impersonation_sysmon_17`:**
     - The description no longer names GodPotato, which stands up an `epmapper` pipe. The
       sibling rule already says so.
