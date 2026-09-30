@@ -30,7 +30,8 @@ name: lint (reusable)
 # from the same pinned version, mirroring ci.yml's own markdown step.
 #
 # FOUR JOBS: `shell` (shellcheck/bash -n/RETURN-trap/zsh -n/owned-block/shfmt),
-# `actionlint` (the caller's workflows), `markdown` (#452 — the file class the other two
+# `actionlint` (the caller's workflows, plus rule 10 of Core's CI floor, the
+# `pull_request_target` ban, #1215), `markdown` (#452 — the file class the other two
 # never inspect, and the one a non-maintainer is most likely to read), and `secrets`
 # (#462, #472 — gitleaks over the caller's working tree; the four linters above all read
 # syntax, structure or prose, and none of them looks for a credential).
@@ -593,6 +594,26 @@ jobs:
         env:
           SHELLCHECK_OPTS: "-e SC1090 -e SC1091 -e SC2015 -e SC2088"
         run: actionlint -color
+
+      # Rule 10 of Core's CI floor, and ONLY rule 10 (#1215). `pull_request_target` runs a
+      # fork's PR with the base repo's secrets and a write-capable token. Core bans it in its
+      # own workflows through check-modern.sh, and this carries that one rule to every caller
+      # by running the same walker, from the Core checkout at the root, over `caller/`. Rule 10
+      # alone, because it is the one rule the whole fleet met on the day it landed: 0 uses in
+      # all 17 org repos (2026-09-29). So this step is BLOCKING from the start, unlike the
+      # markdown and owned-block legs, which had to warn for a cycle first.
+      #
+      # The probe covers a caller that pins THIS workflow to a SHA newer than the `v7` tag the
+      # Core checkout above resolves to. That checkout's check-modern.sh would not know the
+      # mode yet, so the step warns and passes rather than failing on a tooling skew the caller
+      # did not cause.
+      - name: banned workflow triggers (Core floor rule 10, on the caller's workflows)
+        run: |
+          if ! grep -q -- '^--banned-triggers)' scripts/check-modern.sh 2>/dev/null; then
+            echo "::warning::the dotfiles-core@v7 checkout predates check-modern.sh --banned-triggers; skipping rule 10 this run"
+            exit 0
+          fi
+          bash scripts/check-modern.sh --banned-triggers caller
 
   # ── markdown. The file class shellcheck and `zsh -n` never inspect, and the one most
   # likely to be read by someone who is not the maintainer: each OS repo's README is the

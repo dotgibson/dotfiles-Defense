@@ -453,6 +453,9 @@ _have gum                           # 05-ui.zsh's helpers probe gum LIVE with `c
 _have jq                            # JSON processor (gron greps; jq transforms — complements).
                                     # No Core module gates on it; dotfiles-Defense probes jq
                                     # itself, in its own role-layer namespace
+_have jc                            # command output -> JSON (`ps aux | jc --ps`, `jc dig …`) — own
+                                    # command, no alias: the "structure" verb ahead of jq's
+                                    # "transform". Nothing reads a flag, so none is set (#1208)
 _have sd                            # regex find/replace — own command, no alias (the regex
                                     # complement to rg=text, ast-grep=syntax, gron=JSON)
 _have ast-grep                      # AST-aware structural search/rewrite — own command, no alias.

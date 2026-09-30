@@ -107,7 +107,7 @@ fi
 # doggo: modern dig (DNS recon). dig stays as-is; this is a distinct verb.
 [[ -n ${HAVE_DOGGO:-} ]] && alias dns='doggo'
 # gron / sd are their own commands (no alias — never shadow sed in scripts).
-# jq / yq / jnv / lnav / hyperfine / watchexec / shellcheck / shfmt are likewise their own
+# jq / yq / jnv / jc / lnav / hyperfine / watchexec / shellcheck / shfmt are likewise their own
 # commands: they shadow nothing classic, so they get HAVE_* detection in 00-tools.zsh but
 # no alias.
 # (jnv is the interactive JSON explorer — you run `jnv file.json` or pipe into it.)
@@ -149,9 +149,10 @@ _core_shadow && alias vim='nvim'  # shadow
 
 # ── git ───────────────────────────────────────────────────────────────────────
 # The git alias set is the single source of truth in 25-git.zsh (OMZ-style, loaded
-# right after this file). Two exceptions live here because they are TOOL-DETECTION
-# gated, not git-workflow aliases: the `lg` lazygit launcher and the HAVE_DIFFT-gated
-# `gdft` below.
+# right after this file). Two exceptions live here because they launch a separate TOOL
+# rather than a git workflow: the `lg` lazygit launcher and the HAVE_DIFFT-gated `gdft`
+# below. `lg` is deliberately UNGUARDED — there is no HAVE_LAZYGIT, and on a box without
+# lazygit the alias fails exactly as typing `lazygit` would, so a gate would buy nothing.
 # git-absorb gets NO alias at all — it installs as the `git absorb` subcommand, so git
 # already dispatches it and there is nothing to shadow; see git/gitconfig's `fix` alias.
 # 00-tools.zsh sets HAVE_GIT_ABSORB for symmetry with the other detected tools, and nothing

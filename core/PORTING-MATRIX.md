@@ -4,9 +4,9 @@ How to stamp `dotfiles-Arch`, `dotfiles-openSUSE`, `dotfiles-Alpine`,
 `dotfiles-Gentoo`, and `dotfiles-Debian` from the `dotfiles-Fedora` template. The structure is identical
 every time — only three things change per distro: **package manager commands**,
 **package names**, and **distro quirks**. Core never changes (it's vendored).
-Offense (Kali) and macOS appear in the reference tables below for convenience, but
-they're their own lineages — built directly, **not** stamped from this template (see
-_Repo status_ at the bottom).
+Offense (Kali) and macOS appear in the reference tables below for convenience, and NixOS
+in the command table, but they're their own lineages — built directly, **not** stamped from
+this template (see _Repo status_ at the bottom).
 
 ## Per-repo recipe
 
@@ -154,17 +154,18 @@ and a footnote here.** The footnotes below stay hand-written.
 | atuin²⁰          | `atuin`           | `atuin`¹⁸         | `atuin`                    | `app-shells/atuin`                  | asset²⁸                    | asset²⁸       |
 | mise³⁰           | `mise`            | script³⁰          | script³⁰                   | script³⁰                            | asset²⁸                    | asset²⁸       |
 | direnv³²         | `direnv`          | `direnv`          | `direnv`                   | `app-shells/direnv`¹²               | `direnv`                   | `direnv`      |
-| yazi             | `yazi`            | `yazi`¹⁸          | `yazi`                     | `app-misc/yazi`¹²                   | cargo³                     | —²⁹           |
+| yazi             | `yazi`            | `yazi`¹⁸          | `yazi`                     | `app-misc/yazi`¹²                   | cargo²¹                    | —²⁹           |
 | tree-sitter-cli⁵ | `tree-sitter-cli` | `tree-sitter`     | `tree-sitter-cli` ≥ 0.26.1 | `dev-util/tree-sitter-cli` ≥ 0.26.1 | `tree-sitter-cli` ≥ 0.26.1 | asset²⁸       |
 | jq³⁴             | `jq`              | `jq`              | `jq`                       | `app-misc/jq`                       | `jq`                       | `jq`          |
 | yq⁶              | `go-yq`           | `yq`              | `yq-go`                    | `app-misc/yq-go`                    | `yq-go`                    | go³           |
 | duf              | `duf`             | `duf`             | testing¹⁴                  | `sys-fs/duf`                        | `duf`                      | `duf`         |
 | dust             | `dust`            | `dust`            | `dust`                     | `sys-block/dust`                    | `du-dust`⁴                 | asset²⁸       |
 | procs            | `procs`           | `procs`           | `procs`                    | `sys-process/procs`                 | `procs`                    | asset²⁸       |
-| viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸         | `viddy`                    | cargo³                              | cargo³                     | —²⁹           |
+| viddy¹⁶          | AUR¹⁶             | `viddy`¹⁸         | `viddy`                    | cargo³                              | cargo²¹                    | —²⁹           |
 | sd²²             | `sd`              | `sd`              | `sd`                       | `sys-apps/sd`¹²                     | `sd`                       | `sd`          |
 | gron             | `gron`            | `gron`            | `gron`                     | go³                                 | `gron`                     | `gron`        |
 | jnv¹⁷            | `jnv`             | cargo             | cargo³                     | cargo                               | cargo                      | —²⁹           |
+| jc⁴⁰             | `jc`              | `jc`⁴⁰            | `jc`                       | `dev-python/jc`⁴⁰                   | `jc`                       | `jc`          |
 | lnav²¹ ²⁴        | `lnav`            | `lnav`            | `lnav`                     | `app-admin/lnav`²⁴                  | `lnav`²⁴                   | `lnav`        |
 | glow             | `glow`            | `glow`            | testing¹⁴                  | `app-misc/glow`¹²                   | `glow`¹⁵                   | charm apt     |
 | gum              | `gum`             | `gum`             | `gum`                      | mise³⁰                              | `gum`¹⁵                    | charm apt     |
@@ -226,12 +227,12 @@ Alpine v3.24/edge version read as fleet-wide.
 | Target              | `tree-sitter-cli` | vs ≥ 0.26.1 | verified   |
 | ------------------- | ----------------- | ----------- | ---------- |
 | Homebrew            | 0.27.0            | at or above | 2026-09-17 |
+| openSUSE Tumbleweed | 0.27.0            | at or above | 2026-09-29 |
 | Gentoo stable       | 0.26.12           | at or above | 2026-09-17 |
 | Fedora Rawhide      | 0.26.11           | at or above | 2026-09-17 |
 | Fedora 45           | 0.26.11           | at or above | 2026-09-17 |
 | Fedora 44           | 0.26.11           | at or above | 2026-09-17 |
 | Arch                | 0.26.9            | at or above | 2026-09-17 |
-| openSUSE Tumbleweed | 0.26.8            | at or above | 2026-09-17 |
 | openSUSE Leap 16.1  | 0.26.8            | at or above | 2026-09-17 |
 | openSUSE Leap 16.0  | 0.26.8            | at or above | 2026-09-17 |
 | Alpine edge         | 0.26.7            | at or above | 2026-09-17 |
@@ -256,14 +257,17 @@ compared against.
 **Fedora:** `tree-sitter-cli` via dnf, and it clears the floor on three of its four
 lanes — F44 reached it in `updates`, F45 and rawhide carry it — but **F43 does not**, and
 F43 is a _blocking_ lane in that repo's CI. On F43 reach past it with `mise use -g tree-sitter` or
-`cargo install tree-sitter-cli`. `dotfiles-Fedora`'s own `install/packages.txt` already
-says this in prose; dotfiles-Fedora#192 is the `# min:` and the warn-only probe that
-would make it checkable, neither of which that repo has. Footnote ³³ carries the matching
+`cargo install tree-sitter-cli`. `dotfiles-Fedora` now checks this rather than saying it
+in prose. dotfiles-Fedora#192 landed `tree-sitter-cli # min:0.26.1` in `install/packages.txt`,
+a cargo fallback in `bootstrap.sh` that runs only when the installed CLI is below
+`TREESITTER_FLOOR`, and a gate in `test/check-packages.sh` that fails if the two floors
+disagree. Footnote ³³ carries the matching
 neovim spread — same distro, same lane, **both halves of the one requirement below the
 floor on F43**, which is the shape this footnote and ³³ each caught on Alpine alone.
 **Arch:** `extra` carries it and clears the floor.
 **openSUSE:** the CLI is in the **base `tree-sitter` package**, on Tumbleweed and both Leap
-lanes; what got split off there is the shared _library_, as `libtree-sitter0_26`. There is **no** `tree-sitter-cli` package on openSUSE, and
+lanes; what got split off there is the shared _library_, named for its soname — `libtree-sitter0_27`
+on Tumbleweed, `libtree-sitter0_26` on Leap 16.x. There is **no** `tree-sitter-cli` package on openSUSE, and
 searching for that name is precisely why `dotfiles-openSUSE` carried this as `cargo³` and
 cargo-built the CLI on every box until dotfiles-openSUSE#113. **Note the inversion against
 the Mac line two above** — brew's `tree-sitter` is the lib-only formula and `tree-sitter-cli`
@@ -396,7 +400,7 @@ opt-in. It was `cargo install --locked ouch` until dotgibson/dotfiles-Gentoo#133
 upstream-latest reasoning `watchexec`²⁵ still carries. That reasoning does not survive contact
 here twice over. The cargo build **cannot succeed on a GCC/libstdc++ box at all**: ouch's
 default `unrar` feature pulls `unrar-ng-sys`, whose `build.rs` unconditionally adds
-`-stdlib=libc++`. And GURU's `app-arch/ouch` is 0.8.2 — **level with upstream** (2026-08-31),
+`-stdlib=libc++`. And GURU's `app-arch/ouch` is 0.8.3 — **level with upstream** (2026-09-13),
 with a `src_prepare()` that seds exactly that flag out. So the route-around bought no version
 advantage at all and cost the tool, on every run, silently.
 
@@ -413,9 +417,12 @@ at all. Note the leading `-*`: on x86, ppc64 or riscv it is reachable only via `
 already merged the source one must `emerge --unmerge dev-util/shellcheck` first.
 ¹³ op = **1Password CLI**. bootstrap.sh installs it from 1Password's official **signed** repo,
 which differs per family: dnf/rpm repo (Fedora/openSUSE), apt repo (Debian/Kali), apk repo
-(Alpine — a native musl build, so it's fine on the musl outlier), the AUR `1password-cli`
-(Arch), and the GURU `app-misc/1password-cli` (Gentoo). A vendor repo, **not** the OS repo;
-the apt/rpm setup is rollback-safe (a failed install removes the added repo entry).
+(Alpine — a native musl build, so it's fine on the musl outlier), and the GURU
+`app-misc/1password-cli` (Gentoo). **Arch** installs nothing: it has no AUR helper, so
+bootstrap.sh only prints a `paru -S 1password-cli` hint, the same shape as `viddy` and
+`carapace`. A vendor repo, **not** the OS repo; the apt/rpm setup is key-first (the repo entry
+is added only after 1Password's signing key has been fetched and imported, so a failed key
+leaves no repo behind — it does not roll back a repo whose later install fails).
 ¹⁴ Alpine **`testing`-only** (`duf`, `glow`, `tealdeer`, `ouch`). All four are musl-fine
 tools that live in `testing` on edge (never promoted to `community` on any stable release,
 incl. 3.24), which isn't enabled by default on a stable release. bootstrap.sh builds them
@@ -431,17 +438,21 @@ is a **footgun the OS repo documents against**: `apk` fails the whole transactio
 name, so a permanently-unresolvable entry breaks the bulk `apk add` on EVERY run and forces the
 per-package retry loop across the entire list.
 ¹⁵ Kali `glow`/`gum`: recent **Debian sid** packages (Kali rolling tracks testing/sid). If they
-haven't migrated to your snapshot, bootstrap falls back to `go install` / the Charm apt repo
-(`repo.charm.sh/apt`).
+haven't migrated to your snapshot, bootstrap falls back to the Charm apt repo
+(`repo.charm.sh/apt`) — the same route ubuntu/debian always take.
 ¹⁶ viddy: the `watch` replacement — Core aliases `watch`→`viddy` (`HAVE_VIDDY`-guarded in
 `zsh/20-aliases.zsh`), so a box without the binary just keeps classic `watch`. viddy is a
 **Rust** CLI (rewritten from Go upstream), so it installs via `cargo install viddy`, **not**
 `go install`. Packaged on Homebrew (`viddy`, already in the macOS `Brewfile`) and the AUR;
 **not** in Arch-official, Gentoo, or Debian/Kali apt, but now in **Alpine**
-`community` (a native musl build — apk-installed, with the cargo build kept as a fallback)
+`community` (a native musl build — apk-installed, with the cargo build kept as a fallback —
+but still the pre-rewrite **Go 0.4.0** on every branch, v3.21 through edge; upstream Rust is
+1.x, and the apk install stops bootstrap's presence-guarded cargo fallback from ever running)
 and **openSUSE** Tumbleweed `repo-oss` (see ¹⁸).
 Where unpackaged, `bootstrap.sh` builds it best-effort via `cargo install --locked viddy`
-(the same cargo path as yazi/dust/tealdeer). **Arch** is the exception: it ships no rust toolchain and builds no AUR
+(the same cargo path as yazi/dust/tealdeer) — **not on Kali**: `dotfiles-Debian` installs
+Kali's `cargo` but cargo-installs none of yazi/viddy/ast-grep, hence `cargo²¹` in those cells.
+**Arch** is the other exception: it ships no rust toolchain and builds no AUR
 helper (see its `packages.txt`), so bootstrap prints a hint to `paru -S viddy` instead of
 auto-installing. Inert without the binary.
 
@@ -463,8 +474,8 @@ this footnote used to prescribe `paru -S jnv`; both are now wrong.** jnv entered
 0.7.1-1 on 2026-04-01, confirmed on-box with `pacman -Si jnv` (`Repository: extra`), so no AUR
 helper is involved on Arch any more. Wiring it into the per-repo bootstrap
 (the ³ best-effort path viddy/yazi use) is done on Alpine and Gentoo and remains a tracked
-follow-up on the rest; there is no confirmed Gentoo GURU atom yet either, so verify on the
-next Gentoo stamp.
+follow-up on the rest. jnv is in neither `::gentoo` nor GURU, nor any Zugaina-indexed overlay
+(checked 2026-09-27, dotgibson/dotfiles-Gentoo#209).
 
 ¹⁸ openSUSE **Tumbleweed** now ships these first-class in the main OSS **binary** repo
 (`repo-oss`, i.e. `.../tumbleweed/repo/oss` — built from OBS `openSUSE:Factory`; note
@@ -480,7 +491,7 @@ is the right first move on Leap too, and the ³ fallback is no longer the expect
 these seven — but Leap pins where Tumbleweed rolls, so treat those versions as a floor and
 take the ³ path when a row needs something newer. The rows are named for Tumbleweed because
 that's the flavor this fleet targets.
-Five of the seven (`starship`, `atuin`, `yazi`, `viddy`, `doggo`) are also installed by
+Four of the seven (`starship`, `atuin`, `viddy`, `doggo`) are also installed by
 `dotfiles-openSUSE`'s `bootstrap.sh`, which stays correct and harmless either way — each
 install is presence-guarded, so a packaged binary just short-circuits it. **`ouch` and
 `ast-grep` are not**: that bootstrap has no installer for them, so the old `cargo³` cells
@@ -488,7 +499,8 @@ promised a fallback that never existed and the package name above was, for a whi
 had to type yourself. Moving any of these into `install/packages.txt` is a separate judgment
 call — it trades upstream-latest for the distro build. **`dotfiles-openSUSE` has since made
 that call the other way**: its list flipped to packaged-first, and `starship`, `atuin` and
-`yazi` are now in it, so the three `curl | sh` installers only run as a fallback — and as of
+`yazi` are now in it — yazi's installer is gone outright, so the two `curl | sh` installers
+left (starship, atuin) only run as a fallback — and as of
 dotfiles-openSUSE#113 **`ouch` and `ast-grep` are in it too**, which is what finally closes the
 gap this paragraph opened: no installer plus no list entry had meant no automatic path at all.
 `viddy` deliberately stays out (cargo, for upstream-latest), and `doggo` likewise (go, same
@@ -759,7 +771,7 @@ you:
   ones — the tool is still something you can decline.
 - **Gentoo's `ouch` cell is a GURU cell, and it used to be a cargo cell by CHOICE** — the same
   shape `watchexec`²⁵ still has, and worth stating because the two parted ways. GURU carries
-  `app-arch/ouch` (0.8.0, 0.8.1, **0.8.2**) and `::gentoo` carries no `ouch` at any category;
+  `app-arch/ouch` (0.8.1, 0.8.2, **0.8.3**) and `::gentoo` carries no `ouch` at any category;
   `dotfiles-Gentoo` `cargo install`ed it anyway, for upstream-latest, until
   dotgibson/dotfiles-Gentoo#133 found the cargo build cannot succeed on a GCC/libstdc++ box at
   all (¹² has the mechanism) and moved it to `guru_extras_install app-arch/ouch`. Read the
@@ -800,8 +812,8 @@ have this" when you do not.
 **`ouch` changed its default unpack LOCATION in 0.8.0, and the spread in this table is what
 makes that Core's problem.** Since 0.8.0 (`ouch-org/ouch#962`) `ouch decompress foo.tar.gz`
 unpacks into `./foo/` rather than into the CWD, with a new `--here` for the old behaviour. The
-rows above are not level: openSUSE Leap ships **0.5.1**, Alpine's index **0.6.1**, GURU
-**0.8.2**, Arch **0.8.3** — so the same `extract foo.tar.gz` built two different trees on two
+rows above are not level: openSUSE Leap ships **0.5.1**, Alpine's index **0.6.1**, GURU and
+Arch **0.8.3** — so the same `extract foo.tar.gz` built two different trees on two
 supported boxes, silently and with no error on either. Core's `extract`
 (`zsh/30-functions.zsh`) pins the old semantics by **probing** `ouch decompress --help` for
 `--here` and passing it where it exists — the ²² rule below, not a version compare, and here
@@ -1104,7 +1116,7 @@ with an actual `go install` before believing it.**
 - **Kali/Debian** — the `linux_<arch>.deb`, same asset set (`amd64`/`arm64`).
   `apt-get install` wants a path, not a URL, so this is curl-to-a-tempfile then
   `apt-get install ./carapace-bin_*.deb` (which resolves deps, unlike bare `dpkg -i`).
-- **Arch** — the AUR, and the package name matters: **`carapace-bin`** (1.7.3-1, `provides`/
+- **Arch** — the AUR, and the package name matters: **`carapace-bin`** (1.8.0-1, `provides`/
   `conflicts` `carapace`, covers x86_64/aarch64/i686) just unpacks the upstream tarball, while
   the AUR also carries a from-source **`carapace`** that is x86_64-only and needs a Go
   toolchain. Prefer `paru -S carapace-bin`. Note the same exception ¹⁶ records for viddy:
@@ -1421,6 +1433,11 @@ fix: `# min:0.12.0` next to the atom in `install/packages.txt`, a **version-rest
 `>=app-editors/neovim-0.12.0 ~__ARCH__` in `gentoo/package.accept_keywords` (restricted so
 0.11.x keeps tracking stable), and a check in `scripts/check-packages.sh` that fails when a
 declared floor is not reachable. Filed as dotfiles-Gentoo#116, verified 2026-08-23.
+The keyword line is not enough on its own: every 0.12.x ebuild needs `>=dev-lua/luv-1.52.1`,
+which is also `~arch` only (newest stable 1.50.0.1), so the same file carries a second
+`>=dev-lua/luv-1.52.1 ~__ARCH__` line. **luv is maintainer-needed** as of 2026-09-27 — the
+same hedge `lnav` carries, since orphaning is what precedes a treeclean, and here it
+sits one level under the editor. A watch item, not a break (dotgibson/dotfiles-Gentoo#209).
 
 `dotfiles-Alpine` has no keyword or archive lever to pull — there is no newer branch to
 point `apk` at without moving the whole box, and neovim's own releases are glibc-linked
@@ -1439,18 +1456,17 @@ gate in `test/check-packages.sh` that fails a Tumbleweed shortfall (that would m
 pin outran the fleet) and reports a Leap one. Filed as dotfiles-openSUSE#178, verified
 2026-09-12.
 
-`dotfiles-Fedora` has neither guard yet, and it repeats Alpine's asymmetry exactly:
-`install/packages.txt` carries the floor for `tree-sitter-cli` — in prose, already
-naming F43's 0.25.10 as below it — while the `neovim` line beside it is bare, with no
-floor recorded anywhere and no version check in `bootstrap.sh`. It is the last
-**non-rolling** target in the fleet without one — Arch and Homebrew declare no floor
-either, but that is the rolling column answered once, which is the distinction this
-footnote closes on. That prose floor is also invisible to `gen-porting-matrix.sh`, which reads
-`# min:`; it costs nothing here only because the package table above has no Fedora column
-to derive, so the remedy moves no cell. Filed as dotfiles-Fedora#192 — Alpine's
-warn-only probe, the `# min:` pair, and the floor-agreement gate `test/check-packages.sh`
-still lacks. Verified 2026-09-16 against `packages.fedoraproject.org` and
-`mdapi.fedoraproject.org`, after #1010 reported the same shortfall from a
+`dotfiles-Fedora` takes Alpine's remedy too. It had repeated Alpine's asymmetry exactly:
+a prose floor for `tree-sitter-cli`, and a bare `neovim` line with no version check. It now
+has the `# min:` pair (`neovim # min:0.12.0`, `tree-sitter-cli # min:0.26.1`), a warn-only
+`NEOVIM_FLOOR` in `bootstrap.sh`, and the version-checked tree-sitter fallback from ⁵. A
+floor-agreement gate in `test/check-packages.sh` fails if a `# min:` disagrees with the
+`bootstrap.sh` constant it restates. F43 is still below both floors (neovim 0.11.6,
+tree-sitter-cli 0.25.10); F44 and rawhide clear them (0.12.5, 0.26.11). The package table
+above has no Fedora column, so the remedy moves no cell. Filed as dotfiles-Fedora#192, fixed
+by dotfiles-Fedora#193. Verified 2026-09-16 against `packages.fedoraproject.org` and
+`mdapi.fedoraproject.org`, and re-verified 2026-09-26 by dotfiles-Fedora#203's `mdapi`
+sweep. The 2026-09-16 check followed #1010, which reported the same shortfall from a
 `fedora-bootc:42` container — a release EOL since 2026-05-13, and not one of this
 fleet's Fedora lanes. **Measure the lanes the repo declares, not the image that happened
 to be handy**: that container was pinned for a research harness's reasons, and its package
@@ -1631,6 +1647,26 @@ tail is the frozen and slow-moving lanes — Ubuntu 24.04, both openSUSE Leap ba
 13 and the older Alpine stables — and the Alpine and Gentoo-stable rows one patch release
 short, which are the ones likely to move first.
 
+⁴⁰ **jc converts plain command output into JSON.** `ps`, `ss`, `dig`, `git log`, `ifconfig`
+and a few hundred others are parsed into JSON that `jq` can then transform. It sits in front
+of the other JSON tools: `jq` transforms, `gron` greps and `jnv` explores, but none of them
+can read `ps aux`. Like those three it is its own command with no alias, probed into the
+`_CORE_PROBED` ledger by `zsh/00-tools.zsh` and listed in core-doctor's `data / net` group
+(#1208). It is a Python CLI: every packaged build puts `jc` on `PATH` and pulls in its module.
+Every fleet repo installs it from its own package manager, including `brew "jc"` on macOS and
+`jc` in NixOS's `home.packages`. There are two exceptions, both marked:
+
+- **openSUSE Leap 16.x has no package** in either `repo/oss` or `Backports:SLE-16.x`; only
+  Tumbleweed and the transactional editions ship it (1.26.0, checked 2026-09-29).
+  `dotfiles-openSUSE` still lists it, so zypper skips the name on Leap, the `tealdeer` shape
+  from ¹. There is no fallback, because Leap has no `pipx`/`uv` to build one with. Instead,
+  Leap's `TOOLS_OPTIN` names `jc`, so core-doctor shows its absence as expected rather than
+  as a failure (dotgibson/dotfiles-openSUSE#221).
+- **Gentoo has only testing ebuilds** (`dev-python/jc`, `~amd64 ~arm64 ~ppc64`, no stable
+  keyword). A stable profile needs the `dev-python/jc ~__ARCH__` line that
+  `dotfiles-Gentoo`'s `bootstrap.sh` installs into `package.accept_keywords`
+  (dotgibson/dotfiles-Gentoo#212).
+
 ## Clipboard packages to install (backends for Core's `clip`)
 
 <!-- Clipboard selection lives in Core's cross-OS clip/clip-paste scripts; each
@@ -1684,8 +1720,8 @@ where the learning is. Tool _names_ are full atoms (`category/name`). Treat this
 repo as your "understand the system from the ground up" build; it's the most
 educational and the most time-expensive.
 
-**Offense (Kali / WSL2)** — One of the two repos that are not stamped from Fedora (macOS
-is the other, see _Repo status_): it's Debian-family
+**Offense (Kali / WSL2)** — Not stamped from Fedora (neither are macOS and NixOS, see
+_Repo status_): it's Debian-family
 (apt) and carries a unique **offensive role layer** on top of an OS layer it no longer
 ships itself — `dotfiles-Debian` owns band 80 and accepts `ID=kali` as a first-class
 target, and Offense adds the `85-offensive.zsh` stage to the loader between it and
@@ -1725,9 +1761,9 @@ are not**, because they are keyed to an Ubuntu series and would break the Debian
   (`scripts/os-repos.txt`) plus `core` itself; `Windows` vendors no `core/` and is
   tracked separately.
 - **Stamp-pending (this doc):** none — all five template stamps are complete.
-- `Offense` (apt + offensive layer) and `MacBook` (Homebrew) are their own lineages,
-  built directly rather than stamped from Fedora. `Windows` is tracked separately
-  from this matrix.
+- `Offense` (offensive role layer on `dotfiles-Debian`), `MacBook` (Homebrew) and `NixOS`
+  (declarative, no `install/packages.txt`) are their own lineages, built directly rather
+  than stamped from Fedora. `Windows` is tracked separately from this matrix.
 - **Role repos:** `Offense` (offensive) and `Defense` (defensive) both vendor
   Core. `Offense` **used to** carry its own OS-native layer (Debian/apt,
   kali-rolling) and no longer does: it shed `os/`, `install/packages.txt` and
