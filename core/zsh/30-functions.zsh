@@ -170,7 +170,8 @@ _core_status_root() {
 #   current   the stamp's core_sha is core.lock's
 #   pending   it is not — the repo moved and the box has not re-run bootstrap
 #   unknown   no stamp (bootstrapped before it existed) or a malformed one — never red
-#   other     the stamp was written from a different checkout; informational
+#   other     the stamp was written from a different checkout (a partial --only/--skip run
+#             of the other one, or a moved checkout); informational, but names both fixes
 #   na        no core.lock: this is Core itself, or not a consumer
 # FORK-FREE, because the shell-start nudge calls it on every interactive shell: both files
 # are read with the builtin `read`, never `$(_core_status_kv …)`, which forks per key.
@@ -181,6 +182,15 @@ _core_relink_state() {
   if [[ ! -r "$_CORE_LOCK_FILE" ]]; then
     REPLY="no core.lock — not a vendored consumer"; REPLY2=na; return 0
   fi
+  # The remedy names THIS checkout's bootstrap, not a bare ./bootstrap.sh (#1211): on a box
+  # carrying an OS and a role checkout, running the other one's bootstrap moves the whole Core
+  # surface onto ITS vendored Core, and the doctor then reads `current`. Tilde-shortened for
+  # the eye; quoted only when the path needs it, which loses the tilde but stays pasteable.
+  local _fix="${(D)_CORE_LOCK_FILE:h}"
+  # "Needs it" is whatever (q-) would quote — a space, a quote, and also `$`, `;`, `*` or `[`,
+  # each of which mis-parses bare. Asking (q-) itself keeps the test and the quoting in step.
+  [[ "${(q-)_CORE_LOCK_FILE:h}" != "${_CORE_LOCK_FILE:h}" ]] && _fix="${(q-)_CORE_LOCK_FILE:h}"
+  _fix+="/bootstrap.sh --links-only"
   while IFS= read -r _l || [[ -n "$_l" ]]; do
     _k="${_l%%=*}" _v="${_l#*=}"
     case "$_k" in
@@ -189,7 +199,7 @@ _core_relink_state() {
     esac
   done <"$_CORE_LOCK_FILE"
   if [[ ! -r "$_CORE_RELINK_STAMP" ]]; then
-    REPLY="unknown — bootstrapped before the relink stamp existed; re-run ./bootstrap.sh --links-only to record it"
+    REPLY="unknown — bootstrapped before the relink stamp existed; re-run ${_fix} to record it"
     REPLY2=unknown; return 0
   fi
   while IFS= read -r _l || [[ -n "$_l" ]]; do
@@ -205,11 +215,19 @@ _core_relink_state() {
   done <"$_CORE_RELINK_STAMP"
   reply=("$s_sha" "$s_mode" "$s_at")
   if (( ${#s_sha} != 40 )) || [[ "$s_sha" == *[^[:xdigit:]]* ]]; then
-    REPLY="unknown — the relink stamp is malformed (core_sha: ${s_sha:-empty}); re-run ./bootstrap.sh --links-only"
+    REPLY="unknown — the relink stamp is malformed (core_sha: ${s_sha:-empty}); re-run ${_fix}"
     REPLY2=unknown; return 0
   fi
   if [[ -n "$s_dir" && "$s_dir" != "${_CORE_LOCK_FILE:h}" ]]; then
-    REPLY="last relinked from another checkout (${s_dir})"; REPLY2=other; return 0
+    # Which of the two SHOULD own Core on a box carrying both is #1211's open policy question,
+    # so name both remedies rather than pick one: a full run of either checkout re-stamps and
+    # makes its own Core the loaded one (#1218). The stamp's path is file data, so it is only
+    # ever printed raw; quoted like _fix when it needs to be.
+    local _other="${(D)s_dir}"
+    [[ "${(q-)s_dir}" != "$s_dir" ]] && _other="${(q-)s_dir}"
+    REPLY="last full relink was from another checkout (${_other}) — run ${_fix} to relink from"
+    REPLY+=" this one, or ${_other}/bootstrap.sh --links-only to restore that one"
+    REPLY2=other; return 0
   fi
   if [[ "$s_sha" == "$l_sha" ]]; then
     REPLY="relinked at ${s_tag:-${s_sha[1,12]}}${s_at:+ (${s_at})}"; REPLY2=current
@@ -218,7 +236,7 @@ _core_relink_state() {
     # the line reads "relinked at v7.12.0 — repo vendors v7.12.0".
     local _from="${s_tag:-${s_sha[1,12]}}" _to="${l_tag:-${l_sha[1,12]}}"
     [[ "$_from" == "$_to" ]] && _from="${s_sha[1,12]}" _to="${l_sha[1,12]}"
-    REPLY="relinked at ${_from} — repo vendors ${_to}, run ./bootstrap.sh --links-only"
+    REPLY="relinked at ${_from} — repo vendors ${_to}, run ${_fix}"
     REPLY2=pending
   fi
 }
@@ -864,7 +882,7 @@ _core_wired() {
 typeset -ga _CORE_DOCTOR_GROUPS=(
   "modern CLI"   "eza bat fd rg fzf zoxide delta dust duf procs btop yazi viddy tldr ouch"
   "integrations" "starship atuin mise carapace gum sesh"
-  "data / net"   "jq yq jnv gron sd xh doggo gping glow lnav op"
+  "data / net"   "jq yq jnv gron jc sd xh doggo gping glow lnav op"
   "dev / repo"   "ast-grep shellcheck shfmt hyperfine watchexec uv jj difft git-absorb"
 )
 
@@ -1615,8 +1633,6 @@ _core_doctor_render() {
     else
       print -r -- "  ${d}${REPLY}${r}"
     fi
-    [[ "$_rl_tok" == unknown ]] &&
-      print -r -- "  ${d}until then the live check is: CORE_CAP_LOUD=1 zsh -i -c 'print -r -- \${#_CORE_CAP}'${r}"
   fi
 
   # Resolved binary names + the detected package manager — the behaviour-affecting bits

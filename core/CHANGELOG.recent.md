@@ -5,10 +5,157 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v7.13.0 … v7.6.0), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v7.14.0 … v7.7.0), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v7.14.0] - 2026-09-29
+
+### Security
+
+- **The CI floor bans the `pull_request_target` trigger.** It runs a fork's pull request in
+  the base repo's context, with its secrets and a write-capable token, which is the
+  precondition for a "pwn request". GitHub starts blocking it by default on 2026-11-02 for
+  repos on the default policy, and rule 10 of `scripts/modern-baseline.yml` makes that
+  permanent whatever a policy later allows. `check-modern.sh` reads the `on:` block itself:
+  the scalar, flow and block forms, quoted or bare, and first-level entries only. A comment,
+  a branch filter or an `env:` value that names the trigger does not fire. That is why it is
+  not a `banned_patterns` entry, which would red the baseline's own rule 1 rationale. It was
+  free to add: no repo in the org declared the trigger on its default branch (#1215).
+- **The `pull_request_target` ban now reaches every repo that calls `lint-call.yml@v7`.**
+  The reusable workflow's `actionlint` job gains a step that runs `check-modern.sh
+  --banned-triggers caller`: rule 10 alone, from the Core checkout, over the caller's own
+  workflows, including ones not yet committed. It blocks from the start, because every
+  caller was measured clean first. Rule 10's walker is now one function that both the
+  floor and the new mode call, so the fleet check cannot drift from Core's. A caller that
+  pins the workflow to a SHA newer than the `v7` tag gets a warning, not a false red.
+  `dotfiles-Windows`, `dotfiles-web` and `htpx` do not call `lint-call.yml`, so they are
+  not covered yet. All three are clean today (#1215).
+
+### Fixed
+
+- **The openSUSE Tumbleweed `tree-sitter-cli` row moves to 0.27.0.** Tumbleweed's `tree-sitter`
+  went 0.26.8 → 0.27.0 (checked 2026-09-29; 0.26.8 has left the index), and both Leap 16.x
+  lanes stay at 0.26.8. All three still clear the ≥ 0.26.1 floor. Footnote ⁵ also named the
+  split-off library `libtree-sitter0_26` for every openSUSE lane. That library is named for its
+  soname, so Tumbleweed now ships `libtree-sitter0_27`. Reported by
+  dotgibson/dotfiles-openSUSE#217.
+
+- **The relink fix now names which checkout to run.** `core-doctor`'s relink row and the
+  "relink pending" nudge used to say `run ./bootstrap.sh --links-only`. On a box with both an
+  OS checkout and a role checkout, running the wrong one moved the whole Core surface onto
+  that repo's vendored Core, possibly an older one, and the doctor then read `current`. The
+  line now names the loaded checkout's own script, for example
+  `run ~/dotfiles-Offense/bootstrap.sh --links-only`, quoted when the path needs it (#1213).
+  The `other` state no longer stops at "last relinked from another checkout". It appears
+  after a partial `--only`/`--skip` run of the other checkout, or a moved one. It now names
+  both fixes, since either checkout's full `--links-only` run re-stamps the box. Which one
+  _should_ own Core stays an open question in #1211 (#1218).
+
+- **`make audit` from a fleet shell no longer reds four cases CI calls green.** The
+  behavioral suite's host scrub now also drops `BROWSER` and every `ATUIN_*` variable.
+  Core's own `00-tools.zsh` exports `BROWSER=w3m` on a headless box (WSL included), and an
+  operator who opted into the atuin daemon exports `ATUIN_DAEMON__ENABLED=true`. Both leaked
+  into the cases that pin the unset state: the GUI and macOS browser cases, and the daemon
+  guard's never-opted-in pair. That is how the v7.13.0 cut went red locally on a tree CI
+  had passed. Every case that wants one of these variables sets it explicitly.
+- **An operator who exports a Core knob no longer reds `make audit` either.** Exporting
+  `CORE_SHADOW_CLASSICS=0` in `~/.zshenv`, as the v7.13.0 notes suggest, failed the
+  suite's "knob unset" shadow case. The host scrub now unsets every `CORE_*` variable that
+  `zsh/` reads, including one read arithmetically as `((CORE_X))` with no `$`. The list is
+  derived from the sources, ignoring comments, so a new knob is covered without an edit. `core-doctor`'s `unknown` relink row also drops its "live check" hint. That check
+  proved the capability contract was live, not that this box had relinked, so a pass read
+  as "you're fine" when it wasn't (#1204).
+- **The weekly `/freshness-triage` routine can now check the CLI tool pins it reports on**
+  ([#1203](https://github.com/dotgibson/dotfiles-core/issues/1203)). Its "CLI tool pins" row
+  asks for each `scripts/tool-versions.env` pin against upstream, but neither the routine's
+  `allowed-tools` nor the job's mirrored `--allowedTools` granted a release lookup, so the
+  row came back "not checked" (#1193). Both lists now grant the read-only
+  `gh release view` and `npm view`, and the routine says which to use for which pin.
+
+### Changed
+
+- **A bootstrap no longer downgrades Core on a box with two checkouts.** An OS repo and a
+  role repo stacked on it each vendor Core, and each bootstrap linked the whole Core surface
+  from its own copy. So running the OS repo's bootstrap after the role repo's could quietly
+  swap in an older Core, and `core-doctor` then read `current`. The shared driver now checks
+  the Core already linked. If it comes from another checkout with a newer `core.version`, the
+  run leaves every Core link alone, still wires its own layer, says why, and leaves the relink
+  stamp as it was. `--force-core` overrides. An unreadable version or an equal one relinks as
+  before (#1211).
+- **The maintenance bots' Claude Code CLI pin rolls forward, 2.1.281 → 2.1.285.** The weekly
+  freshness review ([#1193](https://github.com/dotgibson/dotfiles-core/issues/1193)) found it
+  the only `scripts/tool-versions.env` pin behind upstream that is not deliberately held. It is
+  an npm install, so there is no `*_SHA256` to refresh. `shfmt` stays held at 3.13.1 (#813).
+- **CI audits on Ubuntu 26.04 ahead of the `ubuntu-latest` switch.** `ci.yml`'s audit
+  matrix gains a temporary `ubuntu-26.04` leg, because `ubuntu-latest` rolls to 26.04 between
+  2026-10-19 and 2026-11-19 and the new image changes or removes tools. The leg is not a
+  required check, so a 26.04 break shows up before the switch without blocking a merge. It
+  comes out once the rollout completes. The luacheck cache key now includes the matrix OS so
+  the two Ubuntu legs do not restore each other's natively built tree. `.github/actionlint.yaml`
+  returns to declare the label, because the pinned actionlint 1.7.12 does not know it yet and
+  would red the audit on every leg (#1200).
+- **The fleet's pinned shfmt moves 3.13.1 → 3.14.1, ending the #813 hold**
+  ([#1217](https://github.com/dotgibson/dotfiles-core/issues/1217)). The hold assumed the
+  bump would add `::warning::` nags to consumer repos that pass today. Measured against every
+  sibling's `main`, none of the ten `lint-call.yml` consumers passes today, and 3.14.1 leaves
+  each one's count of drifting files unchanged. The one consumer where shfmt _blocks_ is
+  `dotfiles-MacBook`'s `make fmt-check`, and it was rewritten first to a form both versions
+  agree on ([dotfiles-MacBook#275](https://github.com/dotgibson/dotfiles-MacBook/pull/275)).
+  `SHFMT_SHA256` is refreshed, and the `tool-versions.env` note now says where the next
+  output-changing bump can bite. Core's own scripts are unaffected, since Core does not run
+  shfmt.
+- **`make fleet-protection` now reports each repo's Actions execution settings.** After the
+  ruleset rows, the default run lists whether GitHub itself refuses a tag-pinned action
+  (`sha_pinning_required`, the server-side twin of `check-modern.sh` rule 3) and the
+  `allowed_actions` policy. The rows are reported, not gated: they never change the exit
+  code until the fleet decides whether to enforce them. An unreadable setting prints as `?`,
+  not as "not required". They need repo admin, so `--rulesets-only`, the CI mode, skips them
+  and says so. The first run shows SHA pinning required on 2 of the 11 repos it covers:
+  `dotfiles-core` and `dotfiles-MacBook`. `--help` now prints the whole header instead of a
+  fixed line range that had fallen out of date (#1226).
+
+### Added
+
+- **`jc` is part of the stack: it turns command output into JSON.** `ps aux | jc --ps`,
+  `jc dig example.com` and a few hundred other parsers hand `jq` something to transform.
+  Before this, Core's JSON tools could transform, grep and explore JSON but could not
+  produce it from `ps`, `ss` or `dig`. It is its own command with no alias, probed by
+  `zsh/00-tools.zsh` and listed in core-doctor's `data / net` group. Every OS repo now
+  installs it. `PORTING-MATRIX.md` gains a `jc` row and footnote ⁴⁰, which records the two
+  exceptions: openSUSE Leap 16.x has no package, so it is declared opt-in there, and
+  Gentoo's `dev-python/jc` is testing-keyworded only (#1208).
+
+### Documentation
+
+- **`/modernize` now re-checks its standing watches on every run.** Some floor changes wait
+  on an upstream event, so the routine gains a _Standing watches_ list and reports each one
+  as still watching or trigger met. It starts with two. One is workflow dependency locking
+  (#1223), which would extend the SHA-pin rule to an action's transitive and composite
+  `uses:` once GitHub ships a public preview. Rule 3 in `scripts/modern-baseline.yml` now
+  names that gap. The other is the retirement of the `macos-15` and `windows-2022` runners
+  (#1222).
+
+- **The README's install steps now put the OS layer before a role repo.** Offense used to be
+  shown cloned and bootstrapped on its own, but it ships no OS layer: Kali needs
+  `dotfiles-Debian` first, and Defense needs whichever OS repo the box runs. The WSL
+  mirrored-networking note now points at `dotfiles-Debian/wsl/windows.wslconfig.example`,
+  because Offense no longer carries that file.
+- **`PORTING-MATRIX.md` no longer promises installs that don't happen.** Kali's `yazi` and
+  `viddy` cells read `cargo²¹` (available, not installed): `dotfiles-Debian` installs Kali's
+  `cargo` but cargo-builds nothing with it. Footnote ¹³ says Arch only _hints_ the AUR
+  `1password-cli`, and that the vendor-repo setup is key-first rather than rolled back.
+  Footnote ¹⁵ drops a `go install` fallback for glow/gum that never existed. Footnote ¹⁸
+  counts four openSUSE installers and two `curl | sh` routes now that yazi's is gone. The
+  lineage notes name NixOS as its own lineage and Offense as a role layer on
+  `dotfiles-Debian`. Found by the weekly doc-audit (#1192).
+- **`PORTING-MATRIX.md` footnotes ⁵ and ³³ stop saying `dotfiles-Fedora` has no version floors**
+  ([dotfiles-Fedora#203](https://github.com/dotgibson/dotfiles-Fedora/issues/203)).
+  dotfiles-Fedora#193 landed both floors on 2026-09-17: the `# min:` pair on `neovim` and
+  `tree-sitter-cli`, a warn-only `NEOVIM_FLOOR`, a tree-sitter cargo fallback that runs only
+  below `TREESITTER_FLOOR`, and a floor-agreement gate. Both footnotes now describe that, and
+  ³³ drops its claim that Fedora was the last non-rolling target without a floor.
 
 ## [v7.13.0] - 2026-09-25
 
@@ -2016,75 +2163,3 @@ repo-meta and stays upstream:
   `PKG_APPLY_PENDING` as commented examples into the capability stub and shows the staging
   shape of a provision hook in the starter bootstrap. (`scripts/test/{33-bootstrap-matrix,
   35-new-os-repo,56-fleet-vocabulary}.sh`)
-
-## [v7.6.0] - 2026-09-15
-
-### Added
-
-- **`up`, the shell-start nudge, the maint runner and `core-doctor` learn the staged
-  host** (#1049, runbook step 1 of `NON-MUTABLE-HOST-PROPOSAL.md` §4.6). Three optional
-  declaration keys — `PROVISIONER`, `PKG_APPLY`, `PKG_APPLY_PENDING` (+ `_EXIT`) — are read
-  for the first time, and every branch is on a key the nine mutable repos never declare, so
-  their behaviour and their nudge cache are byte-identical. On an atomic (bootc) or
-  transactional (MicroOS) host: `up` closes with `staged — reboot to apply: <PKG_APPLY>`
-  (the verb is printed, never run), `up -n` with no count verb says the host stages instead
-  of "nothing to upgrade", and the nudge prints **`󰚰 update staged — reboot to apply`** in
-  place of a count. The STAGED question is asked by the refresh (`_pkgup_refresh`, and
-  the maint runner after its optional apply) and cached as lines 3–4 of `pkg-updates`
-  (`staged`/`idle` + the kernel's boot id), so the per-shell path stays fork-free and a
-  reboot silences the line at the next shell. `MAINT_UNATTENDED_UPGRADE` under `atomic`
-  is stage-only and logs `staged — reboot to apply (never run by this runner)`;
-  `declarative` (NixOS) is treated as mutable, `_pkgup_mgr` answers the `PROVISIONER`
-  token when no manager is on PATH (so `up` no longer refuses NixOS), and `core-doctor`'s
-  install hint says "reboot to use" over a staged change and "add it to `home.packages` /
-  `environment.systemPackages`" on a declarative host. Unit tests are the R5 shim replay:
-  the research declarations' package half against stub managers answering with the
-  measured exit statuses. (`zsh/02-capabilities.zsh` `_core_cap_staged`,
-  `zsh/60-update.zsh`, `maint/dotfiles-maint.sh`, `zsh/30-functions.zsh`,
-  `scripts/test/{65-functions,73-maint-runner,74-zsh-helpers}.sh`)
-
-- **The R4 harness for the non-mutable host research, and its answer** (#1004). Two
-  prototype patches under `scripts/research/nonmutable/r4/` give `dotfiles-Fedora` and
-  `dotfiles-openSUSE` an atomic / transactional _variant_ (a host marker, a second
-  declaration relinked by `bootstrap_wire_pre_loader`, a staging path, a "reboot to
-  apply" line); `scripts/research/nonmutable-variant.sh` applies and runs them on the
-  booted guests, and `research-nonmutable-vm.yml`'s `r4=true` input drives the run,
-  reboot and re-run. Measured verdict, in `NON-MUTABLE-HOST-PROPOSAL.md` §5: **variant**
-  (118 + 18 and 65 + 10 lines; NixOS stays a new repo). The `trailing-whitespace`
-  pre-commit hook now leaves `*.patch` alone — a blank diff context line is a lone space.
-
-- **`PKG_APPLY_PENDING` / `PKG_APPLY_PENDING_EXIT`, the staged-change probe, for the
-  non-mutable host research** (R5 of `NON-MUTABLE-HOST-PROPOSAL.md`, #1004).
-  `scripts/check-capabilities.sh` accepts the pair (optional; the probe needs `PKG_APPLY`
-  beside it, the exit is 1–255) and lets `PKG_COUNT_PENDING` be absent when it is
-  declared — on an atomic host the "is there something newer" verb is root-only
-  (measured), so the nudge reports the staged state instead. Read by no consumer yet; the
-  bootc and MicroOS prototypes under `scripts/research/nonmutable/` declare it. Also the R5
-  harness (`scripts/research/nonmutable-r5.sh`, the VM legs' `r5=true`, a registry-backed
-  bootc origin). (`scripts/check-capabilities.sh`, `examples/os.capabilities.example`,
-  `scripts/test/55-capabilities.sh`)
-
-- **The R6 harness for the non-mutable host research, and the research phase's close**
-  (#1004). `scripts/research/nonmutable-r6.sh` runs the reusable `bootstrap-test.yml` legs'
-  own recipes inside the three container images against the R4 variant, plus the same
-  stubbed run with `BOOTSTRAP_PROVISIONER` forced — the seam the variant patches carry so
-  a container can reach the staging path at all; `research-nonmutable.yml`'s `r6=true`
-  drives it. `NON-MUTABLE-HOST-PROPOSAL.md` §5 carries the CI matrix a target is born
-  with, the VM-only gap list, and the note that every exit criterion is met — the next
-  step is the §4 rewrite to PROPOSED.
-
-- **`NON-MUTABLE-HOST-PROPOSAL.md` is PROPOSED** (#1004). §4 is now the proposal — a
-  minor, not a major: the six optional capability keys (shipped), three consumer changes
-  (`up` and the nudge, the maint runner, `core-doctor`), one CI input
-  (`bootstrap-test.yml` `provisioner:`), atomic / transactional variants for
-  `dotfiles-Fedora` and `dotfiles-openSUSE`, and a `dotfiles-NixOS` repo with the
-  home-manager boundary written down — with §4.6 as the per-repo runbook and every line
-  citing §5's measurements. The former §6 and §8 stay as the record of what a major would
-  have cost and what was asked.
-
-### Fixed
-
-- **The `~/.zshrc` loader's backup is counted** (#1026). `blib_write_zshrc_loader` backed up
-  a pre-existing real `~/.zshrc` and warned about it, but never bumped `BLIB_BACKED`, so the
-  closing tally said `0 backed up` on the same run that printed the backup (the R3 research
-  run on Fedora exposed it). Every backup site now counts; the bootstrap-lib suite asserts it.

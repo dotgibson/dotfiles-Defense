@@ -1804,7 +1804,7 @@ HOOK
 #                          the run's state and the driver should print no closing line.
 #
 # THE DRIVER'S OWN FLAGS (one definition, one --help): --links-only, --dry-run/-n,
-# --strict, --only=G,G / --only G,G, --skip=…, -h/--help. --dry-run previews the wiring,
+# --strict, --only=G,G / --only G,G, --skip=…, --force-core, -h/--help. --dry-run previews the wiring,
 # runs the probe (report-only), and skips provisioning. --strict turns a non-empty failure
 # tally into exit BOOTSTRAP_FAIL_EXIT (1); misses are listed either way. Unknown flag: 2.
 #
@@ -1819,6 +1819,60 @@ HOOK
 # NOT here, deliberately: --json, --uninstall, --quiet — MacBook's own surface, and the
 # reason MacBook is the one bootstrap this driver does not aim to absorb (its report is
 # the template for what a hook must be ABLE to express, not a target to flatten).
+# ── Core downgrade guard (#1211) ──────────────────────────────────────────────
+# A box can carry TWO checkouts that each vendor Core: an OS repo (dotfiles-Debian) and a role
+# repo stacked on it (dotfiles-Offense). Both end in blib_main, and blib_link_core links the
+# whole Core surface from ITS OWN core/, so whichever bootstrap ran last decided which Core
+# the shell loads — and running the OS repo's after the role repo's could quietly swap in an
+# OLDER Core, which the doctor then read as `current`. The rule is now "newest Core wins,
+# whatever the run order": when the Core linked right now comes from ANOTHER checkout and
+# that checkout's core/core.version is NEWER than this one's, blib_main leaves every Core
+# link alone, still wires this repo's own layers, says so, and leaves the relink stamp as it
+# was (it truthfully names the checkout the links still point into). --force-core overrides.
+#
+# Can't tell → proceed, as before: no linked loader, a link that is not <checkout>/core/zsh/
+# loader.zsh, the same checkout, or either core.version missing (a pre-core.version Core, a
+# since-deleted checkout). Equal versions proceed too — a same-release relink is no downgrade.
+#
+# _blib_ver_gt A B — true when dotted version A is NEWER than B. Numeric per field, the first
+# three fields, a leading `v` and any non-digit tail (`-rc1`) ignored. bash 3.2-safe: no
+# `sort -V` (BSD sort on older macOS lacks it), no associative arrays.
+_blib_ver_gt() {
+  local x y i
+  local -a av bv
+  IFS=. read -r -a av <<<"${1#v}"
+  IFS=. read -r -a bv <<<"${2#v}"
+  for ((i = 0; i < 3; i++)); do
+    x="${av[i]:-0}" y="${bv[i]:-0}"
+    x="${x%%[!0-9]*}" y="${y%%[!0-9]*}"
+    x=$((10#${x:-0})) y=$((10#${y:-0}))
+    ((x > y)) && return 0
+    ((x < y)) && return 1
+  done
+  return 1
+}
+
+# _blib_core_downgrade <dotfiles> <config> — true when relinking Core from <dotfiles> would
+# replace a NEWER Core linked from another checkout. On true, sets _BLIB_DG_DIR (that
+# checkout, physical), _BLIB_DG_HAVE (its version) and _BLIB_DG_OWN (this one's).
+_blib_core_downgrade() {
+  local dotfiles="$1" config="$2" cur cur_dir own_dir cur_v="" own_v=""
+  _BLIB_DG_DIR="" _BLIB_DG_HAVE="" _BLIB_DG_OWN=""
+  [[ -L "$config/zsh/loader.zsh" ]] || return 1
+  cur="$(readlink "$config/zsh/loader.zsh")" || return 1
+  [[ "$cur" == /*/core/zsh/loader.zsh ]] || return 1
+  cur_dir="${cur%/core/zsh/loader.zsh}"
+  [[ -r "$cur_dir/core/core.version" && -r "$dotfiles/core/core.version" ]] || return 1
+  own_dir="$(cd "$dotfiles" 2>/dev/null && pwd -P)" || return 1
+  cur_dir="$(cd "$cur_dir" 2>/dev/null && pwd -P)" || return 1
+  [[ "$cur_dir" != "$own_dir" ]] || return 1
+  IFS= read -r cur_v <"$cur_dir/core/core.version" || [[ -n "$cur_v" ]] || return 1
+  IFS= read -r own_v <"$dotfiles/core/core.version" || [[ -n "$own_v" ]] || return 1
+  _blib_ver_gt "$cur_v" "$own_v" || return 1
+  _BLIB_DG_DIR="$cur_dir" _BLIB_DG_HAVE="$cur_v" _BLIB_DG_OWN="$own_v"
+  return 0
+}
+
 _blib_main_usage() {
   if declare -F bootstrap_usage >/dev/null 2>&1; then
     bootstrap_usage
@@ -1835,12 +1889,15 @@ Shared flags (core/lib/bootstrap-lib.sh :: blib_main):
                       listed either way)
   --only=G,G          wire ONLY these Core module groups   (zsh nvim tmux git prompt tools)
   --skip=G,G          wire everything EXCEPT these groups
+  --force-core        relink Core from this checkout even when another checkout on
+                      this box has a NEWER Core linked (default: keep the newer one)
   -h, --help          this text
 USAGE
 }
 
 blib_main() {
   local _bm_a _bm_links=0 _bm_dry=0 _bm_only="" _bm_skip="" _bm_degraded=0 _bm_rc=0
+  local _bm_force_core=0 _bm_core=1
   local _bm_strict="${BOOTSTRAP_STRICT_DEFAULT:-0}" _bm_name="${BOOTSTRAP_NAME:-dotfiles}"
   : "${DOTFILES:?blib_main: DOTFILES (the repo root) must be set before the call}"
   : "${CONFIG:=${XDG_CONFIG_HOME:-$HOME/.config}}"
@@ -1850,6 +1907,7 @@ blib_main() {
     --links-only) _bm_links=1 ;;
     --dry-run | -n) _bm_dry=1 ;;
     --strict) _bm_strict=1 ;;
+    --force-core) _bm_force_core=1 ;;
     --only=*) _bm_only="${_bm_a#*=}" ;;
     --skip=*) _bm_skip="${_bm_a#*=}" ;;
     --only | --skip)
@@ -1938,7 +1996,21 @@ blib_main() {
   fi
 
   # ── wire ────────────────────────────────────────────────────────────────────
-  blib_link_core "$DOTFILES" "$CONFIG"
+  # Newest Core wins on a box carrying two checkouts (#1211; the guard's header above).
+  # Under --dry-run these read as a plan ("would …"), as blib_link's and the summary's do, so a
+  # preview never sounds like something was already skipped or relinked.
+  if _blib_core_downgrade "$DOTFILES" "$CONFIG"; then
+    local _bm_pre="" _bm_relink="relinking" _bm_leave="leaving" _bm_wired="are still wired"
+    _blib_dry && _bm_pre="(dry run) " _bm_relink="would relink" _bm_leave="would leave" _bm_wired="would still be wired"
+    if ((_bm_force_core)); then
+      blib_warn "${_bm_pre}--force-core: ${_bm_relink} Core ${_BLIB_DG_OWN} from this checkout over ${_BLIB_DG_HAVE} from ${_BLIB_DG_DIR}"
+    else
+      _bm_core=0
+      blib_warn "${_bm_pre}Core ${_BLIB_DG_HAVE} is linked from ${_BLIB_DG_DIR}, newer than this checkout's ${_BLIB_DG_OWN} — ${_bm_leave} every Core link as it is"
+      blib_say "${_bm_pre}this repo's own layers ${_bm_wired}; pull this checkout to catch up, or pass --force-core to relink Core from it anyway"
+    fi
+  fi
+  ((_bm_core)) && blib_link_core "$DOTFILES" "$CONFIG"
   if [[ -n "${BOOTSTRAP_OS:-}" ]]; then blib_link_os_layer "$DOTFILES" "$CONFIG" "$BOOTSTRAP_OS"; fi
   if [[ -n "${BOOTSTRAP_ROLE:-}" ]]; then blib_link_role_layer "$DOTFILES" "$CONFIG" "$BOOTSTRAP_ROLE"; fi
   if declare -F bootstrap_wire_pre_loader >/dev/null 2>&1; then bootstrap_wire_pre_loader; fi
@@ -1957,7 +2029,9 @@ blib_main() {
   # above never gets here, a dry run changed nothing, and a --only/--skip run relinked a
   # subset, which must not read as the box having caught up.
   if ((_bm_dry == 0)); then
-    if [[ -n "$_bm_only$_bm_skip" ]]; then
+    if ((_bm_core == 0)); then
+      blib_say "Core stayed linked from ${_BLIB_DG_DIR} — this host's relink stamp is left as it was"
+    elif [[ -n "$_bm_only$_bm_skip" ]]; then
       blib_say "partial wiring (--only/--skip) — this host's relink stamp is left as it was"
     elif ((_bm_links)); then
       blib_write_relink_stamp "$DOTFILES" links-only
