@@ -33,4 +33,4 @@
 # same two for the sigma gate. Keep the two files agreeing (#322).
 pysigma==1.5.1
 pyparsing==3.3.3
-pysigma-backend-sqlite==2.0.0
+pysigma-backend-sqlite==2.1.0
