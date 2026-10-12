@@ -184,7 +184,7 @@ and a footnote here.** The footnotes below stay hand-written.
 | difftastic¹⁰     | `difftastic`      | `difftastic`      | `difftastic`               | `dev-util/difftastic`               | asset²⁸                    | asset²⁸       |
 | git-absorb²¹ ²⁶  | `git-absorb`      | `git-absorb`      | `git-absorb`               | `dev-vcs/git-absorb`                | `git-absorb`               | `git-absorb`  |
 | ast-grep¹¹       | `ast-grep`        | `ast-grep`¹⁸      | `ast-grep`                 | cargo²¹                             | cargo²¹                    | —²⁹           |
-| uv³⁰             | `uv`              | `python3-uv`²¹    | `uv`                       | `dev-python/uv`                     | asset²⁸                    | asset²⁸       |
+| uv³⁰             | `uv`              | `python3-uv`      | `uv`                       | `dev-python/uv`                     | asset²⁸                    | asset²⁸       |
 | w3m              | `w3m`             | `w3m`             | `w3m`                      | `www-client/w3m`                    | `w3m`                      | `w3m`         |
 
 <!-- core:porting-matrix:end packages -->
@@ -226,7 +226,7 @@ Alpine v3.24/edge version read as fleet-wide.
 
 | Target              | `tree-sitter-cli` | vs ≥ 0.26.1 | verified   |
 | ------------------- | ----------------- | ----------- | ---------- |
-| Homebrew            | 0.27.0            | at or above | 2026-09-17 |
+| Homebrew            | 0.27.0            | at or above | 2026-10-05 |
 | openSUSE Tumbleweed | 0.27.0            | at or above | 2026-09-29 |
 | Gentoo stable       | 0.26.12           | at or above | 2026-09-17 |
 | Fedora Rawhide      | 0.26.11           | at or above | 2026-09-17 |
@@ -240,7 +240,7 @@ Alpine v3.24/edge version read as fleet-wide.
 | Fedora 43           | 0.25.10           | **below**   | 2026-09-17 |
 | Alpine 3.23         | 0.25.10           | **below**   | 2026-09-17 |
 | Alpine 3.22         | 0.25.10           | **below**   | 2026-09-17 |
-| Alpine 3.21         | 0.24.4            | **below**   | 2026-09-17 |
+| Alpine 3.21         | 0.24.4            | **below**   | 2026-10-05 |
 
 <!-- core:porting-matrix:end fleet-versions-tree-sitter-cli -->
 
@@ -334,14 +334,21 @@ pattern as yazi/ouch. The crate is **`jj-cli`**, not `jujutsu`: the `jujutsu`
 crate is a stub pinned at 0.7.2 whose own description reads "You don't want this
 crate - you want the `jj-cli` crate", so `cargo install jujutsu` lands a redirect
 rather than the VCS — a second reason to spell it `jj` on both packaging paths.
-As an opt-in tool it is carried in exactly one OS repo's `packages.txt` —
-`dotfiles-Alpine` (package `jujutsu`, binary `jj`). Arch lists it only as a
-commented opt-in you run by hand. **Gentoo installs it, but not from
+It is carried in three OS repos' `packages.txt` — `dotfiles-Alpine`,
+`dotfiles-Arch` and `dotfiles-openSUSE` (package `jujutsu`, binary `jj`;
+openSUSE since dotgibson/dotfiles-openSUSE#229). Arch used to list it only as a
+commented opt-in, but `dotfiles-Arch` declares no `TOOLS_OPTIN` — so `core-doctor`
+falls back to `_CORE_DOCTOR_OPTIN`, which does not list `jj`, and counts it EXPECTED
+there; leaving it out rendered a false ✗ on every fresh box
+(dotgibson/dotfiles-Arch#201, which installs `difftastic`¹⁰ and `ast-grep`¹¹ for the
+same reason). **Gentoo installs it, but not from
 `packages.txt`**: that file is the UNCONDITIONAL emerge, and an atom there would
 land on a `--no-extras` run, so `bootstrap.sh` emerges `dev-vcs/jj` from its
 opt-in extras block instead (`scripts/check-packages.sh` check 7 gates the
 hard-coded atom). Read the absence from Gentoo's list as a deliberate placement,
-not a decline. The config (`jujutsu/config.toml`) is inert without the binary.
+not a decline. **Fedora installs it from `bootstrap.sh` too**, unconditionally, as
+`cargo install --locked jj-cli` (dotgibson/dotfiles-Fedora#209) — the cargo path above, since
+`dnf` has nothing to offer. The config (`jujutsu/config.toml`) is inert without the binary.
 ⁹ sesh: smart tmux session manager that Core already drives from the `Ctrl-G`
 shell widget (`35-fzf.zsh`) and the `prefix + f` tmux popup (`tmux-sesh.sh`); both
 degrade to a `find`+`fzf` sessionizer when it's absent. `core-doctor` already
@@ -375,7 +382,9 @@ to `newgrp`, shipped by `login` on the Debian family and by `shadow` elsewhere. 
 that lookup, so a bare `sg` runs the search tool rather than switching group. Prefer the `ast-grep`
 name, and reach the real one as `newgrp` (or `/usr/bin/sg`). This footnote used to say `sg` "can
 collide with `setgroups`" and that ast-grep "shadows nothing" — both were wrong, and #425 turned
-the second into a live shadow rather than a hypothetical one. Core probes it into the `_CORE_PROBED` ledger and sets no flag
+the second into a live shadow rather than a hypothetical one. On Fedora that shadow is the
+default, not something you opt into: `dotfiles-Fedora`'s `bootstrap.sh` `cargo install`s
+ast-grep unconditionally (dotgibson/dotfiles-Fedora#209). Core probes it into the `_CORE_PROBED` ledger and sets no flag
 (#694 — nothing read `HAVE_ASTGREP`; `PORTABILITY.md` §5). Packaged on Arch (`extra`) and Alpine (`community` — a musl build, so the outlier is
 covered) and Homebrew; elsewhere via `cargo install ast-grep` / `mise` / `npm` / `pip`. Inert
 without the binary — nothing depends on it.
@@ -461,20 +470,21 @@ unfamiliar API/JSON response" verb, complementing `jq` (transform), `gron` (grep
 (YAML). Its own command (no alias, like `jq`/`gron`/`ast-grep`), probed into the
 `_CORE_PROBED` ledger by `zsh/00-tools.zsh` and carrying no flag since #694, inert
 without the binary. A **Rust** CLI (embeds `jaq`, so no external
-`jq` needed). **On Linux this is detect-only on every repo but one — `jnv` is in no
-`install/packages.txt` anywhere, so `core-doctor` reports it present only once you
+`jq` needed). **On Linux this is detect-only on every repo but three — `jnv` is in no
+`install/packages.txt` anywhere, so elsewhere `core-doctor` reports it present only once you
 install it yourself. The exceptions, per ²¹: `dotfiles-Alpine`'s `bootstrap.sh` DOES install it
 (cargo, best-effort — hence `cargo³` in its cell, since `jnv` is unpackaged on all five
-Alpine branches including `testing` on edge, making cargo its only source there), and
-`dotfiles-Gentoo` cargo-builds it in the opt-in extras block that `--no-extras` skips. On
-macOS the `Brewfile` carries it.** Everywhere else the row above names where that platform
+Alpine branches including `testing` on edge, making cargo its only source there),
+`dotfiles-Gentoo` cargo-builds it in the opt-in extras block that `--no-extras` skips, and
+`dotfiles-Fedora`'s `bootstrap.sh` cargo-builds it unconditionally (no Fedora release packages
+it; dotgibson/dotfiles-Fedora#209). On macOS the `Brewfile` carries it.** Everywhere else the row above names where that platform
 gets it when you opt in — Arch `pacman -S jnv`, Nix, or `cargo install --locked jnv` — not
 an automatic install. **Arch's cell used to read `AUR` and
 this footnote used to prescribe `paru -S jnv`; both are now wrong.** jnv entered `extra` as
 0.7.1-1 on 2026-04-01, confirmed on-box with `pacman -Si jnv` (`Repository: extra`), so no AUR
 helper is involved on Arch any more. Wiring it into the per-repo bootstrap
-(the ³ best-effort path viddy/yazi use) is done on Alpine and Gentoo and remains a tracked
-follow-up on the rest. jnv is in neither `::gentoo` nor GURU, nor any Zugaina-indexed overlay
+(the ³ best-effort path viddy/yazi use) is done on Alpine, Gentoo and Fedora and remains a
+tracked follow-up on the rest. jnv is in neither `::gentoo` nor GURU, nor any Zugaina-indexed overlay
 (checked 2026-09-27, dotgibson/dotfiles-Gentoo#209).
 
 ¹⁸ openSUSE **Tumbleweed** now ships these first-class in the main OSS **binary** repo
@@ -508,13 +518,14 @@ reason) — those two are declines, not gaps.
 
 ¹⁹ gping: the `ping` replacement — Core aliases `ping`→`gping` (`HAVE_GPING`-guarded in
 `zsh/20-aliases.zsh`), so a box without the binary just keeps classic `ping`. **Detect-only on
-every Linux repo except `dotfiles-Alpine` and `dotfiles-Gentoo`** — Alpine's
-`install/packages.txt` carries `gping` outright, and Gentoo emerges `net-analyzer/gping` from
-GURU in its `guru_install` pass. Gentoo's list names the atom only in a comment because
+every Linux repo except `dotfiles-Alpine`, `dotfiles-Gentoo` and `dotfiles-Fedora`** — Alpine's
+`install/packages.txt` carries `gping` outright, Gentoo emerges `net-analyzer/gping` from
+GURU in its `guru_install` pass, and Fedora's `bootstrap.sh` runs `cargo install --locked gping`
+(dotgibson/dotfiles-Fedora#209), because no Fedora release packages it. Gentoo's list names the atom only in a comment because
 overlay-only atoms **must** live there (the main-tree emerge runs before GURU is enabled, so an
 atom in the list proper would be skipped and never retried) — that comment is a pointer to the
 call, **not** a decline, which is what this footnote used to read it as. The macOS `Brewfile`
-carries it too. On the other seven repos the alias lights up only once you install it yourself —
+carries it too. On the other six repos the alias lights up only once you install it yourself —
 this row exists so there is a documented path when you do. (`aliases.md` and `PARITY.md` have advertised the alias since
 v3; the matrix row is what was missing.) A **Rust** CLI → `cargo install gping` anywhere
 unpackaged. Packaged: Arch `extra`, Alpine `community` (a native musl build, so the outlier is
@@ -730,12 +741,18 @@ made while `core-doctor` — probing live, later — reported the tool present. 
 before detection now.
 
 **Coverage here is per tool, never a fleet-wide zero** — the table below is the authority, not
-the prose. **Two** repos' `bootstrap.sh` really do install entries from this family:
-`dotfiles-Alpine` (`ouch` and `jnv`¹⁷, via cargo¹⁴) and `dotfiles-Gentoo` (`shfmt`
+the prose. **Four** repos' `bootstrap.sh` really do install entries from this family:
+`dotfiles-Alpine` (`ouch` and `jnv`¹⁷, via cargo¹⁴), `dotfiles-Gentoo` (`shfmt`
 unconditionally via `go`; `ast-grep`¹¹, `jnv`¹⁷ and `watchexec`²⁵ via cargo, plus
 `dev-vcs/jj`⁸ via emerge and `app-arch/ouch` via GURU's `guru_extras_install` seam, all in an
-opt-in extras block that `--no-extras` skips; and `gping`¹⁹ via GURU). For the other seven
-repos "no bootstrap installs it" still holds.
+opt-in extras block that `--no-extras` skips; and `gping`¹⁹ via GURU), and `dotfiles-Fedora`
+(`ast-grep`¹¹, `jj`⁸ as crate `jj-cli`, `jnv`¹⁷, `gping`¹⁹, `watchexec`²⁵ as crate
+`watchexec-cli` and `ouch` via cargo, **unconditionally**, with no `--no-extras`
+equivalent; its `install/packages.txt` carries the rest of the family plus `difftastic`¹⁰ and
+`uv`³⁰, dotgibson/dotfiles-Fedora#209), and `dotfiles-openSUSE` (`jnv`¹⁷ via cargo,
+**unconditionally**; its `install/packages.txt` carries the rest of the family plus `uv`³⁰,
+dotgibson/dotfiles-openSUSE#229). For the other five repos "no bootstrap installs it"
+still holds.
 
 **How the Gentoo half of that went unnoticed is the lesson worth keeping:** this table was
 previously verified against each repo's `install/packages.txt` **alone**, and Gentoo is the repo
@@ -745,27 +762,45 @@ UNCONDITIONAL emerge and everything opt-in must therefore live in the script. Ve
 **Check both files, or this row goes stale again.**
 
 Verified 2026-08-21 (Gentoo column re-verified against `bootstrap.sh` as well) against all six
-Linux repos plus the MacBook `Brewfile` — a **—** means detect-only there, and the packaged name
-in that tool's row above is what you would install by hand rather than what a bootstrap gives
-you:
+Linux repos plus the MacBook `Brewfile`; Fedora column re-verified 2026-10-11 against both files
+on F44, with every cell installed by a real `bootstrap.sh` run; openSUSE column verified
+2026-10-11 against both files at dotgibson/dotfiles-openSUSE@9db8dec (#229) — a **—** means detect-only there,
+and the packaged name in that tool's row above is what you would install by hand rather than
+what a bootstrap gives you:
 
-| Tool           | macOS `Brewfile` | Alpine             | Gentoo                                    | Arch / Debian / Fedora / openSUSE |
-| -------------- | ---------------- | ------------------ | ----------------------------------------- | --------------------------------- |
-| `hyperfine`    | ✓                | `hyperfine`        | `app-benchmarks/hyperfine`                | —                                 |
-| `shellcheck`   | ✓                | `shellcheck`       | `dev-util/shellcheck-bin`                 | —                                 |
-| `shfmt`        | ✓                | `shfmt`            | bootstrap, go⁷ (unconditional)            | —                                 |
-| `ouch`         | ✓                | bootstrap, cargo¹⁴ | bootstrap, `app-arch/ouch` (extras)       | openSUSE: `ouch`¹⁸; others —      |
-| `lnav`²⁴       | ✓                | `lnav`             | `app-admin/lnav`                          | —                                 |
-| `git-absorb`²⁶ | ✓                | `git-absorb`       | `dev-vcs/git-absorb`                      | —                                 |
-| `gping`¹⁹      | ✓                | `gping`            | bootstrap, `net-analyzer/gping` (GURU¹²)  | —                                 |
-| `watchexec`²⁵  | —                | `watchexec`        | bootstrap, cargo `watchexec-cli` (extras) | —                                 |
+| Tool           | macOS `Brewfile` | Alpine             | Gentoo                                    | Fedora                                | openSUSE                    | Arch / Debian |
+| -------------- | ---------------- | ------------------ | ----------------------------------------- | ------------------------------------- | --------------------------- | ------------- |
+| `hyperfine`    | ✓                | `hyperfine`        | `app-benchmarks/hyperfine`                | `hyperfine`                           | `hyperfine`                 | —             |
+| `shellcheck`   | ✓                | `shellcheck`       | `dev-util/shellcheck-bin`                 | `ShellCheck`                          | `ShellCheck`                | —             |
+| `shfmt`        | ✓                | `shfmt`            | bootstrap, go⁷ (unconditional)            | `shfmt`                               | `shfmt`                     | —             |
+| `ouch`         | ✓                | bootstrap, cargo¹⁴ | bootstrap, `app-arch/ouch` (extras)       | bootstrap, cargo (no `unrar`/`bzip3`) | `ouch`¹⁸                    | —             |
+| `lnav`²⁴       | ✓                | `lnav`             | `app-admin/lnav`                          | `lnav`                                | `lnav` (Tumbleweed only)    | —             |
+| `git-absorb`²⁶ | ✓                | `git-absorb`       | `dev-vcs/git-absorb`                      | `git-absorb`                          | `git-absorb`                | —             |
+| `gping`¹⁹      | ✓                | `gping`            | bootstrap, `net-analyzer/gping` (GURU¹²)  | bootstrap, cargo                      | `gping`                     | —             |
+| `watchexec`²⁵  | —                | `watchexec`        | bootstrap, cargo `watchexec-cli` (extras) | bootstrap, cargo `watchexec-cli`      | `watchexec`                 | —             |
 
-- **The `ouch` row's last cell is split because that column is four repos, not one.**
-  `dotfiles-openSUSE` added `ouch` to its `install/packages.txt` in dotfiles-openSUSE#113, so
-  the tool is no longer detect-only there while it still is on Arch/Debian/Fedora. Note this
-  is a **`packages.txt`** addition, not a `bootstrap.sh` one — so the "two repos' `bootstrap.sh`"
-  count above stays right, and this is exactly the both-files distinction the lesson two
-  paragraphs up warns about. `ast-grep` moved the same way in the same PR but has no row here.
+- **openSUSE has its own column now.** It used to share the last column with Arch and Debian,
+  split only on the `ouch` row, which `dotfiles-openSUSE` added to its `install/packages.txt` in
+  dotfiles-openSUSE#113. dotgibson/dotfiles-openSUSE#229 then added the rest of the family, so
+  every openSUSE cell here is a `packages.txt` name. `jnv`¹⁷, which no openSUSE release
+  packages, is the one `bootstrap.sh` cargo build, and it has no row here. `lnav` is
+  Tumbleweed-only: Leap 16.0/16.1 do not ship it, and the Leap `TOOLS_OPTIN` lists it.
+- **Fedora's column is split by file.** Five of its eight cells are
+  `install/packages.txt` names (all in Fedora's own repos on F44; `ShellCheck` is the package,
+  `shellcheck` the binary), and the other three are `bootstrap.sh` cargo builds because no Fedora
+  release packages them. Its `ouch` cell is the Gentoo lesson below met a second way: the default
+  cargo build cannot succeed on GCC/libstdc++ (¹²), and Fedora has no overlay to fall back on, so
+  it builds `--no-default-features --features use_zlib,use_zstd_thin` — dropping `unrar` for that
+  reason and `bzip3` because its bindgen step needs libclang. The cost is RAR and `.bz3` only.
+- **Fedora installs these with no way to decline**, unlike Gentoo's extras below: there is no
+  `--no-extras` on `dotfiles-Fedora`. By the next bullet's test that makes its **bootstrap**
+  treat them as installs rather than opt-ins, and that is deliberate (the box owner asked for
+  every probed tool); the ²¹ mark on these rows still describes the other repos. **`core-doctor`
+  agrees once Fedora declares `TOOLS_OPTIN=none`.** `none` is the explicit empty set ("nothing
+  is opt-in"). An empty `TOOLS_OPTIN` cannot say that: it means "not declared" and falls back
+  to Core's nine-tool default, under which a Fedora box whose install of one of these failed
+  shows `·` (opt-in) rather than `✗`. With `none`, every probed tool is expected there, so a
+  failed install is a `✗`.
 - "extras" above means Gentoo's opt-in block: installed by default, **skipped by
   `--no-extras`**. That flag is the one thing keeping these honest as ²¹ entries rather than ³
   ones — the tool is still something you can decline.
@@ -780,9 +815,10 @@ you:
   this family are `ast-grep`¹¹ and `jnv`¹⁷, absent from both trees.
 - This list used to read "**macOS-only in practice**: the MacBook `Brewfile` carries them;
   **no** Linux repo does." Every row above falsifies that — Alpine carries seven of the eight
-  outright and Gentoo installs all eight, four of them from `bootstrap.sh`. Keep it a **per-tool**
+  outright, Gentoo installs all eight, four of them from `bootstrap.sh`, and Fedora installs all
+  eight, three from `bootstrap.sh`. Keep it a **per-tool**
   statement: the family is defined by "Core probes it, and most repos leave installing it to
-  you", not by a distro, and no longer by "no bootstrap installs it" — two now do.
+  you", not by a distro, and no longer by "no bootstrap installs it" — three now do.
   (Deliberately not a counted list — "all four" went stale the first time this family grew,
   "no Linux repo does" the second, and "`ouch` is the one entry" the third.)
 - The cells that previously showed **³** here — `ouch` on Gentoo **and** Kali, `jujutsu` on
@@ -869,12 +905,14 @@ per release (`lnav-0.14.1-linux-musl-x86_64.zip`, and an `arm64` twin), so the f
 an unpackaged or lagging box is "unzip the official build", not "compile it". That is also
 the cleanest way to get 0.14.1 onto Gentoo or Debian/Kali without waiting for the package.
 **No `bootstrap.sh` installs it anywhere**, but it is not detect-only across the board:
-`dotfiles-Alpine` (`lnav`) and `dotfiles-Gentoo` (`app-admin/lnav`) both carry it in
-`install/packages.txt`, and the MacBook `Brewfile` has it too (added 2026-07-15). On the other
-four Linux repos `core-doctor` reports it present only once you install it yourself. So `lnav` sits in
+`dotfiles-Alpine` (`lnav`), `dotfiles-Gentoo` (`app-admin/lnav`) and `dotfiles-Fedora` (`lnav`,
+dotgibson/dotfiles-Fedora#209) all carry it in `install/packages.txt`, and the MacBook
+`Brewfile` has it too (added 2026-07-15). Fedora's copy is the per-release build in the table
+below, so an F44 box gets 0.13.2, not upstream's 0.14.1. On the other three Linux repos
+`core-doctor` reports it present only once you install it yourself. So `lnav` sits in
 ²¹'s family — probed but never bootstrap-installed — rather than jnv's thinner "two platforms
 package it, cargo everywhere else" one: every distro in the table above packages lnav on at
-least one lane — openSUSE only on Tumbleweed, **not** Leap 16.0/16.1 — and two of the repos
+least one lane — openSUSE only on Tumbleweed, **not** Leap 16.0/16.1 — and three of the repos
 ask for it.
 
 Versions **verified against each distro's own package pages** on 2026-08-12, every row
@@ -920,18 +958,22 @@ silently hand you the wrong one.
 
 **The one tool in ²¹'s family that inverts it: macOS is the machine that doesn't get it.**
 The MacBook `Brewfile` does not carry `watchexec` — the only ²¹ entry it skips — while
-`dotfiles-Alpine`'s `install/packages.txt` carries it outright and `dotfiles-Gentoo`
-cargo-installs it from the extras block. The other seven machines are opt-in.
+`dotfiles-Alpine`'s `install/packages.txt` carries it outright, `dotfiles-Gentoo`
+cargo-installs it from the extras block, and `dotfiles-Fedora`'s `bootstrap.sh` cargo-installs
+`watchexec-cli` unconditionally (dotgibson/dotfiles-Fedora#209). The other six machines are
+opt-in.
 (This paragraph used to read "the only tool in this table that nothing in the fleet installs,
 including macOS"; Alpine falsified the first half, and Gentoo — checked against `bootstrap.sh`
 rather than `packages.txt` alone — falsified what was left of it.) Availability, verified
 2026-08-12, Linux-repo coverage re-verified 2026-08-21 against both files, versions
 re-verified 2026-08-30 against each repo's own package pages, the Arch/Homebrew pair
-alone re-verified again 2026-09-23, and the Alpine row re-verified 2026-09-13 on all five
-branches — the stables it had never named (the remaining rows still carry the 08-30 stamp):
+alone re-verified again 2026-09-23 and 2026-10-11, and the Alpine row re-verified 2026-09-13
+on all five branches — the stables it had never named (the remaining rows still carry the
+08-30 stamp):
 
-- **Arch `extra` and Homebrew** — 2.7.3 (Arch's package revision is `2.7.3-1`). Still the
-  same version on both, re-checked 2026-09-23 (dotfiles-Arch#187).
+- **Arch `extra` and Homebrew** — 2.8.0 (Arch's package revision is `2.8.0-1`). Still the
+  same version on both, re-checked 2026-10-11 (dotfiles-Arch#197; was 2.7.3 at the
+  2026-09-23 check, dotfiles-Arch#187).
 - **openSUSE Tumbleweed and nixpkgs** — 2.5.1, still current there. (These two shared a
   line with Arch and Homebrew while all four sat at 2.5.1; the split is what that line looks
   like once two of the four move and two do not.)
@@ -949,7 +991,9 @@ branches — the stables it had never named (the remaining rows still carry the 
 - **Fedora and Debian/Kali do not package it at all** (confirmed: Fedora's package search
   returns no results across F43/44/45/Rawhide/EPEL). Those two take
   `cargo install --locked watchexec-cli` — note the crate is **`watchexec-cli`**; plain
-  `watchexec` on crates.io is the library, and installing that gives you no binary.
+  `watchexec` on crates.io is the library, and installing that gives you no binary. On Fedora
+  `bootstrap.sh` now runs exactly that (dotgibson/dotfiles-Fedora#209); on Debian/Kali it is
+  still yours to run.
 
 Do **not** read **Kali's** `cargo` cell as a `³`: no `bootstrap.sh` installs it there.
 **Gentoo's `cargo` cell is the exception** — its bootstrap does install `watchexec-cli`, in
@@ -1032,8 +1076,9 @@ it with the same caution as the version stamps below.
 
 **No `bootstrap.sh` installs it**, and it is packaged essentially everywhere — the ²¹ shape,
 not `jnv`¹⁷'s. The MacBook `Brewfile` carries it, and so do `dotfiles-Alpine`
-(`git-absorb`) and `dotfiles-Gentoo` (`dev-vcs/git-absorb`) in their `install/packages.txt`;
-the other four Linux repos are detect-only (re-verified 2026-08-21). Package versions verified
+(`git-absorb`), `dotfiles-Gentoo` (`dev-vcs/git-absorb`) and `dotfiles-Fedora` (`git-absorb`,
+dotgibson/dotfiles-Fedora#209) in their `install/packages.txt`; the other three Linux repos
+are detect-only (re-verified 2026-08-21; Fedora 2026-10-11). Package versions verified
 2026-08-12 against each distro's own package pages, the Alpine row re-verified 2026-09-13 on
 all five branches (dotfiles-Alpine#188):
 
@@ -1209,8 +1254,16 @@ the next login picks it up on its own, no symlink into `~/.local/bin` needed.
 get a `HAVE_*` flag, so a `✗` for either sent the reader to a matrix with no row to find —
 the one promise `zsh/30-functions.zsh`'s "install missing" hint makes. **`mise` is the
 chicken-and-egg row**: footnotes ¹, ⁶, ⁷, ¹⁰, ¹¹ and ²⁹ all prescribe `mise use -g <x>` as
-a fallback, and every `bootstrap.sh` reaches for `mise exec go@latest` when no Go toolchain
-is present, so it is a prerequisite of this table rather than an entry in it. Only **Arch**
+a fallback, and five `bootstrap.sh`s (Arch, openSUSE, Alpine, Gentoo and Fedora) reach for
+`mise exec go@latest` when no Go toolchain is present, so it is a prerequisite of this table
+rather than an entry in it. Debian's `_dotfiles_go_install` has no mise arm: with no `go` it
+skips the tool. NixOS's, the role repos' and the MacBook's never take this path. **On those
+five, that call needs a `mise install go@latest` before it.** Core's `mise/config.toml` sets
+`auto_install = false`, and current mise (verified 2026.10.7) carries that into
+`exec_auto_install`, so on a box with no Go a bare `mise exec go@latest` fails in about two
+seconds with `"go" couldn't exec process` instead of downloading. `dotfiles-Fedora`'s
+`bootstrap.sh` lost doggo, sesh and gron to this and now installs Go first
+(dotgibson/dotfiles-Fedora#209). Only **Arch**
 packages it (`extra`); openSUSE and Gentoo have none, and the bootstraps there use the
 official installer (`curl -fsSL https://mise.run | sh`, landing in `~/.local/bin`). Alpine
 _does_ carry `mise` in `community`, but `dotfiles-Alpine` still takes `mise.run` for the musl
@@ -1237,10 +1290,12 @@ resolve on Tumbleweed or on Leap 16.0/16.1. The binary is Python-flavored (`pyth
 `python314-uv` both provide it, so `zypper in uv` makes you pick — whereas `python3-uv` has
 exactly one provider on all three targets. Verified against the OBS published-binary index on
 Tumbleweed (`openSUSE:Factory`, 0.12.7) and Leap 16.0/16.1 (`SUSE:SLFO:1.2`/`1.3`, 0.7.18), so
-no ³ fallback is needed there. **The cell carries ²¹ because `dotfiles-openSUSE` does not
-install it** — the name is where `uv` comes from when you opt in, not something the bootstrap
-puts on the box (#836). Arch, Alpine and Gentoo do install theirs, which is why only this
-column is marked. **This is the same failure the paragraph above describes**:
+no ³ fallback is needed there. **The cell used to carry ²¹**, because `dotfiles-openSUSE` did
+not install it — the name was where `uv` came from when you opted in (#836). Since
+dotgibson/dotfiles-openSUSE#229 its `install/packages.txt` lists `python3-uv`, so the cell is
+derived and the mark is gone. Every column now installs `uv`: Arch, Alpine and Gentoo by
+package, the Debian family by `asset`²⁸, and Fedora by the binary package `uv`
+(dotgibson/dotfiles-Fedora#209). **This is the same failure the paragraph above describes**:
 `python-uv` is the name the archive **contains**, not the one the repo **installs**. Gentoo's
 is `dev-python/uv`, not a bare `uv`.
 
@@ -1319,8 +1374,9 @@ no `os/` layer at all. So the hook is live there and simply finds no binary. The
 above is the apt name you would install by hand.
 
 Verified 2026-08-21 against each distro's own index, the Alpine stamp re-verified 2026-09-13
-(dotfiles-Alpine#188): **Arch `extra`** 2.37.1-1, **Alpine `community`** 2.37.1-r8 (v3.24 and
-`edge`; v3.23 still carries 2.37.1-r7 — a Go binary, so a native musl build), **openSUSE**
+(dotfiles-Alpine#188), the Arch stamp 2026-10-11 (dotfiles-Arch#197): **Arch `extra`**
+2.38.2-1, **Alpine `community`** 2.37.1-r8 (v3.24 and `edge`; v3.23 still carries 2.37.1-r7
+— a Go binary, so a native musl build), **openSUSE**
 Tumbleweed 2.37.1 with **Leap 16.0 and 16.1 both at 2.34.0** through Backports (`bp160.1.13` /
 `bp161.1.9`, both arches), **kali-rolling** 2.37.1-1, **Ubuntu 24.04 `universe`**
 2.32.1-2ubuntu0.24.04.3 and **Debian trixie** 2.32.1-2+b16. **Gentoo is GURU-only** — 2.37.1,
@@ -1359,23 +1415,23 @@ two of those corrections were.
 
 | Target              | `neovim` | vs ≥ 0.12.0 | verified   |
 | ------------------- | -------- | ----------- | ---------- |
-| Arch                | 0.12.5   | at or above | 2026-09-17 |
-| openSUSE Tumbleweed | 0.12.5   | at or above | 2026-09-17 |
-| Fedora Rawhide      | 0.12.5   | at or above | 2026-09-17 |
+| Arch                | 0.12.6   | at or above | 2026-10-11 |
+| openSUSE Tumbleweed | 0.12.5   | at or above | 2026-10-05 |
+| Fedora Rawhide      | 0.12.5   | at or above | 2026-10-05 |
 | Fedora 45           | 0.12.5   | at or above | 2026-09-17 |
-| Fedora 44           | 0.12.5   | at or above | 2026-09-17 |
-| Homebrew            | 0.12.5   | at or above | 2026-09-17 |
+| Fedora 44           | 0.12.5   | at or above | 2026-10-05 |
+| Homebrew            | 0.12.5   | at or above | 2026-10-05 |
 | openSUSE Leap 16.1  | 0.12.4   | at or above | 2026-09-17 |
-| Alpine edge         | 0.12.2   | at or above | 2026-09-17 |
-| Alpine 3.24         | 0.12.2   | at or above | 2026-09-17 |
+| Alpine edge         | 0.12.2   | at or above | 2026-10-05 |
+| Alpine 3.24         | 0.12.2   | at or above | 2026-10-05 |
 | Gentoo stable       | 0.11.7   | **below**   | 2026-09-17 |
-| Alpine 3.23         | 0.11.7   | **below**   | 2026-09-17 |
-| Fedora 43           | 0.11.6   | **below**   | 2026-09-17 |
+| Alpine 3.23         | 0.11.7   | **below**   | 2026-10-05 |
+| Fedora 43           | 0.11.6   | **below**   | 2026-10-05 |
 | openSUSE Leap 16.0  | 0.11.3   | **below**   | 2026-09-17 |
-| Alpine 3.22         | 0.11.1   | **below**   | 2026-09-17 |
-| Debian 13           | 0.10.4   | **below**   | 2026-09-17 |
-| Alpine 3.21         | 0.10.4   | **below**   | 2026-09-17 |
-| Ubuntu 24.04        | 0.9.5    | **below**   | 2026-09-17 |
+| Alpine 3.22         | 0.11.1   | **below**   | 2026-10-05 |
+| Debian 13           | 0.10.4   | **below**   | 2026-10-05 |
+| Alpine 3.21         | 0.10.4   | **below**   | 2026-10-05 |
+| Ubuntu 24.04        | 0.9.5    | **below**   | 2026-10-05 |
 
 <!-- core:porting-matrix:end fleet-versions-neovim -->
 
@@ -1501,22 +1557,22 @@ enforces are now enumerated by one mechanism rather than three prose styles.
 
 | Target              | `jq`  | vs ≥ 1.8.2  | verified   |
 | ------------------- | ----- | ----------- | ---------- |
-| Arch                | 1.8.2 | at or above | 2026-09-09 |
-| Gentoo              | 1.8.2 | at or above | 2026-09-09 |
-| openSUSE Tumbleweed | 1.8.2 | at or above | 2026-09-09 |
+| Arch                | 1.8.2 | at or above | 2026-10-05 |
+| Gentoo              | 1.8.2 | at or above | 2026-10-05 |
+| openSUSE Tumbleweed | 1.8.2 | at or above | 2026-10-05 |
 | openSUSE Leap 16.1  | 1.8.2 | at or above | 2026-09-12 |
-| Homebrew            | 1.8.2 | at or above | 2026-09-09 |
-| Alpine edge         | 1.8.2 | at or above | 2026-09-09 |
-| Alpine 3.24         | 1.8.2 | at or above | 2026-09-09 |
-| Alpine 3.23         | 1.8.2 | at or above | 2026-09-09 |
-| Alpine 3.22         | 1.8.2 | at or above | 2026-09-09 |
-| Fedora Rawhide      | 1.8.2 | at or above | 2026-09-09 |
+| Homebrew            | 1.8.2 | at or above | 2026-10-05 |
+| Alpine edge         | 1.8.2 | at or above | 2026-10-05 |
+| Alpine 3.24         | 1.8.2 | at or above | 2026-10-05 |
+| Alpine 3.23         | 1.8.2 | at or above | 2026-10-05 |
+| Alpine 3.22         | 1.8.2 | at or above | 2026-10-05 |
+| Fedora Rawhide      | 1.8.2 | at or above | 2026-10-05 |
 | Fedora 45           | 1.8.2 | at or above | 2026-09-06 |
-| Fedora 44           | 1.8.1 | **below**   | 2026-09-09 |
-| Fedora 43           | 1.8.1 | **below**   | 2026-09-09 |
-| Alpine 3.21         | 1.7.1 | **below**   | 2026-09-09 |
-| Debian 13           | 1.7.1 | **below**   | 2026-09-09 |
-| Ubuntu 24.04        | 1.7.1 | **below**   | 2026-09-09 |
+| Fedora 44           | 1.8.1 | **below**   | 2026-10-05 |
+| Fedora 43           | 1.8.1 | **below**   | 2026-10-05 |
+| Alpine 3.21         | 1.7.1 | **below**   | 2026-10-05 |
+| Debian 13           | 1.7.1 | **below**   | 2026-10-05 |
+| Ubuntu 24.04        | 1.7.1 | **below**   | 2026-10-05 |
 | openSUSE Leap 16.0  | 1.7.1 | **below**   | 2026-09-12 |
 
 <!-- core:porting-matrix:end fleet-versions -->
@@ -1622,23 +1678,23 @@ here so that watch has a table to read rather than a guess.
 
 | Target              | `eza`   | vs ≥ 0.23.5 | verified   |
 | ------------------- | ------- | ----------- | ---------- |
-| Arch                | 0.23.5  | at or above | 2026-09-24 |
-| openSUSE Tumbleweed | 0.23.5  | at or above | 2026-09-24 |
-| Fedora Rawhide      | 0.23.5  | at or above | 2026-09-24 |
+| Arch                | 0.23.5  | at or above | 2026-10-05 |
+| openSUSE Tumbleweed | 0.23.5  | at or above | 2026-10-05 |
+| Fedora Rawhide      | 0.23.5  | at or above | 2026-10-05 |
 | Fedora 45           | 0.23.5  | at or above | 2026-09-24 |
-| Fedora 44           | 0.23.5  | at or above | 2026-09-24 |
-| Fedora 43           | 0.23.5  | at or above | 2026-09-24 |
-| Homebrew            | 0.23.5  | at or above | 2026-09-24 |
-| Alpine edge         | 0.23.4  | **below**   | 2026-09-24 |
-| Alpine 3.24         | 0.23.4  | **below**   | 2026-09-24 |
-| Alpine 3.23         | 0.23.4  | **below**   | 2026-09-24 |
+| Fedora 44           | 0.23.5  | at or above | 2026-10-05 |
+| Fedora 43           | 0.23.5  | at or above | 2026-10-05 |
+| Homebrew            | 0.23.5  | at or above | 2026-10-05 |
+| Alpine edge         | 0.23.4  | **below**   | 2026-10-05 |
+| Alpine 3.24         | 0.23.4  | **below**   | 2026-10-05 |
+| Alpine 3.23         | 0.23.4  | **below**   | 2026-10-05 |
 | Gentoo stable       | 0.23.4  | **below**   | 2026-09-24 |
-| Alpine 3.22         | 0.21.3  | **below**   | 2026-09-24 |
-| Debian 13           | 0.21.0  | **below**   | 2026-09-24 |
-| Alpine 3.21         | 0.20.12 | **below**   | 2026-09-24 |
+| Alpine 3.22         | 0.21.3  | **below**   | 2026-10-05 |
+| Debian 13           | 0.21.0  | **below**   | 2026-10-05 |
+| Alpine 3.21         | 0.20.12 | **below**   | 2026-10-05 |
 | openSUSE Leap 16.1  | 0.20.4  | **below**   | 2026-09-24 |
 | openSUSE Leap 16.0  | 0.20.4  | **below**   | 2026-09-24 |
-| Ubuntu 24.04        | 0.18.2  | **below**   | 2026-09-24 |
+| Ubuntu 24.04        | 0.18.2  | **below**   | 2026-10-05 |
 
 <!-- core:porting-matrix:end fleet-versions-eza -->
 

@@ -5,10 +5,131 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v7.14.0 … v7.7.0), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v7.15.0 … v7.8.0), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v7.15.0] - 2026-10-11
+
+### Security
+
+- **GitHub now refuses a tag-pinned action in every Core-vendoring repo, and
+  `make fleet-protection` goes red if one stops.** `sha_pinning_required` was on in only
+  `dotfiles-core` and `dotfiles-MacBook`. It is now on in all eleven repos the script
+  audits, which makes GitHub enforce rule 3 of the CI floor server-side: on sibling repos'
+  own workflows, and on anything that reaches `main` without the text gate. The moving
+  major survives. GitHub exempts reusable workflows ("can still be referenced by tag"), and
+  a re-run of `dotfiles-Alpine`'s `lint-call.yml@v7` passed under enforcement. The new
+  `--require-sha-pin` mode turns it on idempotently, keeps each repo's `allowed_actions`,
+  and re-reads the server before it reports success. The admin report now fails a repo
+  whose setting is off or cannot be read. It also reports `allowed_actions` and the count
+  of Actions execution-protection policies, without gating either. CI's `--rulesets-only`
+  run still skips the block, because it has no repo admin. Composite actions are not
+  exempt, so `dotfiles-nvim` first SHA-pinned its `setup-core-tools@v7` references
+  (dotgibson/dotfiles-nvim#9) and then turned the setting on too (#1226).
+
+### Added
+
+- **`TOOLS_OPTIN=none` says "nothing is opt-in".** A repo that installs every tool
+  `core-doctor` probes had no way to declare it. An empty `TOOLS_OPTIN` means "not declared"
+  and falls back to the default opt-in list, so on such a box a failed install of `lnav`,
+  `ouch`, `jnv` and the rest rendered `·` instead of `✗`. `none`, alone, is now the explicit
+  empty set: `_core_doctor_optin` treats every probed tool as expected, in the render and in
+  `--json`. `check-capabilities.sh` accepts it and refuses `none` mixed with tool names. Empty
+  keeps its meaning. A Core that predates this reads `none` as a list naming one nonexistent
+  tool, which gives the same answer, so a repo can declare it before every box has upgraded.
+  `dotfiles-Fedora` is the first user.
+
+- **A Core PR is checked against the real sibling repos before it merges.** The new
+  `fleet-gates` job in `ci.yml` clones the fleet beside Core and runs the audit's fleet-wide
+  gates (§5f, §9m-§9p, theme and desktop-parity drift) that every other leg skips because it
+  checks out Core alone. That gap let #1210 merge green and then refuse the v7.14.0 fan-out
+  on dotfiles-Debian's stale `TOOLS_OPTIN` (#1239). The job is meant to be a required check,
+  so it judges a delta: `scripts/fleet-gate-delta.sh` audits the PR's base and head against
+  the same clones and fails only on a failure the PR adds. A sibling that drifts on its own
+  therefore cannot block unrelated Core PRs. A failure already on `main` is a warning. A red
+  means the sibling fix lands first, which is the fleet ratchets' existing order. The job holds
+  no token, because the gates run sibling code (#1240).
+
+### Changed
+
+- **`PORTING-MATRIX.md` catches up with dotgibson/dotfiles-openSUSE#229.** openSUSE's
+  `install/packages.txt` now lists Core's opt-in set: `hyperfine`, `ShellCheck`, `shfmt`,
+  `lnav`, `git-absorb`, `gping`, `watchexec` and `python3-uv`; `jnv` comes from a
+  `bootstrap.sh` cargo build. `lnav` installs on Tumbleweed only: Leap 16.0/16.1 do not ship
+  it, so zypper skips it there and Leap's `TOOLS_OPTIN` keeps it opt-in. Each of the eight openSUSE cells in `gen-porting-matrix.sh` is now
+  derived (`=`). Before that, `gen-porting-matrix.sh --check` exited 2 against the live fleet,
+  which also hid every other drift check. The `uv` cell drops its ²¹ mark. That was openSUSE's
+  last cell-level mark, so the `TOOLS_OPTIN` gate no longer demands that openSUSE list Core's
+  whole opt-in set. Footnote ²¹'s coverage table gives openSUSE its own column and counts four
+  repos whose `bootstrap.sh` installs from the family. Footnote ³⁰ no longer says openSUSE skips
+  `uv`. The `TOOLS_OPTIN` gate's tests read the real matrix and keyed on that `uv` cell, so they
+  now use Gentoo's column, whose `jj` and `ast-grep` marks also exercise the alias path.
+
+- **`PORTING-MATRIX.md` now records that Arch installs `jujutsu`, `difftastic` and
+  `ast-grep`.** dotgibson/dotfiles-Arch#201 adds all three to Arch's `install/packages.txt`.
+  dotfiles-Arch declares no `TOOLS_OPTIN`, so `core-doctor` falls back to
+  `_CORE_DOCTOR_OPTIN`, which lists none of them, and showed a ✗ on every fresh Arch box.
+  Arch's three cells in `gen-porting-matrix.sh` are now derived (`=`), not asserted; the
+  rendered table is unchanged. Footnote ⁸ no longer says Arch lists `jj` "only as a
+  commented opt-in" (#1262).
+
+- **`PORTING-MATRIX.md` footnote ²¹ now counts Fedora among the repos that install this
+  family.** dotgibson/dotfiles-Fedora#209 puts `hyperfine`, `ShellCheck`, `shfmt`, `lnav` and
+  `git-absorb` in Fedora's `install/packages.txt`. Its `bootstrap.sh` cargo-builds `ouch`,
+  `gping` and `watchexec`. The footnote said "two repos' `bootstrap.sh`" and "the other seven
+  repos", and its table grouped Fedora with the detect-only repos. The table now has its own
+  Fedora column, the counts read three and six, and new notes cover two Fedora specifics:
+  `ouch` is built without `unrar`/`bzip3`, and Fedora has no `--no-extras` to decline these
+  tools. Footnotes ⁸ (`jj`), ¹¹ (`ast-grep`), ¹⁷ (`jnv`), ¹⁹ (`gping`), ²⁴ (`lnav`),
+  ²⁵ (`watchexec`), ²⁶ (`git-absorb`) and ³⁰ (`uv`) made the same per-repo claims and now name
+  Fedora too. ³⁰ also records that `mise exec go@latest` no longer downloads Go under Core's
+  `auto_install = false`, so the five bootstraps that use it (Arch, openSUSE, Alpine, Gentoo,
+  Fedora) need `mise install go@latest` first. The ²¹ notes and the `_CORE_DOCTOR_OPTIN`
+  comment in `zsh/30-functions.zsh` say how `core-doctor` classifies these rows on Fedora:
+  it declares `TOOLS_OPTIN=none` (dotgibson/dotfiles-Fedora#212), the empty-set form added
+  in this release, so a failed install there shows `✗`, not `·`.
+- **`/release-readiness` actually checks the editor pin.** The scheduled job allows
+  `./scripts/check-nvim-freshness.sh` as a literal command, but the routine only named the
+  script loosely. The first run (#1245) ran neither form: it reached for `gh release list`, was
+  refused, and reported a current `nvim.lock` as unverified. Step 4 now lists the three
+  fleet-state commands exactly as the job grants them, says no other tool is needed for the
+  editor row, and spells out the exit codes. Exit 0 with `✓` means current, exit 0 with a
+  SKIP means unverified, exit 2 means behind, and exit 1 means the lock is broken.
+- **`/release-readiness` checks the fleet-wide gates against the sibling repos before a
+  tag.** A Core PR's CI checks out Core alone, so every gate that reads a sibling (§9m-§9p,
+  theme and desktop-parity drift) skips there. Until now the first run that could see a
+  sibling break was `sync-fanout`'s pre-fan-out audit, after the tag was cut. That is how
+  #1210's correct Kali matrix cells merged green and then redded the v7.14.0 fan-out on
+  dotfiles-Debian's stale `TOOLS_OPTIN` (#1239). The weekly job now checks Core out beside
+  the fleet and runs `audit-core.sh --scope none` before the routine, with both tokens
+  withheld from that step because the gates run sibling code. Any `✗` there is a HOLD, and
+  a gate that could not see its sibling is reported as unverified, not as a pass. This is
+  the fallback half of #1240. The PR-time half is the `fleet-gates` job (#1243, under
+  Added), which closed #1240.
+- **`RELEASE-STRATEGY.md` no longer lists making `audit-arch` and `audit-alpine` required
+  checks as future work.** The `main` ruleset already requires both, alongside the Ubuntu and
+  macOS audit legs, and it binds admins too. The "Still worth doing" item still pointed at the
+  classic branch-protection settings page that the fleet retired. The CI bullet now says what
+  the ruleset enforces.
+
+### Fixed
+
+- **Three Arch version stamps in `PORTING-MATRIX.md` had fallen behind `extra`.** Re-checked
+  2026-10-11 against `archlinux.org`:
+  - Footnote ²⁵'s Arch/Homebrew `watchexec` bullet goes from 2.7.3 (`2.7.3-1`) to **2.8.0**
+    (`2.8.0-1`). `formulae.brew.sh` also has 2.8.0, so the two moved together again and the
+    shared bullet stays shared.
+  - Footnote ³²'s Arch `direnv` stamp goes from 2.37.1-1 to **2.38.2-1**.
+  - The Arch `neovim` row in `scripts/fleet-package-versions.tsv` goes from 0.12.5 to
+    **0.12.6**. The rendered table is regenerated with `gen-porting-matrix.sh --local`; it is
+    still above the ≥ 0.12.0 floor.
+
+  None of these changes a package name or a cell. Surfaced by `/os-package-availability arch`
+  (dotgibson/dotfiles-Arch#197). The AUR names that report could not reach (`carapace-bin`,
+  `sesh-bin`, `1password-cli`, `viddy`) were checked separately through the AUR RPC, and all
+  four still resolve.
 
 ## [v7.14.0] - 2026-09-29
 
@@ -2140,26 +2261,3 @@ repo-meta and stays upstream:
   fixture fleet carries the third declaration too, so the parity suite pins a
   three-label cell beside the one-value cell.
   (`scripts/gen-porting-matrix.sh`, `PORTING-MATRIX.md`, `scripts/test/41-gen-matrix-parity.sh`)
-
-## [v7.7.0] - 2026-09-15
-
-### Added
-
-- **`bootstrap-test.yml` learns the staged host: the `provisioner:` input, the sweep's
-  VM-only skip, the register's `real-bootstrap` gate, and the scaffold's stamps** (#1050,
-  runbook step 2 of `NON-MUTABLE-HOST-PROPOSAL.md` §4.6). A container is not the host
-  (no `/run/ostree-booted`, a writable `/usr`), so a variant repo's stubbed provision walked
-  its mutable branch and never reached the staging path (R6, measured). `provisioner:
-  atomic|transactional` (empty = mutable, unchanged) exports `BOOTSTRAP_PROVISIONER` into
-  the provision-stub run, shims `rpm-ostree bootc transactional-update snapper btrfs`,
-  makes the `rpm` shim answer `-q` with 1 so the variant's base-image filter keeps its
-  names, and fails the leg unless the run prints the staged closing line ("reboot to
-  apply"). `scripts/fleet-bootstrap-matrix.py` skips such a caller (the unstubbed sweep
-  would install down the mutable branch) and names it VM-only via a `::notice::` that
-  `real-bootstrap.yml` writes into the run summary. `scripts/fleet-coverage.sh` grows a
-  derived `real-bootstrap` gate: `sweep` for a mutable caller, `real-bootstrap none <why>`
-  required of a provisioner-only repo, and a caller-less repo inherits its `bootstrap-test`
-  declaration. `scripts/new-os-repo.sh` stamps `PROVISIONER` / `PKG_APPLY` /
-  `PKG_APPLY_PENDING` as commented examples into the capability stub and shows the staging
-  shape of a provision hook in the starter bootstrap. (`scripts/test/{33-bootstrap-matrix,
-  35-new-os-repo,56-fleet-vocabulary}.sh`)

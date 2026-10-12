@@ -175,6 +175,10 @@ MAINT_UNATTENDED_UPGRADE=1
 # SAFETY statement and Core honours it exactly. Omitting this one says only that you have
 # not curated a list, so Core's default applies rather than "nothing here is optional",
 # which would mark every uninstalled optional tool as degraded.
+#
+# To say "nothing here is optional" (the repo installs every tool core-doctor probes), write
+# `TOOLS_OPTIN=none`. An EMPTY value cannot say it: empty means "not declared" and falls
+# back to the default, the same as omitting the key. `none` must stand alone.
 TOOLS_OPTIN=lnav hyperfine watchexec shellcheck shfmt ouch git-absorb jnv gping
 
 # ──────────────────────────────────────────────────────────────────────────────
