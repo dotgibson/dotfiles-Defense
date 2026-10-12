@@ -61,7 +61,7 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.14"
+          python-version: "3.15"
 
       - name: Install zircolite deps (pysigma + pipelines)
         # -c: zircolite's requirements.txt floats `pysigma>=0.10.10`, so the engine that
@@ -82,7 +82,7 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.14"
+          python-version: "3.15"
 
       - name: Install pysigma + pyparsing (the evaluator's only deps, pinned for determinism)
         # sigma_eval.py walks pySigma's OWN parsed condition tree, so it breaks exactly
