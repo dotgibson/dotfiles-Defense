@@ -496,9 +496,9 @@
     },
     {
       "techniqueID": "T1649",
-      "score": 1,
+      "score": 2,
       "enabled": true,
-      "comment": "1 rule(s): adcs_esc1_san_mismatch_4886"
+      "comment": "2 rule(s): adcs_esc1_san_mismatch_4886, dc_account_pkinit_non_dc_4768"
     },
     {
       "techniqueID": "T1651",

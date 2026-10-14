@@ -9,6 +9,9 @@ description: |
   so one minted by an unexpected actor is a persistence tell after a control-plane
   compromise (T1098). Reconcile new tokens against known CI integrations and prefer
   short-lived team tokens scoped to a workspace.
+  Shipped bare until the #351 review while tfc_variable_injection carried a filter_ci: the
+  tfe_team_token and tfe_organization_token resources mint a token on every apply that
+  rotates one, so the pipeline actor is excluded below the same way.
   Validate (purple): mint an org/team token via the TFC API from dotfiles-Offense (htpx pair
   tfc-token-backdoor).
 references:
@@ -16,6 +19,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/tfc-token-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
+modified: 2026-10-14
 tags:
   - attack.persistence
   - attack.t1098
@@ -26,8 +30,19 @@ detection:
   selection:
     resource.type: 'authentication_token'
     resource.action: 'create'
-  condition: selection
+  filter_ci:
+    # DEPLOY-REQUIRED: replace with the actor your pipeline mints tokens as, as it appears
+    # in the TFC audit trail's auth.description. The tfe_team_token / tfe_organization_token
+    # resources create a token on every apply that rotates one, so without this each
+    # pipeline run alerts and the rule gets muted - the same stub tfc_variable_injection
+    # carries. Until filled this excludes only the example actor.
+    # Run detections/sigma/deploy-required.sh to find this.
+    auth.description:
+      - 'ci-deploy@example.com'   # example — replace with your CI service identity
+  condition: selection and not filter_ci
 falsepositives:
+  - Routine token rotation from the IaC pipeline - allowlist the CI actor in filter_ci;
+    what remains is a token minted by a human or an unknown integration.
   - Onboarding a sanctioned CI integration - allowlist the expected actors and review
     org tokens created where a scoped team token would do, or any created during an incident.
 level: medium

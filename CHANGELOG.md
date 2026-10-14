@@ -24,6 +24,96 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **`zircolite-constraints.txt` pins `pysigma-backend-sqlite` back to 2.0.0; the
+  host-plane validation gate had been red on `main` since #354.** 2.1.0 is the backend's
+  pySigma-2 release (`pysigma>=2.0.0,<3.0`), and the same file pins `pysigma==1.5.1`, so
+  Renovate's minor bump turned the constraint set into a contradiction: `pip install`
+  stopped at ResolutionImpossible and `sigma rules fire on synthetic event logs` failed on
+  the merge commit and on every run after it, with 0 of 123 rows executed. Nothing caught
+  it — `main`'s ruleset requires `sigma validate + compile` but neither validation-plane
+  job, and the job is path-filtered, so the Core syncs that followed never re-ran it. With
+  2.0.0 (`pysigma>=1.5.1,<2`) the set resolves and the gate
+  passes 123/123 (93 with a true-negative) against zircolite v3.7.6. `renovate.json` now
+  holds the backend below 2.1.0 so it moves only with the pysigma major, in the grouped
+  toolchain PR; that rule is to be deleted in the same PR that takes pysigma 2. The pysigma
+  2 PR itself (#353) stays open and red on purpose: sigma-cli and every pinned backend and
+  pipeline still declare `pysigma<2`, and pysigma 2's `google-re2` has no Python 3.15
+  wheel, so it goes green only once upstream ships.
+- **Weekly detection review #351: `/identity` anchored, three token-creation rules get
+  `filter_ci`, 4698 LOLBins gated, `' stop '` aligned, Harbor retitled; four proposals
+  declined in the rules (#351).** The review found no coverage holes and ten scoping
+  calls. Each was checked against the rule body, the gates and the fixtures before being
+  adopted or declined; a decline that lives only in a closed issue gets re-proposed next
+  cycle, so every decline below is recorded in the rule it concerns.
+  - `linux/ssh_private_key_read`: `name|contains: '/identity'` matched every read under a
+    directory whose name begins `identity` (`~/identity-service/config.yml`), a standing
+    false-positive stream on a `high` rule. The SSHv1 key now has its own
+    `name|endswith: '/.ssh/identity'` selection (a `contains` would still take
+    `~/.ssh/identity-service/`), proven by a single-event row; the true-negative fixture
+    gains both near-misses.
+  - `cloudflare/cloudflare_api_token_created`, `terraform/tfc_token_backdoor`,
+    `gitlab/gitlab_token_backdoor`: each shipped `condition: selection` while its folder
+    siblings carried a `DEPLOY-REQUIRED` `filter_ci`, and each selects an action the IaC
+    provider performs on every apply (`cloudflare_api_token`, `tfe_team_token`,
+    `gitlab_personal_access_token`). Each now carries the sibling's stub on the sibling's
+    actor field (GitLab, first in its folder, on the streamed event's top-level
+    `author_name`, with `author_id` named as the stricter form), a `_ci_suppressed`
+    manifest row proving the stub suppresses, and a deploy-time README row.
+    `cloud/aws_login_profile_created` is declined in-rule: actor ≠ target is the triage
+    criterion, `medium` is a triage surface, and an automation minting console passwords
+    is itself worth seeing.
+  - `cloud/entra_illicit_consent_grant`: the `filter_known_apps` comment and
+    `falsepositives` now say that an unanchored `TargetResources|contains` allowlist hides
+    a grant to a different app whenever a sanctioned id appears anywhere in the event, and
+    name the two Sentinel paths to anchor on (`TargetResources[0].id` is the SP object id;
+    the app id sits in `TargetId.ServicePrincipalNames`). Comment-only; nothing compiled
+    changes.
+  - `lateral_movement/rdp_hijack_tscon_4688`: declined, and the description now says which
+    arm sees which channel. The review read the arms the other way round: the `/dest:`
+    `selection` arm is deliberately not Image-pinned (the sc-create and `cmd /c` wrappers
+    carry the string in their own command lines) and reads a field both channels carry, so
+    the SYSTEM-via-service variant is covered on 4688 and Sysmon alike; the Sysmon-only
+    `as_system` arm is the no-`/dest` interactive form, as its comment already said.
+    `mstsc /shadow` is named as a different technique, out of scope.
+  - `persistence/scheduled_task_suspicious_4698`: `\regsvr32.exe` and `\rundll32.exe` fired
+    at `high` as bare substrings while the same rule had removed `\Users\` and `\Temp\` for
+    being too common. They now require a co-occurring attacker-controlled target (URL or
+    scriptlet, UNC path, user-writable directory); `mshta` stays bare. Two traps found on
+    the way and written into the block: a bare `http` matches the `<Task xmlns="http://…">`
+    root of every real 4698 and would have collapsed the AND (the synthetic fixtures omit
+    the root, so no gate saw it — the new TN carries it), and a UNC prefix is `'\\\\'`
+    because `\` is Sigma's escape. Neither LOLBin had a fixture before; three single-event
+    TP rows and a dedicated TN file are added, because an aggregate TP passes when any
+    event fires and would not have caught these arms going silent.
+  - `lateral_movement/passthehash_4624_fanout`: `filter_machine` is a coverage decision,
+    not only a noise filter — reuse of a captured machine-account hash never reaches the
+    count. Stated in the base rule with why Sigma cannot narrow it (no field-to-field
+    compare of `TargetUserName` against the source host).
+  - `impact/service_stop_burst`: `' stop'` → `' stop '` on the net and sc arms, the anchor
+    `service_stop_protected_services` already used; a bare `' stop'` also matched
+    `' stopped'` and padded the distinct-CommandLine burst. Cmdlet-arm anchoring is declined
+    in the rule: a piped `| Stop-Service` carries no trailing target. The precedence
+    allowlist row is re-traced.
+  - `impact/account_access_removal_4725`: declined in-rule. 4724 is pooled with 4725/4726
+    because resetting a responder's password locks them out as surely as disabling them;
+    the org-wide forced reset that trips the pool is what `filter_identity_admins` exists
+    to name, and a lower-priority 4724 arm would hide the attacker who only resets.
+  - `registry/harbor_image_pushed_trusted_tag`: retitled *Harbor artifact push or tag
+    create (supply-chain triage surface)* to match the logic (every push and tag create
+    minus the CI robot). A protected-repo selector is declined in-rule: a selection-side
+    list is inert until filled, the opposite failure from a noisy filter. File name,
+    manifests and htpx pairing are unchanged.
+  - `google_workspace/gws_external_mail_forwarding`: verified, no change to logic. Google's
+    Reports API appendix lists `email_forwarding_out_of_domain` under both `user_accounts`
+    and `login`; exporter samples carry `user_accounts`, which is what is declared. Recorded
+    in a logsource comment with the appendix as a reference.
+  - Ledger: 124 rules, 0 added, 0 removed. `coverage-layer.json` and `COVERAGE.md` are
+    unchanged (no tag or count moved); all three SIEM forms regenerate (descriptions and
+    the Harbor stanza title are embedded).
+  - `zircolite-constraints.txt` carries the `pysigma-backend-sqlite==2.0.0` pin as a
+    stopgap: the host-plane job was red on `main` since #354 (ResolutionImpossible against
+    `pysigma==1.5.1`) and could not prove the new 4698 fixtures. #360 / #361 hold the full
+    fix with the Renovate cap; this is the same line so either merges cleanly over it.
 - **`github_credential_backdoor` now also selects
   `personal_access_token.request_created` (#348).** This follows htpx's `gh-cred-audit`
   (htpx#139). GitHub logs the request only in orgs that require approval for
@@ -903,6 +993,23 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **`dc_account_pkinit_non_dc_4768` — the ESC8 end state `DEFENSE-METHODOLOGY.md` recorded
+  as an open gap.** A 4768 for a domain controller's machine account with certificate
+  pre-authentication (PreAuthType 16, PKINIT) from a client address that is not a DC. The
+  invariant is that a DC's own account should only ever obtain a TGT from a DC address; a
+  certificate issued to `DC01$` and used from a member server is the coercion → relay → CA
+  web enrollment chain reaching its goal, and the 4662 pair cannot see it
+  (`dcsync_replication_4662` drops `$` subjects, `dcsync_non_dc_machine_account_4662`
+  allowlists the real DCs, and 4662 has no source address). Tagged T1649 only: the event is
+  the certificate being used as a credential, not the DCSync that follows. `experimental`,
+  `high`, with two DEPLOY-REQUIRED lists — the DC accounts in the selection (inert until
+  filled, the `unconstrained_delegation_4624` caveat) and the DC addresses in
+  `filter_dc_sources`. Its false-positive profile is **unmeasured**: the lab has captured
+  no DC-account PKINIT, so the `falsepositives` (RODCs, re-addressed DCs, DC-to-DC Kerberos
+  through a load balancer, machine-certificate PKINIT on a DC) are stated as hypotheses to
+  check, and the methodology now says the logon side is written and stays experimental
+  until a lab run measures them. TP + TN fixtures are `vendor-documented` from Microsoft's
+  4768 reference; the certificate values are synthetic.
 - **`check-readme-tables.sh` — the README's rule and deploy-time tables are now gated
   (#314).** Same argument `check-readme-gates.sh` makes about the other half of the file:
   *"the README is load-bearing documentation, so it gets a gate like the rest of the

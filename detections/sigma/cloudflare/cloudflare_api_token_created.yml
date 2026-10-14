@@ -9,6 +9,9 @@ description: |
   unexpected actor is a persistence tell after an account compromise (T1098). Tokens are
   issued rarely and by a known set of admins/automation; reconcile new tokens against
   known integrations, scope them tightly, and alert on creation outside change control.
+  Shipped bare until the #351 review while both Cloudflare siblings carried a filter_ci:
+  Terraform's cloudflare_api_token resource mints a token on every apply that touches it,
+  so the IaC identity is excluded below the way the WAF and Worker rules exclude it.
   Validate (purple): mint an API token via the Cloudflare API from dotfiles-Offense (htpx
   pair cf-api-token).
 references:
@@ -16,6 +19,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/cf-api-token-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
+modified: 2026-10-14
 tags:
   - attack.persistence
   - attack.t1098
@@ -26,8 +30,20 @@ detection:
   selection:
     resource.type: 'api_token'
     action.type: 'create'
-  condition: selection
+  filter_ci:
+    # DEPLOY-REQUIRED: replace with the identity your IaC pipeline mints tokens as (the
+    # Terraform service account's email, or the token owner shown in the audit log).
+    # Terraform's cloudflare_api_token resource creates a token on every apply that touches
+    # it, so without this each pipeline run is a high-severity alert and the rule gets
+    # muted - the same stub cloudflare_waf_rule_disabled and cloudflare_worker_deployed
+    # carry. Until filled this excludes only the example actor.
+    # Run detections/sigma/deploy-required.sh to find this.
+    actor.email:
+      - 'ci-deploy@example.com'   # example — replace with your CI service identity
+  condition: selection and not filter_ci
 falsepositives:
+  - Routine token rotation from the IaC pipeline - allowlist the CI service identity in
+    filter_ci; what remains is a token minted by a human or an unknown integration.
   - Onboarding a sanctioned integration or automation - allowlist the expected admin
     actors and review broadly scoped tokens or any created during an incident.
 level: high

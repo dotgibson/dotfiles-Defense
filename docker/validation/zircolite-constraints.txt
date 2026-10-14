@@ -27,10 +27,20 @@
 # at 2.0.0, not left to float: which version runs decides whether the timespan half of
 # every correlation rule is tested at all, and a float would move that verdict silently.
 #
+# And at 2.0.0 exactly, not 2.1.0: 2.1.0 is the backend's pySigma-2 release
+# (`pysigma>=2.0.0,<3.0`), so against the `pysigma==1.5.1` pinned two lines up it is not a
+# version choice but a contradiction — pip stops at ResolutionImpossible before a single
+# rule runs. #354 bumped it alone, as a minor, and this gate was red on main for four days
+# with 0/123 rows executed and nothing requiring it green. The backend therefore moves only
+# with the pysigma major; renovate.json holds it below 2.1.0 until the rest of the
+# toolchain (sigma-cli, the splunk/elasticsearch/kusto backends, the sysmon/windows
+# pipelines zircolite needs) ships pySigma-2 releases, and that rule is deleted in the
+# same PR that takes pysigma 2.
+#
 # Renovate watches this file through a managerFilePatterns entry in renovate.json — the
 # name is deliberately not *requirements*, because it is not our dependency list — and
 # bumps the pair in the same grouped PR as detections/requirements.txt, which pins the
 # same two for the sigma gate. Keep the two files agreeing (#322).
 pysigma==1.5.1
 pyparsing==3.3.3
-pysigma-backend-sqlite==2.1.0
+pysigma-backend-sqlite==2.0.0

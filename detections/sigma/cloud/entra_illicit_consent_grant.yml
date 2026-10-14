@@ -19,6 +19,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/consent-grant-auditlogs.md
 author: dotfiles-Defense
 date: 2026-06-30
+modified: 2026-10-14
 tags:
   - attack.credential-access
   - attack.t1528
@@ -49,6 +50,14 @@ detection:
     # DEPLOY-REQUIRED: replace with your sanctioned app (client) IDs so verified LOB apps
     # that legitimately hold these scopes don't alert. Until filled this excludes only the
     # example. Run detections/sigma/deploy-required.sh to find this.
+    # ANCHOR IT AT THE BACKEND. `TargetResources|contains` is unanchored, so an event that
+    # merely MENTIONS a sanctioned id - as the resource API in modifiedProperties, or as a
+    # related object - is suppressed even when the app actually consented to is a different,
+    # malicious one. Over-suppression is silent; noise is not. On Sentinel the consented app
+    # is TargetResources[0]: its `id` is the service principal OBJECT id, and the app
+    # (client) id this placeholder names sits in its modifiedProperties entry
+    # TargetId.ServicePrincipalNames. Key the allowlist on one of those two paths, the way
+    # the scope match above is keyed on DelegatedPermissionGrant.Scope.
     TargetResources|contains:
       - '00000000-0000-0000-0000-000000000000'   # example client id — replace
   condition: selection_consent and selection_highrisk_scope and not filter_known_apps
@@ -56,4 +65,8 @@ falsepositives:
   - Sanctioned line-of-business apps onboarded via user consent that legitimately need
     mail/file scopes - allowlist their app IDs in filter_known_apps, or restrict user
     consent to verified publishers (which turns this into prevention).
+  - The inverse failure, worth more attention than the noise - an allowlisted id that
+    appears anywhere in the event (as the resource API, not the consented client) hides
+    a grant to a different app. Anchor the allowlist to the consented app's own field at
+    the backend; the filter comment names the paths.
 level: medium

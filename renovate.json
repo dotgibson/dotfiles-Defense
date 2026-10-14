@@ -12,6 +12,12 @@
       "semanticCommitType": "ci",
       "semanticCommitScope": "deps",
       "automerge": false
+    },
+    {
+      "description": "pysigma-backend-sqlite 2.1.0 is the backend's pySigma-2 release (pysigma>=2). Offered alone it is unresolvable against the pinned pysigma 1.5.1, and the host-plane gate goes red at pip install with 0 rows run (#354). It moves only with the pysigma major, in the grouped PR — DELETE this rule in the same PR that takes pysigma 2.",
+      "matchManagers": ["pip_requirements"],
+      "matchPackageNames": ["pysigma-backend-sqlite"],
+      "allowedVersions": "<2.1.0"
     }
   ]
 }

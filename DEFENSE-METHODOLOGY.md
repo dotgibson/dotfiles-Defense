@@ -24,18 +24,18 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Offens
 
 ## ATT&CK tactic → data source → detection
 
-| ATT&CK tactic            | Primary data sources                                                         | Where detections live | Validate with (Offense)                                                 |
-| ------------------------ | ---------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------- |
-| Initial Access           | npm / PyPI publish audit logs                                                | sigma                 | htpx pairs `npm-malicious-publish` / `pypi-malicious-publish`           |
-| Recon / Discovery        | 4688/4104, 4798/4799, 5145, 1644/4662, 4648                                  | sigma                 | recon / AD-enumeration folds (no network-plane recon detection yet)     |
-| Credential Access        | Sysmon 10, 4625/4768/4769/4771, 4662, 5145, Zeek Kerberos                    | sigma, network        | Kerberoast / DCSync / LSASS folds (Responder capture: no detection yet) |
-| Lateral Movement         | 4624 type 3, 4688/Sysmon 1, 7045                                             | sigma                 | lateral-movement fold                                                   |
-| Priv Esc / Persistence   | Sysmon 1/13/17, 4720/7045                                                    | sysmon, sigma         | persistence / privesc folds (LOLBAS: no detection yet)                  |
-| Coercion / Relay / AD CS | 5145 pipes, 4886/4887 requests (SAN compared at triage), 4624 relay mismatch | sigma, siem           | coercion → relay → DC fold                                              |
-| Collection               | 4663 file reads, 4688 archive cmds                                           | sigma                 | collection / exfil fold                                                 |
-| Exfil / C2               | Suricata, Zeek conn/dns/ssl, CloudTrail share grants                         | network, sigma        | reverse-shell / pivot folds; htpx pair `aws-snapshot-share-exfil`       |
-| Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn            | sigma, network        | ransomware chain (teardown → recovery → payload); cryptomining pair     |
-| Anti-forensics           | 1102 + 104 log clears, auditd history syscalls, 4742 rogue DC                | sigma                 | DCShadow fold; `wevtutil cl` / `shred ~/.bash_history` on a lab host    |
+| ATT&CK tactic            | Primary data sources                                                                                      | Where detections live | Validate with (Offense)                                                 |
+| ------------------------ | --------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------- |
+| Initial Access           | npm / PyPI publish audit logs                                                                             | sigma                 | htpx pairs `npm-malicious-publish` / `pypi-malicious-publish`           |
+| Recon / Discovery        | 4688/4104, 4798/4799, 5145, 1644/4662, 4648                                                               | sigma                 | recon / AD-enumeration folds (no network-plane recon detection yet)     |
+| Credential Access        | Sysmon 10, 4625/4768/4769/4771, 4662, 5145, Zeek Kerberos                                                 | sigma, network        | Kerberoast / DCSync / LSASS folds (Responder capture: no detection yet) |
+| Lateral Movement         | 4624 type 3, 4688/Sysmon 1, 7045                                                                          | sigma                 | lateral-movement fold                                                   |
+| Priv Esc / Persistence   | Sysmon 1/13/17, 4720/7045                                                                                 | sysmon, sigma         | persistence / privesc folds (LOLBAS: no detection yet)                  |
+| Coercion / Relay / AD CS | 5145 pipes, 4886/4887 requests (SAN compared at triage), 4624 relay mismatch, 4768 PKINIT as a DC account | sigma, siem           | coercion → relay → DC fold                                              |
+| Collection               | 4663 file reads, 4688 archive cmds                                                                        | sigma                 | collection / exfil fold                                                 |
+| Exfil / C2               | Suricata, Zeek conn/dns/ssl, CloudTrail share grants                                                      | network, sigma        | reverse-shell / pivot folds; htpx pair `aws-snapshot-share-exfil`       |
+| Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn                                         | sigma, network        | ransomware chain (teardown → recovery → payload); cryptomining pair     |
+| Anti-forensics           | 1102 + 104 log clears, auditd history syscalls, 4742 rogue DC                                             | sigma                 | DCShadow fold; `wevtutil cl` / `shred ~/.bash_history` on a lab host    |
 
 The right-hand column is the point: every row has a Offense fold that proves the
 detection works.
@@ -632,21 +632,30 @@ monolithic `.ps1` doing all the recon at once is one event and will not trip a
 distinct-block count. The interactive operator is what it adds; a scripted one is caught by
 the 4688 twin only if the script shells out.
 
-**The AD CS row's tail is an open gap, recorded so it is not mistaken for coverage.** The
-row names three stages; the Sigma side sees the first two and part of the third. Coercion
-is `coercion_named_pipes_5145` and its Sysmon 18 companion; the relay is the SIEM plane's
-`ntlm_relay_4624` correlation. The certificate request is
+**The AD CS row's tail is written, and it is experimental for a stated reason.** The
+row names three stages; the Sigma side sees the first two, part of the third, and now the
+end state. Coercion is `coercion_named_pipes_5145` and its Sysmon 18 companion; the relay
+is the SIEM plane's `ntlm_relay_4624` correlation. The certificate request is
 `detections/sigma/privilege_escalation/adcs_esc1_san_mismatch_4886.yml`, which surfaces every
 4886/4887 at `informational` for the SAN-vs-requester comparison an analyst (or a backend
 correlation) makes. The filename names that triage question; the rule does not perform the
-comparison, because Sigma cannot compare two fields. What nothing here sees is ESC8's end
-state: a DC's machine-account certificate obtained through the relay, then used to
-authenticate and DCSync as that DC. `dcsync_replication_4662` drops `$` subjects by design,
-and `dcsync_non_dc_machine_account_4662` allowlists the real DCs, so DCSync as `DC01$` from
-an attacker host reads as ordinary replication - 4662 has no source address to tell them
-apart. Closing it needs the logon side, a DC account authenticating (PKINIT) from an
-address that is not a DC, and that is not yet written because its false-positive profile
-has not been measured.
+comparison, because Sigma cannot compare two fields. ESC8's end state - a DC's
+machine-account certificate obtained through the relay, then used to authenticate and
+DCSync as that DC - is invisible on the 4662 side and that has not changed:
+`dcsync_replication_4662` drops `$` subjects by design, `dcsync_non_dc_machine_account_4662`
+allowlists the real DCs, and 4662 has no source address, so DCSync as `DC01$` from an
+attacker host reads there as ordinary replication. The logon side is where the address
+exists, and it is now
+`detections/sigma/credential_access/dc_account_pkinit_non_dc_4768.yml`: a 4768 for a DC
+machine account with certificate pre-authentication (PreAuthType 16, PKINIT) from a client
+address that is not a DC. The invariant is that a DC's own account should only ever obtain
+a TGT from a DC address. It ships `experimental` with two DEPLOY-REQUIRED lists (the DC
+accounts in the selection, so it is inert until filled, and the DC addresses in the filter)
+because its false-positive profile is still unmeasured: the lab has captured no DC-account
+PKINIT of any kind, and the rule's own `falsepositives` - RODCs, re-addressed DCs, DC-to-DC
+Kerberos through a load balancer, machine-certificate PKINIT on a DC - are the hypotheses
+to measure, not a baseline. It leaves `experimental` when a lab run in
+`docker/validation/labruns/` has measured them.
 
 ### Declined coverage (recorded, not planned)
 
