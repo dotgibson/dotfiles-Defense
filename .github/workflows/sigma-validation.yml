@@ -9,6 +9,17 @@ name: sigma-validation
 # with zircolite (native Sigma via the pysigma windows-audit / sysmon pipeline) and asserts
 # the rule's id lands in the detections. Deterministic (committed fixtures), hermetic (no
 # EVTX capture, no live host). Mirror of network-validation.yml for the Sigma corpus.
+#
+# BOTH JOBS ARE REQUIRED CHECKS, so `pull_request` below is deliberately UNFILTERED, for
+# the same reason sigma.yml's is. A path-filtered required check never reports on a PR
+# that misses its paths, and GitHub then holds that PR forever — the deadlock #213 had to
+# fix for `bootstraps on a bare ubuntu:24.04`. The ruleset on main already required
+# `sigma validate + compile` but neither job here, so #354 merged with the host plane red
+# and main stayed red for four days before anyone looked; a Renovate PR with auto-merge
+# squashes the moment the compile gate is green, whatever this file says. Each job is
+# pure CPU on a checkout and runs in a few minutes, so it simply runs everywhere; gating
+# the steps instead would put a bug in that gating logic between the corpus and its
+# efficacy gate. `push` stays filtered; post-merge runs on main gate nothing.
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -25,18 +36,7 @@ on:
       - "docker/validation/zircolite-constraints.txt"
       - "detections/requirements.txt"
       - ".github/workflows/sigma-validation.yml"
-  pull_request:
-    paths:
-      - "detections/sigma/**"
-      - "docker/validation/sigma-manifest.tsv"
-      - "docker/validation/sigma-cloud-manifest.tsv"
-      - "docker/validation/sigma-fixtures/**"
-      - "docker/validation/sigma_eval.py"
-      - "docker/validation/run-sigma-validation.sh"
-      - "docker/validation/run-cloud-validation.sh"
-      - "docker/validation/zircolite-constraints.txt"
-      - "detections/requirements.txt"
-      - ".github/workflows/sigma-validation.yml"
+  pull_request: # deliberately unfiltered — both jobs are required checks; see the header
 
 concurrency:
   group: sigma-validation-${{ github.ref }}
