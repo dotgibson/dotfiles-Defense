@@ -226,7 +226,7 @@ Alpine v3.24/edge version read as fleet-wide.
 
 | Target              | `tree-sitter-cli` | vs ≥ 0.26.1 | verified   |
 | ------------------- | ----------------- | ----------- | ---------- |
-| Homebrew            | 0.27.0            | at or above | 2026-10-05 |
+| Homebrew            | 0.27.1            | at or above | 2026-10-12 |
 | openSUSE Tumbleweed | 0.27.0            | at or above | 2026-09-29 |
 | Gentoo stable       | 0.26.12           | at or above | 2026-09-17 |
 | Fedora Rawhide      | 0.26.11           | at or above | 2026-09-17 |
@@ -240,7 +240,7 @@ Alpine v3.24/edge version read as fleet-wide.
 | Fedora 43           | 0.25.10           | **below**   | 2026-09-17 |
 | Alpine 3.23         | 0.25.10           | **below**   | 2026-09-17 |
 | Alpine 3.22         | 0.25.10           | **below**   | 2026-09-17 |
-| Alpine 3.21         | 0.24.4            | **below**   | 2026-10-05 |
+| Alpine 3.21         | 0.24.4            | **below**   | 2026-10-12 |
 
 <!-- core:porting-matrix:end fleet-versions-tree-sitter-cli -->
 
@@ -400,7 +400,11 @@ and must not be added back**: `app-misc/gum` exists in neither GURU nor `::gento
 `app-shells/gum` or `dev-util/gum`), so an entry can only ever emerge as a `skipped:` line —
 which reads like a keyword mask and gets "fixed" with an `accept_keywords` entry that unmasks
 nothing. That is exactly how it survived in `guru_install` for months; see ³⁰ for what provides
-gum on Gentoo now.
+gum on Gentoo now. One name on this list does have a `::gentoo` twin: `1password-cli` is also
+`app-admin/op-cli-bin` in the main tree (2.23.0, `~amd64 ~arm64`), but that lags GURU's
+`app-misc/1password-cli` (2.39.0, also `~arch`), so GURU stays the route and the main-tree atom
+is deliberately **not** added alongside it (checked 2026-10-14, dotfiles-Gentoo#214; whether the
+two ebuilds block each other was not checked).
 
 **`ouch` is a GURU atom too, but it is NOT in that `guru_install` list** — it is opt-in, and
 `--no-extras` has to be able to skip it. `dotfiles-Gentoo` therefore has a third seam,
@@ -427,9 +431,9 @@ already merged the source one must `emerge --unmerge dev-util/shellcheck` first.
 ¹³ op = **1Password CLI**. bootstrap.sh installs it from 1Password's official **signed** repo,
 which differs per family: dnf/rpm repo (Fedora/openSUSE), apt repo (Debian/Kali), apk repo
 (Alpine — a native musl build, so it's fine on the musl outlier), and the GURU
-`app-misc/1password-cli` (Gentoo). **Arch** installs nothing: it has no AUR helper, so
-bootstrap.sh only prints a `paru -S 1password-cli` hint, the same shape as `viddy` and
-`carapace`. A vendor repo, **not** the OS repo; the apt/rpm setup is key-first (the repo entry
+`app-misc/1password-cli` (Gentoo; chosen over `::gentoo`'s older `app-admin/op-cli-bin`, see ¹²).
+**Arch** installs nothing: it has no AUR helper, so bootstrap.sh only prints a
+`paru -S 1password-cli` hint, the same shape as `viddy` and `carapace`. A vendor repo, **not** the OS repo; the apt/rpm setup is key-first (the repo entry
 is added only after 1Password's signing key has been fetched and imported, so a failed key
 leaves no repo behind — it does not roll back a repo whose later install fails).
 ¹⁴ Alpine **`testing`-only** (`duf`, `glow`, `tealdeer`, `ouch`). All four are musl-fine
@@ -1303,13 +1307,14 @@ is `dev-python/uv`, not a bare `uv`.
 Charm's gum is packaged nowhere Portage can reach — not `::gentoo`, not GURU, in any category
 (see ¹²) — so `dotfiles-Gentoo` declares it in `gentoo/mise-tools.toml`, which mise installs as
 a prebuilt, checksum-verified binary with no compiler and no privileges. **Read that cell with
-one caveat:** that manifest is installed only on the **`--user`** (no-root) path, so a
-_privileged_ Gentoo bootstrap installs no gum at all. On that path it is a hand-install —
-`mise use -g gum`, or `go install charm.land/gum/v2@latest` (the module path, **not** the
-GitHub URL — see ³¹).
+one caveat:** that manifest is installed only on the **`--user`** (no-root) path. The
+_privileged_ Gentoo bootstrap gets gum from `go install charm.land/gum/v2@latest` instead
+(the module path, **not** the GitHub URL — see ³¹), beside gron, sesh and shfmt
+(dotgibson/dotfiles-Gentoo#218). Before that it installed no gum at all, so `core doctor`
+showed ✗ gum on a root-bootstrapped box unless gum had been installed by hand.
 
-³¹ **`go install` module paths — the repo URL is usually NOT the module path.** Five of the
-seven go-installable rows need a major-version suffix, a `cmd/` subpath, a different HOST, or a
+³¹ **`go install` module paths — the repo URL is usually NOT the module path.** Six of the
+eight go-installable rows need a major-version suffix, a `cmd/` subpath, a different HOST, or a
 combination, and a naive `go install github.com/<org>/<repo>@latest` fails or silently builds
 an abandoned major.
 Verified against each project's own `go.mod`, and these are the exact strings the fleet's
@@ -1324,6 +1329,7 @@ Verified against each project's own `go.mod`, and these are the exact strings th
 | `gron`  | `github.com/tomnomnom/gron`           |
 | `duf`   | `github.com/muesli/duf`               |
 | `glow`  | `charm.land/glow/v3`                  |
+| `gum`   | `charm.land/gum/v2`                   |
 
 **Charm's tools moved off GitHub as a module host** — `glow` is now `charm.land/glow/v3`
 (v3.0.0, 2026-08-11) and `gum` is `charm.land/gum/v2` (v2.0.0). Both still _live_ on GitHub;
@@ -1333,9 +1339,9 @@ rather than trust a remembered path. **`dotfiles-Alpine` go-installs `glow`** �
 `testing`-only on Alpine¹⁴, so `go install` is its real source there, and that call carried the
 stale `github.com/charmbracelet/glow/v2` until dotfiles-Alpine#122 moved it to
 `charm.land/glow/v3`. It resolved either way, which is precisely how it went unnoticed:
-`@latest` on the old path quietly pins the newest **v2** tag instead of failing. `gum` is
-go-installed by no `bootstrap.sh` (the Debian/Kali cells use Charm's apt repo, see ¹⁵), so that
-one is for the reader installing by hand.
+`@latest` on the old path quietly pins the newest **v2** tag instead of failing. **`dotfiles-Gentoo`
+go-installs `gum`** on its privileged path (see ³⁰; dotgibson/dotfiles-Gentoo#218) — the only
+`bootstrap.sh` that does, since the Debian/Kali cells use Charm's apt repo (see ¹⁵).
 
 ³² direnv: per-directory environment loader — **Core wires it but neither installs nor
 detects it.** There is no `HAVE_DIRENV` and no alias: `_cache_eval` already bails on an
@@ -1415,23 +1421,23 @@ two of those corrections were.
 
 | Target              | `neovim` | vs ≥ 0.12.0 | verified   |
 | ------------------- | -------- | ----------- | ---------- |
-| Arch                | 0.12.6   | at or above | 2026-10-11 |
-| openSUSE Tumbleweed | 0.12.5   | at or above | 2026-10-05 |
-| Fedora Rawhide      | 0.12.5   | at or above | 2026-10-05 |
+| Arch                | 0.12.6   | at or above | 2026-10-12 |
+| openSUSE Tumbleweed | 0.12.5   | at or above | 2026-10-12 |
+| Fedora Rawhide      | 0.12.5   | at or above | 2026-10-12 |
 | Fedora 45           | 0.12.5   | at or above | 2026-09-17 |
-| Fedora 44           | 0.12.5   | at or above | 2026-10-05 |
-| Homebrew            | 0.12.5   | at or above | 2026-10-05 |
+| Fedora 44           | 0.12.5   | at or above | 2026-10-12 |
+| Homebrew            | 0.12.6   | at or above | 2026-10-12 |
 | openSUSE Leap 16.1  | 0.12.4   | at or above | 2026-09-17 |
-| Alpine edge         | 0.12.2   | at or above | 2026-10-05 |
-| Alpine 3.24         | 0.12.2   | at or above | 2026-10-05 |
+| Alpine edge         | 0.12.2   | at or above | 2026-10-12 |
+| Alpine 3.24         | 0.12.2   | at or above | 2026-10-12 |
 | Gentoo stable       | 0.11.7   | **below**   | 2026-09-17 |
-| Alpine 3.23         | 0.11.7   | **below**   | 2026-10-05 |
-| Fedora 43           | 0.11.6   | **below**   | 2026-10-05 |
+| Alpine 3.23         | 0.11.7   | **below**   | 2026-10-12 |
+| Fedora 43           | 0.11.6   | **below**   | 2026-10-12 |
 | openSUSE Leap 16.0  | 0.11.3   | **below**   | 2026-09-17 |
-| Alpine 3.22         | 0.11.1   | **below**   | 2026-10-05 |
-| Debian 13           | 0.10.4   | **below**   | 2026-10-05 |
-| Alpine 3.21         | 0.10.4   | **below**   | 2026-10-05 |
-| Ubuntu 24.04        | 0.9.5    | **below**   | 2026-10-05 |
+| Alpine 3.22         | 0.11.1   | **below**   | 2026-10-12 |
+| Debian 13           | 0.10.4   | **below**   | 2026-10-12 |
+| Alpine 3.21         | 0.10.4   | **below**   | 2026-10-12 |
+| Ubuntu 24.04        | 0.9.5    | **below**   | 2026-10-12 |
 
 <!-- core:porting-matrix:end fleet-versions-neovim -->
 
@@ -1557,22 +1563,22 @@ enforces are now enumerated by one mechanism rather than three prose styles.
 
 | Target              | `jq`  | vs ≥ 1.8.2  | verified   |
 | ------------------- | ----- | ----------- | ---------- |
-| Arch                | 1.8.2 | at or above | 2026-10-05 |
-| Gentoo              | 1.8.2 | at or above | 2026-10-05 |
-| openSUSE Tumbleweed | 1.8.2 | at or above | 2026-10-05 |
+| Arch                | 1.8.2 | at or above | 2026-10-12 |
+| Gentoo              | 1.8.2 | at or above | 2026-10-12 |
+| openSUSE Tumbleweed | 1.8.2 | at or above | 2026-10-12 |
 | openSUSE Leap 16.1  | 1.8.2 | at or above | 2026-09-12 |
-| Homebrew            | 1.8.2 | at or above | 2026-10-05 |
-| Alpine edge         | 1.8.2 | at or above | 2026-10-05 |
-| Alpine 3.24         | 1.8.2 | at or above | 2026-10-05 |
-| Alpine 3.23         | 1.8.2 | at or above | 2026-10-05 |
-| Alpine 3.22         | 1.8.2 | at or above | 2026-10-05 |
-| Fedora Rawhide      | 1.8.2 | at or above | 2026-10-05 |
+| Homebrew            | 1.8.2 | at or above | 2026-10-12 |
+| Alpine edge         | 1.8.2 | at or above | 2026-10-12 |
+| Alpine 3.24         | 1.8.2 | at or above | 2026-10-12 |
+| Alpine 3.23         | 1.8.2 | at or above | 2026-10-12 |
+| Alpine 3.22         | 1.8.2 | at or above | 2026-10-12 |
+| Fedora Rawhide      | 1.8.2 | at or above | 2026-10-12 |
 | Fedora 45           | 1.8.2 | at or above | 2026-09-06 |
-| Fedora 44           | 1.8.1 | **below**   | 2026-10-05 |
-| Fedora 43           | 1.8.1 | **below**   | 2026-10-05 |
-| Alpine 3.21         | 1.7.1 | **below**   | 2026-10-05 |
-| Debian 13           | 1.7.1 | **below**   | 2026-10-05 |
-| Ubuntu 24.04        | 1.7.1 | **below**   | 2026-10-05 |
+| Fedora 44           | 1.8.1 | **below**   | 2026-10-12 |
+| Fedora 43           | 1.8.1 | **below**   | 2026-10-12 |
+| Alpine 3.21         | 1.7.1 | **below**   | 2026-10-12 |
+| Debian 13           | 1.7.1 | **below**   | 2026-10-12 |
+| Ubuntu 24.04        | 1.7.1 | **below**   | 2026-10-12 |
 | openSUSE Leap 16.0  | 1.7.1 | **below**   | 2026-09-12 |
 
 <!-- core:porting-matrix:end fleet-versions -->
@@ -1678,23 +1684,23 @@ here so that watch has a table to read rather than a guess.
 
 | Target              | `eza`   | vs ≥ 0.23.5 | verified   |
 | ------------------- | ------- | ----------- | ---------- |
-| Arch                | 0.23.5  | at or above | 2026-10-05 |
-| openSUSE Tumbleweed | 0.23.5  | at or above | 2026-10-05 |
-| Fedora Rawhide      | 0.23.5  | at or above | 2026-10-05 |
+| Arch                | 0.23.5  | at or above | 2026-10-12 |
+| openSUSE Tumbleweed | 0.23.5  | at or above | 2026-10-12 |
+| Fedora Rawhide      | 0.23.5  | at or above | 2026-10-12 |
 | Fedora 45           | 0.23.5  | at or above | 2026-09-24 |
-| Fedora 44           | 0.23.5  | at or above | 2026-10-05 |
-| Fedora 43           | 0.23.5  | at or above | 2026-10-05 |
-| Homebrew            | 0.23.5  | at or above | 2026-10-05 |
-| Alpine edge         | 0.23.4  | **below**   | 2026-10-05 |
-| Alpine 3.24         | 0.23.4  | **below**   | 2026-10-05 |
-| Alpine 3.23         | 0.23.4  | **below**   | 2026-10-05 |
+| Fedora 44           | 0.23.5  | at or above | 2026-10-12 |
+| Fedora 43           | 0.23.5  | at or above | 2026-10-12 |
+| Homebrew            | 0.23.5  | at or above | 2026-10-12 |
+| Alpine edge         | 0.23.4  | **below**   | 2026-10-12 |
+| Alpine 3.24         | 0.23.4  | **below**   | 2026-10-12 |
+| Alpine 3.23         | 0.23.4  | **below**   | 2026-10-12 |
 | Gentoo stable       | 0.23.4  | **below**   | 2026-09-24 |
-| Alpine 3.22         | 0.21.3  | **below**   | 2026-10-05 |
-| Debian 13           | 0.21.0  | **below**   | 2026-10-05 |
-| Alpine 3.21         | 0.20.12 | **below**   | 2026-10-05 |
+| Alpine 3.22         | 0.21.3  | **below**   | 2026-10-12 |
+| Debian 13           | 0.21.0  | **below**   | 2026-10-12 |
+| Alpine 3.21         | 0.20.12 | **below**   | 2026-10-12 |
 | openSUSE Leap 16.1  | 0.20.4  | **below**   | 2026-09-24 |
 | openSUSE Leap 16.0  | 0.20.4  | **below**   | 2026-09-24 |
-| Ubuntu 24.04        | 0.18.2  | **below**   | 2026-10-05 |
+| Ubuntu 24.04        | 0.18.2  | **below**   | 2026-10-12 |
 
 <!-- core:porting-matrix:end fleet-versions-eza -->
 
