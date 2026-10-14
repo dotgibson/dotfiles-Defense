@@ -363,6 +363,9 @@ query_type =~ "UNLOAD" and (not(((query_text startswith "COPY INTO @%" or query_
 // snowflake/snowflake_user_created.yml — Snowflake user created or ACCOUNTADMIN granted (tenant persistence)
 query_type =~ "CREATE_USER" or (query_type =~ "GRANT" and (query_text contains "ACCOUNTADMIN" or query_text contains "SECURITYADMIN"))
 
+// stealth/lolbin_proxy_execution_suspicious_target.yml — LOLBin proxy execution - rundll32/regsvr32/mshta with an attacker-controlled target (T1218)
+(((Image endswith "\\rundll32.exe" or Image endswith "\\regsvr32.exe") and (CommandLine contains "http://" or CommandLine contains "https://" or CommandLine contains "\\\\" or CommandLine contains "javascript:" or CommandLine contains "vbscript:" or CommandLine contains "/i:" or CommandLine contains "\\Users\\" or CommandLine contains "\\Temp\\" or CommandLine contains "\\ProgramData\\" or CommandLine contains "%APPDATA%" or CommandLine contains "%TEMP%" or CommandLine contains "%PUBLIC%")) or Image endswith "\\mshta.exe") and (not(ParentImage endswith "\\vendor-installer.exe"))
+
 // terraform/tfc_rogue_agent_pool.yml — Terraform Cloud agent pool created (rogue run executor)
 ['resource.type'] =~ "agent_pool" and ['resource.action'] =~ "create"
 

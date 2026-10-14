@@ -30,7 +30,7 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Offens
 | Recon / Discovery        | 4688/4104, 4798/4799, 5145, 1644/4662, 4648                                                               | sigma                 | recon / AD-enumeration folds (no network-plane recon detection yet)     |
 | Credential Access        | Sysmon 10, 4625/4768/4769/4771, 4662, 5145, Zeek Kerberos                                                 | sigma, network        | Kerberoast / DCSync / LSASS folds (Responder capture: no detection yet) |
 | Lateral Movement         | 4624 type 3, 4688/Sysmon 1, 7045                                                                          | sigma                 | lateral-movement fold                                                   |
-| Priv Esc / Persistence   | Sysmon 1/13/17, 4720/7045                                                                                 | sysmon, sigma         | persistence / privesc folds (LOLBAS: no detection yet)                  |
+| Priv Esc / Persistence   | Sysmon 1/13/17, 4720/7045                                                                                 | sysmon, sigma         | persistence / privesc folds; LOLBAS → `detections/sigma/stealth/`       |
 | Coercion / Relay / AD CS | 5145 pipes, 4886/4887 requests (SAN compared at triage), 4624 relay mismatch, 4768 PKINIT as a DC account | sigma, siem           | coercion → relay → DC fold                                              |
 | Collection               | 4663 file reads, 4688 archive cmds                                                                        | sigma                 | collection / exfil fold                                                 |
 | Exfil / C2               | Suricata, Zeek conn/dns/ssl, CloudTrail share grants                                                      | network, sigma        | reverse-shell / pivot folds; htpx pair `aws-snapshot-share-exfil`       |
@@ -88,31 +88,38 @@ gap be ledgered instead: T1070 is already covered by
 Both rules were written; they land in different rows, and that is correct rather than a
 mistag.
 
-Stealth is three techniques and six rules, and that is an honest reading of the corpus
+Stealth is six techniques and seven rules, and that is an honest reading of the corpus
 rather than an artifact of tagging. Two of the techniques — T1070 and T1070.003 — are the
-command-history and artifact-removal work described above, one rule each. The third is
-T1134.001, and it arrived by the route this section reserved for it rather than by a tag:
-see below. It now carries four rules, added one at a time and each on its own evidence —
+command-history and artifact-removal work described above, one rule each. Three more —
+T1218.005, T1218.010 and T1218.011 — arrived together in #352 on one rule,
+`detections/sigma/stealth/lolbin_proxy_execution_suspicious_target.yml`, the first in that
+directory: mshta, regsvr32 and rundll32 proxying attacker-supplied code, keyed on the
+*target* (a URL or scriptlet, a UNC path, a user-writable directory) rather than on the
+binary, the way #351 gated the 4698 LOLBin arm. The sixth is T1134.001, and it arrived by
+the route this section reserved for it rather than by a tag: see below. It now carries four
+rules, added one at a time and each on its own evidence —
 `spoolss_pipe_impersonation_sysmon_17` (#225) on the mechanism,
 `token_theft_process_target_subject_4688` (#230) on the token's provenance,
 `token_theft_parent_child_mismatch_sysmon_1` (#239 follow-on) on the same outcome read from
 the other channel, and `srvsvc_epmapper_pipe_impersonation_sysmon_17` (#248) on the same
 mechanism as the first, for the two endpoints it cannot see. The rest of TA0005 is
-masquerading, obfuscation, process injection and LOLBAS proxy execution — a body of work
+masquerading, obfuscation, process injection and the other proxy-execution binaries
+(MSBuild, msiexec, CMSTP, InstallUtil — each needs its own target gating) — a body of work
 this repo has not started, not one it has misfiled.
-**The technique count is the one that measures the gap, and it has not moved since #225.**
-Four rules on one technique is depth, not breadth; read the row widening as one technique
-being covered from three planes — mechanism, token provenance, outcome — rather than as
-TA0005 getting less thin. #248 widened it again without moving the technique count, which is
-the reading this paragraph exists to protect.
+**The technique count is the one that measures the gap.** It sat at three from #225
+through #248 while T1134.001 went from one rule to four: four rules on one technique is
+depth, not breadth, and that row widening was one technique being covered from three
+planes — mechanism, token provenance, outcome — rather than TA0005 getting less thin. #352
+is the first time the count moved, three to six, and it moved by breadth — three techniques
+nothing here had touched, on one rule — which is the reading this paragraph exists to protect.
 
 **The pair still declines the row, and #223 is still the reason.** Because T1134.001 is
 dual-tactic, `detections/sigma/privilege_escalation/potato_seimpersonate_4688.yml` and its
 Sysmon-1 twin could legally claim the TA0005 half — the pairing assertion in
 `detections/check-attack-tags.sh` asserts a tactic tag is *earned* by some technique
 tagged beside it, not that every tactic is claimed, so the tag would pass and
-`detections/navigator/COVERAGE.md` would read `Stealth TA0005 | 3 | 8` instead of the
-`3 | 6` it reads today. The pair does **not** claim it. What those rules select is a service identity
+`detections/navigator/COVERAGE.md` would read `Stealth TA0005 | 6 | 9` instead of the
+`6 | 7` it reads today. The pair does **not** claim it. What those rules select is a service identity
 spawning a shell — the shape *before* the token is stolen, keyed on the un-masked
 account field — and their own descriptions concede they cannot show the run-as-SYSTEM
 result. The evasion is the part they cannot see. Taking the row would buy two rules'

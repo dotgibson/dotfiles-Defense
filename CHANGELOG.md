@@ -1010,6 +1010,27 @@ under `[Unreleased]` from here.
   check, and the methodology now says the logon side is written and stays experimental
   until a lab run measures them. TP + TN fixtures are `vendor-documented` from Microsoft's
   4768 reference; the certificate values are synthetic.
+- **LOLBin proxy execution gets its first rule, and `stealth/` opens as a directory (#352).**
+  The weekly coverage-gap routine found no hole against the methodology and ranked one
+  authorable frontier: system-binary proxy execution, named in the methodology as "LOLBAS:
+  no detection yet" and sitting in neither the `known-absent` marker nor the declined
+  ledger. `stealth/lolbin_proxy_execution_suspicious_target` closes it on the
+  process-creation feed the `host_recon_*` and `token_theft_*` rules already read: rundll32
+  and regsvr32 fire only with a co-occurring attacker-controlled target (URL, scriptlet, UNC
+  path, user-writable directory - the gating #351 put on the 4698 LOLBin arm), mshta is
+  bare, and `filter_vendor_installers` is the one `DEPLOY-REQUIRED` placeholder, keyed on the
+  parent. `http` is anchored on the scheme rather than on a delimiter as in 4698, because
+  `regsvr32 /s winhttp.dll` is a real installer step; the TN carries that exact near-miss so
+  a bare `http` can never come back unnoticed. Four single-event TPs, one per arm, share one
+  five-event TN; all five fixtures are `unverified` - public LOLBAS command forms on a
+  synthetic event shape, since no capture of these binaries exists in the corpus. No htpx
+  entry pairs with it, so it lands under "Sigma techniques no htpx entry covers".
+  `gen-siem.sh`'s `WIN_DIRS` gains `stealth`: that explicit list would otherwise have dropped
+  the new directory from the Splunk form without a word.
+  Ledger: `Stealth TA0005 3 | 6 -> 6 | 7`; corpus 125 -> 126 rules, 149 -> 150 documents,
+  87 -> 90 techniques, 24 -> 25 logsource directories; `HTPX-COVERAGE.md` 26 -> 29 techniques
+  with no htpx entry. The methodology's Stealth paragraph records the first move of its
+  technique count since #225.
 - **`check-readme-tables.sh` — the README's rule and deploy-time tables are now gated
   (#314).** Same argument `check-readme-gates.sh` makes about the other half of the file:
   *"the README is load-bearing documentation, so it gets a gate like the rest of the

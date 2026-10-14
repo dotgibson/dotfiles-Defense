@@ -267,6 +267,24 @@
       "comment": "1 rule(s): dcshadow_rogue_dc_4742"
     },
     {
+      "techniqueID": "T1218.005",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): lolbin_proxy_execution_suspicious_target"
+    },
+    {
+      "techniqueID": "T1218.010",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): lolbin_proxy_execution_suspicious_target"
+    },
+    {
+      "techniqueID": "T1218.011",
+      "score": 1,
+      "enabled": true,
+      "comment": "1 rule(s): lolbin_proxy_execution_suspicious_target"
+    },
+    {
       "techniqueID": "T1482",
       "score": 1,
       "enabled": true,

@@ -87,7 +87,7 @@ require_backends splunk kusto lucene
 
 # Windows tactic dirs → splunk_windows TA pipeline; non-Windows platform dirs → raw.
 # (Same split convert.sh documents; kept explicit so a new dir is a conscious choice.)
-WIN_DIRS=(credential_access privilege_escalation lateral_movement discovery collection persistence defense_impairment impact)
+WIN_DIRS=(credential_access privilege_escalation lateral_movement discovery collection persistence defense_impairment impact stealth)
 NONWIN_DIRS=(linux cloud kubernetes okta github gitlab registry vault terraform jenkins snowflake google_workspace cloudflare npm pypi slack)
 
 # ── Splunk savedsearches form ─────────────────────────────────────────────────
