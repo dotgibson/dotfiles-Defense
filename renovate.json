@@ -12,6 +12,12 @@
       "semanticCommitType": "ci",
       "semanticCommitScope": "deps",
       "automerge": false
+    },
+    {
+      "description": "pysigma-backend-sqlite 2.1.0 moved to pySigma 2 (pysigma>=2.0.0,<3) while sigma-cli, the splunk/elasticsearch/kusto backends and zircolite's pipelines still require pysigma<2, so bumping the backend alone makes the constrained install in sigma-validation.yml ResolutionImpossible (#354 did exactly that and main's host plane went red). Hold it below 2.1.0 until pySigma 2 lands across the toolchain; the PR that moves pysigma to 2.x in both files drops this rule.",
+      "matchManagers": ["pip_requirements"],
+      "matchPackageNames": ["pysigma-backend-sqlite"],
+      "allowedVersions": "<2.1.0"
     }
   ]
 }

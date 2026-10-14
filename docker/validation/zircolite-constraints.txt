@@ -27,10 +27,21 @@
 # at 2.0.0, not left to float: which version runs decides whether the timespan half of
 # every correlation rule is tested at all, and a float would move that verdict silently.
 #
+# 2.0.0 is also the CEILING for as long as this toolchain runs pySigma 1.x, not just the
+# floor. pysigma-backend-sqlite 2.1.0 (2026-10-10) moved to pySigma 2 (`pysigma>=2.0.0,<3`)
+# and nothing else here can follow yet: sigma-cli 3.1.0, the splunk/elasticsearch/kusto
+# backends in detections/requirements.txt and zircolite's own sysmon/windows pipelines all
+# require `pysigma<2`. Renovate bumped the backend alone (#354), the constrained install in
+# sigma-validation.yml went ResolutionImpossible against the pysigma==1.5.1 line below, and
+# the host plane was red on main from that merge until the pin came back down. Upstream's
+# release notes say it outright: installs on pySigma 1.x keep resolving to 2.0.0. So
+# renovate.json caps this package at <2.1.0; the PR that moves pysigma to 2.x in BOTH files
+# lifts that cap, and has to re-prove every correlation `-outside-window` case here.
+#
 # Renovate watches this file through a managerFilePatterns entry in renovate.json — the
 # name is deliberately not *requirements*, because it is not our dependency list — and
 # bumps the pair in the same grouped PR as detections/requirements.txt, which pins the
 # same two for the sigma gate. Keep the two files agreeing (#322).
 pysigma==1.5.1
 pyparsing==3.3.3
-pysigma-backend-sqlite==2.1.0
+pysigma-backend-sqlite==2.0.0

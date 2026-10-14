@@ -24,6 +24,20 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **The host validation plane was red on main from #354: `pysigma-backend-sqlite` goes
+  back to 2.0.0.** Renovate bumped the backend to 2.1.0, which moved to pySigma 2
+  (`pysigma>=2.0.0,<3`), while `zircolite-constraints.txt` pins `pysigma==1.5.1` and must
+  (#322): sigma-cli 3.1.0, the splunk/elasticsearch/kusto backends and zircolite's
+  sysmon/windows pipelines all still require `pysigma<2`. The constrained install step in
+  `sigma-validation.yml` went `ResolutionImpossible`, the job failed before running a single
+  rule, and the PR was merged with that check red. 2.0.0 is the last release on pySigma 1.x
+  and the one #334 proved (upstream's notes say 1.x installs keep resolving to it), so the
+  pin returns there, the constraints header records that 2.0.0 is now a ceiling as well as a
+  floor, and `renovate.json` caps the package at `<2.1.0` so the same PR does not come back
+  weekly. The cap goes when pySigma 2 lands across the toolchain in both pin files. Full
+  run against zircolite v3.7.6 on the restored pin: 123/123, the 19
+  `-outside-window` cases included.
+
 - **`github_credential_backdoor` now also selects
   `personal_access_token.request_created` (#348).** This follows htpx's `gh-cred-audit`
   (htpx#139). GitHub logs the request only in orgs that require approval for
