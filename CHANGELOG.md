@@ -789,6 +789,18 @@ under `[Unreleased]` from here.
 
 ### Changed
 
+- **`sigma-validation.yml` runs on every PR, so its two jobs can join the ruleset.**
+  The ruleset on `main` requires `sigma validate + compile` but not the host-plane job
+  (`sigma rules fire on synthetic event logs`) or the cloud-plane job
+  (`cloud sigma rules fire on synthetic events (nested-field plane)`), and both were
+  path-filtered on `pull_request`, which rules them out: a path-filtered required check
+  never reports on a PR that misses its paths, and that PR never merges (#213). So #354
+  merged with the host plane failing, and `main` stayed red for four days. A Renovate PR
+  with auto-merge on makes the gap concrete: it squashes the moment the compile gate is
+  green, red validation or not. The filter goes, exactly as `sigma.yml` did it. Both jobs
+  are pure CPU on a checkout and run in a few minutes. `push` stays filtered. Adding the
+  two contexts to the ruleset is a repo-settings change and is not in this diff.
+
 - **The Sigma toolchain pins moved where Renovate can see them (#322).** pySigma,
   pyparsing, sigma-cli and the three backends were strings inside `sigma.yml`'s `run:` line,
   so nothing noticed when they aged. They now live in `detections/requirements.txt`, which
