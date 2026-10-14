@@ -4,10 +4,23 @@ status: test
 description: |
   Detects the command-line path of RDP session hijacking: a process creation carrying a
   "tscon ... /dest:rdp-tcp#" command line. Low false-positive on what it covers - admins
-  almost never tscon to another session's RDP endpoint by hand - and it covers both the
-  direct invocation and the SYSTEM-via-service variant, because "sc create ... binpath=
-  ...tscon.../dest:rdp-tcp#..." embeds that same string in sc.exe's own command line and
-  matches on it.
+  almost never tscon to another session's RDP endpoint by hand.
+  Two arms, and which channel each one sees, written down because the #351 review read
+  them the other way round:
+    - `selection` is the /dest:rdp-tcp# string on ANY image, and that is deliberate. The
+      SYSTEM-via-service variant runs "sc create ... binpath= ...tscon.../dest:rdp-tcp#"
+      and embeds the string in sc.exe's own command line; a `cmd /c` wrapper embeds it in
+      cmd.exe's. An Image allowlist would have to enumerate every wrapper and each
+      omission is a blind spot, while the string itself is the discriminator - nothing
+      legitimate carries it, and an attacker who plants it to trip the alert has tripped
+      the alert. This arm reads CommandLine only, which native 4688 and Sysmon 1 both
+      carry, so the sc-create variant is covered on BOTH channels.
+    - `tscon_image and as_system` is the no-/dest interactive hijack (`psexec -s cmd`,
+      then `tscon 3`) and is Sysmon-1 only; its comment gives the 4688 substitution.
+  mstsc /shadow is session shadowing - viewing or controlling a live session, consent-gated
+  unless policy removes the prompt - and runs neither tscon nor any /dest argument. It is a
+  different technique with its own events in the TerminalServices-RemoteConnectionManager
+  log, out of scope here and stated rather than implied.
   Blind spot, stated rather than left to be discovered: tscon.exe is a thin wrapper over
   the Wtsapi32 WTSConnectSession / WTSDisconnectSession API, and a hijack that calls the
   API directly runs neither tscon.exe nor any "/dest:rdp-tcp#" argument, so this rule does
@@ -28,7 +41,7 @@ references:
   - https://github.com/bohops/SharpRDPHijack
 author: dotfiles-Defense
 date: 2026-06-30
-modified: 2026-09-28
+modified: 2026-10-14
 tags:
   - attack.lateral-movement
   - attack.t1563.002

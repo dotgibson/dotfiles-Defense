@@ -1,4 +1,4 @@
-title: Harbor image push (backdoored image / trusted-tag poisoning)
+title: Harbor artifact push or tag create (supply-chain triage surface)
 id: 3afe0d4d-b997-4a87-821d-83328a205dd2
 status: experimental
 description: |
@@ -14,6 +14,11 @@ description: |
   push outside the CI service account / build window. Compare the new digest to the last
   known-good and enforce image signing (cosign / content trust) so an unsigned overwrite
   is blocked, not just logged.
+  The filename keeps the threat this exists for; the title says what the logic does: every
+  artifact push and tag create minus the CI robot in filter_ci. A protected-repo or
+  tag-pattern selector would sharpen it, but a selection-side list is INERT until filled -
+  the opposite failure from a noisy filter, and one this repo does not ship. Add that
+  discriminator at the backend, where your protected repos are known.
   Validate (purple): push over a trusted tag from dotfiles-Offense (htpx pair
   harbor-image-backdoor).
 references:
@@ -21,7 +26,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/harbor-image-push-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
-modified: 2026-09-27
+modified: 2026-10-14
 tags:
   - attack.persistence
   - attack.t1525

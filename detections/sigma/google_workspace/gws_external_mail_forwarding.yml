@@ -13,11 +13,18 @@ description: |
 references:
   - https://attack.mitre.org/techniques/T1114/003/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/gws-mail-forward-audit.md
+  - https://developers.google.com/workspace/admin/reports/v1/appendix/activity/user-accounts
 author: dotfiles-Defense
 date: 2026-07-02
+modified: 2026-10-14
 tags:
   - attack.collection
   - attack.t1114.003
+# Verified 2026-10-14 against the Reports API appendix: email_forwarding_out_of_domain is
+# listed under BOTH the user_accounts and the login application, and exporter samples carry
+# applicationName=user_accounts, which is what is declared here. If your tenant's export
+# files it under login, remap the service at the backend - the selection is on eventName
+# and does not change.
 logsource:
   product: google_workspace
   service: user_accounts
