@@ -24,6 +24,21 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **`zircolite-constraints.txt` pins `pysigma-backend-sqlite` back to 2.0.0; the
+  host-plane validation gate had been red on `main` since #354.** 2.1.0 is the backend's
+  pySigma-2 release (`pysigma>=2.0.0,<3.0`), and the same file pins `pysigma==1.5.1`, so
+  Renovate's minor bump turned the constraint set into a contradiction: `pip install`
+  stopped at ResolutionImpossible and `sigma rules fire on synthetic event logs` failed on
+  the merge commit and on every run after it, with 0 of 123 rows executed. Nothing caught
+  it — `main`'s ruleset requires `sigma validate + compile` but neither validation-plane
+  job, and the job is path-filtered, so the Core syncs that followed never re-ran it. With
+  2.0.0 (`pysigma>=1.5.1,<2`) the set resolves and the gate
+  passes 123/123 (93 with a true-negative) against zircolite v3.7.6. `renovate.json` now
+  holds the backend below 2.1.0 so it moves only with the pysigma major, in the grouped
+  toolchain PR; that rule is to be deleted in the same PR that takes pysigma 2. The pysigma
+  2 PR itself (#353) stays open and red on purpose: sigma-cli and every pinned backend and
+  pipeline still declare `pysigma<2`, and pysigma 2's `google-re2` has no Python 3.15
+  wheel, so it goes green only once upstream ships.
 - **`github_credential_backdoor` now also selects
   `personal_access_token.request_created` (#348).** This follows htpx's `gh-cred-audit`
   (htpx#139). GitHub logs the request only in orgs that require approval for
