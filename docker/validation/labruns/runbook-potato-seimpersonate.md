@@ -20,7 +20,7 @@ the Windows side is yours to stand up.
    `potato_sysmon1_tp.jsonl` and its TN from `vendor-documented` to `captured`.
 2. **Whether `potato_seimpersonate_4688.yml` fires on a real potato — it never has.** No
    capture in the corpus carries a Security 4688 for a potato at all, let alone one whose
-   `SubjectUserName` is an app pool. Its fixture proves only that the rule fires on the event
+   Subject is a service identity. Its fixture proves only that the rule fires on the event
    shape we believe in. This is the oldest unconfirmed claim in the pair and the cheapest to
    close: it is one `auditpol` setting away on the same host as item 1.
 3. **`SubjectUserSid` on that 4688 — the `ONE ASSUMPTION, STATED` in
@@ -43,16 +43,17 @@ prediction.
    the parent process's own `User` on its own Sysmon 1 in the same log. (Both halves matter. The
    corpus never confirmed the second, because in none of the four records carrying `ParentUser`
    is the parent's own Sysmon 1 present.)
-2. On that same process's 4688, **`SubjectUserName` reads the service identity** — and record the
+2. On that same process's 4688, **the Subject identity reads the service account** — and record the
    exact field split, because 4688 does not qualify the account the way Sysmon does. Sysmon puts
    `IIS APPPOOL\DefaultAppPool` in one field; 4688 splits it, the way the captured 4688 in
    `2026-08-potato-sysmon1-user-semantics.md` splits `MSEDGEWIN10$` / `WORKGROUP`. So expect
-   `SubjectUserName: DefaultAppPool` with `SubjectDomainName: IIS APPPOOL`.
-   `potato_seimpersonate_4688.yml` selects `SubjectUserName|contains: 'APPPOOL'`, so on the default
-   pool it survives only on the case-insensitive `AppPool` substring of the pool *name*, and on a
-   pool named anything else there is no such substring in that field at all — the identity is in
-   `SubjectDomainName`, which the rule does not read. Record both fields verbatim, for the escalated
-   process and for the foothold.
+   `SubjectUserName: DefaultAppPool` with `SubjectDomainName: IIS APPPOOL`, and
+   `SubjectUserSid: S-1-5-82-…` for an app pool (`S-1-5-19` / `S-1-5-20` for LOCAL / NETWORK SERVICE).
+   Since #338 `potato_seimpersonate_4688.yml` keys on those SIDs and on `SubjectDomainName: 'IIS
+   APPPOOL'`, not on an `AppPool` substring of the name, so the pool's own name does not matter and a
+   custom-named pool is still caught by its SID and domain. Record `SubjectUserName`,
+   `SubjectDomainName` and `SubjectUserSid` verbatim, for the escalated process and for the foothold:
+   those are what a replacement selection would key on if the capture overturns the rule.
 3. **`SubjectUserSid` is the creating process's token SID, not `S-1-5-18`.** Equivalently: the
    audit reads Creator Subject from the process token, and `filter_same_context` in
    `token_theft_process_target_subject_4688.yml` does not eat its own true positive.
@@ -310,7 +311,8 @@ grep -n 'sigma-fixtures/<name>.jsonl' docker/validation/fixture-provenance.tsv
 | --- | --- | --- |
 | `potato_sysmon1_tp.jsonl` | `vendor-documented` | row A (or B) — the escalated process's Sysmon 1 |
 | `potato_sysmon1_tn.jsonl` | `vendor-documented` | row C — the interactive-admin capture, same key set |
-| `potato_security_4688.jsonl` | `vendor-documented` | row A's 4688. Today its identity block is *constructed*, and its Target Subject block is deliberately null pending exactly this measurement |
+| `potato_security_4688.jsonl` | `vendor-documented` | row A's 4688. Today its identity block is *constructed* to the documented rendering (bare pool name, `S-1-5-82-` SID, `IIS APPPOOL` domain), and its Target Subject block is deliberately null pending exactly this measurement |
+| `potato_security_4688_tn.jsonl` | `vendor-documented` | a captured 4688 whose Subject is SYSTEM / the machine account (`S-1-5-18`) spawning a shell — the benign same-context shape the rule declines. Added by #338; this shape is on any host, so a SYSTEM-spawned `cmd`/`powershell` from the run replaces it |
 | `token_theft_sysmon1_tp.jsonl` | `vendor-documented` | row D — the non-shell payload. Synthetic today |
 | `token_theft_sysmon1_tn.jsonl` | `unverified` | row E. Hand-authored from its TP |
 | `token_theft_4688_{tp,tn}.jsonl` | `vendor-documented` | TP: row A's 4688, and only if the fourth expectation held. TN: see below — probably nothing this run can produce |
@@ -360,11 +362,12 @@ clause from its note and cite the new run record instead. These would be the rep
 - **Item 3 fails — `SubjectUserSid` reads `S-1-5-18`.** The expensive branch, and the reason
   question 2 is answered first. On the thread-token reading, `filter_same_context` in
   `token_theft_process_target_subject_4688.yml` deletes that rule's own true positive, and
-  `potato_seimpersonate_4688.yml` goes silent for the same reason — its `SubjectUserName` would
-  carry whatever the host renders `S-1-5-18` as, never an app pool. Do not expect the literal string
-  `SYSTEM` there: the one captured 4688 in the corpus with `SubjectUserSid` `S-1-5-18` renders it
-  `MSEDGEWIN10$` / `WORKGROUP`, the machine account. Record the rendering, since it is what any
-  replacement selection would have to match. That is a two-rule rework, not a fixture edit. Reopen [#238]
+  `potato_seimpersonate_4688.yml` goes silent for the same reason — its SID selectors would see
+  `SubjectUserSid: S-1-5-18` and `SubjectDomainName` the machine-account domain, never an app-pool
+  SID or `IIS APPPOOL`. Do not expect the literal string `SYSTEM` in `SubjectUserName` either: the
+  one captured 4688 in the corpus with `SubjectUserSid` `S-1-5-18` renders it `MSEDGEWIN10$` /
+  `WORKGROUP`, the machine account. Record the rendering, since it is what any replacement selection
+  would have to match. That is a two-rule rework, not a fixture edit. Reopen [#238]
   and [#230] with the measurement attached, and note that
   `token_theft_parent_child_mismatch_sysmon_1.yml` is the rule that survives it: `ParentUser` is
   resolved from the parent *process*'s token and is untouched by the question. Its description
@@ -373,15 +376,16 @@ clause from its note and cite the new run record instead. These would be the rep
   nor `S-1-5-18`. Correct `potato_seimpersonate_4688.yml`'s selection to what was measured and
   say in the record which claim the capture overturned — the #239 shape, where the fix is a
   field, not a threshold.
-- **`SubjectUserName` reads the bare pool name.** The expected result on the field split above.
-  This is *not* item 2 failing — the creator is the service identity, exactly as predicted — it is
-  the rule reading the wrong half of it, so it is a rule finding rather than a fixture one: `potato_seimpersonate_4688.yml` matches `DefaultAppPool`
-  only by the case-insensitive `AppPool` substring and cannot match a custom-named pool at all.
-  Replace the fixture with what was captured — `potato_security_4688.jsonl` today carries the
-  Sysmon-style qualified string in `SubjectUserName` while also setting `SubjectDomainName`, a shape
-  no captured 4688 has — and open a rule change adding `SubjectDomainName|contains: 'APPPOOL'`, or
-  moving the term there, with the measurement attached. Do not hand-edit the fixture back to the
-  qualified form to keep the rule green: that is the #149 shape.
+- **`SubjectUserName` reads the bare pool name.** The expected result on the field split above, and
+  since #338 *not* a failure. `potato_seimpersonate_4688.yml` no longer reads `SubjectUserName` for
+  the app pool at all — it keys on `SubjectUserSid: S-1-5-82-…` and `SubjectDomainName: 'IIS
+  APPPOOL'`, so the bare pool name is caught whatever the pool is called, and
+  `potato_security_4688.jsonl` already carries that rendering (bare pool name, `S-1-5-82-` SID,
+  `IIS APPPOOL` domain). Confirm those fields populated as predicted and promote the fixture per the
+  table. The only rule finding here would be a host that writes the app-pool SID or domain in a form
+  the selector does not match — something other than an `S-1-5-82-` SID or the `IIS APPPOOL` domain;
+  correct the selection to what was measured, with the measurement attached. Do not hand-edit the
+  fixture to keep the rule green: that is the #149 shape.
 - **The fourth expectation fails — `TargetUserSid` reads `S-1-0-0` on a populated Target Subject
   block.** The corpus already produced one 4688 shaped that way, so this is the least surprising
   failure of the four, and it is the whole selection of
@@ -411,16 +415,15 @@ clause from its note and cite the new run record instead. These would be the rep
 
 ### Manifest consequences
 
-The `potato-seimpersonate-4688` row of `docker/validation/sigma-manifest.tsv` carries `-` in the TN
-column, and the rule has no `filter_*` block, so `check-rule-coverage.sh` does not require a true
-negative. It is still worth adding one, and **row E's 4688** is the one to use: same app-pool
-`Subject*` block, `NewProcessName` of `whoami.exe`, so it changes exactly one value against row A's
-4688 and `check_near_miss` will accept it. Adding it is three edits rather than one — the fixture,
-that manifest row's sixth column, and a new row in `fixture-provenance.tsv` — because the provenance
-gate fails on a manifest-referenced fixture with no ledger row, and `check_near_miss` starts applying
-to this pair the moment the `-` goes away. `potato-seimpersonate-sysmon-1`,
-`token-theft-parent-child-sysmon-1` and `token-theft-target-subject-4688` already name both fixtures
-and need no structural change — only the fixtures behind them are replaced.
+All four potato/token rows of `docker/validation/sigma-manifest.tsv` already name both a TP and a TN
+fixture: `potato-seimpersonate-sysmon-1`, `token-theft-parent-child-sysmon-1`,
+`potato-seimpersonate-4688` and `token-theft-target-subject-4688`. #338 added the 4688 pair's true
+negative — `potato_security_4688_tn.jsonl`, a SYSTEM / machine-account subject (`S-1-5-18`) spawning
+a shell, the benign shape the rule declines — and filled in that manifest row's sixth column along
+with its `fixture-provenance.tsv` row. So `check_near_miss` already applies to this pair: a
+replacement TP and TN must carry the same EventID and `EventData` key set. None of the four rows
+needs a structural change — only the fixtures behind them are replaced on a host run, and each
+replacement's ledger row is edited in place rather than added.
 
 [#230]: https://github.com/dotgibson/dotfiles-Defense/issues/230
 [#238]: https://github.com/dotgibson/dotfiles-Defense/issues/238

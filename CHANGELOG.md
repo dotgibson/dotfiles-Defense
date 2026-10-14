@@ -24,6 +24,17 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **The potato runbook and the 4688 rule description now match the SID-keyed rule from #338;
+  #246 stays open.** `potato_seimpersonate_4688.yml` was re-keyed from `SubjectUserName|contains:
+  'APPPOOL'` onto SIDs (`S-1-5-82-`, `S-1-5-19`/`S-1-5-20`, `SubjectDomainName: 'IIS APPPOOL'`) and
+  gained a true-negative fixture in #338, but `docker/validation/labruns/runbook-potato-seimpersonate.md`
+  still described the old name-based rule — its prediction 2, its item-3 and bare-pool-name
+  branches, its promotion table and its "Manifest consequences" section all told a host operator to
+  add a `SubjectDomainName` term and a TN fixture the rule already has. Those passages are rewritten
+  to the shipped rule, the promotion table gains the existing `potato_security_4688_tn.jsonl` row,
+  the rule's thread-token note is reframed onto `SubjectUserSid` (and the Splunk savedsearches
+  regenerated), and the `potato_security_4688.jsonl` ledger note's #338 run-on is repaired. No
+  fixture is promoted — that still needs a first-party Windows capture — so #246 remains open.
 - **`zircolite-constraints.txt` pins `pysigma-backend-sqlite` back to 2.0.0; the
   host-plane validation gate had been red on `main` since #354.** 2.1.0 is the backend's
   pySigma-2 release (`pysigma>=2.0.0,<3.0`), and the same file pins `pysigma==1.5.1`, so
