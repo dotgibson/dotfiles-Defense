@@ -22,26 +22,6 @@ under `[Unreleased]` from here.
 
 ## [Unreleased]
 
-### Added
-
-- **`dc_account_pkinit_non_dc_4768` — the ESC8 end state `DEFENSE-METHODOLOGY.md` recorded
-  as an open gap.** A 4768 for a domain controller's machine account with certificate
-  pre-authentication (PreAuthType 16, PKINIT) from a client address that is not a DC. The
-  invariant is that a DC's own account should only ever obtain a TGT from a DC address; a
-  certificate issued to `DC01$` and used from a member server is the coercion → relay → CA
-  web enrollment chain reaching its goal, and the 4662 pair cannot see it
-  (`dcsync_replication_4662` drops `$` subjects, `dcsync_non_dc_machine_account_4662`
-  allowlists the real DCs, and 4662 has no source address). Tagged T1649 only: the event is
-  the certificate being used as a credential, not the DCSync that follows. `experimental`,
-  `high`, with two DEPLOY-REQUIRED lists — the DC accounts in the selection (inert until
-  filled, the `unconstrained_delegation_4624` caveat) and the DC addresses in
-  `filter_dc_sources`. Its false-positive profile is **unmeasured**: the lab has captured
-  no DC-account PKINIT, so the `falsepositives` (RODCs, re-addressed DCs, DC-to-DC Kerberos
-  through a load balancer, machine-certificate PKINIT on a DC) are stated as hypotheses to
-  check, and the methodology now says the logon side is written and stays experimental
-  until a lab run measures them. TP + TN fixtures are `vendor-documented` from Microsoft's
-  4768 reference; the certificate values are synthetic.
-
 ### Fixed
 
 - **`github_credential_backdoor` now also selects
@@ -911,6 +891,23 @@ under `[Unreleased]` from here.
 
 ### Added
 
+- **`dc_account_pkinit_non_dc_4768` — the ESC8 end state `DEFENSE-METHODOLOGY.md` recorded
+  as an open gap.** A 4768 for a domain controller's machine account with certificate
+  pre-authentication (PreAuthType 16, PKINIT) from a client address that is not a DC. The
+  invariant is that a DC's own account should only ever obtain a TGT from a DC address; a
+  certificate issued to `DC01$` and used from a member server is the coercion → relay → CA
+  web enrollment chain reaching its goal, and the 4662 pair cannot see it
+  (`dcsync_replication_4662` drops `$` subjects, `dcsync_non_dc_machine_account_4662`
+  allowlists the real DCs, and 4662 has no source address). Tagged T1649 only: the event is
+  the certificate being used as a credential, not the DCSync that follows. `experimental`,
+  `high`, with two DEPLOY-REQUIRED lists — the DC accounts in the selection (inert until
+  filled, the `unconstrained_delegation_4624` caveat) and the DC addresses in
+  `filter_dc_sources`. Its false-positive profile is **unmeasured**: the lab has captured
+  no DC-account PKINIT, so the `falsepositives` (RODCs, re-addressed DCs, DC-to-DC Kerberos
+  through a load balancer, machine-certificate PKINIT on a DC) are stated as hypotheses to
+  check, and the methodology now says the logon side is written and stays experimental
+  until a lab run measures them. TP + TN fixtures are `vendor-documented` from Microsoft's
+  4768 reference; the certificate values are synthetic.
 - **`check-readme-tables.sh` — the README's rule and deploy-time tables are now gated
   (#314).** Same argument `check-readme-gates.sh` makes about the other half of the file:
   *"the README is load-bearing documentation, so it gets a gate like the rest of the

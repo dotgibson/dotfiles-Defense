@@ -24,18 +24,18 @@ tooling lines up against MITRE ATT&CK from the defender's seat. Mirror of Offens
 
 ## ATT&CK tactic → data source → detection
 
-| ATT&CK tactic            | Primary data sources                                                         | Where detections live | Validate with (Offense)                                                 |
-| ------------------------ | ---------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------- |
-| Initial Access           | npm / PyPI publish audit logs                                                | sigma                 | htpx pairs `npm-malicious-publish` / `pypi-malicious-publish`           |
-| Recon / Discovery        | 4688/4104, 4798/4799, 5145, 1644/4662, 4648                                  | sigma                 | recon / AD-enumeration folds (no network-plane recon detection yet)     |
-| Credential Access        | Sysmon 10, 4625/4768/4769/4771, 4662, 5145, Zeek Kerberos                    | sigma, network        | Kerberoast / DCSync / LSASS folds (Responder capture: no detection yet) |
-| Lateral Movement         | 4624 type 3, 4688/Sysmon 1, 7045                                             | sigma                 | lateral-movement fold                                                   |
-| Priv Esc / Persistence   | Sysmon 1/13/17, 4720/7045                                                    | sysmon, sigma         | persistence / privesc folds (LOLBAS: no detection yet)                  |
+| ATT&CK tactic            | Primary data sources                                                                                      | Where detections live | Validate with (Offense)                                                 |
+| ------------------------ | --------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------- |
+| Initial Access           | npm / PyPI publish audit logs                                                                             | sigma                 | htpx pairs `npm-malicious-publish` / `pypi-malicious-publish`           |
+| Recon / Discovery        | 4688/4104, 4798/4799, 5145, 1644/4662, 4648                                                               | sigma                 | recon / AD-enumeration folds (no network-plane recon detection yet)     |
+| Credential Access        | Sysmon 10, 4625/4768/4769/4771, 4662, 5145, Zeek Kerberos                                                 | sigma, network        | Kerberoast / DCSync / LSASS folds (Responder capture: no detection yet) |
+| Lateral Movement         | 4624 type 3, 4688/Sysmon 1, 7045                                                                          | sigma                 | lateral-movement fold                                                   |
+| Priv Esc / Persistence   | Sysmon 1/13/17, 4720/7045                                                                                 | sysmon, sigma         | persistence / privesc folds (LOLBAS: no detection yet)                  |
 | Coercion / Relay / AD CS | 5145 pipes, 4886/4887 requests (SAN compared at triage), 4624 relay mismatch, 4768 PKINIT as a DC account | sigma, siem           | coercion → relay → DC fold                                              |
-| Collection               | 4663 file reads, 4688 archive cmds                                           | sigma                 | collection / exfil fold                                                 |
-| Exfil / C2               | Suricata, Zeek conn/dns/ssl, CloudTrail share grants                         | network, sigma        | reverse-shell / pivot folds; htpx pair `aws-snapshot-share-exfil`       |
-| Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn            | sigma, network        | ransomware chain (teardown → recovery → payload); cryptomining pair     |
-| Anti-forensics           | 1102 + 104 log clears, auditd history syscalls, 4742 rogue DC                | sigma                 | DCShadow fold; `wevtutil cl` / `shred ~/.bash_history` on a lab host    |
+| Collection               | 4663 file reads, 4688 archive cmds                                                                        | sigma                 | collection / exfil fold                                                 |
+| Exfil / C2               | Suricata, Zeek conn/dns/ssl, CloudTrail share grants                                                      | network, sigma        | reverse-shell / pivot folds; htpx pair `aws-snapshot-share-exfil`       |
+| Impact                   | 4688 destructive + service-stop cmds, 4663 file writes, Zeek conn                                         | sigma, network        | ransomware chain (teardown → recovery → payload); cryptomining pair     |
+| Anti-forensics           | 1102 + 104 log clears, auditd history syscalls, 4742 rogue DC                                             | sigma                 | DCShadow fold; `wevtutil cl` / `shred ~/.bash_history` on a lab host    |
 
 The right-hand column is the point: every row has a Offense fold that proves the
 detection works.
