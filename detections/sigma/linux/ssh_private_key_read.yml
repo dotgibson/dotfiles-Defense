@@ -15,6 +15,11 @@ description: |
   this rule once you have a baseline for how many key reads are normal on your hosts.
   The correlation is deliberately not shipped here: its threshold is a property of your
   estate, not of the rule.
+  The legacy SSHv1 key is always exactly ~/.ssh/identity, so it is matched as
+  '/.ssh/identity'. The bare '/identity' it replaced matched every read under a directory
+  whose name begins with identity - ~/identity-service/config.yml, ~/.config/identity/... -
+  a standing false-positive stream on a high rule with no key theft behind it. A key
+  named identity outside .ssh/ is now out of scope, and that is the right trade.
   Requires an auditd read watch that sets the key (load with `augenrules --load`):
     -w /home -p r -k ssh_key_read
     -w /root/.ssh/ -p r -k ssh_key_read
@@ -30,7 +35,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/ssh-key-theft-auditd.md
 author: dotfiles-Defense
 date: 2026-08-26
-modified: 2026-09-28
+modified: 2026-10-14
 tags:
   - attack.credential-access
   - attack.t1552.004
@@ -45,7 +50,7 @@ detection:
       - '/id_ecdsa'
       - '/id_ed25519'
       - '/id_dsa'
-      - '/identity'
+      - '/.ssh/identity'
   filter_ssh_stack:
     # DEPLOY-REQUIRED: extend with the agents in YOUR estate that legitimately read
     # private keys - backup and endpoint agents are the usual additions, and a

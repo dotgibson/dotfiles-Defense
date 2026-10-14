@@ -1,2 +1,3 @@
 {"key": "ssh_key_read", "comm": "ssh", "exe": "/usr/bin/ssh", "name": "/home/dev/.ssh/id_ed25519", "auid": "1000", "uid": "1000"}
 {"key": "ssh_key_read", "comm": "cat", "exe": "/usr/bin/cat", "name": "/home/dev/.ssh/id_ed25519.pub", "auid": "1000", "uid": "1000"}
+{"key": "ssh_key_read", "comm": "tar", "exe": "/usr/bin/tar", "name": "/home/dev/identity-service/config.yml", "auid": "1000", "uid": "1000"}

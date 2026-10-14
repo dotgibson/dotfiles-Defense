@@ -3,7 +3,8 @@ id: 8ae44ad2-6331-4444-97f4-b2eac893717c
 status: experimental
 description: |
   Detects scheduled-task persistence: a 4698 task-created event whose task XML runs
-  encoded/hidden PowerShell or a LOLBin (mshta/regsvr32/rundll32). Detect on the action,
+  encoded/hidden PowerShell, mshta, or regsvr32/rundll32 pointed at something an attacker
+  controls. Detect on the action,
   not the task name; 4702 catches the modify-an-existing-task variant. Baseline your
   software's legit tasks and alert on the rest.
   Scoped to the interpreter/LOLBin shapes on purpose: bare '\Users\' and '\Temp\'
@@ -13,6 +14,14 @@ description: |
   common turns a high-severity rule into a mute button. If you want drop-directory
   coverage, add it as a separate lower-confidence rule gated on a task-name or
   signed-binary allowlist rather than folding it back into this OR.
+  regsvr32 and rundll32 are gated for the same reason, as of the #351 review: OEM and
+  vendor installers register rundll32 actions against System32 DLLs at volume, so the bare
+  binary name fired at high on a display-calibration task. The LOLBin arm now requires a
+  co-occurring attacker-controlled target - a URL or scriptlet (/i:http, javascript:), a
+  UNC path, or a user-writable directory. \Users\ and \Temp\ return ONLY inside that AND
+  and stay out of the bare OR for the reason above. mshta stays bare: a scheduled task
+  whose action is mshta has no benign shape worth the exception. Neither LOLBin had a
+  fixture before this change, so the bare arms had never been shown to fire.
   The interpreter tokens are anchored for the same reason the path matches were dropped.
   A bare 'IEX' is a 3-character case-insensitive substring against the whole task XML, so
   it matches iexplore.exe and any author/product string containing "iex"; it is written
@@ -34,7 +43,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/schtask-4698.md
 author: dotfiles-Defense
 date: 2026-06-30
-modified: 2026-09-29
+modified: 2026-10-14
 tags:
   - attack.persistence
   - attack.execution
@@ -54,12 +63,46 @@ detection:
       - 'FromBase64String'
       # Path-less, so `<Command>mshta</Command>` matches as well as `\mshta.exe`.
       - 'mshta'
-      - '\regsvr32.exe'
-      - '\rundll32.exe'
       - 'DownloadString'
       - 'IEX('
       - 'IEX '
       - '| IEX'
+  lolbin:
+    # The bare binary is not the signal - see the description. Path-less forms too:
+    # `<Command>rundll32</Command>` is how schtasks writes a bare name.
+    TaskContent|contains:
+      - '\regsvr32.exe'
+      - '\rundll32.exe'
+      - '<Command>regsvr32'
+      - '<Command>rundll32'
+  lolbin_suspicious_arg:
+    # ANDed with lolbin: a URL or scriptlet (regsvr32 /i:http, rundll32 url.dll), a UNC
+    # path, or a user-writable directory. \Users\ and \Temp\ come back here ONLY inside
+    # this AND - as bare matches they were removed for the reason the description gives,
+    # and they must not be lifted back into `suspicious`.
+    # `http` is ANCHORED: every real 4698 TaskContent opens with
+    # <Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">, so a bare
+    # 'http' is true on every event and would collapse this AND back to the bare LOLBin.
+    # The synthetic fixtures omit that root element, so no gate would have caught it; the
+    # TN fixture now carries the root on purpose. Quotes inside <Arguments> arrive
+    # entity-escaped, hence the &quot; / &apos; forms.
+    # A UNC prefix is '\\\\': backslash is Sigma's escape character, so '\\' is ONE
+    # literal backslash and would match every Windows path.
+    TaskContent|contains:
+      - '>http'
+      - ' http'
+      - '&quot;http'
+      - '&apos;http'
+      - '\\\\'
+      - 'javascript:'
+      - 'vbscript:'
+      - '/i:'
+      - '\Users\'
+      - '\Temp\'
+      - '\ProgramData\'
+      - '%APPDATA%'
+      - '%TEMP%'
+      - '%PUBLIC%'
   powershell_task:
     TaskContent|contains:
       - 'powershell'
@@ -108,7 +151,7 @@ detection:
       - '/C '
       - '\Temp\'
       - '.tmp 2&gt;&amp;1'
-  condition: selection and (suspicious or (powershell_task and 1 of powershell_*_flags) or impacket_atexec)
+  condition: selection and (suspicious or (lolbin and lolbin_suspicious_arg) or (powershell_task and 1 of powershell_*_flags) or impacket_atexec)
 falsepositives:
   - Software installers that register tasks invoking helper scripts (allowlist).
   - A PowerShell task passing its own script a long `-e` value that looks like base64 (for

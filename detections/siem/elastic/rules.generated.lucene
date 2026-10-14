@@ -52,7 +52,7 @@ eventSource:iam.amazonaws.com AND (eventName:(CreateLoginProfile OR UpdateLoginP
 (gcp.audit.method_name:(google.iam.admin.v1.CreateServiceAccountKey OR google.iam.admin.v1.UploadServiceAccountKey)) AND (NOT gcp.audit.principal_email:iam\-terraform@example.iam.gserviceaccount.com)
 
 // cloudflare/cloudflare_api_token_created.yml — Cloudflare API token created (durable control-plane backdoor)
-resource.type:api_token AND action.type:create
+(resource.type:api_token AND action.type:create) AND (NOT actor.email:ci\-deploy@example.com)
 
 // cloudflare/cloudflare_waf_rule_disabled.yml — Cloudflare WAF/firewall rule deleted or disabled (edge exposed)
 ((resource.type:(firewall_rule OR ruleset)) AND (action.type:(delete OR update))) AND (NOT actor.email:ci\-deploy@example.com)
@@ -163,7 +163,7 @@ event_type:protected_branch_removed
 event_type:set_runner_associated_projects
 
 // gitlab/gitlab_token_backdoor.yml — GitLab access/deploy token created (durable-access backdoor)
-event_type:(project_access_token_created OR group_access_token_created OR personal_access_token_created OR deploy_token_created OR group_deploy_token_created)
+(event_type:(project_access_token_created OR group_access_token_created OR personal_access_token_created OR deploy_token_created OR group_deploy_token_created)) AND (NOT author_name:ci\-bot)
 
 // google_workspace/gws_admin_role_grant.yml — Google Workspace admin/super-admin role granted (tenant persistence)
 eventName:(GRANT_ADMIN_PRIVILEGE OR GRANT_DELEGATED_ADMIN_PRIVILEGES OR ASSIGN_ROLE)
@@ -253,7 +253,7 @@ key:shadow_read AND (NOT (exe:(\/usr\/sbin\/unix_chkpwd OR \/sbin\/unix_chkpwd O
 (key:ssh_authkeys AND name:*authorized_keys*) AND (NOT exe:\/opt\/keymgr\/bin\/keyagent)
 
 // linux/ssh_private_key_read.yml — SSH private key read by a non-SSH process (auditd)
-(key:ssh_key_read AND (name:(*\/id_rsa* OR *\/id_ecdsa* OR *\/id_ed25519* OR *\/id_dsa* OR *\/identity*))) AND (NOT ((exe:(\/usr\/bin\/ssh OR \/usr\/sbin\/sshd OR \/usr\/bin\/ssh\-agent OR \/usr\/bin\/ssh\-keygen OR \/usr\/bin\/ssh\-add OR \/usr\/bin\/scp OR \/usr\/bin\/sftp OR \/usr\/bin\/git)) OR name:*.pub))
+(key:ssh_key_read AND (name:(*\/id_rsa* OR *\/id_ecdsa* OR *\/id_ed25519* OR *\/id_dsa* OR *\/.ssh\/identity*))) AND (NOT ((exe:(\/usr\/bin\/ssh OR \/usr\/sbin\/sshd OR \/usr\/bin\/ssh\-agent OR \/usr\/bin\/ssh\-keygen OR \/usr\/bin\/ssh\-add OR \/usr\/bin\/scp OR \/usr\/bin\/sftp OR \/usr\/bin\/git)) OR name:*.pub))
 
 // linux/sudo_root_shell.yml — Root shell spawned under a real login uid - sudo escape (auditd)
 (key:sudo_abuse AND (comm:(bash OR sh OR dash OR zsh OR ksh OR fish OR python OR python3 OR perl OR ruby))) AND (NOT auid:1000)
@@ -292,7 +292,7 @@ eventType:(user.mfa.factor.reset_all OR user.mfa.factor.deactivate OR user.mfa.f
 EventID:4720 AND (NOT SubjectUserName:svc_iam_provisioning)
 
 // persistence/scheduled_task_suspicious_4698.yml — Scheduled task created with a suspicious action
-EventID:4698 AND ((TaskContent:(*\-enc\ * OR *\-EncodedCommand* OR *\-w\ hidden* OR *\-WindowStyle\ Hidden* OR *FromBase64String* OR *mshta* OR *\\regsvr32.exe* OR *\\rundll32.exe* OR *DownloadString* OR *IEX\(* OR *IEX\ * OR *\|\ IEX*)) OR ((TaskContent:(*powershell* OR *pwsh*)) AND (TaskContent:/(?i)((^|[\s>"';(,=^])(-|\/|–|—|―)(\^|"|&quot;)*((-|\/|–|—|―)(\^|"|&quot;)*)?e((\^|"|&quot;)*c|(\^|"|&quot;)*n((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*d((\^|"|&quot;)*e((\^|"|&quot;)*d((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*m((\^|"|&quot;)*m((\^|"|&quot;)*a((\^|"|&quot;)*n((\^|"|&quot;)*d)?)?)?)?)?)?)?)?)?)?)?)?)?(&quot;|&apos;|["'^])*(\s|&#x?9;)+(((&quot;|&apos;|["'^])*[A-Za-z0-9+\/]){20}|(&quot;|")((\s|(&quot;|&apos;|["'^]))*[A-Za-z0-9+\/]){20})|(^|[\s>"';(,=^])(-|–|—|―)(\^|"|&quot;)*((-|–|—|―)(\^|"|&quot;)*)?e((\^|"|&quot;)*c|(\^|"|&quot;)*n((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*d((\^|"|&quot;)*e((\^|"|&quot;)*d((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*m((\^|"|&quot;)*m((\^|"|&quot;)*a((\^|"|&quot;)*n((\^|"|&quot;)*d)?)?)?)?)?)?)?)?)?)?)?)?)?(&quot;|&apos;|["'^])*(\s|&#x?9;)+(&quot;|&apos;|["'^])*[%!$]|(^|[\s>"';(,=^])\/(\^|"|&quot;)*e((\^|"|&quot;)*c|(\^|"|&quot;)*n((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*d((\^|"|&quot;)*e((\^|"|&quot;)*d((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*m((\^|"|&quot;)*m((\^|"|&quot;)*a((\^|"|&quot;)*n((\^|"|&quot;)*d)?)?)?)?)?)?)?)?)?)?)?)?)(&quot;|&apos;|["'^])*(\s|&#x?9;)+(&quot;|&apos;|["'^])*[%!$])/ OR (TaskContent:(*\-w\ 1* OR *\-win\ h*)))) OR (TaskContent:*\<Command\>cmd.exe\<\/Command\>* AND TaskContent:*\/C\ * AND TaskContent:*\\Temp\\* AND TaskContent:*.tmp\ 2\&gt;\&amp;1*))
+EventID:4698 AND ((TaskContent:(*\-enc\ * OR *\-EncodedCommand* OR *\-w\ hidden* OR *\-WindowStyle\ Hidden* OR *FromBase64String* OR *mshta* OR *DownloadString* OR *IEX\(* OR *IEX\ * OR *\|\ IEX*)) OR ((TaskContent:(*\\regsvr32.exe* OR *\\rundll32.exe* OR *\<Command\>regsvr32* OR *\<Command\>rundll32*)) AND (TaskContent:(*\>http* OR *\ http* OR *\&quot;http* OR *\&apos;http* OR *\\\\* OR *javascript\:* OR *vbscript\:* OR *\/i\:* OR *\\Users\\* OR *\\Temp\\* OR *\\ProgramData\\* OR *%APPDATA%* OR *%TEMP%* OR *%PUBLIC%*))) OR ((TaskContent:(*powershell* OR *pwsh*)) AND (TaskContent:/(?i)((^|[\s>"';(,=^])(-|\/|–|—|―)(\^|"|&quot;)*((-|\/|–|—|―)(\^|"|&quot;)*)?e((\^|"|&quot;)*c|(\^|"|&quot;)*n((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*d((\^|"|&quot;)*e((\^|"|&quot;)*d((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*m((\^|"|&quot;)*m((\^|"|&quot;)*a((\^|"|&quot;)*n((\^|"|&quot;)*d)?)?)?)?)?)?)?)?)?)?)?)?)?(&quot;|&apos;|["'^])*(\s|&#x?9;)+(((&quot;|&apos;|["'^])*[A-Za-z0-9+\/]){20}|(&quot;|")((\s|(&quot;|&apos;|["'^]))*[A-Za-z0-9+\/]){20})|(^|[\s>"';(,=^])(-|–|—|―)(\^|"|&quot;)*((-|–|—|―)(\^|"|&quot;)*)?e((\^|"|&quot;)*c|(\^|"|&quot;)*n((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*d((\^|"|&quot;)*e((\^|"|&quot;)*d((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*m((\^|"|&quot;)*m((\^|"|&quot;)*a((\^|"|&quot;)*n((\^|"|&quot;)*d)?)?)?)?)?)?)?)?)?)?)?)?)?(&quot;|&apos;|["'^])*(\s|&#x?9;)+(&quot;|&apos;|["'^])*[%!$]|(^|[\s>"';(,=^])\/(\^|"|&quot;)*e((\^|"|&quot;)*c|(\^|"|&quot;)*n((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*d((\^|"|&quot;)*e((\^|"|&quot;)*d((\^|"|&quot;)*c((\^|"|&quot;)*o((\^|"|&quot;)*m((\^|"|&quot;)*m((\^|"|&quot;)*a((\^|"|&quot;)*n((\^|"|&quot;)*d)?)?)?)?)?)?)?)?)?)?)?)?)(&quot;|&apos;|["'^])*(\s|&#x?9;)+(&quot;|&apos;|["'^])*[%!$])/ OR (TaskContent:(*\-w\ 1* OR *\-win\ h*)))) OR (TaskContent:*\<Command\>cmd.exe\<\/Command\>* AND TaskContent:*\/C\ * AND TaskContent:*\\Temp\\* AND TaskContent:*.tmp\ 2\&gt;\&amp;1*))
 
 // persistence/wmi_event_subscription_consumer.yml — WMI event subscription persistence - command-line or script consumer
 Operation:Created AND ((EventID:20 AND (Destination:(*powershell* OR *pwsh* OR *cmd.exe* OR *mshta* OR *wscript* OR *cscript* OR *rundll32* OR *\-enc\ * OR *\-ec\ * OR *\-EncodedCommand* OR *FromBase64String*))) OR (EventID:20 AND Type:*Script*) OR (EventID:20 AND Type:*Command\ Line*)) AND (NOT Destination:C\:\\Program\ Files\\Monitoring\\agent.exe*)
@@ -336,7 +336,7 @@ tag:(project\:oidc\:publisher\-added OR organization\:oidc\:publisher\-added)
 // registry/harbor_artifact_deleted.yml — Harbor artifact deleted (force re-pull / anti-forensics)
 (operation:delete AND (resource_type:(artifact OR repository))) AND (NOT username:robot$harbor\-gc)
 
-// registry/harbor_image_pushed_trusted_tag.yml — Harbor image push (backdoored image / trusted-tag poisoning)
+// registry/harbor_image_pushed_trusted_tag.yml — Harbor artifact push or tag create (supply-chain triage surface)
 (operation:create AND (resource_type:(artifact OR tag))) AND (NOT username:robot$ci\-pipeline)
 
 // registry/harbor_robot_account_created.yml — Harbor robot account created (durable registry credential)
@@ -364,7 +364,7 @@ query_type:CREATE_USER OR (query_type:GRANT AND (query_text:(*ACCOUNTADMIN* OR *
 resource.type:agent_pool AND resource.action:create
 
 // terraform/tfc_token_backdoor.yml — Terraform Cloud org/team API token created (durable-access backdoor)
-resource.type:authentication_token AND resource.action:create
+(resource.type:authentication_token AND resource.action:create) AND (NOT auth.description:ci\-deploy@example.com)
 
 // terraform/tfc_variable_injection.yml — Terraform Cloud workspace variable created or updated (run hijack)
 (resource.type:variable AND (resource.action:(create OR update))) AND (NOT auth.description:ci\-deploy@example.com)

@@ -69,6 +69,13 @@ description: |
   becomes near-zero-FP, because the accounts that legitimately do this in bulk are a short,
   knowable list. Best paired with a standing alert on ANY change to break-glass accounts,
   which no threshold should ever suppress.
+  4724 is pooled with 4725/4726 on purpose, and because the pooling has been questioned the
+  reason is written down: resetting a responder's password locks them out as surely as
+  disabling the account, and an actor walking a list does whichever is quicker. The one
+  benign shape that trips the pool - an org-wide forced reset after a credential exposure -
+  comes from the identity-admin principals filter_identity_admins exists to name. A
+  lower-priority 4724 arm would quieten that shape only by hiding the attacker who resets
+  rather than disables, which is the wrong half to lose.
   Validate (purple): run the defender lock-out fold from dotfiles-Offense (htpx pair
   account-lockout-defenders). Requires the Audit User Account Management subcategory.
 references:
