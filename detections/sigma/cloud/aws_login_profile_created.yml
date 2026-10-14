@@ -8,6 +8,11 @@ description: |
   admin, and users reset only their own, so CreateLoginProfile on an existing user
   or UpdateLoginProfile where actor != target is the tell. Pairs with the
   CreateAccessKey alert for the full console+API takeover.
+  No filter_iac here, on purpose (declined in the #351 review): an automation principal
+  minting console passwords for IAM users is itself worth seeing - console access belongs
+  on the IdP, not on a Terraform-managed login profile - the triage criterion is actor !=
+  target, and at medium this is a triage surface rather than a page, the posture
+  aws_iam_access_key_created already takes for the API half of the same takeover.
   Validate (purple): run "aws iam create-login-profile --user-name <other>" from
   dotfiles-Offense (htpx pair aws-console-login-profile).
 references:
@@ -15,6 +20,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/aws-loginprofile-cloudtrail.md
 author: dotfiles-Defense
 date: 2026-06-30
+modified: 2026-10-14
 tags:
   - attack.persistence
   - attack.t1098

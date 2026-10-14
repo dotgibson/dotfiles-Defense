@@ -9,13 +9,20 @@ description: |
   short window, expressed by the correlation rule. Loopback and empty source
   addresses are filtered here so the count reflects real remote reuse, not local
   service logons.
+  Blind spot, stated rather than left to be discovered: filter_machine drops every
+  TargetUserName ending in $, so reuse of a CAPTURED machine-account hash - HOST$ replayed
+  from another host, and the RBCD and silver-ticket chains that start from it - never
+  reaches the count below. It is a coverage decision, not only a noise filter. Narrowing
+  it to source-side machine accounts needs TargetUserName compared against the host behind
+  IpAddress, a field-to-field test Sigma cannot express; if you need it, do it at the
+  backend and keep this filter for the boot-time fan-out it exists for.
 references:
   - https://attack.mitre.org/techniques/T1550/002/
   - https://attack.mitre.org/techniques/T1021/
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/lateral-4624-fanout.md
 author: dotfiles-Defense
 date: 2026-07-15
-modified: 2026-09-28
+modified: 2026-10-14
 name: network_logon_4624
 tags:
   - attack.lateral-movement
