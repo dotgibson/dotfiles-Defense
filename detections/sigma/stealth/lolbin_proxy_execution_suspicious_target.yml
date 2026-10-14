@@ -14,7 +14,13 @@ description: |
   after a bare `\rundll32.exe` fired at high on an OEM display-calibration task - so the
   bare binary name is deliberately NOT an arm here. mshta is bare, as it is there: an
   estate that ships no HTA tooling has no routine mshta, and one that does quiets it by
-  parent in filter_vendor_installers rather than by weakening the arm.
+  parent in filter_vendor_installers rather than by weakening the arm. That filter matches
+  the parent's FULL PATH, never its basename: an endswith on the name would let anything
+  renamed vendor-installer.exe in a user-writable directory silence every arm at once
+  (review finding on dotgibson/dotfiles-Defense#365), and the parent-bypass fixture holds
+  exactly that shape open as a true positive. Prefer parents under Program Files or
+  Windows; an exact path under a user-writable directory is the weaker form, since the
+  account the attacker already holds can plant a binary at it.
   `http` is anchored on the SCHEME (`http://`, `https://`), not on a leading delimiter the
   way the 4698 rule anchors it. A command line has no ambient `http` the way 4698's
   TaskContent carries its xmlns root, but System32 ships winhttp.dll and httpapi.dll, and
@@ -100,20 +106,26 @@ detection:
     # not ship HTA tooling. An estate that does names the tooling's parent in the filter.
     Image|endswith: '\mshta.exe'
   filter_vendor_installers:
-    # DEPLOY-REQUIRED: replace with the per-user app installers and updaters that register
-    # COM DLLs from AppData/ProgramData via regsvr32 in YOUR estate (the Teams meeting
-    # add-in, OneDrive, Zoom and printer/driver setup are the usual set), plus any
-    # HTA-based vendor tooling, as PARENT image names. Until filled this excludes only the
-    # example. Run detections/sigma/deploy-required.sh to find this.
-    ParentImage|endswith:
-      - '\vendor-installer.exe' # example - replace with your installer/updater parents
+    # DEPLOY-REQUIRED: replace with the FULL PATHS of the per-user app installers and
+    # updaters that register COM DLLs from AppData/ProgramData via regsvr32 in YOUR estate
+    # (the Teams meeting add-in, OneDrive, Zoom and printer/driver setup are the usual
+    # set), plus any HTA-based vendor tooling, as exact parent images. Never a basename or
+    # an |endswith: a renamed launcher in a user-writable directory would match it and
+    # silence every arm, which is what lolbin_proxy_parent_userdir.jsonl pins as a true
+    # positive. Prefer parents under Program Files / Windows; list an exact path under a
+    # user-writable directory only if the volume forces it, knowing the attacker can plant
+    # a binary there. Until filled this excludes only the example. Run
+    # detections/sigma/deploy-required.sh to find this.
+    ParentImage:
+      - 'C:\Program Files\Acme\vendor-installer.exe' # example - replace with your installers' full paths
   condition: ((lolbin and lolbin_suspicious_arg) or selection_mshta) and not filter_vendor_installers
 falsepositives:
   - Per-user application installers and updaters registering COM DLLs under AppData or
-    ProgramData via regsvr32 (Teams meeting add-in, OneDrive, Zoom). Name the parent in
-    filter_vendor_installers.
+    ProgramData via regsvr32 (Teams meeting add-in, OneDrive, Zoom). Name the parent's full
+    path in filter_vendor_installers.
   - OEM and driver setup running rundll32 against a DLL it staged under ProgramData. Same
-    filter, by parent.
-  - Helpdesk or vendor tooling delivered as an HTA (mshta). Same filter, by parent.
+    filter, by the parent's full path.
+  - Helpdesk or vendor tooling delivered as an HTA (mshta). Same filter, by the parent's
+    full path.
   - regsvr32 `/i:` with a local, non-URL install string (rare; triage the DLL path).
 level: high

@@ -364,7 +364,7 @@ query_type:UNLOAD AND (NOT ((query_text:(COPY\ INTO\ @%* OR COPY\ INTO\ @\~*)) O
 query_type:CREATE_USER OR (query_type:GRANT AND (query_text:(*ACCOUNTADMIN* OR *SECURITYADMIN*)))
 
 // stealth/lolbin_proxy_execution_suspicious_target.yml — LOLBin proxy execution - rundll32/regsvr32/mshta with an attacker-controlled target (T1218)
-(((Image:(*\\rundll32.exe OR *\\regsvr32.exe)) AND (CommandLine:(*http\:\/\/* OR *https\:\/\/* OR *\\\\* OR *javascript\:* OR *vbscript\:* OR *\/i\:* OR *\\Users\\* OR *\\Temp\\* OR *\\ProgramData\\* OR *%APPDATA%* OR *%TEMP%* OR *%PUBLIC%*))) OR Image:*\\mshta.exe) AND (NOT ParentImage:*\\vendor\-installer.exe)
+(((Image:(*\\rundll32.exe OR *\\regsvr32.exe)) AND (CommandLine:(*http\:\/\/* OR *https\:\/\/* OR *\\\\* OR *javascript\:* OR *vbscript\:* OR *\/i\:* OR *\\Users\\* OR *\\Temp\\* OR *\\ProgramData\\* OR *%APPDATA%* OR *%TEMP%* OR *%PUBLIC%*))) OR Image:*\\mshta.exe) AND (NOT ParentImage:"C\:\\Program Files\\Acme\\vendor\-installer.exe")
 
 // terraform/tfc_rogue_agent_pool.yml — Terraform Cloud agent pool created (rogue run executor)
 resource.type:agent_pool AND resource.action:create

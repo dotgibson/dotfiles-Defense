@@ -1019,7 +1019,9 @@ under `[Unreleased]` from here.
   and regsvr32 fire only with a co-occurring attacker-controlled target (URL, scriptlet, UNC
   path, user-writable directory - the gating #351 put on the 4698 LOLBin arm), mshta is
   bare, and `filter_vendor_installers` is the one `DEPLOY-REQUIRED` placeholder, keyed on the
-  parent. `http` is anchored on the scheme rather than on a delimiter as in 4698, because
+  parent's full path - a basename match would let a renamed launcher in a user-writable
+  directory silence every arm, and a fifth fixture holds that bypass open as a true positive
+  (#365 review). `http` is anchored on the scheme rather than on a delimiter as in 4698, because
   `regsvr32 /s winhttp.dll` is a real installer step; the TN carries that exact near-miss so
   a bare `http` can never come back unnoticed. Four single-event TPs, one per arm, share one
   five-event TN; all five fixtures are `unverified` - public LOLBAS command forms on a
