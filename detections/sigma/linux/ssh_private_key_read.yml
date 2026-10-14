@@ -15,11 +15,13 @@ description: |
   this rule once you have a baseline for how many key reads are normal on your hosts.
   The correlation is deliberately not shipped here: its threshold is a property of your
   estate, not of the rule.
-  The legacy SSHv1 key is always exactly ~/.ssh/identity, so it is matched as
-  '/.ssh/identity'. The bare '/identity' it replaced matched every read under a directory
-  whose name begins with identity - ~/identity-service/config.yml, ~/.config/identity/... -
-  a standing false-positive stream on a high rule with no key theft behind it. A key
-  named identity outside .ssh/ is now out of scope, and that is the right trade.
+  The legacy SSHv1 key is always exactly ~/.ssh/identity, so it has its own selection,
+  anchored with name|endswith rather than listed beside the id_* names: the bare
+  '/identity' contains it replaced matched every read under a directory whose name begins
+  with identity - ~/identity-service/config.yml, ~/.config/identity/... - a standing
+  false-positive stream on a high rule with no key theft behind it, and even a
+  '/.ssh/identity' contains would still take ~/.ssh/identity-service/. A key named
+  identity outside .ssh/ is now out of scope, and that is the right trade.
   Requires an auditd read watch that sets the key (load with `augenrules --load`):
     -w /home -p r -k ssh_key_read
     -w /root/.ssh/ -p r -k ssh_key_read
@@ -43,14 +45,17 @@ logsource:
   product: linux
   service: auditd
 detection:
-  selection:
+  selection_key:
     key: 'ssh_key_read'
+  selection_name:
     name|contains:
       - '/id_rsa'
       - '/id_ecdsa'
       - '/id_ed25519'
       - '/id_dsa'
-      - '/.ssh/identity'
+  selection_legacy:
+    # The SSHv1 key. Exact tail, not contains - see the description for what contains took.
+    name|endswith: '/.ssh/identity'
   filter_ssh_stack:
     # DEPLOY-REQUIRED: extend with the agents in YOUR estate that legitimately read
     # private keys - backup and endpoint agents are the usual additions, and a
@@ -74,7 +79,7 @@ detection:
     # `name|contains: '/id_rsa'` also matched id_rsa.pub - pasting a public key into a
     # code host, ssh-copy-id and backups all read it, and none of that is key theft.
     name|endswith: '.pub'
-  condition: selection and not 1 of filter_*
+  condition: selection_key and (selection_name or selection_legacy) and not 1 of filter_*
 falsepositives:
   - Backup or endpoint agents reading home directories wholesale - allowlist them in
     filter_ssh_stack, or narrow the watch away from the paths they sweep.

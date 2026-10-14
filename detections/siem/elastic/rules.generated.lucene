@@ -253,7 +253,7 @@ key:shadow_read AND (NOT (exe:(\/usr\/sbin\/unix_chkpwd OR \/sbin\/unix_chkpwd O
 (key:ssh_authkeys AND name:*authorized_keys*) AND (NOT exe:\/opt\/keymgr\/bin\/keyagent)
 
 // linux/ssh_private_key_read.yml — SSH private key read by a non-SSH process (auditd)
-(key:ssh_key_read AND (name:(*\/id_rsa* OR *\/id_ecdsa* OR *\/id_ed25519* OR *\/id_dsa* OR *\/.ssh\/identity*))) AND (NOT ((exe:(\/usr\/bin\/ssh OR \/usr\/sbin\/sshd OR \/usr\/bin\/ssh\-agent OR \/usr\/bin\/ssh\-keygen OR \/usr\/bin\/ssh\-add OR \/usr\/bin\/scp OR \/usr\/bin\/sftp OR \/usr\/bin\/git)) OR name:*.pub))
+key:ssh_key_read AND ((name:(*\/id_rsa* OR *\/id_ecdsa* OR *\/id_ed25519* OR *\/id_dsa*)) OR name:*\/.ssh\/identity) AND (NOT ((exe:(\/usr\/bin\/ssh OR \/usr\/sbin\/sshd OR \/usr\/bin\/ssh\-agent OR \/usr\/bin\/ssh\-keygen OR \/usr\/bin\/ssh\-add OR \/usr\/bin\/scp OR \/usr\/bin\/sftp OR \/usr\/bin\/git)) OR name:*.pub))
 
 // linux/sudo_root_shell.yml — Root shell spawned under a real login uid - sudo escape (auditd)
 (key:sudo_abuse AND (comm:(bash OR sh OR dash OR zsh OR ksh OR fish OR python OR python3 OR perl OR ruby))) AND (NOT auid:1000)

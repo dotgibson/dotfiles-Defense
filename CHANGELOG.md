@@ -32,9 +32,10 @@ under `[Unreleased]` from here.
   cycle, so every decline below is recorded in the rule it concerns.
   - `linux/ssh_private_key_read`: `name|contains: '/identity'` matched every read under a
     directory whose name begins `identity` (`~/identity-service/config.yml`), a standing
-    false-positive stream on a `high` rule. It is now `'/.ssh/identity'`, the only path the
-    SSHv1 key ever has. The true-negative fixture gains that exact near-miss, which the old
-    value fired on.
+    false-positive stream on a `high` rule. The SSHv1 key now has its own
+    `name|endswith: '/.ssh/identity'` selection (a `contains` would still take
+    `~/.ssh/identity-service/`), proven by a single-event row; the true-negative fixture
+    gains both near-misses.
   - `cloudflare/cloudflare_api_token_created`, `terraform/tfc_token_backdoor`,
     `gitlab/gitlab_token_backdoor`: each shipped `condition: selection` while its folder
     siblings carried a `DEPLOY-REQUIRED` `filter_ci`, and each selects an action the IaC
@@ -66,8 +67,9 @@ under `[Unreleased]` from here.
     the way and written into the block: a bare `http` matches the `<Task xmlns="http://…">`
     root of every real 4698 and would have collapsed the AND (the synthetic fixtures omit
     the root, so no gate saw it — the new TN carries it), and a UNC prefix is `'\\\\'`
-    because `\` is Sigma's escape. Neither LOLBin had a fixture before; three TPs and two
-    TNs are added.
+    because `\` is Sigma's escape. Neither LOLBin had a fixture before; three single-event
+    TP rows and a dedicated TN file are added, because an aggregate TP passes when any
+    event fires and would not have caught these arms going silent.
   - `lateral_movement/passthehash_4624_fanout`: `filter_machine` is a coverage decision,
     not only a noise filter — reuse of a captured machine-account hash never reaches the
     count. Stated in the base rule with why Sigma cannot narrow it (no field-to-field
