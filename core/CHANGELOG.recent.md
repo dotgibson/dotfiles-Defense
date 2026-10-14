@@ -5,10 +5,26 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v7.15.0 … v7.8.0), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v7.15.1 … v7.9.0), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v7.15.1] - 2026-10-14
+
+### Fixed
+
+- **`PORTING-MATRIX.md` footnote ¹² no longer says `1password-cli` has no `::gentoo` atom.**
+  The main tree carries `app-admin/op-cli-bin` (2.23.0, `~amd64 ~arm64`), a twin of GURU's
+  `app-misc/1password-cli` (2.39.0, also `~arch`). GURU stays the route because it is newer,
+  so ¹² now names the twin and says why it is not added, and ¹³ points at ¹². No cell changes;
+  dotfiles-Gentoo's package list, bootstrap and keywords are untouched (dotgibson/dotfiles-Gentoo#214).
+- **`PORTING-MATRIX.md` no longer says a privileged Gentoo bootstrap installs no gum.**
+  dotgibson/dotfiles-Gentoo#218 adds `charm.land/gum/v2` to that path's go-install block,
+  because gum has no ebuild and `gentoo/mise-tools.toml` covers only `--user`. Footnote ³⁰
+  now names both providers. Footnote ³¹'s module-path table gains a `gum` row (six of eight
+  rows now need more than the repo URL), and its "go-installed by no `bootstrap.sh`" line
+  now names dotfiles-Gentoo. No cell changes.
 
 ## [v7.15.0] - 2026-10-11
 
@@ -2244,20 +2260,3 @@ repo-meta and stays upstream:
   — because the whole test would pass vacuously on a lightweight tag.
   (`scripts/lib/core-vendor.sh`, `scripts/new-os-repo.sh`, `scripts/sync-core.sh`,
   `scripts/test/32-sync-core.sh`)
-
-## [v7.8.0] - 2026-09-15
-
-### Changed
-
-- **`PORTING-MATRIX.md`'s openSUSE column renders the transactional edition** (runbook step
-  4 of `NON-MUTABLE-HOST-PROPOSAL.md` §4.6, dotgibson/dotfiles-openSUSE#191 / #195).
-  `scripts/gen-porting-matrix.sh`'s registry names the third declaration,
-  `Transactional=os/opensuse.microos.capabilities`, in the Leap idiom, so the commands
-  table's upgrade / install / remove cells now carry `Transactional: sudo
-  transactional-update dup` / `-n pkg in` / `-n pkg rm` beside the two zypper flavours;
-  every other cell is unchanged (the transactional edition is a Tumbleweed base and reads
-  its archive). Registry order is render order, and the section comment says so. The
-  Fedora atomic column follows once dotgibson/dotfiles-Fedora#189 lands. The generator's
-  fixture fleet carries the third declaration too, so the parity suite pins a
-  three-label cell beside the one-value cell.
-  (`scripts/gen-porting-matrix.sh`, `PORTING-MATRIX.md`, `scripts/test/41-gen-matrix-parity.sh`)
