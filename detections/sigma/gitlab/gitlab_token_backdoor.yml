@@ -15,6 +15,11 @@ description: |
   project_deploy_token_created, the project-level deploy token is the bare
   deploy_token_created. Reconcile new tokens against known CI integrations, prefer
   short expirations, and review any created during an incident.
+  Shipped bare until the #351 review: the gitlab_personal_access_token,
+  gitlab_project_access_token and gitlab_deploy_token Terraform resources mint one on every
+  apply that rotates it, so the automation actor is excluded below. First filter in this
+  folder, keyed on the streamed audit event's top-level author_name - see the block comment
+  for why author_id is the stricter form.
   Validate (purple): mint a project access / deploy token from dotfiles-Offense (htpx pair
   gl-token-backdoor); mint a group access token on a lab group.
 references:
@@ -22,7 +27,7 @@ references:
   - https://github.com/dotgibson/htpx/blob/main/entries/blue/gl-token-audit.md
 author: dotfiles-Defense
 date: 2026-07-02
-modified: 2026-09-02
+modified: 2026-10-14
 tags:
   - attack.persistence
   - attack.t1098
@@ -37,8 +42,22 @@ detection:
       - 'personal_access_token_created'
       - 'deploy_token_created'
       - 'group_deploy_token_created'
-  condition: selection
+  filter_ci:
+    # DEPLOY-REQUIRED: replace with the actor your automation mints tokens as. The GitLab
+    # Terraform provider's token resources create one on every apply that rotates it, so
+    # without this each pipeline run alerts and the rule gets muted. The actor is the
+    # top-level author_name of GitLab's streamed audit event. author_name is a DISPLAY name
+    # and mutable - an actor who renames their account to match the bot is suppressed - so
+    # author_id (the integer user id, immutable) is the stricter form; write it UNQUOTED if
+    # you switch, a quoted integer trips the number_as_string lint. Until filled this
+    # excludes only the example actor.
+    # Run detections/sigma/deploy-required.sh to find this.
+    author_name:
+      - 'ci-bot'   # example — replace with your automation account (or key on author_id)
+  condition: selection and not filter_ci
 falsepositives:
+  - Routine token rotation from the IaC pipeline - allowlist the automation actor in
+    filter_ci; what remains is a token minted by a human or an unknown integration.
   - Onboarding a sanctioned CI integration or deploy automation - allowlist the expected
     actors and review tokens created outside change windows or with broad scopes.
 level: medium

