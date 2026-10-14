@@ -16,7 +16,7 @@ references:
   - https://attack.mitre.org/techniques/T1489/
 author: dotfiles-Defense
 date: 2026-08-05
-modified: 2026-09-23
+modified: 2026-10-14
 name: service_stop_command
 tags:
   - attack.impact
@@ -26,14 +26,19 @@ logsource:
   product: windows
 detection:
   selection_net_stop:
+    # Trailing space, the same anchor service_stop_protected_services uses: a stop that
+    # tears something down names the service after the verb. A bare ' stop' also matched
+    # ' stopped' and ' stop-' anywhere on the line, and because this base feeds a
+    # distinct-CommandLine count, each such line padded the burst toward threshold rather
+    # than alerting once.
     Image|endswith:
       - '\net.exe'
       - '\net1.exe'
-    CommandLine|contains: ' stop'
+    CommandLine|contains: ' stop '
   selection_sc_stop:
     Image|endswith: '\sc.exe'
     CommandLine|contains:
-      - ' stop'
+      - ' stop '
       - 'start= disabled' # the durable half of the same action
       - 'start=disabled'
   selection_taskkill:
@@ -43,6 +48,11 @@ detection:
     # `taskkill /f /im <proc>`, where /f is followed by the next argument.
     CommandLine|contains: '/f '
   selection_powershell_stop:
+    # Deliberately NOT anchored to a verb+target shape, unlike the net/sc arms above:
+    # `Get-Service -Name 'veeam*' | Stop-Service -Force` and a piped `| Stop-Service` at
+    # the end of a line carry no trailing target, and those are real teardown shapes. A
+    # lone `Stop-Process -Id $PID` in a script counts once in the distinct-CommandLine
+    # burst below, which is what keeps the bare cmdlet from padding the count.
     Image|endswith:
       - '\powershell.exe'
       - '\pwsh.exe'

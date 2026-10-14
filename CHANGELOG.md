@@ -24,6 +24,81 @@ under `[Unreleased]` from here.
 
 ### Fixed
 
+- **Weekly detection review #351: `/identity` anchored, three token-creation rules get
+  `filter_ci`, 4698 LOLBins gated, `' stop '` aligned, Harbor retitled; four proposals
+  declined in the rules (#351).** The review found no coverage holes and ten scoping
+  calls. Each was checked against the rule body, the gates and the fixtures before being
+  adopted or declined; a decline that lives only in a closed issue gets re-proposed next
+  cycle, so every decline below is recorded in the rule it concerns.
+  - `linux/ssh_private_key_read`: `name|contains: '/identity'` matched every read under a
+    directory whose name begins `identity` (`~/identity-service/config.yml`), a standing
+    false-positive stream on a `high` rule. The SSHv1 key now has its own
+    `name|endswith: '/.ssh/identity'` selection (a `contains` would still take
+    `~/.ssh/identity-service/`), proven by a single-event row; the true-negative fixture
+    gains both near-misses.
+  - `cloudflare/cloudflare_api_token_created`, `terraform/tfc_token_backdoor`,
+    `gitlab/gitlab_token_backdoor`: each shipped `condition: selection` while its folder
+    siblings carried a `DEPLOY-REQUIRED` `filter_ci`, and each selects an action the IaC
+    provider performs on every apply (`cloudflare_api_token`, `tfe_team_token`,
+    `gitlab_personal_access_token`). Each now carries the sibling's stub on the sibling's
+    actor field (GitLab, first in its folder, on the streamed event's top-level
+    `author_name`, with `author_id` named as the stricter form), a `_ci_suppressed`
+    manifest row proving the stub suppresses, and a deploy-time README row.
+    `cloud/aws_login_profile_created` is declined in-rule: actor ≠ target is the triage
+    criterion, `medium` is a triage surface, and an automation minting console passwords
+    is itself worth seeing.
+  - `cloud/entra_illicit_consent_grant`: the `filter_known_apps` comment and
+    `falsepositives` now say that an unanchored `TargetResources|contains` allowlist hides
+    a grant to a different app whenever a sanctioned id appears anywhere in the event, and
+    name the two Sentinel paths to anchor on (`TargetResources[0].id` is the SP object id;
+    the app id sits in `TargetId.ServicePrincipalNames`). Comment-only; nothing compiled
+    changes.
+  - `lateral_movement/rdp_hijack_tscon_4688`: declined, and the description now says which
+    arm sees which channel. The review read the arms the other way round: the `/dest:`
+    `selection` arm is deliberately not Image-pinned (the sc-create and `cmd /c` wrappers
+    carry the string in their own command lines) and reads a field both channels carry, so
+    the SYSTEM-via-service variant is covered on 4688 and Sysmon alike; the Sysmon-only
+    `as_system` arm is the no-`/dest` interactive form, as its comment already said.
+    `mstsc /shadow` is named as a different technique, out of scope.
+  - `persistence/scheduled_task_suspicious_4698`: `\regsvr32.exe` and `\rundll32.exe` fired
+    at `high` as bare substrings while the same rule had removed `\Users\` and `\Temp\` for
+    being too common. They now require a co-occurring attacker-controlled target (URL or
+    scriptlet, UNC path, user-writable directory); `mshta` stays bare. Two traps found on
+    the way and written into the block: a bare `http` matches the `<Task xmlns="http://…">`
+    root of every real 4698 and would have collapsed the AND (the synthetic fixtures omit
+    the root, so no gate saw it — the new TN carries it), and a UNC prefix is `'\\\\'`
+    because `\` is Sigma's escape. Neither LOLBin had a fixture before; three single-event
+    TP rows and a dedicated TN file are added, because an aggregate TP passes when any
+    event fires and would not have caught these arms going silent.
+  - `lateral_movement/passthehash_4624_fanout`: `filter_machine` is a coverage decision,
+    not only a noise filter — reuse of a captured machine-account hash never reaches the
+    count. Stated in the base rule with why Sigma cannot narrow it (no field-to-field
+    compare of `TargetUserName` against the source host).
+  - `impact/service_stop_burst`: `' stop'` → `' stop '` on the net and sc arms, the anchor
+    `service_stop_protected_services` already used; a bare `' stop'` also matched
+    `' stopped'` and padded the distinct-CommandLine burst. Cmdlet-arm anchoring is declined
+    in the rule: a piped `| Stop-Service` carries no trailing target. The precedence
+    allowlist row is re-traced.
+  - `impact/account_access_removal_4725`: declined in-rule. 4724 is pooled with 4725/4726
+    because resetting a responder's password locks them out as surely as disabling them;
+    the org-wide forced reset that trips the pool is what `filter_identity_admins` exists
+    to name, and a lower-priority 4724 arm would hide the attacker who only resets.
+  - `registry/harbor_image_pushed_trusted_tag`: retitled *Harbor artifact push or tag
+    create (supply-chain triage surface)* to match the logic (every push and tag create
+    minus the CI robot). A protected-repo selector is declined in-rule: a selection-side
+    list is inert until filled, the opposite failure from a noisy filter. File name,
+    manifests and htpx pairing are unchanged.
+  - `google_workspace/gws_external_mail_forwarding`: verified, no change to logic. Google's
+    Reports API appendix lists `email_forwarding_out_of_domain` under both `user_accounts`
+    and `login`; exporter samples carry `user_accounts`, which is what is declared. Recorded
+    in a logsource comment with the appendix as a reference.
+  - Ledger: 124 rules, 0 added, 0 removed. `coverage-layer.json` and `COVERAGE.md` are
+    unchanged (no tag or count moved); all three SIEM forms regenerate (descriptions and
+    the Harbor stanza title are embedded).
+  - `zircolite-constraints.txt` carries the `pysigma-backend-sqlite==2.0.0` pin as a
+    stopgap: the host-plane job was red on `main` since #354 (ResolutionImpossible against
+    `pysigma==1.5.1`) and could not prove the new 4698 fixtures. #360 / #361 hold the full
+    fix with the Renovate cap; this is the same line so either merges cleanly over it.
 - **`github_credential_backdoor` now also selects
   `personal_access_token.request_created` (#348).** This follows htpx's `gh-cred-audit`
   (htpx#139). GitHub logs the request only in orgs that require approval for
