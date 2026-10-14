@@ -93,6 +93,10 @@ under `[Unreleased]` from here.
   - Ledger: 124 rules, 0 added, 0 removed. `coverage-layer.json` and `COVERAGE.md` are
     unchanged (no tag or count moved); all three SIEM forms regenerate (descriptions and
     the Harbor stanza title are embedded).
+  - `zircolite-constraints.txt` carries the `pysigma-backend-sqlite==2.0.0` pin as a
+    stopgap: the host-plane job was red on `main` since #354 (ResolutionImpossible against
+    `pysigma==1.5.1`) and could not prove the new 4698 fixtures. #360 / #361 hold the full
+    fix with the Renovate cap; this is the same line so either merges cleanly over it.
 - **`github_credential_backdoor` now also selects
   `personal_access_token.request_created` (#348).** This follows htpx's `gh-cred-audit`
   (htpx#139). GitHub logs the request only in orgs that require approval for

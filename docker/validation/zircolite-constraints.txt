@@ -33,4 +33,8 @@
 # same two for the sigma gate. Keep the two files agreeing (#322).
 pysigma==1.5.1
 pyparsing==3.3.3
-pysigma-backend-sqlite==2.1.0
+# 2.0.0, not 2.1.0: 2.1.0 is the backend's pySigma-2 release and contradicts the pysigma==1.5.1
+# line above, so pip stops at ResolutionImpossible before a rule runs (#354 bumped it alone).
+# The full account and the Renovate cap that stops the re-bump are in #360 / #361; this line
+# is the same pin so this branch's fixtures can be proven on CI meanwhile.
+pysigma-backend-sqlite==2.0.0
