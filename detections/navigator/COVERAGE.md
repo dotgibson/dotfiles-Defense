@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**124 rules · 148 detection documents · 87 techniques · 12 tactics · 24 logsources.**
+**125 rules · 149 detection documents · 87 techniques · 12 tactics · 24 logsources.**
 
 ## By ATT&CK tactic
 
@@ -14,7 +14,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Privilege Escalation | TA0004 | 10 | 16 |
 | Stealth | TA0005 | 3 | 6 |
 | Defense Impairment | TA0112 | 9 | 13 |
-| Credential Access | TA0006 | 19 | 24 |
+| Credential Access | TA0006 | 20 | 25 |
 | Discovery | TA0007 | 14 | 9 |
 | Lateral Movement | TA0008 | 11 | 9 |
 | Collection | TA0009 | 5 | 4 |
@@ -106,7 +106,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1610 | 1 | `k8s_privileged_pod_created` |
 | T1611 | 1 | `k8s_privileged_pod_created` |
 | T1648 | 1 | `cloudflare_worker_deployed` |
-| T1649 | 1 | `adcs_esc1_san_mismatch_4886` |
+| T1649 | 2 | `adcs_esc1_san_mismatch_4886`, `dc_account_pkinit_non_dc_4768` |
 | T1651 | 2 | `azure_vm_run_command`, `gcp_gce_metadata_startup_script` |
 | T1685 | 3 | `github_branch_protection_tamper`, `gitlab_protected_branch_tamper`, `vault_audit_device_disabled` |
 | T1685.002 | 1 | `gcp_audit_log_sink_deleted` |
@@ -120,7 +120,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `cloud` | `aws`, `azure`, `gcp` | 15 |
 | `cloudflare` | `cloudflare` | 3 |
 | `collection` | `windows` | 2 |
-| `credential_access` | `windows` | 14 |
+| `credential_access` | `windows` | 15 |
 | `defense_impairment` | `windows` | 4 |
 | `discovery` | `windows` | 9 |
 | `github` | `github` | 3 |

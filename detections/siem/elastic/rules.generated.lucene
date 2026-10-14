@@ -78,6 +78,9 @@ EventType:ConnectPipe AND PipeName:*efsrpc*
 // credential_access/coercion_named_pipes_5145.yml — Authentication coercion - named-pipe access over IPC$ (5145)
 (EventID:5145 AND ShareName:*IPC$* AND (RelativeTargetName:(*spoolss* OR *efsrpc* OR *lsarpc* OR *netlogon* OR *lsass*))) AND (NOT SubjectUserName:*$)
 
+// credential_access/dc_account_pkinit_non_dc_4768.yml — AD CS ESC8 end state - DC machine account TGT by certificate (PKINIT) from a non-DC address (4768)
+(EventID:4768 AND PreAuthType:16 AND (TargetUserName:(DC01$ OR DC02$))) AND (NOT ((IpAddress:(\:\:ffff\:10.0.0.10 OR \:\:ffff\:10.0.0.11)) OR (IpAddress:(\:\:1 OR 127.0.0.1 OR \:\:ffff\:127.0.0.1))))
+
 // credential_access/dcsync_non_dc_machine_account_4662.yml — DCSync - replication right requested by a machine account that is not a DC
 (EventID:4662 AND (Properties:(*1131f6aa\-9c07\-11d1\-f79f\-00c04fc2dcd2* OR *1131f6ad\-9c07\-11d1\-f79f\-00c04fc2dcd2* OR *89e95b76\-444d\-4c62\-991a\-0facbeda640c*)) AND SubjectUserName:*$) AND (NOT ((SubjectUserName:(DC01$ OR DC02$)) OR SubjectUserSid:S\-1\-5\-18))
 
