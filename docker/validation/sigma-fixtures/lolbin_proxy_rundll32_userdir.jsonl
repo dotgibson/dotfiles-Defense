@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 1, "Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WKS07"}, "EventData": {"Image": "C:\\Windows\\System32\\rundll32.exe", "CommandLine": "rundll32.exe C:\\Users\\Public\\Libraries\\update.dll,DllMain", "ParentImage": "C:\\Windows\\System32\\cmd.exe", "User": "CORP\\victim"}}}

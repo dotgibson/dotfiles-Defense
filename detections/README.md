@@ -197,7 +197,7 @@ The first content drop mirrors the **htpx red↔blue corpus**: each rule below
 detects a technique that `dotfiles-Offense` can execute on demand, so every one is
 purple-validatable out of the box.
 
-### `sigma/` — 125 rules / 149 documents, organized by ATT&CK tactic
+### `sigma/` — 126 rules / 150 documents, organized by ATT&CK tactic
 
 **`credential_access/`**
 
@@ -288,6 +288,12 @@ Elastic deploy forms cannot express a correlation and mark the whole **file** un
 | `registry_run_key_suspicious_target_sysmon_13` | Sysmon 13 Run/RunOnce value → user-writable path or interpreter | T1547.001             | `reg add …\Run /d %APPDATA%\x.exe` on a lab host |
 | `rogue_account_creation_4720`                  | 4720 account created                                            | T1136.002 / T1136.001 | Persistence · `net user /add`                    |
 | `machine_account_creation_burst_4741`          | 4741 burst (value_count correlation)                            | T1136.002             | AD attack paths · rbcd-impacket                  |
+
+**`stealth/`**
+
+| Rule                                       | Event / source                                                                          | ATT&CK                            | Validate with                                            |
+| ------------------------------------------ | --------------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------- |
+| `lolbin_proxy_execution_suspicious_target` | proc create (rundll32/regsvr32 → URL, scriptlet, UNC or user-writable path; mshta bare) | T1218.011 / T1218.010 / T1218.005 | `regsvr32 /s /n /u /i:http://… scrobj.dll` on a lab host |
 
 **`defense_impairment/`**
 
@@ -630,6 +636,7 @@ comment isn't enforcement, so this is the discoverable checklist instead.)
 | Rule                                                             | Substitute                                                                                                                    | Until you do                                                                                                                                                                                                                                |
 | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `privilege_escalation/rbcd_allowedtoact_5136`                    | `filter_delegation_admins` → your delegation-admin accounts                                                                   | can't tell admin from user; pair with `machine_account_creation_burst_4741` for fidelity that doesn't need it                                                                                                                               |
+| `stealth/lolbin_proxy_execution_suspicious_target`               | `filter_vendor_installers` → your installers / updaters and HTA tooling, as **full parent paths** under a protected dir       | Teams / OneDrive / Zoom COM registration from AppData alerts at `high` on every install or update; the URL, scriptlet and UNC arms are unaffected. Never a basename: a renamed launcher in a writable dir would silence every arm           |
 | `defense_impairment/dcshadow_rogue_dc_4742`                      | `filter_real_dcs` → your real DC computer accounts                                                                            | a `GC/` SPN write onto another real DC would alert (low risk — rare regardless)                                                                                                                                                             |
 | `credential_access/dcsync_non_dc_machine_account_4662`           | `filter_real_dcs` → every DC / RODC computer account                                                                          | routine DC-to-DC replication alerts at high on every DC not listed                                                                                                                                                                          |
 | `credential_access/dc_account_pkinit_non_dc_4768`                | `TargetUserName` → your DC / RODC computer accounts, **and** `filter_dc_sources` → those DCs' addresses as 4768 logs them     | **inert** — the selection matches only the `DC01$`/`DC02$` examples, so a certificate TGT as any other real DC is missed; fill the accounts first. Then a DC address missing from the filter alerts at high on that DC's own PKINIT         |

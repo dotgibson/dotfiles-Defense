@@ -2,7 +2,7 @@
 
 Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **technique**, and **logsource**. Regenerate with `detections/navigator/gen-coverage.sh`; CI drift-gates it with `gen-coverage.sh --check`. Prose companion to `coverage-layer.json` (the machine-readable Navigator layer).
 
-**125 rules · 149 detection documents · 87 techniques · 12 tactics · 24 logsources.**
+**126 rules · 150 detection documents · 90 techniques · 12 tactics · 25 logsources.**
 
 ## By ATT&CK tactic
 
@@ -12,7 +12,7 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | Execution | TA0002 | 9 | 12 |
 | Persistence | TA0003 | 17 | 38 |
 | Privilege Escalation | TA0004 | 10 | 16 |
-| Stealth | TA0005 | 3 | 6 |
+| Stealth | TA0005 | 6 | 7 |
 | Defense Impairment | TA0112 | 9 | 13 |
 | Credential Access | TA0006 | 20 | 25 |
 | Discovery | TA0007 | 14 | 9 |
@@ -68,6 +68,9 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | T1187 | 3 | `coercion_efsrpc_pipe_sysmon_18`, `coercion_named_pipes_5145`, `unconstrained_delegation_4624` |
 | T1195.002 | 2 | `npm_malicious_package_publish`, `pypi_token_release_upload` |
 | T1207 | 1 | `dcshadow_rogue_dc_4742` |
+| T1218.005 | 1 | `lolbin_proxy_execution_suspicious_target` |
+| T1218.010 | 1 | `lolbin_proxy_execution_suspicious_target` |
+| T1218.011 | 1 | `lolbin_proxy_execution_suspicious_target` |
 | T1482 | 1 | `sharphound_ldap_sweep_4662` |
 | T1484.002 | 1 | `okta_idp_created` |
 | T1485 | 2 | `aws_data_destruction`, `data_destruction_wipe` |
@@ -139,5 +142,6 @@ Rolls up every Sigma rule in `detections/sigma/` by ATT&CK **tactic**, **techniq
 | `registry` | `harbor` | 3 |
 | `slack` | `slack` | 3 |
 | `snowflake` | `snowflake` | 3 |
+| `stealth` | `windows` | 1 |
 | `terraform` | `terraform` | 3 |
 | `vault` | `vault` | 3 |

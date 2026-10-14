@@ -17,7 +17,8 @@
   <EventFiltering>
 
     <!-- Event 1: ProcessCreate — feeds ntds_dump, potato_seimpersonate, wmiexec,
-         rdp_hijack, scheduled_task (action), service-exec triage. Capture all;
+         rdp_hijack, scheduled_task (action), lolbin_proxy_execution, service-exec
+         triage. Capture all;
          the Sigma rules carry the selectivity. Exclude only the noisiest signed
          updater to keep lab volume sane. -->
     <RuleGroup name="proc-create" groupRelation="or">
