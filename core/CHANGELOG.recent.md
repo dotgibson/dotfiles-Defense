@@ -5,10 +5,25 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v7.15.1 … v7.9.0), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v7.16.0 … v7.10.0), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v7.16.0] - 2026-10-14
+
+### Added
+
+- **`sync-core.sh` refuses to vendor an unreleased commit.** `make sync` defaults to `main`,
+  so an ad-hoc run put one repo on a `main` tip no release pointed at (dotgibson/dotfiles-Arch#203,
+  stamped `v7.14.0-11-g200ebaa`, 32 minutes before v7.15.0 was tagged): unreleased behaviour
+  landed in one repo ahead of the fleet, `core.version` understated what `core/` carried, and
+  fleet-drift flagged it the next morning. The sync now classifies the resolved commit by the
+  same alias-proof `git describe` it already stamps into `core.lock` and exits 1 unless the
+  commit sits exactly at a `vX.Y.Z` tag. A tagless (greenfield) Core still syncs; a checkout
+  that lacks the commit or its tags is told to fetch rather than called unreleased. The fan-out
+  is unaffected (it passes the released SHA). `SYNC_ALLOW_UNRELEASED=1` is the explicit,
+  logged override. `--dry-run` refuses too, so a rehearsal says what the real run would.
 
 ## [v7.15.1] - 2026-10-14
 
@@ -2133,130 +2148,3 @@ repo-meta and stays upstream:
   `--no-extras`**, both real, and `.claude/agents/doc-consistency.md` still called this an
   _eleven_-repo system — the auditor's own charter, stale since `dotfiles-NixOS` made the
   whole system twelve.
-
-## [v7.9.0] - 2026-09-16
-
-### Added
-
-- **`PORTING-MATRIX.md` renders the atomic and declarative editions** — the two columns
-  #1062 could not add (runbook step 5 of `NON-MUTABLE-HOST-PROPOSAL.md` §4.6, #1051).
-  `dotfiles-Fedora` gains `Atomic=os/fedora.atomic.capabilities` as a second label beside
-  `Workstation` (the idiom openSUSE already uses for three), and `dotfiles-NixOS` gets a
-  column of its own.
-
-  **What blocked them was one line.** `scripts/gen-porting-matrix.sh` refused any
-  declaration missing a key `CMD_ROWS` names — and both of these legally omit
-  `PKG_COUNT_PENDING`, which `scripts/check-capabilities.sh` permits under
-  `PROVISIONER=declarative` and whenever `PKG_APPLY_PENDING` is declared beside it. That is
-  why #1062 shipped openSUSE's transactional column, which declares the count verb, and
-  deferred Fedora's, which does not.
-
-  The generator now renders an absent key **only where the validator would accept its
-  absence**, keyed to the same two conditions so one rule has two readers. A **staged** host
-  shows the verb it does have with the question it answers outside the code span —
-  `` `rpm-ostree status --pending-exit-77` (staged?) `` — because it cannot cheaply say how
-  many packages are pending (that verb is root-only there) but can say whether a change is
-  already staged, which is what the nudge runs. A **declarative** host shows `—`:
-  packages-pending is not a thing NixOS knows, and the nearest question needs root and
-  lists derivations. Anywhere else a missing verb is still `exit 2`, which is what keeps
-  the gate honest for the eight mutable declarations.
-
-  The cell builder now compares **rendered** strings rather than raw values when collapsing
-  a multi-label column to one — the old code rebuilt the code span from a raw value plus
-  whatever placeholder the last loop pass left behind, which is wrong the moment one
-  declaration renders something that is not a code span.
-
-  Pinned by four arms in the parity suite (the staged tail, the bare dash, neither
-  relaxation → 2 naming the column _and_ its label, and that `declarative` excuses the
-  count verb and nothing else) over a fixture fleet that grew `dotfiles-NixOS` and the two
-  relaxed declarations. The pre-existing "a declaration missing a verb is a structural
-  failure" assertion is the load-bearing one and is untouched: widening the relaxation to
-  any absent key fails it, plus two of the four new arms.
-
-  `PKG_COLUMNS` is deliberately unchanged — `dotfiles-NixOS` ships no `install/packages.txt`
-  (`nix/home.nix` owns the package set), so the packages table, its 8-field row assertion
-  and §9p's five-repo `TOOLS_OPTIN` list are all untouched. Footnote ³⁵ is now scoped to the
-  Workstation half, since the atomic edition genuinely does have a standalone index refresh.
-  (`scripts/gen-porting-matrix.sh`, `PORTING-MATRIX.md`,
-  `scripts/test/41-gen-matrix-parity.sh`)
-
-- **`dotfiles-NixOS` is the fleet's tenth Core-vendoring repo** (runbook step 5 of
-  `NON-MUTABLE-HOST-PROPOSAL.md` §4.6, #1051). NixOS is the one non-mutable target that
-  could not be a variant of an existing repo — R4 measured it as _"no package list in
-  Fedora's format, no `dnf`-shaped verbs, and a different owner for packages and the shell
-  declaration"_ — so `scripts/os-repos.txt` grows by one and every register that counts the
-  fleet grows with it.
-
-  **The boundary the new repo ships is R3's measurement, not a preference.**
-  `nix/` owns packages, `PATH`, tpm and the login-shell declaration; the bootstrap driver
-  owns every link and the zsh entry, and `home.nix` declares no `home.file` and no
-  `programs.zsh`. The driver relinks whatever home-manager links, silently and without a
-  backup (a differing symlink is a relink, not a foreign file); home-manager tolerates that
-  for every path whose content matches and refuses to activate **at all** over the one whose
-  bytes differ — `$ZDOTDIR/.zshrc`, where `-b` cannot help because it backs up only a
-  _regular_ foreign file, never a foreign symlink. One file, total deadlock. The repo's
-  `blib_set_login_shell` arm prints `users.users.<name>.shell = pkgs.zsh;` instead of running
-  `chsh`, because a hand-set login shell is exactly the state `nixos-rebuild switch` does not
-  reproduce — the repo's own arm, not a lib change.
-
-  Core's side is the registration and the sweep it forces: the §5f helper ledger gains
-  `dotfiles-NixOS` on **all nine** rows (§5f credits the whole `blib_main` contract to a
-  driver adopter, so a partial ledger is `advanced` → fail, once per missed row), §9m's
-  fan-out count moves 32 tracked claims from nine to ten, and `assets/hero-repos.txt` gains
-  its row — with the tape rendered and the **gif deliberately pending**, which §9k weighs as
-  a skip rather than a red.
-  (`scripts/os-repos.txt`, `scripts/audit/40-fleet-registers.sh`, `scripts/lib/common.sh`,
-  `assets/hero-repos.txt`, `ARCHITECTURE.md`, `CLAUDE.md`, `PORTABILITY.md`,
-  `PORTING-MATRIX.md`, `RELEASE-STRATEGY.md`, `RELEASE-RUNBOOK.md`, `VENDORING.md`,
-  `SECURITY.md`, `README.md`, `core.vendor`)
-
-- **`scripts/fleet-protection.sh`'s `REPOS` array is now gated against `scripts/os-repos.txt`**
-  — the second fleet list, and the one nothing compared. #669 deleted three hardcoded
-  fallback arrays precisely so a registered repo could not vanish from a gate;
-  `fleet-protection.sh` kept one for a real reason (it also audits `dotfiles-core`, and asks
-  GitHub rather than the disk), and nothing checked it. Verified while adding the tenth repo:
-  no audit fragment, no test fragment and no workflow referenced it. The failure mode is the
-  quiet one — a repo missing from the array is not a red gate, it is branch protection nobody
-  is auditing on a repo that looks covered because every other register lists it. The new
-  assertion is **bidirectional**, unlike the §5f ledger's own integrity check (which catches a
-  typo but not an omission — and an omission is what the next `os-repos.txt +1` produces).
-  (`scripts/test/90-policy-gates.sh`, `scripts/fleet-protection.sh`)
-
-### Fixed
-
-- **`new-os-repo.sh` stamped the annotated TAG OBJECT as vendoring provenance, not the
-  peeled commit** (#1065). Its default `CORE_BRANCH` is `refs/tags/v7`, and it resolved
-  that with `git ls-remote <remote> <ref> | awk 'NR==1'` — which for an annotated tag
-  returns the tag object. Not "the first of two lines": asked plainly, that is the _only_
-  line there is, so the peeled ref has to be requested explicitly. Measured at v7.8.0 —
-  `refs/tags/v7` → `a96cf64c58b5` (a tag object), `refs/tags/v7^{}` → `a4907d555d9f` (the
-  commit every `core.lock` in the fleet records). Every scaffolded repo therefore committed
-  `chore(core): vendor Core at <tag object>`, contradicting the rule `ARCHITECTURE.md` and
-  `VENDORING.md` both state outright and the block's own comment ("the provenance must name
-  one commit").
-
-  **The tree was never wrong** — `core_vendor_materialize` hands the SHA to `git read-tree`,
-  which peels — so this was a false claim rather than a broken vendor. Confirmed on the
-  repo that found it: `dotfiles-NixOS`'s `core/` tree is `760df33cf00e`, byte-identical to
-  `dotfiles-Alpine`'s at v7.8.0.
-
-  **The same read was in `sync-core.sh`, one step from `core.lock`.** It defaults to a
-  branch and the fan-out passes a SHA, so no live path reached it — but that script's own
-  usage text says _"pass a released tag"_, and there the tag object would have been written
-  into `core.lock` as `core_sha`, where all ten siblings record the commit. Both callers now
-  go through one resolver, `core_vendor_remote_commit` in `scripts/lib/core-vendor.sh`
-  (Core-only, already sourced by both), which asks for the bare **and** peeled ref in one
-  network call and prefers the peeled one **by shape rather than by position**.
-
-  Deliberately **not** changed: `tag-release.sh`'s read of `refs/tags/$MAJOR`. That one
-  wants the raw ref value, because `--force-with-lease` compares the _ref's_ value — which
-  for an annotated tag _is_ the tag object — and it peels separately for its ancestry
-  check. Peeling there would break the lease.
-
-  Pinned by six assertions against a local fixture remote with a real annotated tag (no
-  network): the peel, the object type, the lightweight-tag and branch cases, and that a bare
-  SHA stays **unresolvable** so the fan-out's local `rev-parse` fallback is untouched. The
-  fixture asserts its own premise first — that the tag object and the commit actually differ
-  — because the whole test would pass vacuously on a lightweight tag.
-  (`scripts/lib/core-vendor.sh`, `scripts/new-os-repo.sh`, `scripts/sync-core.sh`,
-  `scripts/test/32-sync-core.sh`)
