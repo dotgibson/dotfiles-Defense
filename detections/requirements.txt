@@ -30,7 +30,7 @@
 #
 # docker/validation/zircolite-constraints.txt pins the same pysigma + pyparsing pair for
 # the host validation plane; Renovate bumps both files in the same grouped PR.
-pysigma==1.5.1
+pysigma==2.0.1
 pyparsing==3.3.3
 sigma-cli==3.1.0
 pysigma-backend-splunk==2.1.0
