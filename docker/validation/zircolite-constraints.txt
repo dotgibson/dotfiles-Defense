@@ -41,6 +41,6 @@
 # name is deliberately not *requirements*, because it is not our dependency list — and
 # bumps the pair in the same grouped PR as detections/requirements.txt, which pins the
 # same two for the sigma gate. Keep the two files agreeing (#322).
-pysigma==1.5.1
+pysigma==2.0.1
 pyparsing==3.3.3
 pysigma-backend-sqlite==2.0.0
