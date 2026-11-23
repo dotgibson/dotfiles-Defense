@@ -14,10 +14,28 @@
       "automerge": false
     },
     {
-      "description": "pysigma-backend-sqlite 2.1.0 is the backend's pySigma-2 release (pysigma>=2). Offered alone it is unresolvable against the pinned pysigma 1.5.1, and the host-plane gate goes red at pip install with 0 rows run (#354). It moves only with the pysigma major, in the grouped PR — DELETE this rule in the same PR that takes pysigma 2.",
+      "description": "pysigma-backend-sqlite 2.1.0 is the backend's pySigma-2 release (pysigma>=2). Offered alone it is unresolvable against the pinned pysigma 1.5.1, and the host-plane gate goes red at pip install with 0 rows run (#354). Part of the pySigma-1 hold below: DELETE it with the others in the PR that takes pysigma 2.",
       "matchManagers": ["pip_requirements"],
       "matchPackageNames": ["pysigma-backend-sqlite"],
       "allowedVersions": "<2.1.0"
+    },
+    {
+      "description": "pySigma-1 hold. pysigma-backend-elasticsearch (2.1.1) and pysigma-backend-kusto (1.0.1) have no pySigma-2 release yet: both declare pysigma<2.0.0, so the grouped bump to pysigma 2 (#353) fails at pip install with ResolutionImpossible and runs nothing. Hold pysigma on 1.x until both backends ship a release that accepts pysigma 2. Then DELETE this rule and the three beside it (sigma-cli, pysigma-backend-splunk, pysigma-backend-sqlite) in the same PR that takes pysigma 2, so the toolchain still moves as one.",
+      "matchManagers": ["pip_requirements"],
+      "matchPackageNames": ["pysigma"],
+      "allowedVersions": "<2.0.0"
+    },
+    {
+      "description": "Part of the pySigma-1 hold above: sigma-cli 4.0.0 is its first release requiring pysigma>=2.0.0, so it cannot move while pysigma is held. DELETE with the pysigma rule.",
+      "matchManagers": ["pip_requirements"],
+      "matchPackageNames": ["sigma-cli"],
+      "allowedVersions": "<4.0.0"
+    },
+    {
+      "description": "Part of the pySigma-1 hold above: pysigma-backend-splunk 3.0.0 is its first release requiring pysigma>=2.0.1, so it cannot move while pysigma is held. DELETE with the pysigma rule.",
+      "matchManagers": ["pip_requirements"],
+      "matchPackageNames": ["pysigma-backend-splunk"],
+      "allowedVersions": "<3.0.0"
     }
   ]
 }
